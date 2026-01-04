@@ -15,7 +15,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cast/core": "workspace:*"
+    "@cast/core": "workspace:*",
+    "@neondatabase/serverless": "^1.0.2",
+    "ulid": "^3.0.2"
   },
   "devDependencies": {
     "typescript": "^5.3.0"

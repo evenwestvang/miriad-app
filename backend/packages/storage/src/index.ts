@@ -1,21 +1,12 @@
 /**
  * @cast/storage - Storage interface and implementations
  *
- * For now, just a placeholder. Real implementation comes in Phase 1.
+ * PostgreSQL storage using @neondatabase/serverless for PlanetScale.
  */
 
-export interface Storage {
-  // Placeholder - will be filled in Phase 1
-  initialize(): Promise<void>;
-  close(): Promise<void>;
-}
+// Interface
+export type { Storage } from './interface.js';
 
-export class StubStorage implements Storage {
-  async initialize(): Promise<void> {
-    // No-op for now
-  }
-
-  async close(): Promise<void> {
-    // No-op for now
-  }
-}
+// Implementations
+export { createPostgresStorage } from './postgres.js';
+export type { PostgresStorageOptions } from './postgres.js';
