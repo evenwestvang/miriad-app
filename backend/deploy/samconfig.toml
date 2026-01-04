@@ -1,0 +1,38 @@
+# SAM CLI Configuration for Cast Backend
+# Deploy: sam build && sam deploy --config-env cast-stag
+
+version = 0.1
+
+[default.global.parameters]
+stack_name = "cast-backend"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.validate.parameters]
+lint = true
+
+# =============================================================================
+# cast-stag: Staging environment
+# Usage: pnpm deploy (or sam deploy --config-env cast-stag)
+# =============================================================================
+
+[cast-stag.global.parameters]
+stack_name = "cast-backend-stag"
+
+[cast-stag.build.parameters]
+cached = true
+parallel = true
+
+[cast-stag.deploy.parameters]
+profile = "cikada-stag"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3 = true
+s3_prefix = "cast-backend"
+region = "us-east-1"
+disable_rollback = false
+parameter_overrides = [
+    "Stage=stag"
+]

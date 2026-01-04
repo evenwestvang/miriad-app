@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Cast Backend - Multi-agent collaboration platform
+
+Parameters:
+  Stage:
+    Type: String
+    Default: stag
+    AllowedValues:
+      - stag
+      - prod
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: nodejs20.x
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        STAGE: !Ref Stage
+        NODE_OPTIONS: --enable-source-maps
+
+Resources:
+  # Main API Lambda
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cast-backend-api-${Stage}
+      Handler: lambda.handler
+      CodeUri: dist/
+      Description: Cast Backend API
+      Events:
+        RootPath:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: ANY
+            ApiId: !Ref HttpApi
+        ProxyPath:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+            ApiId: !Ref HttpApi
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: esm
+        Sourcemap: true
+        EntryPoints:
+          - lambda.mjs
+        OutExtension:
+          - .js=.mjs
+
+  # HTTP API Gateway
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Stage
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowHeaders:
+          - '*'
+        AllowMethods:
+          - '*'
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+  ApiFunctionArn:
+    Description: API Lambda Function ARN
+    Value: !GetAtt ApiFunction.Arn
