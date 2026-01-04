@@ -1,0 +1,436 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Fargate Claude Code Runtime - ECS cluster, EFS filesystem, and orchestrator Lambda
+
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+
+  AnthropicApiKeySecretArn:
+    Type: String
+    Description: ARN of the Secrets Manager secret containing the Anthropic API key
+
+  CikadaApiUrl:
+    Type: String
+    Description: HTTP API URL for Tymbal streaming (e.g., https://xxx.execute-api.region.amazonaws.com/prod)
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for Fargate tasks and EFS
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnet IDs for Fargate tasks (comma-separated)
+
+  ContainerImage:
+    Type: String
+    Description: ECR image URI for Claude Code container (e.g., 123456789.dkr.ecr.us-east-1.amazonaws.com/claude-code:latest)
+
+  WebSocketEndpoint:
+    Type: String
+    Description: WebSocket API endpoint (without wss:// prefix, e.g., xxx.execute-api.region.amazonaws.com/prod)
+    Default: ""
+
+  ConnectionsTableName:
+    Type: String
+    Description: DynamoDB table name for WebSocket connections
+    Default: ""
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: nodejs22.x
+
+Resources:
+  # ============================================
+  # EFS Filesystem - Persistent Storage
+  # ============================================
+
+  # EFS Filesystem for persistent workspaces
+  WorkspaceFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      LifecyclePolicies:
+        # Move to IA after 30 days of no access
+        - TransitionToIA: AFTER_30_DAYS
+        # Move back to standard on next access
+        - TransitionToPrimaryStorageClass: AFTER_1_ACCESS
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-workspaces
+
+  # Security Group for EFS
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-efs-sg
+      GroupDescription: Allow NFS access from Fargate tasks
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref ContainerSecurityGroup
+          Description: NFS from Fargate containers
+
+  # EFS Mount Targets (one per subnet)
+  WorkspaceMountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref WorkspaceFileSystem
+      SubnetId: !Select [0, !Ref SubnetIds]
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+  # Access Point for thread workspaces
+  WorkspaceAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref WorkspaceFileSystem
+      PosixUser:
+        Uid: "1000"
+        Gid: "1000"
+      RootDirectory:
+        Path: /threads
+        CreationInfo:
+          OwnerUid: "1000"
+          OwnerGid: "1000"
+          Permissions: "755"
+      AccessPointTags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-threads
+
+  # ============================================
+  # ECS Cluster and Task Definition
+  # ============================================
+
+  # ECS Cluster
+  ClaudeCodeCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${AWS::StackName}-claude-code
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        # Use Spot for cost savings (can be overridden per task)
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 1
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  # Security Group for Fargate containers
+  ContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-container-sg
+      GroupDescription: Security group for Claude Code containers
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # Allow orchestrator Lambda to reach container HTTP endpoint
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 10.0.0.0/8
+          Description: HTTP from VPC
+      SecurityGroupEgress:
+        # Allow all outbound (for API calls, git, npm, etc.)
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: All outbound traffic
+
+  # CloudWatch Log Group for containers
+  ClaudeCodeLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${AWS::StackName}-claude-code
+      RetentionInDays: 30
+
+  # ECS Task Execution Role (for ECR pull, logging)
+  ECSExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-ecs-execution
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref AnthropicApiKeySecretArn
+
+  # ECS Task Role (for container runtime permissions)
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-ecs-task
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: TymbalAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Allow posting Tymbal frames to Cikada API
+              - Effect: Allow
+                Action:
+                  - execute-api:Invoke
+                Resource: "*"
+        - PolicyName: EFSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                Resource: !GetAtt WorkspaceFileSystem.Arn
+                Condition:
+                  StringEquals:
+                    elasticfilesystem:AccessPointArn: !GetAtt WorkspaceAccessPoint.Arn
+
+  # ECS Task Definition
+  ClaudeCodeTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${AWS::StackName}-claude-code
+      Cpu: '1024'      # 1 vCPU
+      Memory: '2048'   # 2 GB
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: claude-code
+          Image: !Ref ContainerImage
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: CIKADA_API_URL
+              Value: !Ref CikadaApiUrl
+            - Name: IDLE_TIMEOUT_MS
+              Value: "600000"  # 10 minutes
+          Secrets:
+            - Name: ANTHROPIC_API_KEY
+              ValueFrom: !Sub "${AnthropicApiKeySecretArn}:api_key::"
+          MountPoints:
+            - SourceVolume: workspace
+              ContainerPath: /workspace
+              ReadOnly: false
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ClaudeCodeLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: claude-code
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:8080/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 30
+      Volumes:
+        - Name: workspace
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref WorkspaceFileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref WorkspaceAccessPoint
+              IAM: ENABLED
+
+  # ============================================
+  # Container State Table
+  # ============================================
+
+  ContainerStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-container-state
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: threadId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: threadId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # ============================================
+  # Orchestrator Lambda
+  # ============================================
+
+  OrchestratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-orchestrator
+      Handler: orchestrator/index.handler
+      CodeUri: ./dist
+      Timeout: 180  # 3 minutes (includes task startup wait)
+      MemorySize: 256
+      VpcConfig:
+        SubnetIds: !Ref SubnetIds
+        SecurityGroupIds:
+          - !Ref OrchestratorSecurityGroup
+      Environment:
+        Variables:
+          CLUSTER_ARN: !GetAtt ClaudeCodeCluster.Arn
+          TASK_DEFINITION: !Ref ClaudeCodeTaskDefinition
+          CONTAINER_STATE_TABLE: !Ref ContainerStateTable
+          SUBNET_IDS: !Join [",", !Ref SubnetIds]
+          SECURITY_GROUP_ID: !Ref ContainerSecurityGroup
+          CIKADA_API_URL: !Ref CikadaApiUrl
+          ANTHROPIC_API_KEY_ARN: !Ref AnthropicApiKeySecretArn
+          EFS_FILE_SYSTEM_ID: !Ref WorkspaceFileSystem
+          EFS_ACCESS_POINT_ID: !Ref WorkspaceAccessPoint
+          # WebSocket broadcasting for status messages
+          WEBSOCKET_ENDPOINT: !Ref WebSocketEndpoint
+          CONNECTIONS_TABLE: !Ref ConnectionsTableName
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            # ECS task management
+            - Effect: Allow
+              Action:
+                - ecs:RunTask
+                - ecs:StopTask
+                - ecs:DescribeTasks
+              Resource: "*"
+              Condition:
+                ArnEquals:
+                  ecs:cluster: !GetAtt ClaudeCodeCluster.Arn
+            - Effect: Allow
+              Action:
+                - iam:PassRole
+              Resource:
+                - !GetAtt ECSExecutionRole.Arn
+                - !GetAtt ECSTaskRole.Arn
+            # DynamoDB container state
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+              Resource: !GetAtt ContainerStateTable.Arn
+            # DynamoDB connections table (for WebSocket broadcasting)
+            # Note: ConnectionsTableName defaults to "" - policy is permissive but
+            # broadcast code gracefully skips if WEBSOCKET_ENDPOINT not set
+            - Effect: Allow
+              Action:
+                - dynamodb:Query
+              Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/*"
+            # API Gateway Management (for WebSocket broadcasting)
+            - Effect: Allow
+              Action:
+                - execute-api:ManageConnections
+              Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/@connections/*"
+
+  # Security Group for Orchestrator Lambda (in VPC)
+  OrchestratorSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-orchestrator-sg
+      GroupDescription: Security group for orchestrator Lambda
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: All outbound traffic
+
+  # ============================================
+  # Stop Container Lambda (for cleanup)
+  # ============================================
+
+  StopContainerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-stop-container
+      Handler: orchestrator/index.stopContainerHandler
+      CodeUri: ./dist
+      Timeout: 60
+      MemorySize: 256
+      VpcConfig:
+        SubnetIds: !Ref SubnetIds
+        SecurityGroupIds:
+          - !Ref OrchestratorSecurityGroup
+      Environment:
+        Variables:
+          CLUSTER_ARN: !GetAtt ClaudeCodeCluster.Arn
+          CONTAINER_STATE_TABLE: !Ref ContainerStateTable
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - ecs:StopTask
+              Resource: "*"
+              Condition:
+                ArnEquals:
+                  ecs:cluster: !GetAtt ClaudeCodeCluster.Arn
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt ContainerStateTable.Arn
+
+Outputs:
+  ClusterArn:
+    Description: ECS Cluster ARN
+    Value: !GetAtt ClaudeCodeCluster.Arn
+
+  TaskDefinitionArn:
+    Description: ECS Task Definition ARN
+    Value: !Ref ClaudeCodeTaskDefinition
+
+  ContainerStateTableName:
+    Description: DynamoDB table for container state
+    Value: !Ref ContainerStateTable
+
+  OrchestratorFunctionArn:
+    Description: Orchestrator Lambda ARN
+    Value: !GetAtt OrchestratorFunction.Arn
+
+  OrchestratorFunctionName:
+    Description: Orchestrator Lambda name (for send-message integration)
+    Value: !Ref OrchestratorFunction
+
+  EFSFileSystemId:
+    Description: EFS Filesystem ID
+    Value: !Ref WorkspaceFileSystem
+
+  EFSAccessPointId:
+    Description: EFS Access Point ID
+    Value: !Ref WorkspaceAccessPoint
+
+  ContainerSecurityGroupId:
+    Description: Security group for containers
+    Value: !Ref ContainerSecurityGroup

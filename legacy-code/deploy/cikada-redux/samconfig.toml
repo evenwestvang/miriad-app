@@ -1,0 +1,60 @@
+# SAM CLI Configuration for cikada-redux stack
+# Run: sam build && sam deploy
+
+version = 0.1
+
+[default.global.parameters]
+stack_name = "cikada-redux-prod"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.validate.parameters]
+lint = true
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+resolve_s3 = true
+s3_prefix = "cikada-redux"
+region = "us-east-1"
+disable_rollback = false
+parameter_overrides = [
+    "Stage=prod"
+]
+
+[default.sync.parameters]
+watch = true
+
+[default.local_start_api.parameters]
+warm_containers = "EAGER"
+
+[default.local_start_lambda.parameters]
+warm_containers = "EAGER"
+
+# =============================================================================
+# cikada-stag: Staging environment (account 455626925815)
+# Usage: sam deploy --config-env cikada-stag
+# =============================================================================
+
+[cikada-stag.global.parameters]
+stack_name = "cikada-stag"
+
+[cikada-stag.build.parameters]
+cached = true
+parallel = true
+
+[cikada-stag.deploy.parameters]
+profile = "cikada-stag"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3 = true
+s3_prefix = "cikada-stag"
+region = "us-east-1"
+disable_rollback = false
+parameter_overrides = [
+    "Stage=prod",
+    "HttpDomainName=api.staging.clanker.is",
+    "WebSocketDomainName=ws.staging.clanker.is"
+]

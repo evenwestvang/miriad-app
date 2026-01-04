@@ -1,0 +1,19 @@
+<svg width="304" height="304" viewBox="0 0 304 304" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Outer square -->
+  <path d="M303.5 0.5H0.5V303.5H303.5V0.5Z" stroke="black" stroke-miterlimit="10"/>
+
+  <!-- Outer rotated square (diamond) -->
+  <path d="M152 28L276 152L152 276L28 152Z" stroke="black" stroke-miterlimit="10"/>
+
+  <!-- Axis-aligned square -->
+  <path d="M76 76H228V228H76Z" stroke="black" stroke-miterlimit="10"/>
+
+  <!-- Inner octagon rosette -->
+  <path d="M152 116L172 120L188 136L192 156L188 172L172 188L152 192L132 188L116 172L112 152L116 136L132 120Z" stroke="black" stroke-miterlimit="10"/>
+
+  <!-- Corner kites -->
+  <path d="M28 76L60 76L76 60L76 28L28 28Z" stroke="black" stroke-miterlimit="10"/>
+  <path d="M228 28V60L244 76H276V28Z" stroke="black" stroke-miterlimit="10"/>
+  <path d="M28 276H76V244L60 228H28Z" stroke="black" stroke-miterlimit="10"/>
+  <path d="M228 244V276H276V228H244Z" stroke="black" stroke-miterlimit="10"/>
+</svg>

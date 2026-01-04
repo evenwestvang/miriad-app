@@ -1,0 +1,42 @@
+{
+  "name": "@cikada/aws-runtime",
+  "version": "0.1.0",
+  "description": "AWS Lambda runtime for Cicada agent framework",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.0",
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.700.0",
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/client-lambda": "^3.956.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0",
+    "@aws/durable-execution-sdk-js": "^1.0.1",
+    "@cikada/agent": "workspace:*",
+    "@cikada/core": "workspace:*",
+    "ulid": "^2.3.0",
+    "zod-to-json-schema": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "peerDependencies": {
+    "@aws/durable-execution-sdk-js": "^1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@aws/durable-execution-sdk-js": {
+      "optional": true
+    }
+  }
+}

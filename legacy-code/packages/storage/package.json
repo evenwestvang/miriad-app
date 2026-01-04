@@ -1,0 +1,38 @@
+{
+  "name": "@cikada/storage",
+  "version": "0.1.0",
+  "description": "Storage adapters for Cikada platform - SQLite and DynamoDB",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./sqlite": {
+      "import": "./dist/sqlite/index.js",
+      "types": "./dist/sqlite/index.d.ts"
+    },
+    "./dynamodb": {
+      "import": "./dist/dynamodb/index.js",
+      "types": "./dist/dynamodb/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0",
+    "@cikada/core": "workspace:*",
+    "better-sqlite3": "^11.0.0",
+    "sqlite-vec": "^0.1.7-alpha.2",
+    "ulid": "^2.3.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "typescript": "^5.5.0"
+  }
+}

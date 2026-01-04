@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="400" height="400">
+  <!-- Fox face -->
+  <circle cx="100" cy="100" r="60" fill="#ff6b35"/>
+
+  <!-- Ears -->
+  <polygon points="70,50 60,20 80,45" fill="#ff6b35"/>
+  <polygon points="130,50 140,20 120,45" fill="#ff6b35"/>
+  <polygon points="70,50 65,35 75,45" fill="#fff"/>
+  <polygon points="130,50 135,35 125,45" fill="#fff"/>
+
+  <!-- Eyes -->
+  <ellipse cx="85" cy="90" rx="8" ry="12" fill="#000"/>
+  <ellipse cx="115" cy="90" rx="8" ry="12" fill="#000"/>
+  <circle cx="86" cy="88" r="3" fill="#fff"/>
+  <circle cx="116" cy="88" r="3" fill="#fff"/>
+
+  <!-- Snout -->
+  <ellipse cx="100" cy="110" rx="25" ry="20" fill="#fff"/>
+
+  <!-- Nose -->
+  <ellipse cx="100" cy="105" rx="6" ry="5" fill="#000"/>
+
+  <!-- Mouth - big smile -->
+  <path d="M 100 105 Q 85 120 75 115 M 100 105 Q 115 120 125 115"
+        stroke="#000" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+  <!-- Tongue sticking out -->
+  <ellipse cx="100" cy="122" rx="8" ry="6" fill="#ff69b4" transform="rotate(-10 100 122)"/>
+
+  <!-- Whiskers -->
+  <line x1="60" y1="100" x2="40" y2="95" stroke="#000" stroke-width="1.5"/>
+  <line x1="60" y1="105" x2="35" y2="105" stroke="#000" stroke-width="1.5"/>
+  <line x1="60" y1="110" x2="40" y2="115" stroke="#000" stroke-width="1.5"/>
+  <line x1="140" y1="100" x2="160" y2="95" stroke="#000" stroke-width="1.5"/>
+  <line x1="140" y1="105" x2="165" y2="105" stroke="#000" stroke-width="1.5"/>
+  <line x1="140" y1="110" x2="160" y2="115" stroke="#000" stroke-width="1.5"/>
+
+  <!-- Silly eyebrows -->
+  <path d="M 75 75 Q 80 70 90 72" stroke="#000" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M 125 75 Q 120 70 110 72" stroke="#000" stroke-width="2" fill="none" stroke-linecap="round"/>
+</svg>

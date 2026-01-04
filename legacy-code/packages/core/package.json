@@ -1,0 +1,32 @@
+{
+  "name": "@cikada/core",
+  "version": "0.1.0",
+  "description": "Shared types for Cikada platform - Tymbal protocol and channel models",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./tymbal": {
+      "import": "./dist/tymbal/index.js",
+      "types": "./dist/tymbal/index.d.ts"
+    },
+    "./cikada": {
+      "import": "./dist/cikada/index.js",
+      "types": "./dist/cikada/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ulid": "^2.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "@cikada/server",
+  "version": "0.1.0",
+  "description": "Cikada Channels Service - HTTP API and WebSocket streaming",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "cikada-server": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "dev": "tsx watch src/cli.ts",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.0",
+    "@cikada/agent": "workspace:*",
+    "@cikada/handlers": "workspace:*",
+    "@cikada/local-runtime": "workspace:*",
+    "@cikada/reactive-agent": "workspace:*",
+    "@cikada/core": "workspace:*",
+    "@cikada/storage": "workspace:*",
+    "dotenv": "^16.4.0",
+    "jose": "^6.1.3",
+    "openai": "^4.77.0",
+    "ulid": "^2.3.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.0",
+    "zod-to-json-schema": "^3.24.0"
+  },
+  "optionalDependencies": {
+    "@aws-sdk/lib-dynamodb": "^3.600.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

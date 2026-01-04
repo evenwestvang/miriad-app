@@ -1,0 +1,1166 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Cikada Redux - Stateless agent execution with WebSocket streaming
+
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+  AnthropicApiKey:
+    Type: String
+    NoEcho: true
+    Description: Anthropic API key for Claude
+  SessionSecret:
+    Type: String
+    NoEcho: true
+    Description: Secret for JWT session tokens
+    Default: ""
+  FrontendUrl:
+    Type: String
+    Description: Frontend URL for redirects after auth (e.g., https://app.example.com)
+    Default: ""
+  HttpDomainName:
+    Type: String
+    Description: Custom domain for HTTP API (e.g., api.staging.example.com)
+    Default: ""
+  WebSocketDomainName:
+    Type: String
+    Description: Custom domain for WebSocket API (e.g., ws.staging.example.com)
+    Default: ""
+  CikadaApiUrl:
+    Type: String
+    Description: Public API URL for MCP server connections (e.g., https://api.staging.clanker.is)
+    Default: ""
+
+Conditions:
+  HasFrontendUrl: !Not [!Equals [!Ref FrontendUrl, ""]]
+  HasSessionSecret: !Not [!Equals [!Ref SessionSecret, ""]]
+  HasCustomDomain: !Not [!Equals [!Ref HttpDomainName, ""]]
+  HasWebSocketDomain: !Not [!Equals [!Ref WebSocketDomainName, ""]]
+  HasCikadaApiUrl: !Not [!Equals [!Ref CikadaApiUrl, ""]]
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: nodejs20.x
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        CONNECTIONS_TABLE: !Ref ConnectionsTable
+        THREADS_TABLE: !Ref ThreadsTable
+        THREAD_META_TABLE: !Ref ThreadMetaTable
+
+Resources:
+  # ============================================
+  # DynamoDB Tables
+  # ============================================
+
+  ConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-connections
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: threadId
+          AttributeType: S
+        - AttributeName: connectionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: threadId
+          KeyType: HASH
+        - AttributeName: connectionId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: connectionId-index
+          KeySchema:
+            - AttributeName: connectionId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  ThreadsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-threads
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: threadId
+          AttributeType: S
+        - AttributeName: msgId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: threadId
+          KeyType: HASH
+        - AttributeName: msgId
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  ThreadMetaTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-thread-meta
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: threadId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: threadId
+          KeyType: HASH
+
+  # Auth State Table (for OAuth PKCE state)
+  AuthStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-auth-state
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # Main Table (for Spaces, Channels, Messages, Roster)
+  MainTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-main
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+        - AttributeName: GSI2PK
+          AttributeType: S
+        - AttributeName: GSI2SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI2
+          KeySchema:
+            - AttributeName: GSI2PK
+              KeyType: HASH
+            - AttributeName: GSI2SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # ============================================
+  # WebSocket API
+  # ============================================
+
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub ${AWS::StackName}-websocket
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.request
+
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebSocketApi
+      StageName: !Ref Stage
+      AutoDeploy: true
+
+  # Connect Route
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $connect
+      AuthorizationType: NONE
+      Target: !Sub integrations/${ConnectIntegration}
+
+  ConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ConnectFunction.Arn}/invocations
+
+  ConnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ConnectFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/$connect
+
+  # Disconnect Route
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $disconnect
+      AuthorizationType: NONE
+      Target: !Sub integrations/${DisconnectIntegration}
+
+  DisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DisconnectFunction.Arn}/invocations
+
+  DisconnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DisconnectFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/$disconnect
+
+  # Sync Route
+  SyncRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: sync
+      AuthorizationType: NONE
+      Target: !Sub integrations/${SyncIntegration}
+
+  SyncIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SyncFunction.Arn}/invocations
+
+  SyncPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SyncFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/sync
+
+  # ============================================
+  # HTTP API
+  # ============================================
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Stage
+      CorsConfiguration:
+        # Note: SAM CorsConfiguration doesn't support CloudFormation conditionals
+        # These get transformed to OpenAPI before CF resolves !If
+        # For staging, we hardcode localhost origins. Add FrontendUrl when available.
+        AllowOrigins:
+          - "http://localhost:5173"
+          - "http://localhost:5174"
+          - "http://localhost:5175"
+          - "http://localhost:5176"
+          - "http://localhost:5177"
+          - "http://localhost:3000"
+        AllowHeaders:
+          - "Content-Type"
+          - "Authorization"
+          - "X-Requested-With"
+          - "Cookie"
+        AllowMethods:
+          - "GET"
+          - "POST"
+          - "DELETE"
+          - "OPTIONS"
+        AllowCredentials: true
+
+  # ============================================
+  # Lambda Functions
+  # ============================================
+
+  # Channel-aware WebSocket handlers (supports channelId query param)
+  ConnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-connect
+      Handler: lambda.channelConnectHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConnectionsTable
+
+  DisconnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-disconnect
+      Handler: lambda.channelDisconnectHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConnectionsTable
+
+  SyncFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-sync
+      Handler: lambda.channelSyncHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          WEBSOCKET_ENDPOINT: !Sub ${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConnectionsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref MainTable
+        - Statement:
+            - Effect: Allow
+              Action: execute-api:ManageConnections
+              Resource: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/${Stage}/*
+
+  ListAgentsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-list-agents
+      Handler: lambda.listAgentsHandler
+      CodeUri: ./dist
+      Events:
+        ListAgents:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /agents
+            Method: GET
+
+  ListThreadsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-list-threads
+      Handler: lambda.listThreadsHandler
+      CodeUri: ./dist
+      Events:
+        ListThreads:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /threads
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ThreadMetaTable
+
+  GetMessagesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-get-messages
+      Handler: lambda.getMessagesHandler
+      CodeUri: ./dist
+      Events:
+        GetMessages:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /thread/{threadId}/messages
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ThreadsTable
+
+  StartThreadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-start-thread
+      Handler: lambda.startThreadHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          AGENT_FUNCTION_NAME: !Ref AgentFunction
+      Events:
+        StartThread:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /thread
+            Method: POST
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref AgentFunction
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ThreadMetaTable
+
+  SendMessageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-send-message
+      Handler: lambda.sendMessageHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          WEBSOCKET_ENDPOINT: !Sub ${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+          AGENT_FUNCTION_NAME: !Ref AgentFunction
+          # SDK_AGENT_FUNCTION_NAME: Disabled until Fargate support is ready
+          WORKDIR_BASE: /tmp
+      Events:
+        SendMessage:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /thread/{threadId}/message
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ThreadsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ThreadMetaTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ConnectionsTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref AgentFunction
+        # SDK Agent invoke policy disabled until Fargate support is ready
+        # - LambdaInvokePolicy:
+        #     FunctionName: !Ref SDKAgentFunction
+        - Statement:
+            - Effect: Allow
+              Action: execute-api:ManageConnections
+              Resource: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/${Stage}/*
+
+  AgentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      # Note: No FunctionName - let CF auto-generate to avoid replacement conflicts
+      Handler: lambda.agentHandler
+      CodeUri: ./dist
+      Runtime: nodejs22.x
+      Timeout: 900
+      MemorySize: 1024
+      AutoPublishAlias: live
+      Environment:
+        Variables:
+          WEBSOCKET_ENDPOINT: !Sub ${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+          ANTHROPIC_API_KEY: !Ref AnthropicApiKey
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ThreadsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ThreadMetaTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ConnectionsTable
+        - Statement:
+            - Effect: Allow
+              Action: execute-api:ManageConnections
+              Resource: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/${Stage}/*
+
+  # ============================================
+  # Auth Functions (Sanity OAuth)
+  # ============================================
+
+  AuthLoginFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-auth-login
+      Handler: lambda.authLoginHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          AUTH_STATE_TABLE: !Ref AuthStateTable
+          MAIN_TABLE: !Ref MainTable
+          FRONTEND_URL: !If [HasFrontendUrl, !Ref FrontendUrl, "http://localhost:5173"]
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        AuthLogin:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /auth/sanity/login
+            Method: GET
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuthStateTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+
+  AuthCallbackFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-auth-callback
+      Handler: lambda.authCallbackHandler
+      CodeUri: ./dist
+      Timeout: 60
+      Environment:
+        Variables:
+          AUTH_STATE_TABLE: !Ref AuthStateTable
+          MAIN_TABLE: !Ref MainTable
+          FRONTEND_URL: !If [HasFrontendUrl, !Ref FrontendUrl, "http://localhost:5173"]
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+          API_URL: !If [HasCikadaApiUrl, !Ref CikadaApiUrl, ""]
+          CIKADA_API_URL: !If [HasCikadaApiUrl, !Ref CikadaApiUrl, ""]
+      Events:
+        AuthCallback:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /auth/sanity/callback
+            Method: GET
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuthStateTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+
+  AuthLogoutFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-auth-logout
+      Handler: lambda.authLogoutHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        AuthLogout:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /auth/sanity/logout
+            Method: POST
+
+  AuthMeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-auth-me
+      Handler: lambda.authMeHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        AuthMe:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /auth/me
+            Method: GET
+
+  # ============================================
+  # Channel API Functions
+  # ============================================
+
+  ListChannelsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-list-channels
+      Handler: lambda.listChannelsHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        ListChannels:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref MainTable
+
+  CreateChannelFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-create-channel
+      Handler: lambda.createChannelHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+          API_URL: !If [HasCikadaApiUrl, !Ref CikadaApiUrl, ""]
+          CIKADA_API_URL: !If [HasCikadaApiUrl, !Ref CikadaApiUrl, ""]
+      Events:
+        CreateChannel:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+
+  GetChannelFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-get-channel
+      Handler: lambda.getChannelHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        GetChannel:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref MainTable
+
+  ArchiveChannelFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-archive-channel
+      Handler: lambda.archiveChannelHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        ArchiveChannel:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}
+            Method: DELETE
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+
+  GetChannelMessagesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-get-channel-messages
+      Handler: lambda.getChannelMessagesHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        GetChannelMessages:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}/messages
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref MainTable
+
+  SendChannelMessageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-send-channel-message
+      Handler: lambda.sendChannelMessageHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+          WEBSOCKET_ENDPOINT: !Sub ${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+          REACTIVE_AGENT_FUNCTION_ARN: !GetAtt ReactiveAgentFunction.Arn
+      Events:
+        SendChannelMessage:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}/messages
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConnectionsTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ReactiveAgentFunction
+        - Statement:
+            - Effect: Allow
+              Action: execute-api:ManageConnections
+              Resource: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/${Stage}/*
+
+  AddAgentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-add-agent
+      Handler: lambda.addAgentHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+          API_URL: !If [HasCikadaApiUrl, !Ref CikadaApiUrl, ""]
+          CIKADA_API_URL: !If [HasCikadaApiUrl, !Ref CikadaApiUrl, ""]
+      Events:
+        AddAgent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}/agents
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+
+  RemoveAgentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-remove-agent
+      Handler: lambda.removeAgentHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        RemoveAgent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}/agents/{callsign}
+            Method: DELETE
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+
+  # ============================================
+  # Artifact API Functions
+  # ============================================
+
+  ListFocusTypesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-list-focus-types
+      Handler: lambda.listFocusTypesHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        ListFocusTypes:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /focus-types
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref MainTable
+
+  GlobArtifactsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-glob-artifacts
+      Handler: lambda.globArtifactsHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        GlobArtifacts:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}/artifacts/tree
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref MainTable
+
+  ListArtifactsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-list-artifacts
+      Handler: lambda.listArtifactsHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        ListArtifacts:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}/artifacts
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref MainTable
+
+  CreateArtifactFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-create-artifact
+      Handler: lambda.createArtifactHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        CreateArtifact:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}/artifacts
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+
+  GetArtifactFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-get-artifact
+      Handler: lambda.getArtifactHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        GetArtifact:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}/artifacts/{slug}
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref MainTable
+
+  UpdateArtifactFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-update-artifact
+      Handler: lambda.updateArtifactHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        UpdateArtifact:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}/artifacts/{slug}
+            Method: PUT
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+
+  ArchiveArtifactFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-archive-artifact
+      Handler: lambda.archiveArtifactHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        ArchiveArtifact:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}/artifacts/{slug}
+            Method: DELETE
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+
+  CheckpointArtifactFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-checkpoint-artifact
+      Handler: lambda.checkpointArtifactHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        CheckpointArtifact:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}/artifacts/{slug}/checkpoint
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+
+  ListArtifactVersionsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-list-artifact-versions
+      Handler: lambda.listArtifactVersionsHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        ListArtifactVersions:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}/artifacts/{slug}/versions
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref MainTable
+
+  GetArtifactVersionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-get-artifact-version
+      Handler: lambda.getArtifactVersionHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        GetArtifactVersion:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /channels/{id}/artifacts/{slug}/versions/{versionName}
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref MainTable
+
+  # ============================================
+  # Bootstrap API (System Artifact Seeding)
+  # ============================================
+
+  BootstrapFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-bootstrap
+      Handler: lambda.bootstrapHandler
+      CodeUri: ./dist
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          SESSION_SECRET: !If [HasSessionSecret, !Ref SessionSecret, ""]
+      Events:
+        Bootstrap:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /bootstrap
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+
+  # ============================================
+  # Reactive Agent (Channel-based agent responses)
+  # ============================================
+
+  ReactiveAgentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-reactive-agent
+      Handler: lambda.reactiveAgentHandler
+      CodeUri: ./dist
+      Runtime: nodejs22.x
+      Timeout: 900
+      MemorySize: 1024
+      Environment:
+        Variables:
+          MAIN_TABLE: !Ref MainTable
+          WEBSOCKET_ENDPOINT: !Sub ${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+          ANTHROPIC_API_KEY: !Ref AnthropicApiKey
+          API_URL: !If [HasCikadaApiUrl, !Ref CikadaApiUrl, ""]
+          CIKADA_API_URL: !If [HasCikadaApiUrl, !Ref CikadaApiUrl, ""]
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConnectionsTable
+        - Statement:
+            - Effect: Allow
+              Action: execute-api:ManageConnections
+              Resource: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/${Stage}/*
+
+  # ============================================
+  # SDK Agent (Claude Agent SDK with code sandbox)
+  # NOTE: Disabled until Fargate/Docker container support is implemented.
+  #       The SDK agent requires subprocess execution which doesn't work well in Lambda.
+  # ============================================
+
+  # SDKAgentFunction:
+  #   Type: AWS::Serverless::Function
+  #   Properties:
+  #     Handler: lambda.sdkAgentHandler
+  #     CodeUri: ./dist
+  #     Runtime: nodejs22.x
+  #     Timeout: 900
+  #     MemorySize: 2048
+  #     Environment:
+  #       Variables:
+  #         WEBSOCKET_ENDPOINT: !Sub ${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+  #         ANTHROPIC_API_KEY: !Ref AnthropicApiKey
+  #         WORKDIR_BASE: /tmp
+  #     Policies:
+  #       - DynamoDBCrudPolicy:
+  #           TableName: !Ref ThreadsTable
+  #       - DynamoDBCrudPolicy:
+  #           TableName: !Ref ThreadMetaTable
+  #       - DynamoDBReadPolicy:
+  #           TableName: !Ref ConnectionsTable
+  #       - Statement:
+  #           - Effect: Allow
+  #             Action: execute-api:ManageConnections
+  #             Resource: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/${Stage}/*
+
+  # ============================================
+  # Custom Domain (Optional)
+  # ============================================
+
+  # ACM Certificate for custom domains (must be in us-east-1 for API Gateway)
+  CustomDomainCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Condition: HasCustomDomain
+    Properties:
+      DomainName: !Ref HttpDomainName
+      SubjectAlternativeNames:
+        - !If [HasWebSocketDomain, !Ref WebSocketDomainName, !Ref "AWS::NoValue"]
+      ValidationMethod: DNS
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-certificate
+
+  # HTTP API Custom Domain
+  HttpApiDomainName:
+    Type: AWS::ApiGatewayV2::DomainName
+    Condition: HasCustomDomain
+    Properties:
+      DomainName: !Ref HttpDomainName
+      DomainNameConfigurations:
+        - EndpointType: REGIONAL
+          CertificateArn: !Ref CustomDomainCertificate
+
+  HttpApiMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Condition: HasCustomDomain
+    DependsOn: HttpApiDomainName
+    Properties:
+      ApiId: !Ref HttpApi
+      DomainName: !Ref HttpDomainName
+      Stage: !Ref Stage
+
+  # WebSocket API Custom Domain
+  WebSocketApiDomainName:
+    Type: AWS::ApiGatewayV2::DomainName
+    Condition: HasWebSocketDomain
+    Properties:
+      DomainName: !Ref WebSocketDomainName
+      DomainNameConfigurations:
+        - EndpointType: REGIONAL
+          CertificateArn: !Ref CustomDomainCertificate
+
+  WebSocketApiMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Condition: HasWebSocketDomain
+    DependsOn: WebSocketApiDomainName
+    Properties:
+      ApiId: !Ref WebSocketApi
+      DomainName: !Ref WebSocketDomainName
+      Stage: !Ref Stage
+
+Outputs:
+  WebSocketEndpoint:
+    Description: WebSocket endpoint for Tymbal streaming
+    Value: !Sub wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+
+  HttpApiEndpoint:
+    Description: HTTP API endpoint
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+    Export:
+      Name: !Sub ${AWS::StackName}-HttpApiUrl
+
+  ConnectionsTableName:
+    Value: !Ref ConnectionsTable
+
+  ThreadsTableName:
+    Value: !Ref ThreadsTable
+
+  ThreadMetaTableName:
+    Value: !Ref ThreadMetaTable
+
+  AuthStateTableName:
+    Description: DynamoDB table for OAuth PKCE state
+    Value: !Ref AuthStateTable
+
+  MainTableName:
+    Description: DynamoDB table for Spaces, Channels, Messages
+    Value: !Ref MainTable
+
+  # Custom Domain Outputs (only when custom domain is configured)
+  HttpApiDomainTarget:
+    Condition: HasCustomDomain
+    Description: CNAME target for HTTP API custom domain
+    Value: !GetAtt HttpApiDomainName.RegionalDomainName
+
+  WebSocketDomainTarget:
+    Condition: HasWebSocketDomain
+    Description: CNAME target for WebSocket custom domain
+    Value: !GetAtt WebSocketApiDomainName.RegionalDomainName
+
+  CustomHttpEndpoint:
+    Condition: HasCustomDomain
+    Description: Custom HTTP API endpoint (after DNS configured)
+    Value: !Sub https://${HttpDomainName}
+
+  CustomWebSocketEndpoint:
+    Condition: HasWebSocketDomain
+    Description: Custom WebSocket endpoint (after DNS configured)
+    Value: !Sub wss://${WebSocketDomainName}

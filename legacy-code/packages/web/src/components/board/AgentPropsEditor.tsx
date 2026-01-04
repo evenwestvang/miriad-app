@@ -1,0 +1,256 @@
+import { useState, useEffect } from 'react'
+import { Plus, X, Server } from 'lucide-react'
+import { EditableField } from '../ui/editable-field'
+import { SegmentedControl } from '../ui/segmented-control'
+import { apiFetch } from '../../lib/api'
+import { cn } from '../../lib/utils'
+
+// Agent props types - matches server schema
+export interface AgentProps {
+  engine: string
+  model?: string
+  nameTheme?: string
+  agentName?: string
+  mcp?: McpReference[]
+}
+
+interface McpReference {
+  slug: string
+  channel?: string // If from different channel (e.g., 'root')
+}
+
+interface AgentPropsEditorProps {
+  props: AgentProps
+  onChange: (updates: Partial<AgentProps>) => void
+  channelId: string
+  apiHost: string
+}
+
+// Common engine options
+const ENGINE_OPTIONS = [
+  { value: 'claude', label: 'Claude' },
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'codex', label: 'Codex' },
+]
+
+// Available MCP artifact from API
+interface McpArtifact {
+  slug: string
+  title?: string
+  tldr: string
+  channel: string
+}
+
+export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentPropsEditorProps) {
+  const [availableMcps, setAvailableMcps] = useState<McpArtifact[]>([])
+  const [mcpLoading, setMcpLoading] = useState(false)
+  const [showMcpPicker, setShowMcpPicker] = useState(false)
+
+  // Fetch available MCPs from current channel and root
+  useEffect(() => {
+    async function fetchMcps() {
+      setMcpLoading(true)
+      try {
+        // Fetch from current channel
+        const channelResponse = await apiFetch(
+          `${apiHost}/channels/${channelId}/artifacts?type=system.mcp`
+        )
+        const channelData = channelResponse.ok ? await channelResponse.json() : { artifacts: [] }
+        const channelMcps: McpArtifact[] = (channelData.artifacts || []).map((a: McpArtifact) => ({
+          ...a,
+          channel: channelId,
+        }))
+
+        // Fetch from root (if different)
+        let rootMcps: McpArtifact[] = []
+        if (channelId !== 'root') {
+          const rootResponse = await apiFetch(`${apiHost}/channels/root/artifacts?type=system.mcp`)
+          const rootData = rootResponse.ok ? await rootResponse.json() : { artifacts: [] }
+          rootMcps = (rootData.artifacts || []).map((a: McpArtifact) => ({
+            ...a,
+            channel: 'root',
+          }))
+        }
+
+        setAvailableMcps([...channelMcps, ...rootMcps])
+      } catch (error) {
+        console.error('Failed to fetch MCPs:', error)
+      } finally {
+        setMcpLoading(false)
+      }
+    }
+
+    fetchMcps()
+  }, [channelId, apiHost])
+
+  // Add MCP to the list
+  const addMcp = (mcp: McpArtifact) => {
+    const currentMcps = props.mcp || []
+    // Check if already added
+    const exists = currentMcps.some(
+      (m) => m.slug === mcp.slug && (m.channel || channelId) === mcp.channel
+    )
+    if (!exists) {
+      const newRef: McpReference = { slug: mcp.slug }
+      if (mcp.channel !== channelId) {
+        newRef.channel = mcp.channel
+      }
+      onChange({ mcp: [...currentMcps, newRef] })
+    }
+    setShowMcpPicker(false)
+  }
+
+  // Remove MCP from the list
+  const removeMcp = (index: number) => {
+    const currentMcps = props.mcp || []
+    onChange({ mcp: currentMcps.filter((_, i) => i !== index) })
+  }
+
+  // Get display name for an MCP reference
+  const getMcpDisplay = (ref: McpReference) => {
+    const mcp = availableMcps.find(
+      (m) => m.slug === ref.slug && m.channel === (ref.channel || channelId)
+    )
+    const displayName = mcp?.title || ref.slug
+    return ref.channel && ref.channel !== channelId ? `${displayName} (#${ref.channel})` : displayName
+  }
+
+  // Filter available MCPs to exclude already selected ones
+  const selectableMcps = availableMcps.filter((mcp) => {
+    const currentMcps = props.mcp || []
+    return !currentMcps.some(
+      (m) => m.slug === mcp.slug && (m.channel || channelId) === mcp.channel
+    )
+  })
+
+  return (
+    <div className="space-y-4">
+      {/* Engine Selection */}
+      <SegmentedControl<string>
+        label="Engine"
+        value={props.engine || 'claude'}
+        onChange={(value) => onChange({ engine: value })}
+        options={ENGINE_OPTIONS}
+      />
+
+      {/* Model */}
+      <EditableField
+        label="Model"
+        value={props.model || ''}
+        onChange={(value) => onChange({ model: value || undefined })}
+        placeholder="e.g., claude-sonnet-4-20250514"
+      />
+
+      {/* Agent Name (fixed callsign) */}
+      <EditableField
+        label="Agent Name (Fixed Callsign)"
+        value={props.agentName || ''}
+        onChange={(value) => onChange({ agentName: value || undefined })}
+        placeholder="Leave empty for auto-generated name"
+      />
+
+      {/* Name Theme */}
+      <EditableField
+        label="Name Theme"
+        value={props.nameTheme || ''}
+        onChange={(value) => onChange({ nameTheme: value || undefined })}
+        placeholder="e.g., animals, greek-gods, nato-phonetic"
+      />
+
+      {/* MCP Servers */}
+      <div className="space-y-2">
+        <label className="block text-xs font-medium text-muted-foreground uppercase">
+          MCP Servers
+        </label>
+
+        {/* Selected MCPs */}
+        {(props.mcp?.length ?? 0) > 0 && (
+          <div className="space-y-1">
+            {props.mcp?.map((ref, index) => (
+              <div
+                key={`${ref.channel || channelId}-${ref.slug}`}
+                className="flex items-center gap-2 px-2 py-1.5 bg-secondary/30 rounded border border-border"
+              >
+                <Server className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                <span className="text-sm flex-1 truncate">{getMcpDisplay(ref)}</span>
+                <button
+                  type="button"
+                  onClick={() => removeMcp(index)}
+                  className="p-0.5 text-muted-foreground hover:text-destructive transition-colors"
+                  title="Remove"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add MCP button / picker */}
+        {showMcpPicker ? (
+          <div className="rounded border border-border bg-secondary/20 p-2 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Select MCP Server</span>
+              <button
+                type="button"
+                onClick={() => setShowMcpPicker(false)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </button>
+            </div>
+            {mcpLoading ? (
+              <div className="text-xs text-muted-foreground py-2">Loading...</div>
+            ) : selectableMcps.length === 0 ? (
+              <div className="text-xs text-muted-foreground py-2">
+                No MCP servers available
+              </div>
+            ) : (
+              <div className="max-h-40 overflow-y-auto space-y-1">
+                {selectableMcps.map((mcp) => (
+                  <button
+                    key={`${mcp.channel}-${mcp.slug}`}
+                    type="button"
+                    onClick={() => addMcp(mcp)}
+                    className={cn(
+                      "w-full text-left px-2 py-1.5 rounded text-sm",
+                      "hover:bg-secondary/50 transition-colors"
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Server className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      <span className="truncate">
+                        {mcp.title || mcp.slug}
+                        {mcp.channel !== channelId && (
+                          <span className="text-muted-foreground ml-1">(#{mcp.channel})</span>
+                        )}
+                      </span>
+                    </div>
+                    {mcp.tldr && (
+                      <div className="text-xs text-muted-foreground truncate ml-5.5 mt-0.5">
+                        {mcp.tldr}
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowMcpPicker(true)}
+            className={cn(
+              "flex items-center gap-1.5 px-2 py-1.5 text-xs rounded border border-dashed",
+              "border-border text-muted-foreground hover:text-foreground hover:border-primary/50",
+              "transition-colors"
+            )}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add MCP Server
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}

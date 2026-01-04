@@ -1,0 +1,26 @@
+{
+  "name": "cicada",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stateless agent framework for AWS Lambda",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r --parallel dev",
+    "dev:server": "pnpm --filter @cikada/server dev",
+    "dev:web": "pnpm --filter @cikada/web dev",
+    "dev:web:aws": "pnpm --filter @cikada/web dev:aws",
+    "start:server": "pnpm --filter @cikada/server start",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "pnpm -r exec rm -rf dist node_modules"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  }
+}
