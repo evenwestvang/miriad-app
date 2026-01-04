@@ -18,6 +18,7 @@
   "dependencies": {
     "@cast/core": "workspace:*",
     "@cast/runtime": "workspace:*",
+    "@cast/storage": "workspace:*",
     "@hono/node-server": "^1.8.0",
     "hono": "^4.0.0",
     "ws": "^8.18.3"
