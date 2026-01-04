@@ -1,13 +1,20 @@
 /**
  * @cast/runtime - Container orchestration for agents
  *
- * For now, just a placeholder. Real Docker orchestration comes in Phase 1.
+ * Provides container lifecycle management for running claude-code agents.
+ * Local development uses Docker, production uses AWS Fargate.
  */
 
-export interface ContainerOrchestrator {
-  // Placeholder - will be filled in Phase 1
-}
+// Types
+export type {
+  ContainerOrchestrator,
+  ContainerSpawnOptions,
+  ContainerState,
+  ContainerStatus,
+  McpServerConfig,
+  OrchestratorEvent,
+  OrchestratorEventHandler,
+} from './types.js';
 
-export class StubOrchestrator implements ContainerOrchestrator {
-  // No-op for now
-}
+// Docker implementation (local development)
+export { DockerOrchestrator, type DockerOrchestratorConfig } from './docker-orchestrator.js';
