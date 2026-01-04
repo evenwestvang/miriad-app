@@ -13,7 +13,7 @@ import {
   type TymbalFrame,
   type SetFrame,
 } from '@cast/core';
-import { requireContainerAuth, getContainerAuth } from '../auth/index.js';
+import { requireContainerAuth, getContainerAuth, type ContainerAuthVariables } from '../auth/index.js';
 import type { ConnectionManager } from '../websocket/index.js';
 
 // =============================================================================
@@ -64,10 +64,10 @@ function normalizeSetFrame(frame: SetFrame): { frame: SetFrame; serialized: stri
 /**
  * Create the /tymbal routes.
  */
-export function createTymbalRoutes(options: TymbalHandlerOptions): Hono {
+export function createTymbalRoutes(options: TymbalHandlerOptions): Hono<{ Variables: ContainerAuthVariables }> {
   const { connectionManager, onSetFrame, onResetFrame } = options;
 
-  const app = new Hono();
+  const app = new Hono<{ Variables: ContainerAuthVariables }>();
 
   // Require container auth for all tymbal routes
   app.use('/*', requireContainerAuth());
