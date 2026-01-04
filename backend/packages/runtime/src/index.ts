@@ -18,3 +18,12 @@ export type {
 
 // Docker implementation (local development)
 export { DockerOrchestrator, type DockerOrchestratorConfig } from './docker-orchestrator.js';
+
+// Mock implementation (testing)
+export {
+  MockContainerOrchestrator,
+  createMockOrchestrator,
+  type MockOrchestratorOptions,
+  type SpawnCall,
+  type SendMessageCall,
+} from './mock-orchestrator.js';
