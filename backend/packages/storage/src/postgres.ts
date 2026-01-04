@@ -11,6 +11,14 @@ import type {
   StoredMessage,
   CreateMessageInput,
   GetMessagesParams,
+  StoredChannel,
+  CreateChannelInput,
+  UpdateChannelInput,
+  ListChannelsParams,
+  RosterEntry,
+  AddToRosterInput,
+  UpdateRosterInput,
+  RosterStatus,
 } from '@cast/core';
 import type { Storage } from './interface.js';
 
@@ -37,6 +45,26 @@ interface MessageRow {
   addressed_agents: string[] | null;
   turn_id: string | null;
   metadata: Record<string, unknown> | null;
+}
+
+interface ChannelRow {
+  id: string;
+  space_id: string;
+  name: string;
+  tagline: string | null;
+  mission: string | null;
+  archived: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface RosterRow {
+  id: string;
+  channel_id: string;
+  callsign: string;
+  agent_type: string;
+  status: string;
+  created_at: Date;
 }
 
 // =============================================================================
@@ -185,6 +213,209 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   // ---------------------------------------------------------------------------
+  // Channel Operations (Phase 2)
+  // ---------------------------------------------------------------------------
+
+  async function createChannel(input: CreateChannelInput): Promise<StoredChannel> {
+    const id = input.id ?? ulid();
+    const now = new Date();
+
+    const result = await sql<ChannelRow[]>`
+      INSERT INTO channels (
+        id, space_id, name, tagline, mission, archived, created_at, updated_at
+      )
+      VALUES (
+        ${id},
+        ${input.spaceId},
+        ${input.name},
+        ${input.tagline ?? null},
+        ${input.mission ?? null},
+        false,
+        ${now},
+        ${now}
+      )
+      RETURNING *
+    `;
+
+    return rowToChannel(result[0]);
+  }
+
+  async function getChannel(
+    spaceId: string,
+    channelId: string
+  ): Promise<StoredChannel | null> {
+    const result = await sql<ChannelRow[]>`
+      SELECT * FROM channels
+      WHERE space_id = ${spaceId} AND id = ${channelId}
+    `;
+
+    if (result.length === 0) return null;
+    return rowToChannel(result[0]);
+  }
+
+  async function getChannelByName(
+    spaceId: string,
+    name: string
+  ): Promise<StoredChannel | null> {
+    const result = await sql<ChannelRow[]>`
+      SELECT * FROM channels
+      WHERE space_id = ${spaceId} AND name = ${name}
+    `;
+
+    if (result.length === 0) return null;
+    return rowToChannel(result[0]);
+  }
+
+  async function listChannels(
+    spaceId: string,
+    params?: ListChannelsParams
+  ): Promise<StoredChannel[]> {
+    const limit = params?.limit ?? 100;
+    const includeArchived = params?.includeArchived ?? false;
+
+    let result: ChannelRow[];
+
+    if (includeArchived) {
+      result = await sql<ChannelRow[]>`
+        SELECT * FROM channels
+        WHERE space_id = ${spaceId}
+        ORDER BY created_at DESC
+        LIMIT ${limit}
+      `;
+    } else {
+      result = await sql<ChannelRow[]>`
+        SELECT * FROM channels
+        WHERE space_id = ${spaceId} AND archived = false
+        ORDER BY created_at DESC
+        LIMIT ${limit}
+      `;
+    }
+
+    return result.map(rowToChannel);
+  }
+
+  async function updateChannel(
+    spaceId: string,
+    channelId: string,
+    update: UpdateChannelInput
+  ): Promise<void> {
+    const updateObj: Record<string, unknown> = {
+      updated_at: new Date(),
+    };
+
+    if (update.name !== undefined) {
+      updateObj.name = update.name;
+    }
+    if (update.tagline !== undefined) {
+      updateObj.tagline = update.tagline;
+    }
+    if (update.mission !== undefined) {
+      updateObj.mission = update.mission;
+    }
+    if (update.archived !== undefined) {
+      updateObj.archived = update.archived;
+    }
+
+    await sql`
+      UPDATE channels
+      SET ${sql(updateObj, ...Object.keys(updateObj))}
+      WHERE space_id = ${spaceId} AND id = ${channelId}
+    `;
+  }
+
+  async function archiveChannel(spaceId: string, channelId: string): Promise<void> {
+    await sql`
+      UPDATE channels
+      SET archived = true, updated_at = ${new Date()}
+      WHERE space_id = ${spaceId} AND id = ${channelId}
+    `;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Roster Operations (Phase 2)
+  // ---------------------------------------------------------------------------
+
+  async function addToRoster(input: AddToRosterInput): Promise<RosterEntry> {
+    const id = input.id ?? ulid();
+    const now = new Date();
+    const status = input.status ?? 'active';
+
+    const result = await sql<RosterRow[]>`
+      INSERT INTO roster (
+        id, channel_id, callsign, agent_type, status, created_at
+      )
+      VALUES (
+        ${id},
+        ${input.channelId},
+        ${input.callsign},
+        ${input.agentType},
+        ${status},
+        ${now}
+      )
+      RETURNING *
+    `;
+
+    return rowToRosterEntry(result[0]);
+  }
+
+  async function getRosterEntry(
+    channelId: string,
+    entryId: string
+  ): Promise<RosterEntry | null> {
+    const result = await sql<RosterRow[]>`
+      SELECT * FROM roster
+      WHERE channel_id = ${channelId} AND id = ${entryId}
+    `;
+
+    if (result.length === 0) return null;
+    return rowToRosterEntry(result[0]);
+  }
+
+  async function getRosterByCallsign(
+    channelId: string,
+    callsign: string
+  ): Promise<RosterEntry | null> {
+    const result = await sql<RosterRow[]>`
+      SELECT * FROM roster
+      WHERE channel_id = ${channelId} AND callsign = ${callsign}
+    `;
+
+    if (result.length === 0) return null;
+    return rowToRosterEntry(result[0]);
+  }
+
+  async function listRoster(channelId: string): Promise<RosterEntry[]> {
+    const result = await sql<RosterRow[]>`
+      SELECT * FROM roster
+      WHERE channel_id = ${channelId}
+      ORDER BY created_at ASC
+    `;
+
+    return result.map(rowToRosterEntry);
+  }
+
+  async function updateRosterEntry(
+    channelId: string,
+    entryId: string,
+    update: UpdateRosterInput
+  ): Promise<void> {
+    if (update.status === undefined) return;
+
+    await sql`
+      UPDATE roster
+      SET status = ${update.status}
+      WHERE channel_id = ${channelId} AND id = ${entryId}
+    `;
+  }
+
+  async function removeFromRoster(channelId: string, entryId: string): Promise<void> {
+    await sql`
+      DELETE FROM roster
+      WHERE channel_id = ${channelId} AND id = ${entryId}
+    `;
+  }
+
+  // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
 
@@ -207,7 +438,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       )
     `;
 
-    // Create indexes
+    // Create messages indexes
     await sql`
       CREATE INDEX IF NOT EXISTS idx_messages_channel
       ON messages(space_id, channel_id, id)
@@ -216,6 +447,54 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     await sql`
       CREATE INDEX IF NOT EXISTS idx_messages_turn
       ON messages(space_id, channel_id, turn_id)
+    `;
+
+    // Create channels table (Phase 2)
+    await sql`
+      CREATE TABLE IF NOT EXISTS channels (
+        id VARCHAR(26) PRIMARY KEY,
+        space_id VARCHAR(26) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        tagline TEXT,
+        mission TEXT,
+        archived BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+
+    // Create channels indexes
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_channels_space
+      ON channels(space_id)
+    `;
+
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_channels_space_name
+      ON channels(space_id, name)
+    `;
+
+    // Create roster table (Phase 2)
+    await sql`
+      CREATE TABLE IF NOT EXISTS roster (
+        id VARCHAR(26) PRIMARY KEY,
+        channel_id VARCHAR(26) NOT NULL,
+        callsign VARCHAR(255) NOT NULL,
+        agent_type VARCHAR(255) NOT NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'active',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+
+    // Create roster indexes
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_roster_channel
+      ON roster(channel_id)
+    `;
+
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_roster_channel_callsign
+      ON roster(channel_id, callsign)
     `;
   }
 
@@ -264,12 +543,52 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     };
   }
 
+  function rowToChannel(row: ChannelRow): StoredChannel {
+    return {
+      id: row.id,
+      spaceId: row.space_id,
+      name: row.name,
+      tagline: row.tagline ?? undefined,
+      mission: row.mission ?? undefined,
+      archived: row.archived,
+      createdAt: row.created_at.toISOString(),
+      updatedAt: row.updated_at.toISOString(),
+    };
+  }
+
+  function rowToRosterEntry(row: RosterRow): RosterEntry {
+    return {
+      id: row.id,
+      channelId: row.channel_id,
+      callsign: row.callsign,
+      agentType: row.agent_type,
+      status: row.status as RosterStatus,
+      createdAt: row.created_at.toISOString(),
+    };
+  }
+
   return {
+    // Message operations
     saveMessage,
     getMessage,
     getMessages,
     updateMessage,
     deleteMessage,
+    // Channel operations
+    createChannel,
+    getChannel,
+    getChannelByName,
+    listChannels,
+    updateChannel,
+    archiveChannel,
+    // Roster operations
+    addToRoster,
+    getRosterEntry,
+    getRosterByCallsign,
+    listRoster,
+    updateRosterEntry,
+    removeFromRoster,
+    // Lifecycle
     initialize,
     close,
   };

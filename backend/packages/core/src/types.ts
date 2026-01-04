@@ -103,6 +103,117 @@ export interface GetMessagesParams {
 }
 
 // =============================================================================
+// Channel Types (Phase 2)
+// =============================================================================
+
+/**
+ * A channel as stored in the database.
+ */
+export interface StoredChannel {
+  /** Unique channel identifier (ULID) */
+  id: string;
+
+  /** Space this channel belongs to */
+  spaceId: string;
+
+  /** Channel name (slug-like) */
+  name: string;
+
+  /** Short description */
+  tagline?: string;
+
+  /** Longer mission/purpose statement */
+  mission?: string;
+
+  /** Whether the channel is archived */
+  archived: boolean;
+
+  /** ISO timestamp of creation */
+  createdAt: string;
+
+  /** ISO timestamp of last update */
+  updatedAt: string;
+}
+
+/**
+ * Input for creating a new channel
+ */
+export interface CreateChannelInput {
+  id?: string;
+  spaceId: string;
+  name: string;
+  tagline?: string;
+  mission?: string;
+}
+
+/**
+ * Input for updating a channel
+ */
+export interface UpdateChannelInput {
+  name?: string;
+  tagline?: string;
+  mission?: string;
+  archived?: boolean;
+}
+
+/**
+ * Parameters for listing channels
+ */
+export interface ListChannelsParams {
+  /** Include archived channels (default: false) */
+  includeArchived?: boolean;
+  /** Maximum number of channels to return */
+  limit?: number;
+}
+
+// =============================================================================
+// Roster Types (Phase 2)
+// =============================================================================
+
+export type RosterStatus = 'active' | 'idle' | 'busy' | 'offline';
+
+/**
+ * A roster entry (agent in a channel) as stored in the database.
+ */
+export interface RosterEntry {
+  /** Unique roster entry identifier (ULID) */
+  id: string;
+
+  /** Channel this roster entry belongs to */
+  channelId: string;
+
+  /** Agent's callsign in this channel */
+  callsign: string;
+
+  /** Type of agent (definition slug) */
+  agentType: string;
+
+  /** Current status */
+  status: RosterStatus;
+
+  /** ISO timestamp of when agent joined */
+  createdAt: string;
+}
+
+/**
+ * Input for adding an agent to a roster
+ */
+export interface AddToRosterInput {
+  id?: string;
+  channelId: string;
+  callsign: string;
+  agentType: string;
+  status?: RosterStatus;
+}
+
+/**
+ * Input for updating a roster entry
+ */
+export interface UpdateRosterInput {
+  status?: RosterStatus;
+}
+
+// =============================================================================
 // Type Guards
 // =============================================================================
 
@@ -113,5 +224,25 @@ export function isStoredMessage(value: unknown): value is StoredMessage {
     typeof (value as StoredMessage).id === 'string' &&
     typeof (value as StoredMessage).channelId === 'string' &&
     typeof (value as StoredMessage).sender === 'string'
+  );
+}
+
+export function isStoredChannel(value: unknown): value is StoredChannel {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as StoredChannel).id === 'string' &&
+    typeof (value as StoredChannel).spaceId === 'string' &&
+    typeof (value as StoredChannel).name === 'string'
+  );
+}
+
+export function isRosterEntry(value: unknown): value is RosterEntry {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as RosterEntry).id === 'string' &&
+    typeof (value as RosterEntry).channelId === 'string' &&
+    typeof (value as RosterEntry).callsign === 'string'
   );
 }
