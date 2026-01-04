@@ -6,3 +6,6 @@ export const VERSION = '0.0.1';
 
 // Types
 export * from './types.js';
+
+// Tymbal streaming protocol
+export * from './tymbal/index.js';
