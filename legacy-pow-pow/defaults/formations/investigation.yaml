@@ -1,0 +1,9 @@
+name: Investigation
+description: Root cause analysis, debugging, and understanding complex issues
+playbook: deep-dive
+specialInstructions: ""
+cast:
+  - coordinator
+  - researcher
+  - researcher
+  - scout

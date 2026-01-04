@@ -1,0 +1,7 @@
+name: Cleanup
+description: Refactoring, tech debt reduction, and code quality improvements
+playbook: git-workflow
+specialInstructions: ""
+cast:
+  - steward
+  - builder

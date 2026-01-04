@@ -1,0 +1,6 @@
+name: Spike
+description: Quick solo exploration to assess feasibility or learn something new
+playbook: prototyping
+specialInstructions: ""
+cast:
+  - scout

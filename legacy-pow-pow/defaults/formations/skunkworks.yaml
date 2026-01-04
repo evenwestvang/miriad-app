@@ -1,0 +1,9 @@
+name: Skunkworks
+description: Experimental exploration and rapid prototyping of new ideas
+playbook: prototyping
+specialInstructions: ""
+cast:
+  - coordinator
+  - scout
+  - scout
+  - scout

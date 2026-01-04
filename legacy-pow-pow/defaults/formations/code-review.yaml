@@ -1,0 +1,7 @@
+name: Code Review
+description: Thorough code review with multiple reviewers for quality assurance
+playbook: git-workflow
+specialInstructions: ""
+cast:
+  - reviewer
+  - reviewer

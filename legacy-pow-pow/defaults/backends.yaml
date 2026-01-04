@@ -1,0 +1,33 @@
+# External Agent Backends
+#
+# Register custom agent binaries that implement the PowPow protocol.
+# Each backend becomes available as an engine in hat configuration.
+#
+# Example hat frontmatter:
+#   ---
+#   name: Security Expert
+#   engine: my-custom-agent
+#   ---
+#
+# Protocol: JSON-RPC 2.0 over stdin/stdout (NDJSON framing)
+# See docs: custom-backend-protocol, custom-backend-interface
+
+backends:
+  # Echo agent - minimal reference implementation for testing
+  # Relative paths resolve from this config file's location
+  echo-agent:
+    path: npx
+    args:
+      - "tsx"
+      - "../examples/echo-agent/agent.ts"
+
+  # Example: Custom agent with persona flag
+  # my-custom-agent:
+  #   path: /usr/local/bin/my-agent
+  #   args:
+  #     - "--persona=security"
+  #
+  # Example: Local development agent (relative path)
+  # dev-agent:
+  #   path: ../agents/dev-agent.ts
+  #   args: []

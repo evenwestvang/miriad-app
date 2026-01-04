@@ -1,0 +1,62 @@
+{
+  "name": "@sanity/cast",
+  "version": "1.0.0",
+  "description": "Multi-actor coding chat for agents and humans",
+  "type": "module",
+  "bin": {
+    "cast": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "defaults",
+    "packages/web/dist"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/cli.js && npm install --prefix packages/web && npm run build --prefix packages/web",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build",
+    "server": "tsx src/server/index.ts",
+    "server:watch": "tsx watch src/server/index.ts",
+    "dev:server": "CAST_DIR=$HOME/.cast-dev tsx watch src/server/index.ts",
+    "dev:web": "npm run dev --prefix packages/web",
+    "dev": "CAST_DIR=$HOME/.cast-dev tsx watch src/server/index.ts",
+    "client": "tsx src/client/index.tsx",
+    "simulate": "tsx scripts/simulate.ts",
+    "exercise": "tsx scripts/exerciser.ts",
+    "seed": "tsx src/server/seed-defaults.ts",
+    "seed:reset": "tsx src/server/seed-defaults.ts --reset",
+    "test": "tsx --test src/server/__tests__/*.test.ts",
+    "test:providers": "tsx --test src/server/__tests__/providers.test.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.75",
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "@openai/codex-sdk": "^0.77.0",
+    "@types/busboy": "^1.5.4",
+    "better-sqlite3": "^12.5.0",
+    "busboy": "^1.6.0",
+    "command-exists": "^1.2.9",
+    "fractional-indexing": "^3.2.0",
+    "ink": "^5.0.1",
+    "ink-text-input": "^6.0.0",
+    "js-yaml": "^4.1.1",
+    "react": "^18.3.1",
+    "sqlite-vec": "^0.1.7-alpha.2",
+    "uuid": "^10.0.0",
+    "zod": "^3.23.0",
+    "zod-to-json-schema": "^3.25.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/command-exists": "^1.2.3",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

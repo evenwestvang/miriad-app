@@ -1,0 +1,9 @@
+name: Research Party
+description: Deep collaborative research on a topic with multiple researchers
+playbook: deep-dive
+specialInstructions: ""
+cast:
+  - coordinator
+  - researcher
+  - researcher
+  - researcher

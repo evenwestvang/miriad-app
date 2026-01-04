@@ -1,0 +1,11 @@
+name: Feature Team
+description: Full-stack team for building complete features end-to-end
+playbook: git-workflow
+specialInstructions: ""
+cast:
+  - coordinator
+  - builder
+  - builder
+  - builder
+  - reviewer
+  - steward
