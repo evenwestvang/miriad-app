@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@cast/core": "workspace:*",
-    "@neondatabase/serverless": "^1.0.2",
+    "postgres": "^3.4.7",
     "ulid": "^3.0.2"
   },
   "devDependencies": {

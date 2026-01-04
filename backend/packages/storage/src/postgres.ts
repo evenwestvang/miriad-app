@@ -1,11 +1,11 @@
 /**
  * PostgreSQL Storage Implementation
  *
- * Uses @neondatabase/serverless for PlanetScale Postgres.
- * Works in serverless environments (Lambda, Edge).
+ * Uses postgres (porsager/postgres) for PlanetScale Postgres.
+ * Standard TCP/TLS connection that works everywhere.
  */
 
-import { neon } from '@neondatabase/serverless';
+import postgres from 'postgres';
 import { ulid } from 'ulid';
 import type {
   StoredMessage,
@@ -31,8 +31,8 @@ interface MessageRow {
   sender: string;
   sender_type: string;
   type: string;
-  content: string;
-  timestamp: string;
+  content: unknown;
+  timestamp: Date;
   is_complete: boolean;
   addressed_agents: string[] | null;
   turn_id: string | null;
@@ -44,9 +44,10 @@ interface MessageRow {
 // =============================================================================
 
 export function createPostgresStorage(options: PostgresStorageOptions): Storage {
-  // Note: fetchConnectionCache is now always true by default in @neondatabase/serverless
-
-  const sql = neon(options.connectionString);
+  const sql = postgres(options.connectionString, {
+    ssl: 'require',
+    max: 10, // connection pool size
+  });
 
   // ---------------------------------------------------------------------------
   // Message Operations
@@ -54,10 +55,10 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
   async function saveMessage(input: CreateMessageInput): Promise<StoredMessage> {
     const id = input.id ?? ulid();
-    const timestamp = new Date().toISOString();
+    const timestamp = new Date();
     const isComplete = input.isComplete ?? true;
 
-    const result = await sql`
+    const result = await sql<MessageRow[]>`
       INSERT INTO messages (
         id, space_id, channel_id, sender, sender_type, type, content,
         timestamp, is_complete, addressed_agents, turn_id, metadata
@@ -79,20 +80,20 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       RETURNING *
     `;
 
-    return rowToMessage(result[0] as MessageRow);
+    return rowToMessage(result[0]);
   }
 
   async function getMessage(
     spaceId: string,
     messageId: string
   ): Promise<StoredMessage | null> {
-    const result = await sql`
+    const result = await sql<MessageRow[]>`
       SELECT * FROM messages
       WHERE space_id = ${spaceId} AND id = ${messageId}
     `;
 
     if (result.length === 0) return null;
-    return rowToMessage(result[0] as MessageRow);
+    return rowToMessage(result[0]);
   }
 
   async function getMessages(
@@ -102,10 +103,10 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   ): Promise<StoredMessage[]> {
     const limit = params?.limit ?? 50;
 
-    let result;
+    let result: MessageRow[];
 
     if (params?.since && params?.before) {
-      result = await sql`
+      result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
@@ -115,7 +116,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         LIMIT ${limit}
       `;
     } else if (params?.since) {
-      result = await sql`
+      result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
@@ -124,7 +125,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         LIMIT ${limit}
       `;
     } else if (params?.before) {
-      result = await sql`
+      result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
@@ -133,7 +134,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         LIMIT ${limit}
       `;
     } else {
-      result = await sql`
+      result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
@@ -142,7 +143,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       `;
     }
 
-    return result.map((row) => rowToMessage(row as MessageRow));
+    return result.map(rowToMessage);
   }
 
   async function updateMessage(
@@ -150,39 +151,30 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     messageId: string,
     update: Partial<StoredMessage>
   ): Promise<void> {
-    // Build dynamic update - only update provided fields
-    const updates: string[] = [];
-    const values: unknown[] = [];
-    let paramIndex = 1;
+    // Build update object for postgres.js
+    const updateObj: Record<string, unknown> = {};
 
     if (update.content !== undefined) {
-      updates.push(`content = $${paramIndex++}`);
-      values.push(JSON.stringify(update.content));
+      updateObj.content = JSON.stringify(update.content);
     }
     if (update.isComplete !== undefined) {
-      updates.push(`is_complete = $${paramIndex++}`);
-      values.push(update.isComplete);
+      updateObj.is_complete = update.isComplete;
     }
     if (update.addressedAgents !== undefined) {
-      updates.push(`addressed_agents = $${paramIndex++}`);
-      values.push(update.addressedAgents);
+      updateObj.addressed_agents = update.addressedAgents;
     }
     if (update.metadata !== undefined) {
-      updates.push(`metadata = $${paramIndex++}`);
-      values.push(JSON.stringify(update.metadata));
+      updateObj.metadata = JSON.stringify(update.metadata);
     }
 
-    if (updates.length === 0) return;
+    if (Object.keys(updateObj).length === 0) return;
 
-    // Use raw query for dynamic updates
-    const query = `
+    // Use postgres.js dynamic column updates
+    await sql`
       UPDATE messages
-      SET ${updates.join(', ')}
-      WHERE space_id = $${paramIndex++} AND id = $${paramIndex++}
+      SET ${sql(updateObj, ...Object.keys(updateObj))}
+      WHERE space_id = ${spaceId} AND id = ${messageId}
     `;
-    values.push(spaceId, messageId);
-
-    await sql.query(query, values);
   }
 
   async function deleteMessage(spaceId: string, messageId: string): Promise<void> {
@@ -228,7 +220,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function close(): Promise<void> {
-    // neon client doesn't need explicit close
+    await sql.end();
   }
 
   // ---------------------------------------------------------------------------
@@ -236,6 +228,26 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   // ---------------------------------------------------------------------------
 
   function rowToMessage(row: MessageRow): StoredMessage {
+    // Parse JSONB content if it comes back as a string
+    let content = row.content;
+    if (typeof content === 'string') {
+      try {
+        content = JSON.parse(content);
+      } catch {
+        // Keep as string if not valid JSON
+      }
+    }
+
+    // Parse metadata if it comes back as a string
+    let metadata = row.metadata;
+    if (typeof metadata === 'string') {
+      try {
+        metadata = JSON.parse(metadata);
+      } catch {
+        metadata = null;
+      }
+    }
+
     return {
       id: row.id,
       spaceId: row.space_id,
@@ -243,12 +255,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       sender: row.sender,
       senderType: row.sender_type as StoredMessage['senderType'],
       type: row.type as StoredMessage['type'],
-      content: typeof row.content === 'string' ? JSON.parse(row.content) : row.content,
-      timestamp: row.timestamp,
+      content,
+      timestamp: row.timestamp.toISOString(),
       isComplete: row.is_complete,
       addressedAgents: row.addressed_agents ?? undefined,
       turnId: row.turn_id ?? undefined,
-      metadata: row.metadata ?? undefined,
+      metadata: metadata ?? undefined,
     };
   }
 

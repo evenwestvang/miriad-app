@@ -14,10 +14,11 @@ const connectionString = process.env.PLANETSCALE_URL ?? buildConnectionString();
 
 function buildConnectionString(): string {
   const host = 'us-east-2.pg.psdb.cloud';
-  const user = 'pscale_api_32jdrrvvgx9c.pwp8x47bv2br';
-  const pass = 'pscale_pw_I1JaDzYWzEb1GofP51H15OFB0ltL250Y';
-  const db = 'cast-dev';
-  return `postgresql://${user}:${pass}@${host}/${db}?sslmode=require`;
+  const port = '6432';
+  const user = 'pscale_api_nmney6igy1w2.pwp8x47bv2br';
+  const pass = 'pscale_pw_MdmptCQgW99vHwo4MILzUqRPdfn5iNAk';
+  const db = 'postgres';
+  return `postgres://${user}:${pass}@${host}:${port}/${db}`;
 }
 
 // Skip tests if we can't connect to database
@@ -29,8 +30,9 @@ async function testConnection(): Promise<boolean> {
     await storage.initialize();
     await storage.close();
     return true;
-  } catch {
+  } catch (err) {
     console.log('⚠️  Skipping PostgresStorage tests: cannot connect to PlanetScale');
+    console.log('   Error:', (err as Error).message);
     return false;
   }
 }
