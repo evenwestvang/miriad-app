@@ -134,8 +134,10 @@ describe('Tymbal Builders', () => {
       expect(ids.size).toBe(100);
     });
 
-    it('generates sortable IDs', () => {
+    it('generates sortable IDs', async () => {
       const id1 = generateMessageId();
+      // ULIDs use millisecond precision - wait 1ms to ensure different timestamp
+      await new Promise((resolve) => setTimeout(resolve, 1));
       const id2 = generateMessageId();
       expect(id1 < id2).toBe(true);
     });
