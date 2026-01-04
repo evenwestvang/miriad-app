@@ -40,8 +40,12 @@ async function testConnection(): Promise<boolean> {
 describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
   let storage: Storage;
   const testSpaceId = 'test-space-002';
+  const testRunId = Date.now().toString(36); // Unique suffix per test run
   const createdChannelIds: string[] = [];
   const createdRosterIds: { channelId: string; entryId: string }[] = [];
+
+  // Helper to create unique channel names per test run
+  const uniqueName = (base: string) => `${base}-${testRunId}`;
 
   beforeAll(async () => {
     storage = createPostgresStorage({ connectionString });
@@ -76,9 +80,10 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
 
   describe('createChannel', () => {
     it('should create a channel and return it with generated id', async () => {
+      const name = uniqueName('test-channel');
       const channel = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'test-channel',
+        name,
         tagline: 'A test channel',
         mission: 'Testing the storage layer',
       });
@@ -88,7 +93,7 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
       expect(channel.id).toBeDefined();
       expect(channel.id.length).toBe(26); // ULID length
       expect(channel.spaceId).toBe(testSpaceId);
-      expect(channel.name).toBe('test-channel');
+      expect(channel.name).toBe(name);
       expect(channel.tagline).toBe('A test channel');
       expect(channel.mission).toBe('Testing the storage layer');
       expect(channel.archived).toBe(false);
@@ -97,14 +102,15 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
     });
 
     it('should create a channel with minimal fields', async () => {
+      const name = uniqueName('minimal-channel');
       const channel = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'minimal-channel',
+        name,
       });
 
       createdChannelIds.push(channel.id);
 
-      expect(channel.name).toBe('minimal-channel');
+      expect(channel.name).toBe(name);
       expect(channel.tagline).toBeUndefined();
       expect(channel.mission).toBeUndefined();
     });
@@ -112,9 +118,10 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
 
   describe('getChannel', () => {
     it('should retrieve a channel by id', async () => {
+      const name = uniqueName('get-test-channel');
       const created = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'get-test-channel',
+        name,
       });
       createdChannelIds.push(created.id);
 
@@ -122,7 +129,7 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
 
       expect(retrieved).not.toBeNull();
       expect(retrieved!.id).toBe(created.id);
-      expect(retrieved!.name).toBe('get-test-channel');
+      expect(retrieved!.name).toBe(name);
     });
 
     it('should return null for non-existent channel', async () => {
@@ -133,14 +140,15 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
 
   describe('getChannelByName', () => {
     it('should retrieve a channel by name', async () => {
+      const name = uniqueName('named-channel');
       const created = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'named-channel',
+        name,
         tagline: 'Find me by name',
       });
       createdChannelIds.push(created.id);
 
-      const retrieved = await storage.getChannelByName(testSpaceId, 'named-channel');
+      const retrieved = await storage.getChannelByName(testSpaceId, name);
 
       expect(retrieved).not.toBeNull();
       expect(retrieved!.id).toBe(created.id);
@@ -155,15 +163,18 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
 
   describe('listChannels', () => {
     it('should list non-archived channels by default', async () => {
+      const name1 = uniqueName('list-channel-1');
+      const name2 = uniqueName('list-channel-2');
+
       const ch1 = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'list-channel-1',
+        name: name1,
       });
       createdChannelIds.push(ch1.id);
 
       const ch2 = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'list-channel-2',
+        name: name2,
       });
       createdChannelIds.push(ch2.id);
 
@@ -171,14 +182,15 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
 
       expect(channels.length).toBeGreaterThanOrEqual(2);
       const names = channels.map((c) => c.name);
-      expect(names).toContain('list-channel-1');
-      expect(names).toContain('list-channel-2');
+      expect(names).toContain(name1);
+      expect(names).toContain(name2);
     });
 
     it('should exclude archived channels by default', async () => {
+      const name = uniqueName('archived-channel');
       const ch = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'archived-channel',
+        name,
       });
       createdChannelIds.push(ch.id);
 
@@ -186,24 +198,34 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
 
       const channels = await storage.listChannels(testSpaceId);
       const names = channels.map((c) => c.name);
-      expect(names).not.toContain('archived-channel');
+      expect(names).not.toContain(name);
     });
 
     it('should include archived channels when requested', async () => {
+      // Create a fresh archived channel for this test
+      const name = uniqueName('archived-for-include');
+      const ch = await storage.createChannel({
+        spaceId: testSpaceId,
+        name,
+      });
+      createdChannelIds.push(ch.id);
+      await storage.archiveChannel(testSpaceId, ch.id);
+
       const channels = await storage.listChannels(testSpaceId, {
         includeArchived: true,
       });
 
       const names = channels.map((c) => c.name);
-      expect(names).toContain('archived-channel');
+      expect(names).toContain(name);
     });
   });
 
   describe('updateChannel', () => {
     it('should update channel fields', async () => {
+      const name = uniqueName('update-test-channel');
       const ch = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'update-test-channel',
+        name,
         tagline: 'Original tagline',
       });
       createdChannelIds.push(ch.id);
@@ -216,15 +238,16 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
       const updated = await storage.getChannel(testSpaceId, ch.id);
       expect(updated!.tagline).toBe('Updated tagline');
       expect(updated!.mission).toBe('New mission');
-      expect(updated!.name).toBe('update-test-channel'); // unchanged
+      expect(updated!.name).toBe(name); // unchanged
     });
   });
 
   describe('archiveChannel', () => {
     it('should archive a channel', async () => {
+      const name = uniqueName('to-archive-channel');
       const ch = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'to-archive-channel',
+        name,
       });
       createdChannelIds.push(ch.id);
 
@@ -243,7 +266,7 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
     it('should add an agent to a roster', async () => {
       const ch = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'roster-test-channel',
+        name: uniqueName('roster-test-channel'),
       });
       createdChannelIds.push(ch.id);
 
@@ -267,7 +290,7 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
     it('should add an agent with custom status', async () => {
       const ch = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'roster-status-channel',
+        name: uniqueName('roster-status-channel'),
       });
       createdChannelIds.push(ch.id);
 
@@ -288,7 +311,7 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
     it('should retrieve a roster entry by id', async () => {
       const ch = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'get-roster-channel',
+        name: uniqueName('get-roster-channel'),
       });
       createdChannelIds.push(ch.id);
 
@@ -308,7 +331,7 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
     it('should return null for non-existent entry', async () => {
       const ch = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'nonexistent-roster-channel',
+        name: uniqueName('nonexistent-roster-channel'),
       });
       createdChannelIds.push(ch.id);
 
@@ -321,7 +344,7 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
     it('should retrieve a roster entry by callsign', async () => {
       const ch = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'callsign-roster-channel',
+        name: uniqueName('callsign-roster-channel'),
       });
       createdChannelIds.push(ch.id);
 
@@ -342,7 +365,7 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
     it('should return null for non-existent callsign', async () => {
       const ch = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'no-callsign-channel',
+        name: uniqueName('no-callsign-channel'),
       });
       createdChannelIds.push(ch.id);
 
@@ -355,7 +378,7 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
     it('should list all agents in a roster', async () => {
       const ch = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'list-roster-channel',
+        name: uniqueName('list-roster-channel'),
       });
       createdChannelIds.push(ch.id);
 
@@ -386,7 +409,7 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
     it('should update roster entry status', async () => {
       const ch = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'update-roster-channel',
+        name: uniqueName('update-roster-channel'),
       });
       createdChannelIds.push(ch.id);
 
@@ -411,7 +434,7 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
     it('should remove an agent from a roster', async () => {
       const ch = await storage.createChannel({
         spaceId: testSpaceId,
-        name: 'remove-roster-channel',
+        name: uniqueName('remove-roster-channel'),
       });
       createdChannelIds.push(ch.id);
 
