@@ -65,6 +65,9 @@ importers:
       '@cast/core':
         specifier: workspace:*
         version: link:../core
+      '@cast/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@hono/node-server':
         specifier: ^1.8.0
         version: 1.19.7(hono@4.11.3)

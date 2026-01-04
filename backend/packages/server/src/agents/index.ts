@@ -13,3 +13,8 @@ export {
   type ChannelContext,
   type RosterEntry,
 } from './agent-manager.js';
+
+export {
+  createAgentInvokerAdapter,
+  type AgentInvokerAdapterOptions,
+} from './invoker-adapter.js';
