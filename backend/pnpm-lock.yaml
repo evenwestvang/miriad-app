@@ -23,6 +23,9 @@ importers:
 
   deploy:
     dependencies:
+      '@cast/runtime':
+        specifier: workspace:*
+        version: link:../packages/runtime
       '@cast/server':
         specifier: workspace:*
         version: link:../packages/server

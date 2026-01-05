@@ -9,6 +9,7 @@
     "deploy:stag": "sam deploy --config-env cast-stag"
   },
   "dependencies": {
+    "@cast/runtime": "workspace:*",
     "@cast/server": "workspace:*",
     "@cast/storage": "workspace:*",
     "hono": "^4.0.0"
