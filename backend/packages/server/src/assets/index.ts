@@ -59,11 +59,10 @@ export interface AssetStorage {
 // Default Config
 // =============================================================================
 
-const DEFAULT_ASSETS_DIR = path.join(
-  process.env.HOME || '/tmp',
-  '.cast',
-  'assets'
-);
+// Use /tmp/.cast-dev for local development, ~/.cast/assets for production
+const DEFAULT_ASSETS_DIR = process.env.NODE_ENV === 'production'
+  ? path.join(process.env.HOME || '/tmp', '.cast', 'assets')
+  : '/tmp/.cast-dev/assets';
 const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 // =============================================================================
