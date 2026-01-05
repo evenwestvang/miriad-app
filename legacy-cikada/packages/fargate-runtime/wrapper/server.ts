@@ -90,6 +90,23 @@ function getLocalIp(): string {
   return "127.0.0.1";
 }
 
+/**
+ * Get the container's public IP address for callback URL.
+ * In AWS, fetches public IP from checkip.amazonaws.com.
+ * Falls back to local IP for local development.
+ */
+async function getPublicIp(): Promise<string> {
+  try {
+    const response = await fetch("https://checkip.amazonaws.com");
+    if (response.ok) {
+      return (await response.text()).trim();
+    }
+  } catch {
+    // Fall through to local IP for local development
+  }
+  return getLocalIp();
+}
+
 // Get path to MCP artifact server (relative to this file's compiled location)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -524,8 +541,8 @@ async function checkin(): Promise<void> {
     return;
   }
 
-  const localIp = getLocalIp();
-  const endpoint = `http://${localIp}:${PORT}`;
+  const ip = await getPublicIp();
+  const endpoint = `http://${ip}:${PORT}`;
 
   console.log(`[Server] Checking in with Cast API at ${CAST_API_URL}`);
   console.log(`[Server]   Channel: ${CAST_CHANNEL_ID}`);
