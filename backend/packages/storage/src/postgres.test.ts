@@ -93,7 +93,7 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
         channelId: testChannelId,
         sender: 'test-agent',
         senderType: 'agent',
-        type: 'assistant',
+        type: 'agent',
         content: { text: 'I am an agent' },
         addressedAgents: ['channel'],
         turnId: 'turn-001',
@@ -103,7 +103,7 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
 
       expect(message.id).toBe(customId);
       expect(message.senderType).toBe('agent');
-      expect(message.type).toBe('assistant');
+      expect(message.type).toBe('agent');
       expect(message.addressedAgents).toEqual(['channel']);
       expect(message.turnId).toBe('turn-001');
     });
@@ -208,7 +208,7 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
         channelId: testChannelId,
         sender: 'update-test',
         senderType: 'agent',
-        type: 'assistant',
+        type: 'agent',
         content: { text: 'Initial content' },
         isComplete: false,
       });
