@@ -264,6 +264,7 @@ export function isRosterEntry(value: unknown): value is RosterEntry {
  * Artifact type discriminator.
  * - doc, task, code, decision: User content types
  * - knowledgebase: Searchable documentation
+ * - asset: Binary files (images, PDFs, etc.)
  * - system.*: System configuration types
  */
 export type ArtifactType =
@@ -272,10 +273,19 @@ export type ArtifactType =
   | 'code'
   | 'decision'
   | 'knowledgebase'
+  | 'asset'
   | 'system.mcp'
   | 'system.agent'
   | 'system.focus'
   | 'system.playbook';
+
+/**
+ * Content encoding for artifacts.
+ * - undefined: Text content stored in `content` field
+ * - 'file': Binary stored on filesystem
+ * - 's3': Binary stored in S3 (not implemented - will throw)
+ */
+export type ArtifactEncoding = 'file' | 's3';
 
 /**
  * Artifact status values.
@@ -341,6 +351,15 @@ export interface StoredArtifact {
   /** Type-specific properties (e.g., MCP config, agent definition) */
   props?: Record<string, unknown>;
 
+  /** Content encoding (undefined = text, 'file' = filesystem, 's3' = S3) */
+  encoding?: ArtifactEncoding;
+
+  /** MIME type for binary assets (e.g., 'image/png') */
+  contentType?: string;
+
+  /** File size in bytes for binary assets */
+  fileSize?: number;
+
   /** Optimistic concurrency version (auto-incremented on update) */
   version: number;
 
@@ -393,6 +412,15 @@ export interface CreateArtifactInput {
 
   /** Type-specific properties */
   props?: Record<string, unknown>;
+
+  /** Content encoding for binary assets */
+  encoding?: ArtifactEncoding;
+
+  /** MIME type for binary assets */
+  contentType?: string;
+
+  /** File size in bytes for binary assets */
+  fileSize?: number;
 
   /** Who is creating this artifact */
   createdBy: string;
@@ -569,6 +597,7 @@ export function isArtifactType(value: unknown): value is ArtifactType {
       'code',
       'decision',
       'knowledgebase',
+      'asset',
       'system.mcp',
       'system.agent',
       'system.focus',
@@ -634,4 +663,61 @@ export function extractRefs(content: string): string[] {
     }
   }
   return refs;
+}
+
+// =============================================================================
+// Asset/MIME Type Utilities (Phase E)
+// =============================================================================
+
+/**
+ * Extension to MIME type mapping for supported asset types.
+ * Based on PowPow's supported file types.
+ */
+export const ASSET_MIME_TYPES: Record<string, string> = {
+  // Images
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  // Audio
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  // Video
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  // Documents
+  '.pdf': 'application/pdf',
+  // Fonts
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  // Other
+  '.zip': 'application/zip',
+  '.wasm': 'application/wasm',
+  '.json': 'application/json',
+};
+
+/**
+ * Get MIME type from file extension or slug.
+ * Returns 'application/octet-stream' for unknown types.
+ */
+export function getMimeType(filenameOrSlug: string): string {
+  const ext = filenameOrSlug.includes('.')
+    ? '.' + filenameOrSlug.split('.').pop()!.toLowerCase()
+    : '';
+  return ASSET_MIME_TYPES[ext] || 'application/octet-stream';
+}
+
+/**
+ * Check if an extension/slug is a supported asset type.
+ */
+export function isSupportedAssetType(filenameOrSlug: string): boolean {
+  const ext = filenameOrSlug.includes('.')
+    ? '.' + filenameOrSlug.split('.').pop()!.toLowerCase()
+    : '';
+  return ext in ASSET_MIME_TYPES;
 }

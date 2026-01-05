@@ -13,12 +13,14 @@
  */
 
 import { Hono } from 'hono';
+import * as fs from 'node:fs/promises';
 import type { Storage } from '@cast/storage';
 import {
   requireContainerAuth,
   getContainerAuth,
   type ContainerAuthVariables,
 } from '../auth/container-middleware.js';
+import type { AssetStorage } from '../assets/index.js';
 
 // =============================================================================
 // Types
@@ -55,6 +57,7 @@ interface JsonRpcResponse {
 interface McpHttpHandlerOptions {
   storage: Storage;
   spaceId: string;
+  assetStorage?: AssetStorage;
 }
 
 // JSON-RPC error codes
@@ -319,6 +322,45 @@ const TOOLS: McpToolDefinition[] = [
     },
   },
   // ---------------------------------------------------------------------------
+  // Asset Tools
+  // ---------------------------------------------------------------------------
+  {
+    name: 'upload_asset',
+    description:
+      'Upload a binary file (image, PDF, etc.) to the channel. Provide either a local file path OR base64-encoded data.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        slug: {
+          type: 'string',
+          description: "Artifact slug with file extension (e.g., 'mockup.png', 'report.pdf')",
+        },
+        tldr: {
+          type: 'string',
+          description: 'Brief description of the asset',
+        },
+        path: {
+          type: 'string',
+          description: 'Local file path (absolute or relative to cwd) - use this OR data',
+        },
+        data: {
+          type: 'string',
+          description: 'Base64-encoded file content - use this OR path (max 5MB)',
+        },
+        title: {
+          type: 'string',
+          description: 'Optional display name',
+        },
+        parentSlug: {
+          type: 'string',
+          description: 'Optional parent artifact for tree structure',
+        },
+        channel: channelProperty,
+      },
+      required: ['slug', 'tldr'],
+    },
+  },
+  // ---------------------------------------------------------------------------
   // Message Tools
   // ---------------------------------------------------------------------------
   {
@@ -376,6 +418,7 @@ interface ToolContext {
   spaceId: string;
   channelId: string;
   callsign: string;
+  assetStorage?: AssetStorage;
 }
 
 type ToolHandler = (args: Record<string, unknown>, ctx: ToolContext) => Promise<string>;
@@ -596,6 +639,91 @@ const toolHandlers: Record<string, ToolHandler> = {
     return diff;
   },
 
+  async upload_asset(args, { storage, channelId, callsign, assetStorage }) {
+    const { slug, tldr, path, data, title, parentSlug, channel } = args as {
+      slug: string;
+      tldr: string;
+      path?: string;
+      data?: string;
+      title?: string;
+      parentSlug?: string;
+      channel?: string;
+    };
+    const targetChannel = channel || channelId;
+
+    if (!assetStorage) {
+      throw new Error('Asset storage not configured');
+    }
+
+    // Validate: exactly one of path or data must be provided
+    if (!path && !data) {
+      throw new Error('Either path or data must be provided');
+    }
+    if (path && data) {
+      throw new Error('Provide either path OR data, not both');
+    }
+
+    // Validate slug has file extension
+    if (!slug.includes('.')) {
+      throw new Error('Slug must include file extension (e.g., "mockup.png", "report.pdf")');
+    }
+
+    // Save asset to filesystem
+    let result;
+    if (path) {
+      // Resolve relative paths
+      const resolvedPath = path.startsWith('/') ? path : `${process.cwd()}/${path}`;
+
+      // Verify file exists
+      try {
+        await fs.access(resolvedPath);
+      } catch {
+        throw new Error(`File not found: ${path}`);
+      }
+
+      result = await assetStorage.saveAsset({
+        channelId: targetChannel,
+        slug,
+        source: { type: 'path', path: resolvedPath },
+      });
+    } else {
+      // Base64 data - check size limit (5MB)
+      const MAX_BASE64_SIZE = 5 * 1024 * 1024;
+      const decodedSize = Math.ceil((data!.length * 3) / 4);
+      if (decodedSize > MAX_BASE64_SIZE) {
+        throw new Error(`Base64 data exceeds 5MB limit (${Math.round(decodedSize / 1024 / 1024)}MB). Use path-based upload for larger files.`);
+      }
+
+      result = await assetStorage.saveAsset({
+        channelId: targetChannel,
+        slug,
+        source: { type: 'base64', data: data! },
+      });
+    }
+
+    // Create artifact record
+    const artifact = await storage.createArtifact(targetChannel, {
+      slug,
+      channelId: targetChannel,
+      type: 'asset',
+      title,
+      tldr,
+      content: '', // Assets have no text content
+      parentSlug,
+      encoding: 'file',
+      contentType: result.contentType,
+      fileSize: result.fileSize,
+      createdBy: callsign,
+    });
+
+    return JSON.stringify({
+      slug: artifact.slug,
+      contentType: result.contentType,
+      fileSize: result.fileSize,
+      url: `/channels/${targetChannel}/assets/${slug}`,
+    }, null, 2);
+  },
+
   // ---------------------------------------------------------------------------
   // Message Tools (fully implemented)
   // ---------------------------------------------------------------------------
@@ -714,7 +842,7 @@ function jsonRpcSuccess(id: string | number, result: unknown): JsonRpcResponse {
 }
 
 export function createMcpRoutes(opts: McpHttpHandlerOptions): Hono<{ Variables: ContainerAuthVariables }> {
-  const { storage, spaceId } = opts;
+  const { storage, spaceId, assetStorage } = opts;
   const app = new Hono<{ Variables: ContainerAuthVariables }>();
 
   // Apply container auth to all MCP routes
@@ -795,6 +923,7 @@ export function createMcpRoutes(opts: McpHttpHandlerOptions): Hono<{ Variables: 
             spaceId,
             channelId: channel.id,
             callsign: container.callsign,
+            assetStorage,
           };
           const result = await handler(params.arguments ?? {}, ctx);
 

@@ -18,3 +18,6 @@ export * from './handlers/index.js';
 
 // Agent management
 export * from './agents/index.js';
+
+// Asset storage
+export * from './assets/index.js';

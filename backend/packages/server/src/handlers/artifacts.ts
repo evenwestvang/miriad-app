@@ -13,6 +13,11 @@
  * - DELETE /channels/:channelId/artifacts/:slug             - Archive (soft delete)
  * - POST   /channels/:channelId/artifacts/:slug/versions    - Create checkpoint
  * - GET    /channels/:channelId/artifacts/:slug/versions    - List versions
+ * - GET    /channels/:channelId/artifacts/:slug/diff        - Diff versions
+ *
+ * Asset Endpoints (Phase E):
+ * - POST   /channels/:channelId/assets                      - Upload asset (multipart)
+ * - GET    /channels/:channelId/assets/:slug                - Serve asset file
  */
 
 import { Hono } from 'hono';
@@ -24,8 +29,10 @@ import {
   type ArtifactCASChange,
   isArtifactType,
   isArtifactStatus,
+  getMimeType,
 } from '@cast/core';
 import type { ConnectionManager } from '../websocket/index.js';
+import type { AssetStorage } from '../assets/index.js';
 
 // =============================================================================
 // Types
@@ -38,6 +45,8 @@ export interface ArtifactHandlerOptions {
   spaceId: string;
   /** WebSocket connection manager for broadcasts */
   connectionManager: ConnectionManager;
+  /** Asset storage backend (optional - required for asset uploads) */
+  assetStorage?: AssetStorage;
 }
 
 // =============================================================================
@@ -54,6 +63,7 @@ const ArtifactTypeSchema = z.enum([
   'code',
   'decision',
   'knowledgebase',
+  'asset',
   'system.mcp',
   'system.agent',
   'system.focus',
@@ -169,7 +179,7 @@ async function broadcastArtifactEvent(
 // =============================================================================
 
 export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
-  const { storage, spaceId, connectionManager } = options;
+  const { storage, spaceId, connectionManager, assetStorage } = options;
   const app = new Hono();
 
   // ---------------------------------------------------------------------------
@@ -706,6 +716,183 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
       }
       console.error('[Artifacts] Error generating diff:', error);
       return c.json({ error: 'Failed to generate diff' }, 500);
+    }
+  });
+
+  // ===========================================================================
+  // Asset Endpoints (Phase E)
+  // ===========================================================================
+
+  // ---------------------------------------------------------------------------
+  // POST /channels/:channelId/assets - Upload asset (multipart or base64 JSON)
+  // ---------------------------------------------------------------------------
+  app.post('/:channelId/assets', async (c) => {
+    if (!assetStorage) {
+      return c.json({ error: 'Asset storage not configured' }, 501);
+    }
+
+    const channelId = c.req.param('channelId');
+
+    try {
+      // Resolve channel by name or ID
+      const channel = await storage.getChannelByName(spaceId, channelId)
+        || await storage.getChannel(spaceId, channelId);
+
+      if (!channel) {
+        return c.json({ error: 'Channel not found' }, 404);
+      }
+
+      const contentType = c.req.header('Content-Type') || '';
+
+      let slug: string;
+      let tldr: string;
+      let sender: string;
+      let title: string | undefined;
+      let parentSlug: string | undefined;
+      let source: { type: 'path'; path: string } | { type: 'base64'; data: string };
+
+      if (contentType.includes('multipart/form-data')) {
+        // Handle multipart form upload
+        const formData = await c.req.formData();
+        const file = formData.get('file') as File | null;
+        slug = formData.get('slug') as string;
+        tldr = formData.get('tldr') as string;
+        sender = formData.get('sender') as string;
+        title = (formData.get('title') as string) || undefined;
+        parentSlug = (formData.get('parentSlug') as string) || undefined;
+
+        if (!file) {
+          return c.json({ error: 'Missing file in form data' }, 400);
+        }
+        if (!slug || !tldr || !sender) {
+          return c.json({ error: 'Missing required fields: slug, tldr, sender' }, 400);
+        }
+
+        // Convert file to base64
+        const arrayBuffer = await file.arrayBuffer();
+        const base64 = Buffer.from(arrayBuffer).toString('base64');
+        source = { type: 'base64', data: base64 };
+      } else {
+        // Handle JSON body with base64 data
+        const body = await c.req.json();
+        slug = body.slug;
+        tldr = body.tldr;
+        sender = body.sender;
+        title = body.title;
+        parentSlug = body.parentSlug;
+
+        if (!slug || !tldr || !sender) {
+          return c.json({ error: 'Missing required fields: slug, tldr, sender' }, 400);
+        }
+
+        if (body.data) {
+          source = { type: 'base64', data: body.data };
+        } else if (body.path) {
+          source = { type: 'path', path: body.path };
+        } else {
+          return c.json({ error: 'Missing file data (provide "data" for base64 or "path" for file path)' }, 400);
+        }
+      }
+
+      // Validate slug format
+      const slugValidation = SlugSchema.safeParse(slug);
+      if (!slugValidation.success) {
+        return c.json({ error: slugValidation.error.errors[0].message }, 400);
+      }
+
+      // Save asset to filesystem
+      const result = await assetStorage.saveAsset({
+        channelId: channel.id,
+        slug,
+        source,
+      });
+
+      // Create artifact record
+      const artifact = await storage.createArtifact(channel.id, {
+        slug,
+        channelId: channel.id,
+        type: 'asset',
+        title,
+        tldr,
+        content: '', // Binary content is stored separately
+        parentSlug,
+        status: 'published',
+        encoding: 'file',
+        contentType: result.contentType,
+        fileSize: result.fileSize,
+        createdBy: sender,
+      });
+
+      return c.json({
+        slug: artifact.slug,
+        type: artifact.type,
+        contentType: result.contentType,
+        fileSize: result.fileSize,
+        url: `/channels/${channelId}/assets/${slug}`,
+      }, 201);
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message.includes('exceeds maximum')) {
+          return c.json({ error: error.message }, 413);
+        }
+        if (error.message.includes('not found')) {
+          return c.json({ error: error.message }, 404);
+        }
+        if (error.message.includes('already exists')) {
+          return c.json({ error: error.message }, 409);
+        }
+      }
+      console.error('[Artifacts] Error uploading asset:', error);
+      return c.json({ error: 'Failed to upload asset' }, 500);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // GET /channels/:channelId/assets/:slug - Serve asset file
+  // ---------------------------------------------------------------------------
+  app.get('/:channelId/assets/:slug', async (c) => {
+    if (!assetStorage) {
+      return c.json({ error: 'Asset storage not configured' }, 501);
+    }
+
+    const channelId = c.req.param('channelId');
+    const slug = c.req.param('slug');
+
+    try {
+      // Resolve channel by name or ID
+      const channel = await storage.getChannelByName(spaceId, channelId)
+        || await storage.getChannel(spaceId, channelId);
+
+      if (!channel) {
+        return c.json({ error: 'Channel not found' }, 404);
+      }
+
+      // Check artifact exists and is an asset
+      const artifact = await storage.getArtifact(channel.id, slug);
+      if (!artifact) {
+        return c.json({ error: `Asset not found: ${slug}` }, 404);
+      }
+      if (artifact.encoding !== 'file') {
+        return c.json({ error: `Not a file asset: ${slug}` }, 400);
+      }
+
+      // Read and serve the file
+      const data = await assetStorage.readAsset(channel.id, slug);
+      const mimeType = artifact.contentType || getMimeType(slug);
+
+      return new Response(data, {
+        headers: {
+          'Content-Type': mimeType,
+          'Content-Length': data.length.toString(),
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('not found')) {
+        return c.json({ error: error.message }, 404);
+      }
+      console.error('[Artifacts] Error serving asset:', error);
+      return c.json({ error: 'Failed to serve asset' }, 500);
     }
   });
 

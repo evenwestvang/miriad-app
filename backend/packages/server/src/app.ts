@@ -17,6 +17,7 @@ import { createMessageRoutes, type MessageStorage, type RosterProvider, type Mes
 import { createCheckinRoutes } from './handlers/checkin.js';
 import { createMcpRoutes } from './handlers/mcp-http.js';
 import { createArtifactRoutes } from './handlers/artifacts.js';
+import { createFilesystemAssetStorage } from './assets/index.js';
 import type { ConnectionManager } from './websocket/index.js';
 import { AgentManager, createAgentInvokerAdapter } from './agents/index.js';
 
@@ -689,10 +690,14 @@ export function createApp(options: AppOptions): Hono {
   });
   app.route('/agents', checkinRoutes);
 
+  // Asset storage for binary files
+  const assetStorage = createFilesystemAssetStorage();
+
   // MCP HTTP routes (container → server board operations)
   const mcpRoutes = createMcpRoutes({
     storage,
     spaceId,
+    assetStorage,
   });
   app.route('/mcp', mcpRoutes);
 
@@ -701,6 +706,7 @@ export function createApp(options: AppOptions): Hono {
     storage,
     spaceId,
     connectionManager,
+    assetStorage,
   });
   app.route('/channels', artifactRoutes);
 
