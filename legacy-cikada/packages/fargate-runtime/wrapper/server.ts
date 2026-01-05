@@ -446,6 +446,20 @@ async function handleMessage(req: IncomingMessage, res: ServerResponse): Promise
     return;
   }
 
+  // Validate auth token if configured
+  if (CAST_AUTH_TOKEN) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      sendJson(res, 401, { error: "Missing or invalid Authorization header" });
+      return;
+    }
+    const token = authHeader.slice(7); // Remove "Bearer " prefix
+    if (token !== CAST_AUTH_TOKEN) {
+      sendJson(res, 401, { error: "Invalid auth token" });
+      return;
+    }
+  }
+
   // Parse request body
   interface MessageRequest {
     content: string;
