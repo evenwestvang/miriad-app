@@ -353,10 +353,26 @@ export function useTymbalConnection({
 
         // Standard message handling - whitelist approach
         // Only render known renderable message types
-        const renderableTypes = ['user', 'agent', 'error', 'status', 'attachment', 'structured_ask']
+        const renderableTypes = ['user', 'agent', 'error', 'status', 'attachment', 'structured_ask', 'idle', 'thinking']
         if (!renderableTypes.includes(value.type)) {
-          // Log unknown types for debugging, don't render as bubbles
-          console.debug('[Tymbal] Ignoring non-renderable message type:', value.type, frame.i)
+          // Render unrecognized types as error messages for visibility
+          // This catches compliance issues (e.g., old 'assistant' type from stored data)
+          console.error('[Tymbal] Unrecognized message type:', value.type, frame.i, value)
+          onMessage({
+            id: frame.i,
+            channelId: channelId!,
+            type: 'error',
+            content: `Unrecognized message type: "${value.type}"\n\nRaw: ${JSON.stringify(value, null, 2)}`,
+            sender: 'system',
+            senderType: 'agent',
+            timestamp: frame.t,
+          })
+          return
+        }
+
+        // Skip non-renderable types that we recognize but don't display
+        if (value.type === 'idle' || value.type === 'thinking') {
+          // idle: turn completion signal, thinking: internal traces - don't render as bubbles
           return
         }
 
