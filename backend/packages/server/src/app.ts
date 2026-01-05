@@ -15,6 +15,7 @@ import { parseFrame, isSetFrame, isResetFrame, tymbal, generateMessageId } from 
 import { createTymbalRoutes } from './handlers/tymbal.js';
 import { createMessageRoutes, type MessageStorage, type RosterProvider, type Message } from './handlers/messages.js';
 import { createCheckinRoutes } from './handlers/checkin.js';
+import { createMcpRoutes } from './handlers/mcp-http.js';
 import type { ConnectionManager } from './websocket/index.js';
 import { AgentManager, createAgentInvokerAdapter } from './agents/index.js';
 
@@ -686,6 +687,13 @@ export function createApp(options: AppOptions): Hono {
     orchestrator, // For local Docker: use orchestrator's port mapping for pending messages
   });
   app.route('/agents', checkinRoutes);
+
+  // MCP HTTP routes (container → server board operations)
+  const mcpRoutes = createMcpRoutes({
+    storage,
+    spaceId,
+  });
+  app.route('/mcp', mcpRoutes);
 
   return app;
 }
