@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => ({
       proxy: {
         // Proxy API requests to backend server
         '/channels': {
-          target: 'http://localhost:3001',
+          target: 'http://localhost:3233',
           changeOrigin: true,
         },
       },
