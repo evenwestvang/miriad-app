@@ -91,18 +91,28 @@ function getLocalIp(): string {
 }
 
 /**
- * Get the container's public IP address for callback URL.
- * In AWS, fetches public IP from checkip.amazonaws.com.
- * Falls back to local IP for local development.
+ * Get the container's callback host for registration with Cast API.
+ *
+ * Priority:
+ * 1. CAST_CALLBACK_HOST env var (for local Docker: "host.docker.internal")
+ * 2. AWS public IP from checkip.amazonaws.com (for Fargate)
+ * 3. Local IP fallback
  */
-async function getPublicIp(): Promise<string> {
+async function getCallbackHost(): Promise<string> {
+  // Allow explicit override for local Docker development
+  const callbackHost = process.env.CAST_CALLBACK_HOST;
+  if (callbackHost) {
+    return callbackHost;
+  }
+
+  // In AWS, fetch public IP
   try {
     const response = await fetch("https://checkip.amazonaws.com");
     if (response.ok) {
       return (await response.text()).trim();
     }
   } catch {
-    // Fall through to local IP for local development
+    // Fall through to local IP
   }
   return getLocalIp();
 }
@@ -555,8 +565,8 @@ async function checkin(): Promise<void> {
     return;
   }
 
-  const ip = await getPublicIp();
-  const endpoint = `http://${ip}:${PORT}`;
+  const host = await getCallbackHost();
+  const endpoint = `http://${host}:${PORT}`;
 
   console.log(`[Server] Checking in with Cast API at ${CAST_API_URL}`);
   console.log(`[Server]   Channel: ${CAST_CHANNEL_ID}`);

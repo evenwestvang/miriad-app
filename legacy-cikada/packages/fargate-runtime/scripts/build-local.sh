@@ -53,6 +53,7 @@ if [[ "$1" == "--run" ]]; then
         -e CAST_CHANNEL_ID="${CAST_CHANNEL_ID:-}" \
         -e CAST_CALLSIGN="${CAST_CALLSIGN:-}" \
         -e CAST_AUTH_TOKEN="${CAST_AUTH_TOKEN:-}" \
+        -e CAST_CALLBACK_HOST="${CAST_CALLBACK_HOST:-host.docker.internal}" \
         -e THREAD_ID="${THREAD_ID:-test-thread}" \
         -e IDLE_TIMEOUT_MS="${IDLE_TIMEOUT_MS:-600000}" \
         -v "${PWD}/test-workspace:/workspace" \
