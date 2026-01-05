@@ -204,27 +204,22 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
     const storeKey = `${channelId}:${callsign}`;
     const readmark = readmarkStore.get(storeKey) ?? null;
 
-    // Return OK immediately
-    // Then push pending messages asynchronously
-    const responsePromise = c.json({ ok: true });
+    // Block on pending message delivery before returning
+    // (Lambda freezes async work after response is sent)
+    let delivered = 0;
+    try {
+      // Get pending messages
+      const pendingMessages = await getPendingMessages(
+        storage,
+        spaceId,
+        channelId,
+        callsign,
+        readmark
+      );
 
-    // Async: query and push pending messages
-    (async () => {
-      try {
-        // Get pending messages
-        const pendingMessages = await getPendingMessages(
-          storage,
-          spaceId,
-          channelId,
-          callsign,
-          readmark
-        );
-
-        if (pendingMessages.length === 0) {
-          console.log(`[Checkin] No pending messages for ${callsign}`);
-          return;
-        }
-
+      if (pendingMessages.length === 0) {
+        console.log(`[Checkin] No pending messages for ${callsign}`);
+      } else {
         console.log(
           `[Checkin] ${pendingMessages.length} pending message(s) for ${callsign}`
         );
@@ -239,7 +234,7 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
         // Build thread ID
         const threadId = `${spaceId}:${channelId}:${callsign}`;
 
-        // Push to container
+        // Push to container (blocking)
         const success = await pushMessagesToContainer(
           endpoint,
           compiledContent,
@@ -247,17 +242,18 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
         );
 
         if (success) {
+          delivered = pendingMessages.length;
           // Update readmark to latest message ID
           const latestMessageId = pendingMessages[pendingMessages.length - 1].id;
           readmarkStore.set(storeKey, latestMessageId);
           console.log(`[Checkin] Updated readmark to ${latestMessageId}`);
         }
-      } catch (error) {
-        console.error(`[Checkin] Error pushing messages:`, error);
       }
-    })();
+    } catch (error) {
+      console.error(`[Checkin] Error pushing messages:`, error);
+    }
 
-    return responsePromise;
+    return c.json({ ok: true, delivered });
   });
 
   /**
