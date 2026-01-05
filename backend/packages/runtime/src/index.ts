@@ -19,6 +19,9 @@ export type {
 // Docker implementation (local development)
 export { DockerOrchestrator, type DockerOrchestratorConfig } from './docker-orchestrator.js';
 
+// Fargate implementation (AWS production)
+export { FargateOrchestrator, type FargateOrchestratorConfig } from './fargate-orchestrator.js';
+
 // Mock implementation (testing)
 export {
   MockContainerOrchestrator,
