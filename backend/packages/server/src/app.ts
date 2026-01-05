@@ -10,7 +10,8 @@ import { logger } from 'hono/logger';
 import { cors } from 'hono/cors';
 import type { Storage } from '@cast/storage';
 import type { ContainerOrchestrator } from '@cast/runtime';
-import type { ChannelRoster, StoredMessage, RosterEntry, StoredMessageType } from '@cast/core';
+import type { ChannelRoster, StoredMessage, RosterEntry, StoredMessageType, SetFrame } from '@cast/core';
+import { parseFrame, isSetFrame, isResetFrame } from '@cast/core';
 import { createTymbalRoutes } from './handlers/tymbal.js';
 import { createMessageRoutes, type MessageStorage, type RosterProvider, type Message } from './handlers/messages.js';
 import type { ConnectionManager } from './websocket/index.js';
@@ -370,6 +371,66 @@ export function createApp(options: AppOptions): Hono {
     },
   });
   app.route('/tymbal', tymbalRoutes);
+
+  // Legacy /thread/:threadId/tymbal endpoint for compatibility with existing containers
+  // threadId format: spaceId:channelId:callsign
+  // This endpoint doesn't require container auth (legacy containers don't send it)
+  app.post('/thread/:threadId/tymbal', async (c) => {
+    const threadId = c.req.param('threadId');
+    const parts = threadId.split(':');
+    if (parts.length < 2) {
+      return c.json({ error: 'invalid_thread_id', message: 'Thread ID must be spaceId:channelId[:callsign]' }, 400);
+    }
+    const channelId = parts[1];
+
+    const body = await c.req.text();
+    if (!body.trim()) {
+      return c.json({ error: 'empty_body', message: 'Request body is empty' }, 400);
+    }
+
+    const frame = parseFrame(body);
+    if (!frame) {
+      return c.json({ error: 'invalid_frame', message: 'Could not parse Tymbal frame' }, 400);
+    }
+
+    try {
+      if (isSetFrame(frame)) {
+        const normalizedValue = frame.v && typeof frame.v === 'object' && (frame.v as Record<string, unknown>).type === 'tool_call' && 'input' in (frame.v as Record<string, unknown>) && !('args' in (frame.v as Record<string, unknown>))
+          ? { ...(frame.v as Record<string, unknown>), args: (frame.v as Record<string, unknown>).input }
+          : frame.v;
+        const normalizedFrame = normalizedValue !== frame.v ? { ...frame, v: normalizedValue } : frame;
+        const serialized = JSON.stringify(normalizedFrame);
+        await connectionManager.broadcast(channelId, serialized);
+
+        // Persist SetFrames as messages
+        if (normalizedFrame.v && typeof normalizedFrame.v === 'object') {
+          const value = normalizedFrame.v as Record<string, unknown>;
+          await storage.saveMessage({
+            id: normalizedFrame.i,
+            spaceId,
+            channelId,
+            sender: (value.sender as string) ?? 'system',
+            senderType: (value.senderType as 'user' | 'agent') ?? 'agent',
+            type: ((value.type as string) ?? 'assistant') as StoredMessageType,
+            content: value.content ?? value,
+            isComplete: true,
+            addressedAgents: value.mentions as string[] | undefined,
+            metadata: { fromTymbal: true },
+          });
+        }
+      } else if (isResetFrame(frame)) {
+        await connectionManager.broadcast(channelId, body);
+        await storage.deleteMessage(spaceId, frame.i);
+      } else {
+        await connectionManager.broadcast(channelId, body);
+      }
+
+      return c.json({ ok: true });
+    } catch (error) {
+      console.error('[Tymbal/Legacy] Error processing frame:', error);
+      return c.json({ error: 'processing_error', message: 'Failed to process frame' }, 500);
+    }
+  });
 
   // Message routes (user → server → agents)
   const messageRoutes = createMessageRoutes({

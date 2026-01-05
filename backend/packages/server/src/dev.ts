@@ -4,6 +4,21 @@
  * Run with: pnpm dev
  */
 
+import { config } from 'dotenv';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+// Load .env from backend root (two levels up from packages/server/src)
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const envPath = resolve(__dirname, '../../../.env');
+console.log(`[dev] Loading .env from: ${envPath}`);
+const result = config({ path: envPath });
+if (result.error) {
+  console.log(`[dev] .env load error: ${result.error.message}`);
+} else {
+  console.log(`[dev] .env loaded successfully`);
+}
+
 import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
 import { createConnectionManager } from './websocket/index.js';
