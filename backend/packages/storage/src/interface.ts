@@ -4,6 +4,7 @@
  * Abstract interface for Cast storage backends.
  * Phase 1: Messages
  * Phase 2: Channels + Roster
+ * Phase A: Artifacts
  */
 
 import type {
@@ -17,6 +18,17 @@ import type {
   RosterEntry,
   AddToRosterInput,
   UpdateRosterInput,
+  // Artifact types (Phase A)
+  StoredArtifact,
+  CreateArtifactInput,
+  ArtifactCASChange,
+  ArtifactCASResult,
+  ArtifactEditInput,
+  ListArtifactsParams,
+  ArtifactSummary,
+  ArtifactTreeNode,
+  ArtifactVersion,
+  CreateArtifactVersionInput,
 } from '@cast/core';
 
 // =============================================================================
@@ -139,6 +151,122 @@ export interface Storage {
    * Remove an agent from a channel's roster.
    */
   removeFromRoster(channelId: string, entryId: string): Promise<void>;
+
+  // ---------------------------------------------------------------------------
+  // Artifact Operations (Phase A)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Create a new artifact.
+   * - Generates ULID for id
+   * - Computes path from parentSlug hierarchy (using ltree format)
+   * - Auto-extracts [[slug]] references into refs array
+   * - Sets default status based on type if not provided
+   */
+  createArtifact(channelId: string, input: CreateArtifactInput): Promise<StoredArtifact>;
+
+  /**
+   * Get an artifact by slug.
+   * Slug is unique per channel.
+   */
+  getArtifact(channelId: string, slug: string): Promise<StoredArtifact | null>;
+
+  /**
+   * Update artifact fields with compare-and-swap (CAS) for atomic multi-agent coordination.
+   * Only updates if all oldValue fields match current values.
+   * Returns conflict info if any value doesn't match.
+   *
+   * Allowed fields: title, tldr, status, parentSlug, assignees, labels, props
+   * Content changes should use editArtifact for surgical find-replace.
+   */
+  updateArtifactWithCAS(
+    channelId: string,
+    slug: string,
+    changes: ArtifactCASChange[],
+    updatedBy: string
+  ): Promise<ArtifactCASResult>;
+
+  /**
+   * Surgical find-replace edit on artifact content.
+   * - oldString must match exactly once in content
+   * - Returns error if not found or ambiguous (multiple matches)
+   * - Auto-updates refs array from new content
+   * - Does NOT create a version snapshot (use checkpointArtifact for that)
+   */
+  editArtifact(
+    channelId: string,
+    slug: string,
+    edit: ArtifactEditInput
+  ): Promise<StoredArtifact>;
+
+  /**
+   * Archive an artifact (soft delete).
+   * Sets status to 'archived'.
+   */
+  archiveArtifact(
+    channelId: string,
+    slug: string,
+    updatedBy: string
+  ): Promise<StoredArtifact>;
+
+  /**
+   * List artifacts with optional filters.
+   * Returns summary info (not full content) for efficiency.
+   *
+   * Filters:
+   * - type: filter by artifact type
+   * - status: filter by status
+   * - assignee: filter tasks by assignee (checks JSONB array)
+   * - parentSlug: filter by parent ('root' = top-level only)
+   * - search: keyword search using FTS (BM25 ranking)
+   * - regex: regex pattern matching on slug/title/tldr/content
+   * - limit/offset: pagination
+   */
+  listArtifacts(
+    channelId: string,
+    params?: ListArtifactsParams
+  ): Promise<ArtifactSummary[]>;
+
+  /**
+   * Get artifacts matching a glob pattern as a tree structure.
+   * Uses ltree path for efficient hierarchical queries.
+   *
+   * Pattern examples:
+   * - "/**" - entire tree
+   * - "/auth-system/**" - subtree under auth-system
+   * - "/**\/*.ts" - all .ts slugs anywhere
+   * - "/*" - root level only
+   */
+  globArtifacts(channelId: string, pattern: string): Promise<ArtifactTreeNode[]>;
+
+  /**
+   * Create a named version snapshot of an artifact.
+   * Snapshots current content and tldr.
+   * Versions are immutable once created.
+   */
+  checkpointArtifact(
+    channelId: string,
+    slug: string,
+    input: CreateArtifactVersionInput
+  ): Promise<ArtifactVersion>;
+
+  /**
+   * Get a specific version of an artifact.
+   */
+  getArtifactVersion(
+    channelId: string,
+    slug: string,
+    versionName: string
+  ): Promise<ArtifactVersion | null>;
+
+  /**
+   * List all versions of an artifact.
+   * Returns versions ordered by creation time (newest first).
+   */
+  listArtifactVersions(
+    channelId: string,
+    slug: string
+  ): Promise<ArtifactVersion[]>;
 
   // ---------------------------------------------------------------------------
   // Lifecycle

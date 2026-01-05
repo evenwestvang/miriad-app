@@ -200,7 +200,7 @@ const TOOLS: McpToolDefinition[] = [
   {
     name: 'artifact_update',
     description:
-      'Atomic update with compare-and-swap (CAS) for conflict prevention. All changes are atomic - all succeed or all fail.',
+      'Atomic metadata update with compare-and-swap (CAS) for conflict prevention. All changes are atomic - all succeed or all fail. For content changes, use artifact_edit instead.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -215,7 +215,7 @@ const TOOLS: McpToolDefinition[] = [
             properties: {
               field: {
                 type: 'string',
-                description: 'Field name: title, tldr, status, content, parentSlug, assignees, labels',
+                description: 'Field name: title, tldr, status, parentSlug, assignees, labels, props',
               },
               oldValue: {
                 description: 'Expected current value (null if unset)',
@@ -270,6 +270,29 @@ const TOOLS: McpToolDefinition[] = [
         channel: channelProperty,
       },
       required: ['slug'],
+    },
+  },
+  {
+    name: 'artifact_checkpoint',
+    description: 'Create a named version snapshot. Snapshots current content and tldr. Versions are immutable once created.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        slug: {
+          type: 'string',
+          description: 'Artifact slug to checkpoint',
+        },
+        version: {
+          type: 'string',
+          description: "Version name (e.g., 'v1.0', 'draft-2', 'final')",
+        },
+        message: {
+          type: 'string',
+          description: "Version message (e.g., 'Addressed security feedback')",
+        },
+        channel: channelProperty,
+      },
+      required: ['slug', 'version'],
     },
   },
   // ---------------------------------------------------------------------------
@@ -336,43 +359,204 @@ type ToolHandler = (args: Record<string, unknown>, ctx: ToolContext) => Promise<
 
 const toolHandlers: Record<string, ToolHandler> = {
   // ---------------------------------------------------------------------------
-  // Artifact Tools (stubs for now)
+  // Artifact Tools (fully implemented)
   // ---------------------------------------------------------------------------
 
-  async artifact_create(_args, _ctx) {
-    // Write operation - return error
-    throw new Error('artifact_create not yet implemented - storage layer pending');
+  async artifact_create(args, { storage, channelId, callsign }) {
+    const { slug, type, tldr, content, title, parentSlug, status, assignees, labels } = args as {
+      slug: string;
+      type: string;
+      tldr: string;
+      content: string;
+      title?: string;
+      parentSlug?: string;
+      status?: string;
+      assignees?: string[];
+      labels?: string[];
+    };
+
+    const artifact = await storage.createArtifact(channelId, {
+      slug,
+      channelId,
+      type: type as 'doc' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook',
+      title,
+      tldr,
+      content,
+      parentSlug,
+      status: status as 'draft' | 'published' | 'archived' | 'pending' | 'in_progress' | 'done' | 'blocked' | undefined,
+      assignees,
+      labels,
+      createdBy: callsign,
+    });
+
+    return JSON.stringify({
+      slug: artifact.slug,
+      type: artifact.type,
+      path: artifact.path,
+      status: artifact.status,
+      version: artifact.version,
+    }, null, 2);
   },
 
-  async artifact_read(args, _ctx) {
-    // Read operation - return empty/not found
-    const { slug } = args as { slug: string };
-    throw new Error(`Artifact not found: ${slug}`);
+  async artifact_read(args, { storage, channelId }) {
+    const { slug, channel } = args as { slug: string; channel?: string };
+    const targetChannel = channel || channelId;
+
+    const artifact = await storage.getArtifact(targetChannel, slug);
+    if (!artifact) {
+      throw new Error(`Artifact not found: ${slug}`);
+    }
+
+    // Include version list
+    const versions = await storage.listArtifactVersions(targetChannel, slug);
+
+    return JSON.stringify({
+      ...artifact,
+      versions: versions.map((v) => ({
+        versionName: v.versionName,
+        versionMessage: v.versionMessage,
+        versionCreatedBy: v.versionCreatedBy,
+        versionCreatedAt: v.versionCreatedAt,
+      })),
+    }, null, 2);
   },
 
-  async artifact_list(_args, _ctx) {
-    // Read operation - return empty list
-    return JSON.stringify({ artifacts: [] }, null, 2);
+  async artifact_list(args, { storage, channelId }) {
+    const { type, status, assignee, parentSlug, search, limit, offset, channel } = args as {
+      type?: string;
+      status?: string;
+      assignee?: string;
+      parentSlug?: string;
+      search?: string;
+      limit?: number;
+      offset?: number;
+      channel?: string;
+    };
+
+    const targetChannel = channel || channelId;
+
+    const artifacts = await storage.listArtifacts(targetChannel, {
+      type: type as 'doc' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook' | undefined,
+      status: status as 'draft' | 'published' | 'archived' | 'pending' | 'in_progress' | 'done' | 'blocked' | undefined,
+      assignee,
+      parentSlug: parentSlug as string | 'root' | undefined,
+      search,
+      limit,
+      offset,
+    });
+
+    return JSON.stringify({ artifacts }, null, 2);
   },
 
-  async artifact_glob(_args, _ctx) {
-    // Read operation - return empty tree
-    return '(empty)';
+  async artifact_glob(args, { storage, channelId }) {
+    const { pattern, channel } = args as { pattern?: string; channel?: string };
+    const targetChannel = channel || channelId;
+    const globPattern = pattern || '/**';
+
+    const tree = await storage.globArtifacts(targetChannel, globPattern);
+
+    // Format as indented text for readability
+    const formatTree = (nodes: typeof tree, indent = 0): string => {
+      return nodes.map((node) => {
+        const prefix = '  '.repeat(indent);
+        const typeAnnotation = node.type !== 'doc' ? ` :${node.type}` : '';
+        const statusAnnotation = node.type === 'task' ? ` (${node.status})` : '';
+        const assigneeAnnotation = node.assignees.length > 0 ? ` @${node.assignees.join(', @')}` : '';
+        const line = `${prefix}/${node.slug}${typeAnnotation}${statusAnnotation}${assigneeAnnotation}`;
+        const children = node.children.length > 0 ? '\n' + formatTree(node.children, indent + 1) : '';
+        return line + children;
+      }).join('\n');
+    };
+
+    const output = formatTree(tree);
+    return output || '(empty)';
   },
 
-  async artifact_update(_args, _ctx) {
-    // Write operation - return error
-    throw new Error('artifact_update not yet implemented - storage layer pending');
+  async artifact_update(args, { storage, channelId, callsign }) {
+    const { slug, changes, channel } = args as {
+      slug: string;
+      changes: Array<{ field: string; oldValue: unknown; newValue: unknown }>;
+      channel?: string;
+    };
+    const targetChannel = channel || channelId;
+
+    // Convert from MCP format to storage format
+    const storageChanges = changes.map((change) => ({
+      field: change.field as 'title' | 'tldr' | 'status' | 'parentSlug' | 'assignees' | 'labels' | 'props',
+      oldValue: change.oldValue,
+      newValue: change.newValue,
+    }));
+
+    const result = await storage.updateArtifactWithCAS(targetChannel, slug, storageChanges, callsign);
+
+    if (!result.success) {
+      throw new Error(`Conflict on field '${result.conflict?.field}': expected ${JSON.stringify(result.conflict?.expected)} but found ${JSON.stringify(result.conflict?.actual)}`);
+    }
+
+    return JSON.stringify({
+      success: true,
+      slug: result.artifact?.slug,
+      version: result.artifact?.version,
+    }, null, 2);
   },
 
-  async artifact_edit(_args, _ctx) {
-    // Write operation - return error
-    throw new Error('artifact_edit not yet implemented - storage layer pending');
+  async artifact_edit(args, { storage, channelId, callsign }) {
+    const { slug, old_string, new_string, channel } = args as {
+      slug: string;
+      old_string: string;
+      new_string: string;
+      channel?: string;
+    };
+    const targetChannel = channel || channelId;
+
+    const artifact = await storage.editArtifact(targetChannel, slug, {
+      oldString: old_string,
+      newString: new_string,
+      updatedBy: callsign,
+    });
+
+    return JSON.stringify({
+      success: true,
+      slug: artifact.slug,
+      version: artifact.version,
+    }, null, 2);
   },
 
-  async artifact_archive(_args, _ctx) {
-    // Write operation - return error
-    throw new Error('artifact_archive not yet implemented - storage layer pending');
+  async artifact_archive(args, { storage, channelId, callsign }) {
+    const { slug, channel } = args as { slug: string; channel?: string };
+    const targetChannel = channel || channelId;
+
+    const artifact = await storage.archiveArtifact(targetChannel, slug, callsign);
+
+    return JSON.stringify({
+      archived: true,
+      slug: artifact.slug,
+      status: artifact.status,
+    }, null, 2);
+  },
+
+  async artifact_checkpoint(args, { storage, channelId, callsign }) {
+    const { slug, version, message, channel } = args as {
+      slug: string;
+      version: string;
+      message?: string;
+      channel?: string;
+    };
+    const targetChannel = channel || channelId;
+
+    const artifactVersion = await storage.checkpointArtifact(targetChannel, slug, {
+      versionName: version,
+      versionMessage: message,
+      createdBy: callsign,
+    });
+
+    return JSON.stringify({
+      slug: artifactVersion.slug,
+      version: artifactVersion.versionName,
+      message: artifactVersion.versionMessage,
+      createdBy: artifactVersion.versionCreatedBy,
+      createdAt: artifactVersion.versionCreatedAt,
+    }, null, 2);
   },
 
   // ---------------------------------------------------------------------------

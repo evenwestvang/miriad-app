@@ -21,3 +21,7 @@ export {
   type CheckinRequest,
   type CheckinHandlerOptions,
 } from './checkin.js';
+export {
+  createArtifactRoutes,
+  type ArtifactHandlerOptions,
+} from './artifacts.js';

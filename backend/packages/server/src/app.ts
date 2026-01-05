@@ -16,6 +16,7 @@ import { createTymbalRoutes } from './handlers/tymbal.js';
 import { createMessageRoutes, type MessageStorage, type RosterProvider, type Message } from './handlers/messages.js';
 import { createCheckinRoutes } from './handlers/checkin.js';
 import { createMcpRoutes } from './handlers/mcp-http.js';
+import { createArtifactRoutes } from './handlers/artifacts.js';
 import type { ConnectionManager } from './websocket/index.js';
 import { AgentManager, createAgentInvokerAdapter } from './agents/index.js';
 
@@ -423,7 +424,7 @@ export function createApp(options: AppOptions): Hono {
       return null;
     },
     credentials: true,
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
   }));
 
@@ -694,6 +695,14 @@ export function createApp(options: AppOptions): Hono {
     spaceId,
   });
   app.route('/mcp', mcpRoutes);
+
+  // Artifact routes (REST API for frontend)
+  const artifactRoutes = createArtifactRoutes({
+    storage,
+    spaceId,
+    connectionManager,
+  });
+  app.route('/channels', artifactRoutes);
 
   return app;
 }

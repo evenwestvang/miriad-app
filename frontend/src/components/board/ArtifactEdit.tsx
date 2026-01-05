@@ -53,7 +53,7 @@ export function ArtifactEdit({
   // Get status options based on type
   const statusOptions = type === 'task' ? TASK_STATUSES : DOC_STATUSES
 
-  // Build CAS changes array
+  // Build CAS changes array (metadata only, not content)
   const buildChanges = useCallback(() => {
     const changes: Array<{ field: string; oldValue: unknown; newValue: unknown }> = []
 
@@ -69,20 +69,24 @@ export function ArtifactEdit({
     if (tldr !== artifact.tldr) {
       changes.push({ field: 'tldr', oldValue: artifact.tldr, newValue: tldr })
     }
-    if (content !== artifact.content) {
-      changes.push({ field: 'content', oldValue: artifact.content, newValue: content })
-    }
+    // Note: content is handled separately via the edit endpoint
     if (parentSlug !== (artifact.parentSlug || '')) {
       changes.push({ field: 'parentSlug', oldValue: artifact.parentSlug, newValue: parentSlug || null })
     }
 
     return changes
-  }, [artifact, title, type, status, tldr, content, parentSlug])
+  }, [artifact, title, type, status, tldr, parentSlug])
+
+  // Check if content has changed
+  const hasContentChanged = useCallback(() => {
+    return content !== artifact.content
+  }, [artifact.content, content])
 
   const handleSave = async () => {
     const changes = buildChanges()
+    const contentChanged = hasContentChanged()
 
-    if (changes.length === 0) {
+    if (changes.length === 0 && !contentChanged) {
       onCancel() // No changes
       return
     }
@@ -92,29 +96,61 @@ export function ArtifactEdit({
     setConflict(null)
 
     try {
-      const response = await apiFetch(`${apiHost}/channels/${channelId}/artifacts/${artifact.slug}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          changes,
-          updatedBy: 'user', // TODO: Get from auth context
-        }),
-      })
+      let updatedArtifact = artifact
 
-      if (response.status === 409) {
-        // Conflict
-        const data = await response.json()
-        setConflict(data.conflict)
-        return
+      // First, handle content changes via the edit endpoint
+      if (contentChanged) {
+        const editResponse = await apiFetch(`${apiHost}/channels/${channelId}/artifacts/${artifact.slug}/edit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            old_string: artifact.content,
+            new_string: content,
+            sender: 'user', // TODO: Get from auth context
+          }),
+        })
+
+        if (editResponse.status === 409) {
+          setConflict({ field: 'content', expected: artifact.content, actual: 'modified by another user' })
+          return
+        }
+
+        if (!editResponse.ok) {
+          const data = await editResponse.json()
+          throw new Error(data.error || 'Failed to save content')
+        }
+
+        const editData = await editResponse.json()
+        updatedArtifact = editData.artifact || updatedArtifact
       }
 
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to save')
+      // Then, handle metadata changes via PATCH
+      if (changes.length > 0) {
+        const patchResponse = await apiFetch(`${apiHost}/channels/${channelId}/artifacts/${artifact.slug}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            changes,
+            sender: 'user', // TODO: Get from auth context
+          }),
+        })
+
+        if (patchResponse.status === 409) {
+          const data = await patchResponse.json()
+          setConflict(data.conflict)
+          return
+        }
+
+        if (!patchResponse.ok) {
+          const data = await patchResponse.json()
+          throw new Error(data.error || 'Failed to save')
+        }
+
+        const patchData = await patchResponse.json()
+        updatedArtifact = patchData.artifact || updatedArtifact
       }
 
-      const data = await response.json()
-      onSuccess(data.artifact)
+      onSuccess(updatedArtifact)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')
     } finally {
@@ -142,7 +178,7 @@ export function ArtifactEdit({
             content,
             parentSlug: parentSlug || null,
           },
-          updatedBy: 'user',
+          sender: 'user',
         }),
       })
 

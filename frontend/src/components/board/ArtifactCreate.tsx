@@ -152,7 +152,7 @@ export function ArtifactCreate({
           parentSlug: parentSlug || undefined,
           status: DEFAULT_STATUS[type],
           props: props || undefined,
-          createdBy: 'user', // TODO: Get from auth context
+          sender: 'user', // TODO: Get from auth context
         }),
       })
 
@@ -166,8 +166,8 @@ export function ArtifactCreate({
         throw new Error(data.error || 'Failed to create artifact')
       }
 
-      const data = await response.json()
-      onSuccess(data.artifact)
+      const artifact = await response.json()
+      onSuccess(artifact)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create')
     } finally {

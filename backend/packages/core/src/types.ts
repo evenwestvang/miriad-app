@@ -255,3 +255,383 @@ export function isRosterEntry(value: unknown): value is RosterEntry {
     typeof (value as RosterEntry).callsign === 'string'
   );
 }
+
+// =============================================================================
+// Artifact Types (Phase A)
+// =============================================================================
+
+/**
+ * Artifact type discriminator.
+ * - doc, task, code, decision: User content types
+ * - knowledgebase: Searchable documentation
+ * - system.*: System configuration types
+ */
+export type ArtifactType =
+  | 'doc'
+  | 'task'
+  | 'code'
+  | 'decision'
+  | 'knowledgebase'
+  | 'system.mcp'
+  | 'system.agent'
+  | 'system.focus'
+  | 'system.playbook';
+
+/**
+ * Artifact status values.
+ * - draft/published/archived: For documents
+ * - pending/in_progress/done/blocked: For tasks
+ */
+export type ArtifactStatus =
+  | 'draft'
+  | 'published'
+  | 'archived'
+  | 'pending'
+  | 'in_progress'
+  | 'done'
+  | 'blocked';
+
+/**
+ * An artifact as stored in the database.
+ * Artifacts are persistent work products scoped to a channel.
+ */
+export interface StoredArtifact {
+  /** Unique artifact identifier (ULID) */
+  id: string;
+
+  /** Channel this artifact belongs to */
+  channelId: string;
+
+  /** Human-readable identifier, IMMUTABLE after creation */
+  slug: string;
+
+  /** Artifact type */
+  type: ArtifactType;
+
+  /** Optional display title */
+  title?: string;
+
+  /** Optional summary (1-3 sentences) */
+  tldr?: string;
+
+  /** Main content (markdown for docs, raw code for code artifacts) */
+  content: string;
+
+  /** Parent artifact slug for tree hierarchy (mutable) */
+  parentSlug?: string;
+
+  /** Computed hierarchical path (e.g., "planning.phase_1.auth_spec" in ltree format) */
+  path: string;
+
+  /** Lexicographic sort key for sibling ordering */
+  orderKey: string;
+
+  /** Current status */
+  status: ArtifactStatus;
+
+  /** Assigned agent callsigns (for tasks) */
+  assignees: string[];
+
+  /** Freeform tags */
+  labels: string[];
+
+  /** Auto-extracted [[slug]] cross-references */
+  refs: string[];
+
+  /** Type-specific properties (e.g., MCP config, agent definition) */
+  props?: Record<string, unknown>;
+
+  /** Optimistic concurrency version (auto-incremented on update) */
+  version: number;
+
+  /** Who created this artifact */
+  createdBy: string;
+
+  /** ISO timestamp of creation */
+  createdAt: string;
+
+  /** Who last updated this artifact */
+  updatedBy?: string;
+
+  /** ISO timestamp of last update */
+  updatedAt?: string;
+}
+
+/**
+ * Input for creating a new artifact.
+ */
+export interface CreateArtifactInput {
+  /** Human-readable identifier (immutable after creation) */
+  slug: string;
+
+  /** Channel this artifact belongs to */
+  channelId: string;
+
+  /** Artifact type */
+  type: ArtifactType;
+
+  /** Optional display title */
+  title?: string;
+
+  /** Optional summary */
+  tldr?: string;
+
+  /** Main content */
+  content: string;
+
+  /** Parent artifact slug for tree hierarchy */
+  parentSlug?: string;
+
+  /** Initial status (defaults based on type) */
+  status?: ArtifactStatus;
+
+  /** Assigned agent callsigns */
+  assignees?: string[];
+
+  /** Freeform tags */
+  labels?: string[];
+
+  /** Type-specific properties */
+  props?: Record<string, unknown>;
+
+  /** Who is creating this artifact */
+  createdBy: string;
+}
+
+/**
+ * A single field change for compare-and-swap updates.
+ */
+export interface ArtifactCASChange {
+  /** Field to update */
+  field: 'title' | 'tldr' | 'status' | 'parentSlug' | 'assignees' | 'labels' | 'props';
+
+  /** Expected current value (null if field should be unset) */
+  oldValue: unknown;
+
+  /** New value to set */
+  newValue: unknown;
+}
+
+/**
+ * Result of a compare-and-swap update operation.
+ */
+export interface ArtifactCASResult {
+  /** Whether the update succeeded */
+  success: boolean;
+
+  /** Updated artifact (if success) */
+  artifact?: StoredArtifact;
+
+  /** Conflict details (if failed) */
+  conflict?: {
+    field: string;
+    expected: unknown;
+    actual: unknown;
+  };
+}
+
+/**
+ * Input for surgical content edit (find-replace).
+ */
+export interface ArtifactEditInput {
+  /** Text to find (must match exactly once) */
+  oldString: string;
+
+  /** Replacement text */
+  newString: string;
+
+  /** Who is performing the edit */
+  updatedBy: string;
+}
+
+/**
+ * Parameters for listing artifacts.
+ */
+export interface ListArtifactsParams {
+  /** Filter by artifact type */
+  type?: ArtifactType;
+
+  /** Filter by status */
+  status?: ArtifactStatus;
+
+  /** Filter by assignee (for tasks) */
+  assignee?: string;
+
+  /** Filter by parent slug ('root' for top-level only) */
+  parentSlug?: string | 'root';
+
+  /** Keyword search (FTS with BM25 ranking) */
+  search?: string;
+
+  /** Regex pattern matching on slug/title/tldr/content */
+  regex?: string;
+
+  /** Maximum results (default: 50) */
+  limit?: number;
+
+  /** Pagination offset */
+  offset?: number;
+}
+
+/**
+ * Summary view of an artifact (for list responses).
+ */
+export interface ArtifactSummary {
+  slug: string;
+  type: ArtifactType;
+  title?: string;
+  tldr?: string;
+  status: ArtifactStatus;
+  path: string;
+  orderKey: string;
+  assignees: string[];
+  parentSlug?: string;
+}
+
+/**
+ * Tree node for hierarchical artifact views.
+ */
+export interface ArtifactTreeNode {
+  slug: string;
+  type: ArtifactType;
+  title?: string;
+  status: ArtifactStatus;
+  path: string;
+  orderKey: string;
+  assignees: string[];
+  children: ArtifactTreeNode[];
+}
+
+/**
+ * A named version snapshot of an artifact.
+ */
+export interface ArtifactVersion {
+  /** Artifact slug */
+  slug: string;
+
+  /** Channel ID */
+  channelId: string;
+
+  /** Version name (e.g., "v1.0", "draft-2") */
+  versionName: string;
+
+  /** Optional version message */
+  versionMessage?: string;
+
+  /** Snapshot of tldr at version time */
+  tldr: string;
+
+  /** Snapshot of content at version time */
+  content: string;
+
+  /** Who created this version */
+  versionCreatedBy: string;
+
+  /** ISO timestamp of version creation */
+  versionCreatedAt: string;
+}
+
+/**
+ * Input for creating a version checkpoint.
+ */
+export interface CreateArtifactVersionInput {
+  /** Version name (e.g., "v1.0") */
+  versionName: string;
+
+  /** Optional version message */
+  versionMessage?: string;
+
+  /** Who is creating this version */
+  createdBy: string;
+}
+
+// =============================================================================
+// Artifact Type Guards
+// =============================================================================
+
+export function isStoredArtifact(value: unknown): value is StoredArtifact {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as StoredArtifact).id === 'string' &&
+    typeof (value as StoredArtifact).channelId === 'string' &&
+    typeof (value as StoredArtifact).slug === 'string' &&
+    typeof (value as StoredArtifact).type === 'string'
+  );
+}
+
+export function isArtifactType(value: unknown): value is ArtifactType {
+  return (
+    typeof value === 'string' &&
+    [
+      'doc',
+      'task',
+      'code',
+      'decision',
+      'knowledgebase',
+      'system.mcp',
+      'system.agent',
+      'system.focus',
+      'system.playbook',
+    ].includes(value)
+  );
+}
+
+export function isArtifactStatus(value: unknown): value is ArtifactStatus {
+  return (
+    typeof value === 'string' &&
+    [
+      'draft',
+      'published',
+      'archived',
+      'pending',
+      'in_progress',
+      'done',
+      'blocked',
+    ].includes(value)
+  );
+}
+
+/**
+ * Get the default status for an artifact type.
+ */
+export function getDefaultArtifactStatus(type: ArtifactType): ArtifactStatus {
+  if (type === 'task') {
+    return 'pending';
+  }
+  if (type.startsWith('system.')) {
+    return 'published';
+  }
+  return 'draft';
+}
+
+/**
+ * Convert a slug to ltree path segment format.
+ * Hyphens become underscores (ltree doesn't allow hyphens).
+ */
+export function slugToPathSegment(slug: string): string {
+  return slug.replace(/-/g, '_').replace(/\./g, '_');
+}
+
+/**
+ * Convert an ltree path segment back to slug format.
+ * Note: This is lossy - can't distinguish original hyphens from underscores.
+ */
+export function pathSegmentToSlug(segment: string): string {
+  return segment.replace(/_/g, '-');
+}
+
+/**
+ * Extract [[slug]] references from content.
+ */
+export function extractRefs(content: string): string[] {
+  const regex = /\[\[([a-z0-9-]+(?:\.[a-z0-9]+)*)\]\]/g;
+  const refs: string[] = [];
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    if (!refs.includes(match[1])) {
+      refs.push(match[1]);
+    }
+  }
+  return refs;
+}
