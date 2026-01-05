@@ -130,6 +130,7 @@ export class DockerOrchestrator implements ContainerOrchestrator {
       '-e', `CAST_CHANNEL_ID=${options.channelId}`,
       '-e', `CAST_CALLSIGN=${options.callsign}`,
       '-e', `CAST_AUTH_TOKEN=${options.authToken}`,
+      '-e', `CAST_CALLBACK_HOST=host.docker.internal`,
       '-e', `THREAD_ID=${threadId}`,
       '-e', `IDLE_TIMEOUT_MS=${this.config.idleTimeoutMs}`,
       this.config.imageName,
