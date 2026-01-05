@@ -1,36 +1,35 @@
 /**
- * Claude Code Wrapper Server
+ * Claude Agent SDK Server
  *
  * HTTP server that receives messages from the orchestrator,
- * spawns Claude Code CLI, and streams output via Tymbal.
+ * uses the Claude Agent SDK for conversation, and streams output via Tymbal.
  *
  * Endpoints:
- * - POST /message - Send message to Claude Code
+ * - POST /message - Send message to Claude
  * - GET /health - Health check for ECS
  * - POST /shutdown - Graceful shutdown
+ *
+ * Phase 2: SDK integration (replaces CLI subprocess)
  */
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
-import { spawn, ChildProcess } from "node:child_process";
-import { createInterface } from "node:readline";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { networkInterfaces } from "node:os";
 import { IdleMonitor } from "./idle-monitor.js";
-import { TymbalBridge, type ClaudeCodeEvent } from "./tymbal-bridge.js";
+import { TymbalBridge } from "./tymbal-bridge.js";
+import { Pushable } from "./pushable.js";
+import {
+  query,
+  type Query,
+  type SDKMessage,
+  type SDKUserMessage,
+  type Options,
+  type McpServerConfig,
+} from "@anthropic-ai/claude-agent-sdk";
 
-// Inline types and converter from @cikada/mcp to avoid workspace dependency in Docker
-interface McpServerConfig {
-  type: "stdio" | "http";
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  cwd?: string;
-  url?: string;
-  headers?: Record<string, string>;
-}
-
+// Inline types for MCP config (avoid workspace dependency in Docker)
 interface ResolvedMcpConfig {
   slug: string;
   transport: "stdio" | "http";
@@ -42,19 +41,18 @@ interface ResolvedMcpConfig {
   headers?: Record<string, string>;
 }
 
-function convertToMcpServerConfig(resolved: ResolvedMcpConfig): McpServerConfig {
+function convertToSdkMcpConfig(resolved: ResolvedMcpConfig): McpServerConfig {
   if (resolved.transport === "stdio") {
     return {
       type: "stdio",
-      command: resolved.command,
+      command: resolved.command!,
       args: resolved.args,
       env: resolved.env,
-      cwd: resolved.cwd,
     };
   } else {
     return {
       type: "http",
-      url: resolved.url,
+      url: resolved.url!,
       headers: resolved.headers,
     };
   }
@@ -69,6 +67,9 @@ const CAST_CALLSIGN = process.env.CAST_CALLSIGN ?? "";
 const CAST_AUTH_TOKEN = process.env.CAST_AUTH_TOKEN ?? "";
 const WORKSPACE_BASE = process.env.WORKSPACE_DIR ?? "/workspace";
 const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS ?? String(10 * 60 * 1000), 10);
+
+// Model configuration
+const DEFAULT_MODEL = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-20250514";
 
 /**
  * Get the container's local IP address for callback URL.
@@ -92,11 +93,6 @@ function getLocalIp(): string {
 
 /**
  * Get the container's callback host for registration with Cast API.
- *
- * Priority:
- * 1. CAST_CALLBACK_HOST env var (for local Docker: "host.docker.internal")
- * 2. AWS public IP from checkip.amazonaws.com (for Fargate)
- * 3. Local IP fallback
  */
 async function getCallbackHost(): Promise<string> {
   // Allow explicit override for local Docker development
@@ -121,11 +117,7 @@ async function getCallbackHost(): Promise<string> {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Per-thread directory structure:
-// /workspace/threads/{threadId}/
-//   ├── project/     # Working directory for code
-//   ├── .claude/     # Claude Code session state
-//   └── mcp-config.json  # MCP server configuration
+// Per-thread directory structure
 function getThreadWorkspace(threadId: string): {
   root: string;
   project: string;
@@ -153,9 +145,6 @@ function ensureThreadWorkspace(threadId: string): ReturnType<typeof getThreadWor
     mkdirSync(workspace.project, { recursive: true });
   }
 
-  // .claude directory is created by Claude Code itself
-  // but we check for its existence to determine if we should use --continue
-
   return workspace;
 }
 
@@ -168,14 +157,9 @@ function hasExistingSession(threadId: string): boolean {
 }
 
 /**
- * Generate MCP config file for Claude Code.
- * This configures the artifact server with per-agent channel/callsign,
- * plus any additional MCPs resolved by the orchestrator.
+ * Build MCP server configurations for SDK.
  */
-function generateMcpConfig(
-  workspace: ReturnType<typeof getThreadWorkspace>,
-  resolvedMcps?: ResolvedMcpConfig[]
-): string | null {
+function buildMcpServers(resolvedMcps?: ResolvedMcpConfig[]): Record<string, McpServerConfig> {
   const mcpServers: Record<string, McpServerConfig> = {};
 
   // Add built-in cast-artifacts MCP via HTTP transport
@@ -188,36 +172,26 @@ function generateMcpConfig(
       },
     };
     console.log("[Server] Added cast-artifacts MCP (HTTP transport)");
-  } else {
-    console.log("[Server] cast-artifacts MCP disabled - missing CAST_API_URL, CAST_CHANNEL_ID, or CAST_AUTH_TOKEN");
   }
 
-  // Add resolved MCPs from orchestrator (already have env vars resolved)
+  // Add resolved MCPs from orchestrator
   if (resolvedMcps && resolvedMcps.length > 0) {
     for (const resolved of resolvedMcps) {
-      mcpServers[resolved.slug] = convertToMcpServerConfig(resolved);
+      mcpServers[resolved.slug] = convertToSdkMcpConfig(resolved);
       console.log(`[Server] Added resolved MCP: ${resolved.slug} (${resolved.transport})`);
     }
   }
 
-  // If no MCPs configured at all, skip config file
-  if (Object.keys(mcpServers).length === 0) {
-    console.log("[Server] No MCP servers configured");
-    return null;
-  }
-
-  const mcpConfig = { mcpServers };
-  writeFileSync(workspace.mcpConfig, JSON.stringify(mcpConfig, null, 2));
-  console.log(`[Server] Generated MCP config at ${workspace.mcpConfig} with ${Object.keys(mcpServers).length} server(s)`);
-
-  return workspace.mcpConfig;
+  return mcpServers;
 }
 
 // State
 let isProcessing = false;
 let isShuttingDown = false;
-let continueSession = false; // Set to true after first message OR if session exists on EFS
-let currentProcess: ChildProcess | null = null;
+let continueSession = false;
+let currentQuery: Query | null = null;
+let currentAbortController: AbortController | null = null;
+let currentInput: Pushable<SDKUserMessage> | null = null;
 
 // Message queue for handling messages while busy
 interface QueuedMessage {
@@ -238,9 +212,9 @@ const idleMonitor = new IdleMonitor({
 });
 
 /**
- * Spawn Claude Code CLI and stream output.
+ * Run Claude Agent SDK query and stream output.
  */
-async function runClaudeCode(
+async function runClaudeQuery(
   prompt: string,
   tymbalBridge: TymbalBridge,
   shouldContinue: boolean,
@@ -248,111 +222,96 @@ async function runClaudeCode(
   resolvedMcps?: ResolvedMcpConfig[],
   systemPrompt?: string
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // Ensure workspace directories exist
-    const workspace = ensureThreadWorkspace(threadId);
+  // Ensure workspace directories exist
+  const workspace = ensureThreadWorkspace(threadId);
 
-    // Generate MCP config for artifact tools + resolved MCPs from orchestrator
-    const mcpConfigPath = generateMcpConfig(workspace, resolvedMcps);
+  // Build MCP servers
+  const mcpServers = buildMcpServers(resolvedMcps);
 
-    // Build CLI arguments
-    // Note: --verbose is required when using --output-format stream-json
-    // --dangerously-skip-permissions + --permission-mode bypassPermissions = full sandbox mode
-    const args = [
-      "--print",
-      "--verbose",
-      "--output-format", "stream-json",
-      "--dangerously-skip-permissions",
-      "--permission-mode", "bypassPermissions",
-    ];
+  // Create abort controller for cancellation
+  const abortController = new AbortController();
+  currentAbortController = abortController;
 
-    // Add MCP config if available
-    if (mcpConfigPath) {
-      args.push("--mcp-config", mcpConfigPath);
-    }
+  // Create Pushable for mid-turn message injection (Phase 2: ready for future use)
+  const input = new Pushable<SDKUserMessage>();
+  currentInput = input;
 
-    // Add system prompt if provided (channel context, roster, @mention rules)
-    if (systemPrompt) {
-      args.push("--system-prompt", systemPrompt);
-      console.log(`[Server] Using system prompt (${systemPrompt.length} chars)`);
-    }
+  // Build SDK options
+  const options: Options = {
+    // Model selection
+    model: DEFAULT_MODEL,
 
-    if (shouldContinue) {
-      args.push("--continue");
-    }
+    // System prompt with Claude Code preset + channel context
+    systemPrompt: systemPrompt
+      ? {
+          type: "preset",
+          preset: "claude_code",
+          append: systemPrompt,
+        }
+      : {
+          type: "preset",
+          preset: "claude_code",
+        },
 
-    // Add the prompt with -- separator to prevent it from being parsed as flags
-    args.push("--", prompt);
+    // MCP servers
+    mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
 
-    console.log(`[Server] Spawning: claude ${args.join(" ")}`);
-    console.log(`[Server] Working directory: ${workspace.project}`);
-    console.log(`[Server] Claude config dir: ${workspace.claudeConfig}`);
+    // Permissions (container is sandboxed)
+    permissionMode: "bypassPermissions",
+    allowDangerouslySkipPermissions: true,
 
-    const proc = spawn("claude", args, {
-      cwd: workspace.project,
-      env: {
-        ...process.env,
-        // Ensure Claude Code uses the right API key
-        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-        // Set Claude config directory to per-thread path on EFS
-        // This is where Claude Code stores session state for --continue
-        CLAUDE_CONFIG_DIR: workspace.claudeConfig,
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    // Streaming - enable partial messages for Phase 3 readiness
+    includePartialMessages: true,
 
-    currentProcess = proc;
+    // Session management
+    continue: shouldContinue,
 
-    // Close stdin immediately since we pass prompt as argument
-    // Without this, Claude CLI waits for stdin EOF
-    proc.stdin?.end();
+    // Working directory
+    cwd: workspace.project,
 
-    // Parse JSON lines from stdout
-    const rl = createInterface({
-      input: proc.stdout,
-      crlfDelay: Infinity,
-    });
+    // Environment - set Claude config directory for session persistence
+    env: {
+      ...process.env,
+      CLAUDE_CONFIG_DIR: workspace.claudeConfig,
+    },
 
-    rl.on("line", async (line) => {
+    // Abort controller for cancellation
+    abortController,
+  };
+
+  console.log(`[Server] Starting SDK query for thread ${threadId}`);
+  console.log(`[Server] Model: ${DEFAULT_MODEL}`);
+  console.log(`[Server] Working directory: ${workspace.project}`);
+  console.log(`[Server] Continue session: ${shouldContinue}`);
+  console.log(`[Server] MCP servers: ${Object.keys(mcpServers).join(", ") || "(none)"}`);
+
+  try {
+    // Start the query with the initial prompt
+    const q = query({ prompt, options });
+    currentQuery = q;
+
+    // Process SDK messages and emit Tymbal frames
+    for await (const message of q) {
       idleMonitor.touch();
+      await tymbalBridge.processSDKMessage(message);
+    }
 
-      if (!line.trim()) return;
+    // Finalize any pending messages
+    await tymbalBridge.finalize();
 
-      try {
-        const event = JSON.parse(line) as ClaudeCodeEvent;
-        // Debug: log all event types
-        console.log(`[Server] Claude event type: ${event.type}`);
-        await tymbalBridge.processEvent(event);
-      } catch (error) {
-        console.error(`[Server] Failed to parse Claude output: ${line}`);
-      }
-    });
+    console.log(`[Server] Query completed for thread ${threadId}`);
+  } catch (error) {
+    console.error(`[Server] SDK query error:`, error);
 
-    // Capture stderr for debugging
-    let stderr = "";
-    proc.stderr.on("data", (data) => {
-      stderr += data.toString();
-      console.error(`[Claude stderr] ${data.toString().trim()}`);
-    });
-
-    proc.on("close", async (code) => {
-      currentProcess = null;
-
-      if (code === 0) {
-        await tymbalBridge.finalize();
-        resolve();
-      } else {
-        console.error(`[Server] Claude exited with code ${code}`);
-        reject(new Error(`Claude exited with code ${code}: ${stderr}`));
-      }
-    });
-
-    proc.on("error", (error) => {
-      currentProcess = null;
-      console.error(`[Server] Failed to spawn Claude:`, error);
-      reject(error);
-    });
-  });
+    // Emit error frame
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    // The bridge will handle error emission in handleResult
+    throw error;
+  } finally {
+    currentQuery = null;
+    currentAbortController = null;
+    currentInput = null;
+  }
 }
 
 /**
@@ -382,58 +341,62 @@ function sendJson(res: ServerResponse, status: number, data: unknown): void {
 }
 
 /**
- * Process a single message through Claude Code.
- * Called for both immediate messages and queued messages.
+ * Parse threadId format (spaceId:channelId:callsign) to extract channelId.
+ * Falls back to full threadId if not in expected format.
+ */
+function parseChannelId(threadId: string): string {
+  const parts = threadId.split(":");
+  // Format: spaceId:channelId:callsign
+  if (parts.length >= 2) {
+    return parts[1];
+  }
+  return threadId;
+}
+
+/**
+ * Process a single message through Claude SDK.
  */
 async function processMessage(message: QueuedMessage): Promise<void> {
   const { content, threadId, resolvedMcps, systemPrompt } = message;
 
+  // Extract channelId from threadId (format: spaceId:channelId:callsign)
+  const channelId = parseChannelId(threadId);
+
   // Create Tymbal bridge for this conversation
-  // Pass callsign so frames include correct sender for routing
   const tymbalBridge = new TymbalBridge({
-    cikadaApiUrl: CAST_API_URL,
-    threadId,
+    serverUrl: CAST_API_URL,
+    channelId,
     callsign: CAST_CALLSIGN || undefined,
+    authToken: CAST_AUTH_TOKEN || undefined,
   });
 
-  // Check if we should use --continue:
-  // 1. If we've already processed a message in this container session
-  // 2. OR if a previous session exists on EFS (container restart resume)
+  // Check if we should use --continue
   const shouldContinue = continueSession || hasExistingSession(threadId);
 
   console.log(`[Server] Processing message for thread ${threadId}`);
-  console.log(`[Server] Continue session: ${shouldContinue} (in-memory: ${continueSession}, EFS session exists: ${hasExistingSession(threadId)})`);
+  console.log(`[Server] Continue session: ${shouldContinue}`);
 
   try {
-    // Run Claude Code CLI with any resolved MCPs and system prompt from the orchestrator
-    await runClaudeCode(content, tymbalBridge, shouldContinue, threadId, resolvedMcps, systemPrompt);
+    await runClaudeQuery(content, tymbalBridge, shouldContinue, threadId, resolvedMcps, systemPrompt);
 
-    // Mark that we should continue for subsequent messages in this container
+    // Mark that we should continue for subsequent messages
     continueSession = true;
 
     console.log(`[Server] Completed processing for thread ${threadId}`);
   } catch (error) {
     console.error(`[Server] Error processing message:`, error);
-
-    // Emit error via Tymbal
-    await tymbalBridge.processEvent({
-      type: "error",
-      error: {
-        message: error instanceof Error ? error.message : "Unknown error",
-      },
-    });
+    // Error handling is done in the bridge
   }
 }
 
 /**
  * Process the message queue.
- * Called after each message completes to check for queued messages.
  */
 async function processQueue(): Promise<void> {
   while (messageQueue.length > 0 && !isShuttingDown) {
     const nextMessage = messageQueue.shift();
     if (nextMessage) {
-      console.log(`[Server] Processing queued message (${messageQueue.length} remaining in queue)`);
+      console.log(`[Server] Processing queued message (${messageQueue.length} remaining)`);
       await processMessage(nextMessage);
     }
   }
@@ -442,8 +405,7 @@ async function processQueue(): Promise<void> {
 }
 
 /**
- * Handle POST /message - Send message to Claude Code.
- * If busy, messages are queued and processed in order.
+ * Handle POST /message - Send message to Claude.
  */
 async function handleMessage(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (isShuttingDown) {
@@ -458,7 +420,7 @@ async function handleMessage(req: IncomingMessage, res: ServerResponse): Promise
       sendJson(res, 401, { error: "Missing or invalid Authorization header" });
       return;
     }
-    const token = authHeader.slice(7); // Remove "Bearer " prefix
+    const token = authHeader.slice(7);
     if (token !== CAST_AUTH_TOKEN) {
       sendJson(res, 401, { error: "Invalid auth token" });
       return;
@@ -469,8 +431,8 @@ async function handleMessage(req: IncomingMessage, res: ServerResponse): Promise
   interface MessageRequest {
     content: string;
     threadId?: string;
-    resolvedMcps?: ResolvedMcpConfig[];  // Pre-resolved MCP configs from orchestrator
-    systemPrompt?: string;  // System prompt with channel context, roster, @mention rules
+    resolvedMcps?: ResolvedMcpConfig[];
+    systemPrompt?: string;
   }
 
   let body: MessageRequest;
@@ -535,6 +497,8 @@ function handleHealth(_req: IncomingMessage, res: ServerResponse): void {
     workspace: workspace?.project ?? null,
     uptime: process.uptime(),
     queueLength: messageQueue.length,
+    model: DEFAULT_MODEL,
+    sdkVersion: "phase-2",
   };
 
   const statusCode = isShuttingDown ? 503 : 200;
@@ -551,10 +515,8 @@ async function handleShutdown(_req: IncomingMessage, res: ServerResponse): Promi
 
 /**
  * Register this container with the Cast API.
- * Called on startup to provide our callback URL for message delivery.
  */
 async function checkin(): Promise<void> {
-  // Skip checkin if not configured
   if (!CAST_API_URL || !CAST_CHANNEL_ID || !CAST_CALLSIGN) {
     console.log("[Server] Checkin skipped - missing CAST_API_URL, CAST_CHANNEL_ID, or CAST_CALLSIGN");
     return;
@@ -573,7 +535,7 @@ async function checkin(): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(CAST_AUTH_TOKEN ? { "Authorization": `Bearer ${CAST_AUTH_TOKEN}` } : {}),
+        ...(CAST_AUTH_TOKEN ? { Authorization: `Bearer ${CAST_AUTH_TOKEN}` } : {}),
       },
       body: JSON.stringify({
         channelId: CAST_CHANNEL_ID,
@@ -585,14 +547,12 @@ async function checkin(): Promise<void> {
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`[Server] Checkin failed: ${response.status} ${errorText}`);
-      // Don't throw - container can still receive messages if orchestrator knows our IP
       return;
     }
 
     console.log("[Server] Checkin successful, waiting for messages...");
   } catch (error) {
     console.error("[Server] Checkin error:", error);
-    // Don't throw - container can still function without successful checkin
   }
 }
 
@@ -607,6 +567,17 @@ async function gracefulShutdown(): Promise<void> {
 
   // Stop idle monitor
   idleMonitor.stop();
+
+  // Interrupt current query if running
+  if (currentAbortController) {
+    console.log("[Server] Interrupting current query...");
+    currentAbortController.abort();
+  }
+
+  // End any pending input stream
+  if (currentInput) {
+    currentInput.end();
+  }
 
   // Wait for current processing to complete (up to 30 seconds)
   const maxWait = 30_000;
@@ -679,7 +650,9 @@ if (!CAST_API_URL) {
 
 // Start server
 server.listen(PORT, () => {
-  console.log(`[Server] Claude Code wrapper listening on port ${PORT}`);
+  console.log(`[Server] Claude Agent SDK server listening on port ${PORT}`);
+  console.log(`[Server] SDK Version: Phase 2`);
+  console.log(`[Server] Model: ${DEFAULT_MODEL}`);
   console.log(`[Server] Thread ID: ${THREAD_ID || "(not set)"}`);
   console.log(`[Server] Workspace base: ${WORKSPACE_BASE}`);
   console.log(`[Server] Idle timeout: ${IDLE_TIMEOUT_MS / 1000}s`);
@@ -691,21 +664,21 @@ server.listen(PORT, () => {
     console.log(`[Server]   URL: ${CAST_API_URL}/mcp/${CAST_CHANNEL_ID}`);
   }
 
-  // Check for existing session on EFS (for resume after container restart)
+  // Check for existing session on EFS
   if (THREAD_ID) {
     const workspace = getThreadWorkspace(THREAD_ID);
     const hasSession = hasExistingSession(THREAD_ID);
     console.log(`[Server] Thread workspace: ${workspace.project}`);
     console.log(`[Server] Existing EFS session: ${hasSession}`);
     if (hasSession) {
-      console.log(`[Server] Will use --continue for session resume`);
+      console.log(`[Server] Will use continue: true for session resume`);
     }
   }
 
   // Start idle monitor
   idleMonitor.start();
 
-  // Register with Cast API (fire-and-forget, don't block startup)
+  // Register with Cast API
   checkin().catch((err) => {
     console.error("[Server] Checkin failed:", err);
   });

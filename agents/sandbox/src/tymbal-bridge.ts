@@ -1,18 +1,32 @@
 /**
- * Tymbal Bridge
+ * Tymbal Bridge (SDK Version)
  *
- * Translates Claude Code CLI JSON output events to Tymbal protocol frames
- * and streams them to the Cikada API.
+ * Translates Claude Agent SDK messages to Tymbal protocol frames
+ * and streams them to the Cast server via HTTP POST.
  *
- * Claude Code --output-format stream-json emits JSON lines like:
- * - {"type":"assistant","message":{"content":[{"type":"text","text":"..."}]}}
- * - {"type":"tool_use","tool_use_id":"...","name":"Read","input":{...}}
- * - {"type":"tool_result","tool_use_id":"...","content":"...","is_error":false}
- * - {"type":"result","result":"..."}
- * - {"type":"error","error":{"message":"..."}}
+ * SDK Message Types:
+ * - SDKSystemMessage: Init with session_id, model, tools (not emitted)
+ * - SDKAssistantMessage: Full assistant response with content blocks
+ * - SDKPartialAssistantMessage: Streaming deltas (logged, not emitted in Phase 2)
+ * - SDKUserMessage: User/tool result messages (tool_result blocks emitted)
+ * - SDKResultMessage: Conversation turn complete
+ *
+ * Phase 2 Frame Flow (no streaming):
+ * - Start frame on first partial message
+ * - Set frame on full assistant message
+ * - No append frames (deferred to Phase 3 due to HTTP ordering concerns)
  */
 
-// Content block types from Claude Code CLI
+import type {
+  SDKMessage,
+  SDKSystemMessage,
+  SDKAssistantMessage,
+  SDKPartialAssistantMessage,
+  SDKUserMessage,
+  SDKResultMessage,
+} from "@anthropic-ai/claude-agent-sdk";
+
+// Content block types from Anthropic API
 interface TextBlock {
   type: "text";
   text: string;
@@ -28,315 +42,284 @@ interface ToolUseBlock {
 interface ToolResultBlock {
   type: "tool_result";
   tool_use_id: string;
-  content: unknown;
+  content?: unknown;
   is_error?: boolean;
 }
 
 type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | { type: string };
 
-// Claude Code CLI event types (from --output-format stream-json)
-export interface ClaudeCodeEvent {
-  type: "assistant" | "user" | "tool_use" | "tool_result" | "result" | "error" | "system";
-  // Assistant or user message
-  message?: {
-    content: ContentBlock[];
-  };
-  // Tool use (legacy format)
-  tool_use_id?: string;
-  name?: string;
-  input?: Record<string, unknown>;
-  // Tool result (legacy format)
-  content?: unknown;
-  is_error?: boolean;
-  // Result
-  result?: unknown;
-  // Error
-  error?: {
-    message: string;
-  };
-}
+// ULID generation (Crockford's Base32, 26 characters)
+// Format: 10 chars timestamp + 16 chars randomness
+const ENCODING = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"; // Crockford's Base32
 
-// ULID-like ID generation (simplified for container use)
 function generateId(): string {
-  const timestamp = Date.now().toString(36).padStart(10, "0");
-  const random = Math.random().toString(36).substring(2, 10);
-  return `${timestamp}${random}`.toUpperCase();
+  const now = Date.now();
+
+  // Encode timestamp (48 bits -> 10 chars)
+  let timestamp = "";
+  let t = now;
+  for (let i = 0; i < 10; i++) {
+    timestamp = ENCODING[t % 32] + timestamp;
+    t = Math.floor(t / 32);
+  }
+
+  // Generate randomness (80 bits -> 16 chars)
+  let random = "";
+  for (let i = 0; i < 16; i++) {
+    random += ENCODING[Math.floor(Math.random() * 32)];
+  }
+
+  return timestamp + random;
 }
 
 export interface TymbalBridgeConfig {
-  cikadaApiUrl: string;
-  threadId: string;
+  serverUrl: string;
+  channelId: string;
   /** Agent callsign for sender attribution in frames */
   callsign?: string;
+  /** Container auth token for Tymbal POSTs */
+  authToken?: string;
 }
 
 export interface TymbalFrame {
   i: string; // Message ID
   t?: string; // Timestamp (for set frames)
   m?: Record<string, unknown>; // Metadata (for start frames)
-  a?: string; // Append content
+  a?: string; // Append content (Phase 3)
   v?: unknown; // Set value (or null for delete)
 }
 
 export class TymbalBridge {
-  private readonly apiUrl: string;
-  private readonly threadId: string;
+  private readonly serverUrl: string;
+  private readonly channelId: string;
   private readonly callsign: string;
+  private readonly authToken: string | null;
+
+  // Session state
+  private sessionId: string | null = null;
+
+  // Current message tracking
   private currentAssistantMsgId: string | null = null;
-  private currentToolCallId: string | null = null;
   private assistantContent: string = "";
+  private startFrameEmitted: boolean = false;
 
   constructor(config: TymbalBridgeConfig) {
-    this.apiUrl = config.cikadaApiUrl;
-    this.threadId = config.threadId;
+    this.serverUrl = config.serverUrl;
+    this.channelId = config.channelId;
     this.callsign = config.callsign ?? "claude-code";
+    this.authToken = config.authToken ?? null;
   }
 
   /**
-   * Process a Claude Code CLI event and emit appropriate Tymbal frames.
+   * Get the session ID (available after processing SDKSystemMessage).
    */
-  async processEvent(event: ClaudeCodeEvent): Promise<void> {
-    if (event.type === "assistant") {
-      await this.handleAssistant(event);
-    } else if (event.type === "user") {
-      await this.handleUser(event);
-    } else if (event.type === "tool_use") {
-      // Legacy format - tool_use as top-level event
-      await this.handleToolUse(event);
-    } else if (event.type === "tool_result") {
-      // Legacy format - tool_result as top-level event
-      await this.handleToolResult(event);
-    } else if (event.type === "result") {
-      await this.handleResult(event);
-    } else if (event.type === "error") {
-      await this.handleError(event);
-    } else if (event.type === "system") {
-      // Ignore system events
-    } else {
-      console.log(`[TymbalBridge] Unknown event type: ${(event as ClaudeCodeEvent).type}`);
+  getSessionId(): string | null {
+    return this.sessionId;
+  }
+
+  /**
+   * Process an SDK message and emit appropriate Tymbal frames.
+   */
+  async processSDKMessage(message: SDKMessage): Promise<void> {
+    switch (message.type) {
+      case "system":
+        await this.handleSystem(message as SDKSystemMessage);
+        break;
+
+      case "assistant":
+        await this.handleAssistant(message as SDKAssistantMessage);
+        break;
+
+      case "stream_event":
+        await this.handlePartialAssistant(message as SDKPartialAssistantMessage);
+        break;
+
+      case "user":
+        await this.handleUser(message as SDKUserMessage);
+        break;
+
+      case "result":
+        await this.handleResult(message as SDKResultMessage);
+        break;
+
+      case "tool_progress":
+        // Phase 3: Tool progress events
+        console.log(`[TymbalBridge] Tool progress: ${JSON.stringify(message)}`);
+        break;
+
+      default:
+        console.log(`[TymbalBridge] Unhandled message type: ${(message as SDKMessage).type}`);
     }
   }
 
   /**
-   * Handle assistant events - extract text and tool_use blocks.
-   * Tool use blocks are embedded in assistant message content.
+   * Handle system init message - store session_id.
    */
-  private async handleAssistant(event: ClaudeCodeEvent): Promise<void> {
-    const content = event.message?.content;
+  private async handleSystem(message: SDKSystemMessage): Promise<void> {
+    if (message.subtype === "init") {
+      this.sessionId = message.session_id;
+      console.log(`[TymbalBridge] Session initialized: ${this.sessionId}`);
+      console.log(`[TymbalBridge] Model: ${message.model}`);
+      console.log(`[TymbalBridge] Tools: ${message.tools.join(", ")}`);
+    }
+  }
+
+  /**
+   * Handle partial assistant message (streaming).
+   * Phase 2: Log only, don't emit append frames.
+   */
+  private async handlePartialAssistant(message: SDKPartialAssistantMessage): Promise<void> {
+    const event = message.event;
+
+    // Handle content_block_start - emit start frame
+    if (event.type === "content_block_start") {
+      if (!this.currentAssistantMsgId) {
+        this.currentAssistantMsgId = generateId();
+        this.assistantContent = "";
+        this.startFrameEmitted = false;
+      }
+
+      // Emit start frame on first content block
+      if (!this.startFrameEmitted) {
+        await this.emitFrame({
+          i: this.currentAssistantMsgId,
+          m: { type: "agent", sender: this.callsign, senderType: "agent" },
+        });
+        this.startFrameEmitted = true;
+      }
+    }
+
+    // Handle content_block_delta - accumulate content (no append in Phase 2)
+    if (event.type === "content_block_delta") {
+      const delta = event.delta;
+      if (delta && "type" in delta && delta.type === "text_delta" && "text" in delta) {
+        this.assistantContent += (delta as { text: string }).text;
+        // Phase 2: Log but don't emit append frames
+        // console.log(`[TymbalBridge] Delta: ${(delta as { text: string }).text}`);
+      }
+    }
+  }
+
+  /**
+   * Handle full assistant message - extract text and tool_use blocks.
+   */
+  private async handleAssistant(message: SDKAssistantMessage): Promise<void> {
+    const content = message.message.content as ContentBlock[];
     if (!content) return;
 
-    // Process each content block
+    // Extract text content
+    let textContent = "";
+    const toolUseBlocks: ToolUseBlock[] = [];
+
     for (const block of content) {
       if (block.type === "text" && "text" in block) {
-        // Handle text content - stream incrementally
-        const textBlock = block as TextBlock;
-        const newText = textBlock.text;
-
-        if (newText.length > this.assistantContent.length) {
-          const delta = newText.substring(this.assistantContent.length);
-
-          // Generate ID upfront to ensure it's never null for append
-          // This prevents race conditions where finalizeAssistantMessage()
-          // could reset the ID between start and append frames
-          const msgId = this.currentAssistantMsgId ?? generateId();
-          const needsStart = !this.currentAssistantMsgId;
-          this.currentAssistantMsgId = msgId;
-
-          // Start frame (if this is a new message)
-          if (needsStart) {
-            await this.emitFrame({
-              i: msgId,
-              m: { type: "agent", sender: this.callsign, senderType: "agent" },
-            });
-          }
-
-          // Append delta - msgId is guaranteed non-null
-          await this.emitFrame({
-            i: msgId,
-            a: delta,
-          });
-
-          this.assistantContent = newText;
-        }
+        textContent += (block as TextBlock).text;
       } else if (block.type === "tool_use" && "id" in block && "name" in block) {
-        // Handle embedded tool_use blocks
-        const toolBlock = block as ToolUseBlock;
+        toolUseBlocks.push(block as ToolUseBlock);
+      }
+    }
 
-        // Finalize any pending assistant message first
-        await this.finalizeAssistantMessage();
+    // Emit set frame for text content
+    if (textContent) {
+      const msgId = this.currentAssistantMsgId ?? generateId();
 
-        const toolCallId = generateId();
-        this.currentToolCallId = toolCallId;
-
+      // Emit start frame if not already done
+      if (!this.startFrameEmitted) {
         await this.emitFrame({
-          i: toolCallId,
-          t: new Date().toISOString(),
-          v: {
-            type: "tool_call",
-            sender: this.callsign,
-            senderType: "agent",
-            toolCallId: toolBlock.id,
-            name: toolBlock.name,
-            args: toolBlock.input,
-          },
+          i: msgId,
+          m: { type: "agent", sender: this.callsign, senderType: "agent" },
         });
       }
+
+      // Emit set frame with full content
+      await this.emitFrame({
+        i: msgId,
+        t: new Date().toISOString(),
+        v: {
+          type: "agent",
+          sender: this.callsign,
+          senderType: "agent",
+          content: textContent,
+        },
+      });
+
+      // Reset state
+      this.currentAssistantMsgId = null;
+      this.assistantContent = "";
+      this.startFrameEmitted = false;
+    }
+
+    // Emit tool_call frames for each tool use
+    for (const toolBlock of toolUseBlocks) {
+      const toolCallId = generateId();
+      await this.emitFrame({
+        i: toolCallId,
+        t: new Date().toISOString(),
+        v: {
+          type: "tool_call",
+          sender: this.callsign,
+          senderType: "agent",
+          toolCallId: toolBlock.id,
+          name: toolBlock.name,
+          args: toolBlock.input,
+        },
+      });
     }
   }
 
   /**
-   * Handle user events - extract tool_result blocks.
-   * Tool results are embedded in user message content.
+   * Handle user message - extract tool_result blocks.
    */
-  private async handleUser(event: ClaudeCodeEvent): Promise<void> {
-    const content = event.message?.content;
-    if (!content) return;
+  private async handleUser(message: SDKUserMessage): Promise<void> {
+    const apiMessage = message.message;
+    const content = apiMessage.content;
+
+    if (!Array.isArray(content)) return;
 
     for (const block of content) {
-      if (block.type === "tool_result" && "tool_use_id" in block) {
-        const resultBlock = block as ToolResultBlock;
-        const resultId = generateId();
+      if (typeof block === "object" && block !== null && "type" in block) {
+        const typedBlock = block as ContentBlock;
+        if (typedBlock.type === "tool_result" && "tool_use_id" in typedBlock) {
+          const resultBlock = typedBlock as ToolResultBlock;
+          const resultId = generateId();
 
-        // Determine result status and content
-        const isError = resultBlock.is_error ?? false;
-        let resultContent: unknown = resultBlock.content;
+          // Determine result status and content
+          const isError = resultBlock.is_error ?? false;
+          let resultContent: unknown = resultBlock.content;
 
-        // Extract text content if it's an array
-        if (Array.isArray(resultContent)) {
-          resultContent = resultContent
-            .filter((item): item is { type: "text"; text: string } =>
-              typeof item === "object" && item !== null && item.type === "text"
-            )
-            .map((item) => item.text)
-            .join("\n");
+          // Extract text content if it's an array
+          if (Array.isArray(resultContent)) {
+            resultContent = resultContent
+              .filter(
+                (item): item is { type: "text"; text: string } =>
+                  typeof item === "object" && item !== null && item.type === "text"
+              )
+              .map((item) => item.text)
+              .join("\n");
+          }
+
+          await this.emitFrame({
+            i: resultId,
+            t: new Date().toISOString(),
+            v: {
+              type: "tool_result",
+              sender: this.callsign,
+              senderType: "agent",
+              toolCallId: resultBlock.tool_use_id,
+              content: resultContent,
+              isError,
+            },
+          });
         }
-
-        await this.emitFrame({
-          i: resultId,
-          t: new Date().toISOString(),
-          v: {
-            type: "tool_result",
-            sender: this.callsign,
-            senderType: "agent",
-            toolCallId: resultBlock.tool_use_id,
-            content: resultContent,
-            isError,
-          },
-        });
       }
     }
   }
 
   /**
-   * Handle tool use events - emit tool_call frame.
+   * Handle result message - emit idle frame.
    */
-  private async handleToolUse(event: ClaudeCodeEvent): Promise<void> {
+  private async handleResult(message: SDKResultMessage): Promise<void> {
     // Finalize any pending assistant message
-    await this.finalizeAssistantMessage();
-
-    const toolCallId = generateId();
-    this.currentToolCallId = toolCallId;
-
-    await this.emitFrame({
-      i: toolCallId,
-      t: new Date().toISOString(),
-      v: {
-        type: "tool_call",
-        sender: this.callsign,
-        senderType: "agent",
-        toolCallId: event.tool_use_id,
-        name: event.name,
-        args: event.input,
-      },
-    });
-  }
-
-  /**
-   * Handle tool result events - emit tool_result frame.
-   */
-  private async handleToolResult(event: ClaudeCodeEvent): Promise<void> {
-    const resultId = generateId();
-
-    // Determine result status and content
-    const isError = event.is_error ?? false;
-    let content: unknown = event.content;
-
-    // Extract text content if it's an array
-    if (Array.isArray(content)) {
-      content = content
-        .filter((block): block is { type: "text"; text: string } =>
-          typeof block === "object" && block !== null && block.type === "text"
-        )
-        .map((block) => block.text)
-        .join("\n");
-    }
-
-    await this.emitFrame({
-      i: resultId,
-      t: new Date().toISOString(),
-      v: {
-        type: "tool_result",
-        sender: this.callsign,
-        senderType: "agent",
-        toolCallId: event.tool_use_id,
-        name: event.name,
-        content,
-        isError,
-      },
-    });
-  }
-
-  /**
-   * Handle completion result.
-   */
-  private async handleResult(event: ClaudeCodeEvent): Promise<void> {
-    // Finalize any pending assistant message
-    await this.finalizeAssistantMessage();
-
-    const idleId = generateId();
-    await this.emitFrame({
-      i: idleId,
-      t: new Date().toISOString(),
-      v: {
-        type: "idle",
-        sender: this.callsign,
-      },
-    });
-  }
-
-  /**
-   * Handle error events.
-   */
-  private async handleError(event: ClaudeCodeEvent): Promise<void> {
-    // Emit error message first
-    const errorId = generateId();
-    await this.emitFrame({
-      i: errorId,
-      t: new Date().toISOString(),
-      v: {
-        type: "error",
-        sender: this.callsign,
-        senderType: "agent",
-        message: event.error?.message ?? "Unknown error",
-      },
-    });
-
-    // Then emit idle to signal we're done
-    const idleId = generateId();
-    await this.emitFrame({
-      i: idleId,
-      t: new Date().toISOString(),
-      v: {
-        type: "idle",
-        sender: this.callsign,
-      },
-    });
-  }
-
-  /**
-   * Finalize pending assistant message with set frame.
-   */
-  private async finalizeAssistantMessage(): Promise<void> {
     if (this.currentAssistantMsgId && this.assistantContent) {
       await this.emitFrame({
         i: this.currentAssistantMsgId,
@@ -348,33 +331,87 @@ export class TymbalBridge {
           content: this.assistantContent,
         },
       });
+      this.currentAssistantMsgId = null;
+      this.assistantContent = "";
+      this.startFrameEmitted = false;
     }
 
-    // Reset state
-    this.currentAssistantMsgId = null;
-    this.assistantContent = "";
+    // Check for errors
+    if (message.subtype !== "success") {
+      const errorMsg = message as { errors?: string[] };
+      const errorMessage = errorMsg.errors?.join(", ") ?? `Error: ${message.subtype}`;
+
+      const errorId = generateId();
+      await this.emitFrame({
+        i: errorId,
+        t: new Date().toISOString(),
+        v: {
+          type: "error",
+          sender: this.callsign,
+          senderType: "agent",
+          message: errorMessage,
+        },
+      });
+    }
+
+    // Emit idle frame
+    const idleId = generateId();
+    await this.emitFrame({
+      i: idleId,
+      t: new Date().toISOString(),
+      v: {
+        type: "idle",
+        sender: this.callsign,
+      },
+    });
+
+    // Log usage stats
+    if (message.subtype === "success") {
+      console.log(`[TymbalBridge] Turn complete: ${message.num_turns} turns, $${message.total_cost_usd.toFixed(4)}`);
+    }
   }
 
   /**
-   * Finalize any pending messages (call at end of conversation turn).
+   * Finalize any pending messages (call at end of conversation).
    */
   async finalize(): Promise<void> {
-    await this.finalizeAssistantMessage();
+    if (this.currentAssistantMsgId && this.assistantContent) {
+      await this.emitFrame({
+        i: this.currentAssistantMsgId,
+        t: new Date().toISOString(),
+        v: {
+          type: "agent",
+          sender: this.callsign,
+          senderType: "agent",
+          content: this.assistantContent,
+        },
+      });
+      this.currentAssistantMsgId = null;
+      this.assistantContent = "";
+      this.startFrameEmitted = false;
+    }
   }
 
   /**
-   * Emit a Tymbal frame to the Cikada API.
+   * Emit a Tymbal frame to the server via HTTP POST.
    */
   private async emitFrame(frame: TymbalFrame): Promise<void> {
     const frameJson = JSON.stringify(frame);
     console.log(`[Tymbal] ${frameJson}`);
 
     try {
-      const response = await fetch(`${this.apiUrl}/thread/${this.threadId}/tymbal`, {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      // Add container auth if available
+      if (this.authToken) {
+        headers["Authorization"] = `Container ${this.authToken}`;
+      }
+
+      const response = await fetch(`${this.serverUrl}/tymbal/${this.channelId}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: frameJson,
       });
 

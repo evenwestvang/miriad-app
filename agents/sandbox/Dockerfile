@@ -1,5 +1,6 @@
-# Claude Code Fargate Container
-# Runs Claude Code CLI with a wrapper server for HTTP communication
+# Claude Agent SDK Container
+# Uses Claude Agent SDK directly (replaces CLI subprocess approach)
+# Phase 2 implementation
 
 FROM node:20-bullseye
 
@@ -15,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code CLI globally
+# Install Claude Code CLI globally (SDK requires CLI to be available)
 RUN npm install -g @anthropic-ai/claude-code
 
 # Create workspace directory (will be mounted from EFS)
@@ -29,7 +30,9 @@ WORKDIR /app
 COPY dist/ ./dist/
 
 # Install runtime dependencies directly (avoiding workspace:* resolution)
+# Note: @anthropic-ai/claude-agent-sdk is the SDK (not CLI)
 RUN npm install --no-save \
+    @anthropic-ai/claude-agent-sdk@^0.1.76 \
     @aws-sdk/client-apigatewaymanagementapi@^3.958.0 \
     @aws-sdk/client-dynamodb@^3.450.0 \
     @aws-sdk/client-ecs@^3.450.0 \
