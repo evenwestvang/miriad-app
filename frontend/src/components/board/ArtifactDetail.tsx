@@ -20,6 +20,7 @@ import type { Artifact, ArtifactStatus, ArtifactTreeNode } from '../../types/art
 import { McpPropsEditor, type McpProps } from './McpPropsEditor'
 import { AgentPropsEditor, type AgentProps } from './AgentPropsEditor'
 import { FocusPropsEditor, type FocusProps } from './FocusPropsEditor'
+import { SpaRenderer, isSpaArtifact } from './SpaRenderer'
 
 // =============================================================================
 // Types
@@ -164,7 +165,8 @@ export function ArtifactDetail({
   const assetUrl = `${apiHost}/channels/${channelId}/assets/${artifact.slug}`
 
   // Code detection
-  const isCodeArtifact = artifact.type === 'code' || hasCodeExtension(artifact.slug)
+  const isInteractiveApp = artifact.type === 'code' && isSpaArtifact(artifact.slug)
+  const isCodeArtifact = (artifact.type === 'code' || hasCodeExtension(artifact.slug)) && !isInteractiveApp
   const codeLanguage = getLanguageFromSlug(artifact.slug)
 
   // Get available parent options
@@ -602,7 +604,7 @@ export function ArtifactDetail({
       )}
 
       {/* Content area */}
-      <div className="flex-1 overflow-y-auto">
+      <div className={cn("flex-1", isInteractiveApp ? "overflow-hidden" : "overflow-y-auto")}>
         {isEditing ? (
           <div className="h-full p-3">
             <textarea
@@ -614,6 +616,14 @@ export function ArtifactDetail({
                 "focus:outline-none focus:ring-1 focus:ring-primary resize-none",
                 isCodeArtifact && "font-mono"
               )}
+            />
+          </div>
+        ) : isInteractiveApp ? (
+          <div className="h-full p-2">
+            <SpaRenderer
+              content={artifact.content}
+              channel={channelId}
+              slug={artifact.slug}
             />
           </div>
         ) : isAsset ? (

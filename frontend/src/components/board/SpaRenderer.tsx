@@ -6,8 +6,9 @@
  *
  * Ported from legacy-pow-pow with adaptations for cast-app.
  */
-import { useEffect, useRef, useState } from 'react'
-import { Play, Square, AlertTriangle, RefreshCw } from 'lucide-react'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { Play, Square, AlertTriangle, RefreshCw, Maximize2, X } from 'lucide-react'
+import { createPortal } from 'react-dom'
 
 interface SpaRendererProps {
   /** JavaScript content of the .app.js artifact */
@@ -34,14 +35,19 @@ interface AppModule {
 }
 
 export function SpaRenderer({ content, channel, slug }: SpaRendererProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  const inlineContainerRef = useRef<HTMLDivElement>(null)
+  const fullscreenContainerRef = useRef<HTMLDivElement>(null)
   const appRef = useRef<AppModule | null>(null)
   const loopsRef = useRef<Set<number>>(new Set())
   const [running, setRunning] = useState(false)
   const [stopped, setStopped] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const hasAutoRun = useRef(false)
+
+  // Get the active container based on fullscreen state
+  const containerRef = isFullscreen ? fullscreenContainerRef : inlineContainerRef
 
   // Shared runtime context - dimensions updated on resize
   const ctxRef = useRef<RuntimeContext | null>(null)
@@ -66,25 +72,54 @@ export function SpaRenderer({ content, channel, slug }: SpaRendererProps) {
     }
   }
 
-  // Track container dimensions and update ctx
+  // Track active container dimensions
+  // Single observer that watches whichever container is currently active
   useEffect(() => {
-    if (!containerRef.current) return
-    const observer = new ResizeObserver(entries => {
-      const entry = entries[0]
-      if (entry) {
-        const width = Math.floor(entry.contentRect.width)
-        const height = Math.floor(entry.contentRect.height)
-        setDimensions({ width, height })
-        // Update live ctx so running apps see new dimensions
-        if (ctxRef.current) {
-          ctxRef.current.width = width
-          ctxRef.current.height = height
+    let observer: ResizeObserver | null = null
+    let cancelled = false
+
+    const setup = () => {
+      if (cancelled) return
+      const container = isFullscreen ? fullscreenContainerRef.current : inlineContainerRef.current
+      if (!container) return
+
+      const updateDimensions = () => {
+        const rect = container.getBoundingClientRect()
+        const width = Math.floor(rect.width)
+        const height = Math.floor(rect.height)
+        if (width > 0 && height > 0) {
+          setDimensions({ width, height })
+          // Update live ctx so running apps see new dimensions
+          if (ctxRef.current) {
+            ctxRef.current.width = width
+            ctxRef.current.height = height
+          }
         }
       }
-    })
-    observer.observe(containerRef.current)
-    return () => observer.disconnect()
-  }, [])
+
+      observer = new ResizeObserver(updateDimensions)
+      observer.observe(container)
+
+      // Initial update
+      updateDimensions()
+    }
+
+    // Small delay for fullscreen to ensure portal is mounted
+    if (isFullscreen) {
+      const timer = setTimeout(setup, 50)
+      return () => {
+        cancelled = true
+        clearTimeout(timer)
+        observer?.disconnect()
+      }
+    } else {
+      setup()
+      return () => {
+        cancelled = true
+        observer?.disconnect()
+      }
+    }
+  }, [isFullscreen])
 
   // Cleanup on unmount or content change
   useEffect(() => {
@@ -100,7 +135,36 @@ export function SpaRenderer({ content, channel, slug }: SpaRendererProps) {
       hasAutoRun.current = true
       runApp()
     }
-  }, [dimensions, running])
+  }, [dimensions])
+
+  // ESC key exits fullscreen
+  useEffect(() => {
+    if (!isFullscreen) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        setIsFullscreen(false)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
+  }, [isFullscreen])
+
+  // Restart app when toggling fullscreen (to render in new container)
+  useEffect(() => {
+    if (running && containerRef.current) {
+      // Small delay to ensure the new container is mounted
+      const timer = setTimeout(() => {
+        runApp()
+      }, 50)
+      return () => clearTimeout(timer)
+    }
+  }, [isFullscreen])
+
+  const toggleFullscreen = useCallback(() => {
+    setIsFullscreen(prev => !prev)
+  }, [])
 
   const stopApp = (markStopped = false) => {
     // Stop all animation loops
@@ -126,17 +190,26 @@ export function SpaRenderer({ content, channel, slug }: SpaRendererProps) {
   }
 
   const runApp = async () => {
-    if (!containerRef.current) return
+    const container = containerRef.current
+    if (!container) return
 
     setError(null)
     setStopped(false)
     stopApp()
 
     try {
+      // Get current container dimensions (more reliable than state for fullscreen transitions)
+      const rect = container.getBoundingClientRect()
+      const width = Math.floor(rect.width)
+      const height = Math.floor(rect.height)
+
+      // Update state to keep UI in sync
+      setDimensions({ width, height })
+
       // Create runtime context - width/height are mutable, updated on resize
       const ctx: RuntimeContext = {
-        width: dimensions.width,
-        height: dimensions.height,
+        width,
+        height,
         loop: (callback: (dt: number) => void) => {
           let lastTime = performance.now()
           let rafId: number
@@ -178,7 +251,7 @@ export function SpaRenderer({ content, channel, slug }: SpaRendererProps) {
 
         appRef.current = app
         ctxRef.current = ctx
-        await app.render(containerRef.current, ctx)
+        await app.render(container, ctx)
         setRunning(true)
       } finally {
         URL.revokeObjectURL(url)
@@ -210,7 +283,7 @@ export function SpaRenderer({ content, channel, slug }: SpaRendererProps) {
       {/* App container */}
       <div className="flex-1 relative min-h-[160px]">
         <div
-          ref={containerRef}
+          ref={inlineContainerRef}
           className="absolute inset-0 bg-black rounded overflow-hidden"
         />
         {/* Loading state */}
@@ -253,7 +326,57 @@ export function SpaRenderer({ content, channel, slug }: SpaRendererProps) {
           <span className="text-[10px] text-muted-foreground ml-auto">
             {dimensions.width} × {dimensions.height}
           </span>
+          <button
+            onClick={toggleFullscreen}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
+            title="Expand (ESC to close)"
+          >
+            <Maximize2 className="h-3 w-3" />
+          </button>
         </div>
+      )}
+
+      {/* Fullscreen overlay */}
+      {isFullscreen && createPortal(
+        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+          {/* Fullscreen app container */}
+          <div className="flex-1 relative">
+            <div
+              ref={fullscreenContainerRef}
+              className="absolute inset-0 bg-black"
+            />
+          </div>
+          {/* Minimal controls in fullscreen */}
+          <div className="flex items-center justify-center gap-4 p-3 bg-gray-900/80">
+            <button
+              onClick={() => stopApp(true)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded text-sm hover:bg-gray-700 text-gray-300 hover:text-white"
+            >
+              <Square className="h-4 w-4" />
+              Stop
+            </button>
+            <button
+              onClick={runApp}
+              className="flex items-center gap-1 px-3 py-1.5 rounded text-sm hover:bg-gray-700 text-gray-300 hover:text-white"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Restart
+            </button>
+            <span className="text-xs text-gray-500 flex-1 text-center">
+              {dimensions.width} × {dimensions.height}
+            </span>
+            {/* Close button */}
+            <button
+              onClick={() => setIsFullscreen(false)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded text-sm hover:bg-gray-700 text-gray-300 hover:text-white"
+              title="Close (ESC)"
+            >
+              <X className="h-4 w-4" />
+              Close
+            </button>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   )
