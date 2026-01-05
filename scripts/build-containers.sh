@@ -17,7 +17,7 @@
 #   ./scripts/build-containers.sh --no-cache         # Fresh build
 #
 # Output:
-#   cast-sandbox:local    Sandbox agent container
+#   claude-code:local    Agent container (matches orchestrator default)
 #
 # Prerequisites:
 #   - Docker installed and running
@@ -103,12 +103,12 @@ build_sandbox() {
 
   # Step 2: Build Docker image
   echo "  → Building Docker image..."
-  docker build $NO_CACHE -t cast-sandbox:local "$sandbox_dir"
+  docker build $NO_CACHE -t claude-code:local "$sandbox_dir"
 
-  echo -e "${GREEN}✓ Built cast-sandbox:local${NC}"
+  echo -e "${GREEN}✓ Built claude-code:local${NC}"
 
   # Show image info
-  docker images cast-sandbox:local --format "  Size: {{.Size}}, Created: {{.CreatedSince}}"
+  docker images claude-code:local --format "  Size: {{.Size}}, Created: {{.CreatedSince}}"
 }
 
 # Main
@@ -128,13 +128,13 @@ main() {
 
   echo -e "${GREEN}Build complete!${NC}"
   echo ""
-  echo "To run the sandbox container locally:"
+  echo "To run the container locally:"
   echo "  docker run -e ANTHROPIC_API_KEY=\$ANTHROPIC_API_KEY \\"
   echo "             -e CALLSIGN=fox \\"
   echo "             -e CHANNEL_ID=test-channel \\"
   echo "             -e CAST_SERVER_URL=http://host.docker.internal:3001 \\"
   echo "             -p 8080:8080 \\"
-  echo "             cast-sandbox:local"
+  echo "             claude-code:local"
 }
 
 main "$@"

@@ -85,7 +85,7 @@ docker run \
   -e CHANNEL_ID=test-channel \
   -e CAST_SERVER_URL=http://host.docker.internal:3001 \
   -p 8080:8080 \
-  cast-sandbox:local
+  claude-code:local
 ```
 
 Environment variables:
