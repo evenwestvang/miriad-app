@@ -13,3 +13,11 @@ export {
   type AgentInvoker,
   type MessageHandlerOptions,
 } from './messages.js';
+export {
+  createCheckinRoutes,
+  compileMessages,
+  getPendingMessages,
+  pushMessagesToContainer,
+  type CheckinRequest,
+  type CheckinHandlerOptions,
+} from './checkin.js';

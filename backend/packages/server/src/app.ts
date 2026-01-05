@@ -14,6 +14,7 @@ import type { ChannelRoster, StoredMessage, RosterEntry, StoredMessageType, SetF
 import { parseFrame, isSetFrame, isResetFrame } from '@cast/core';
 import { createTymbalRoutes } from './handlers/tymbal.js';
 import { createMessageRoutes, type MessageStorage, type RosterProvider, type Message } from './handlers/messages.js';
+import { createCheckinRoutes } from './handlers/checkin.js';
 import type { ConnectionManager } from './websocket/index.js';
 import { AgentManager, createAgentInvokerAdapter } from './agents/index.js';
 
@@ -533,6 +534,19 @@ export function createApp(options: AppOptions): Hono {
   // Roster routes (mounted under /channels/:id/roster)
   const rosterRoutes = createRosterRoutes(storage);
   app.route('/channels', rosterRoutes);
+
+  // Agent checkin routes (container → server registration)
+  // In-memory stores for local dev (production uses DynamoDB/PlanetScale)
+  const callbackStore = new Map<string, string>();
+  const readmarkStore = new Map<string, string>();
+
+  const checkinRoutes = createCheckinRoutes({
+    storage,
+    spaceId,
+    callbackStore,
+    readmarkStore,
+  });
+  app.route('/agents', checkinRoutes);
 
   return app;
 }

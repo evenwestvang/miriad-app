@@ -126,7 +126,6 @@ export class DockerOrchestrator implements ContainerOrchestrator {
       '-v', `${workspacePath}:/workspace`,
       '-e', `ANTHROPIC_API_KEY=${this.config.anthropicApiKey}`,
       '-e', `CAST_API_URL=${containerApiUrl}`,
-      '-e', `CIKADA_API_URL=${containerApiUrl}`,  // Legacy container compat
       '-e', `CAST_SPACE_ID=${options.spaceId}`,
       '-e', `CAST_CHANNEL_ID=${options.channelId}`,
       '-e', `CAST_CALLSIGN=${options.callsign}`,
