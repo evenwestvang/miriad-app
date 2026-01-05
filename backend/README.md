@@ -8,6 +8,9 @@ Multi-agent collaboration platform backend. Supports thousands of concurrent AI 
 # Install dependencies
 pnpm install
 
+# Build all packages (required on fresh clone)
+pnpm build
+
 # Copy environment template and fill in your credentials
 cp .env.example .env
 
@@ -67,15 +70,17 @@ See `.env.example` for all available options:
 ## Development
 
 ```bash
+# Build all packages (required before first test run)
+pnpm build
+
 # Run tests
 pnpm test
-
-# Build all packages
-pnpm build
 
 # Type check
 pnpm typecheck
 ```
+
+**Note:** Tests require packages to be built first since they import from `dist/`.
 
 ## How It Works
 
