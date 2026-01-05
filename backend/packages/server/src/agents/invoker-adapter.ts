@@ -1,20 +1,27 @@
 /**
  * AgentInvoker Adapter
  *
- * Adapts the AgentManager to the AgentInvoker interface used by message routing.
- * This is the integration point between @tymbal's routing and agent spawning.
+ * Routes messages to agents - either directly to running containers (via callbackUrl
+ * in roster) or by spawning new containers via the orchestrator.
+ *
+ * This is the integration point between message routing and agent lifecycle.
+ * The roster table in PlanetScale is the source of truth for container state.
  */
 
 import type { AgentManager } from './agent-manager.js';
+import type { Storage } from '@cast/storage';
 import type { AgentInvoker, Message } from '../handlers/messages.js';
+import { pushMessagesToContainer, compileMessages } from '../handlers/checkin.js';
 
 // =============================================================================
 // Types
 // =============================================================================
 
 export interface AgentInvokerAdapterOptions {
-  /** The AgentManager instance to delegate to */
+  /** The AgentManager instance to delegate to (for spawning new containers) */
   agentManager: AgentManager;
+  /** Storage for checking roster callbackUrl */
+  storage: Storage;
   /** The space ID (all agents in this invoker belong to same space) */
   spaceId: string;
 }
@@ -24,17 +31,20 @@ export interface AgentInvokerAdapterOptions {
 // =============================================================================
 
 /**
- * Create an AgentInvoker that delegates to an AgentManager.
+ * Create an AgentInvoker that routes messages to agents.
  *
- * This adapter handles:
- * 1. Iterating over target callsigns
- * 2. Invoking AgentManager.sendMessage() for each
- * 3. Parallel execution with proper error handling
+ * Flow for each target agent:
+ * 1. Check roster for callbackUrl (container already running?)
+ * 2. If callbackUrl exists → push directly to container
+ * 3. If no callbackUrl → spawn new container via AgentManager
+ *    (container will checkin and get message via pending queue)
+ *
+ * This eliminates the need for in-memory state in Lambda - roster is source of truth.
  */
 export function createAgentInvokerAdapter(
   options: AgentInvokerAdapterOptions
 ): AgentInvoker {
-  const { agentManager, spaceId } = options;
+  const { agentManager, storage, spaceId } = options;
 
   return {
     invokeAgents: async (
@@ -55,14 +65,55 @@ export function createAgentInvokerAdapter(
       const results = await Promise.allSettled(
         targets.map(async (callsign) => {
           try {
-            await agentManager.sendMessage(
-              spaceId,
-              channelId,
-              callsign,
-              message.sender,
-              message.content
-            );
-            console.log(`[AgentInvoker] Successfully invoked @${callsign}`);
+            // Step 1: Check roster for existing callbackUrl
+            const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+
+            if (rosterEntry?.callbackUrl) {
+              // Step 2a: Container is running - push directly
+              console.log(`[AgentInvoker] @${callsign} has callbackUrl, pushing directly to ${rosterEntry.callbackUrl}`);
+
+              const threadId = `${spaceId}:${channelId}:${callsign}`;
+              const userMessage = `Message from @${message.sender}: ${message.content}`;
+
+              const success = await pushMessagesToContainer(
+                rosterEntry.callbackUrl,
+                userMessage,
+                threadId
+              );
+
+              if (success) {
+                // Update readmark after successful delivery
+                await storage.updateRosterEntry(channelId, rosterEntry.id, {
+                  readmark: message.id,
+                });
+                console.log(`[AgentInvoker] Successfully pushed to @${callsign}, updated readmark to ${message.id}`);
+              } else {
+                // Push failed - container may have died, clear callbackUrl and spawn new
+                console.warn(`[AgentInvoker] Push to @${callsign} failed, clearing callbackUrl and spawning new container`);
+                await storage.updateRosterEntry(channelId, rosterEntry.id, {
+                  callbackUrl: undefined,
+                });
+                // Fall through to spawn
+                await agentManager.sendMessage(
+                  spaceId,
+                  channelId,
+                  callsign,
+                  message.sender,
+                  message.content
+                );
+              }
+            } else {
+              // Step 2b: No container running - spawn new one
+              console.log(`[AgentInvoker] @${callsign} has no callbackUrl, spawning new container`);
+              await agentManager.sendMessage(
+                spaceId,
+                channelId,
+                callsign,
+                message.sender,
+                message.content
+              );
+              console.log(`[AgentInvoker] Spawned container for @${callsign} (will checkin and get pending messages)`);
+            }
           } catch (error) {
             console.error(`[AgentInvoker] Failed to invoke @${callsign}:`, error);
             throw error;

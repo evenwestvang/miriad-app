@@ -121,9 +121,9 @@ describe('AgentManager', () => {
     manager = new AgentManager(config);
   });
 
-  describe('getOrSpawn', () => {
-    it('spawns a new agent when not running', async () => {
-      const agent = await manager.getOrSpawn('space-1', 'channel-1', 'agent-1');
+  describe('spawn', () => {
+    it('spawns a new agent', async () => {
+      const agent = await manager.spawn('space-1', 'channel-1', 'agent-1');
 
       expect(agent.callsign).toBe('agent-1');
       expect(agent.channelId).toBe('channel-1');
@@ -137,28 +137,17 @@ describe('AgentManager', () => {
       });
     });
 
-    it('returns existing agent if already running', async () => {
-      const agent1 = await manager.getOrSpawn('space-1', 'channel-1', 'agent-1');
-      const agent2 = await manager.getOrSpawn('space-1', 'channel-1', 'agent-1');
-
-      expect(agent1).toBe(agent2);
-      expect(orchestrator.spawnCalls).toHaveLength(1);
-    });
-
-    it('respawns agent if container died', async () => {
-      const agent1 = await manager.getOrSpawn('space-1', 'channel-1', 'agent-1');
-
-      // Simulate container death
-      orchestrator.runningContainers.clear();
-
-      const agent2 = await manager.getOrSpawn('space-1', 'channel-1', 'agent-1');
+    it('always spawns (no in-memory caching)', async () => {
+      // NOTE: Unlike old getOrSpawn, spawn() always spawns a new container
+      // Roster callbackUrl is the source of truth - checked in invoker-adapter
+      await manager.spawn('space-1', 'channel-1', 'agent-1');
+      await manager.spawn('space-1', 'channel-1', 'agent-1');
 
       expect(orchestrator.spawnCalls).toHaveLength(2);
-      expect(agent2.state).toBe('idle');
     });
 
     it('passes system prompt to orchestrator', async () => {
-      await manager.getOrSpawn('space-1', 'channel-1', 'agent-1');
+      await manager.spawn('space-1', 'channel-1', 'agent-1');
 
       expect(orchestrator.spawn).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -168,7 +157,7 @@ describe('AgentManager', () => {
     });
 
     it('passes auth token to orchestrator', async () => {
-      await manager.getOrSpawn('space-1', 'channel-1', 'agent-1');
+      await manager.spawn('space-1', 'channel-1', 'agent-1');
 
       expect(orchestrator.spawn).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -179,69 +168,40 @@ describe('AgentManager', () => {
   });
 
   describe('sendMessage', () => {
-    it('spawns and sends message to agent', async () => {
+    it('spawns container for agent', async () => {
       await manager.sendMessage('space-1', 'channel-1', 'agent-1', 'user', 'Hello!');
 
+      // sendMessage now just spawns - the message is delivered via checkin pending queue
       expect(orchestrator.spawnCalls).toHaveLength(1);
-      expect(orchestrator.sendCalls).toHaveLength(1);
-      expect(orchestrator.sendCalls[0].content).toContain('Message from @user: Hello!');
+      expect(orchestrator.spawnCalls[0]).toEqual({
+        spaceId: 'space-1',
+        channelId: 'channel-1',
+        callsign: 'agent-1',
+      });
     });
 
-    it('formats message with sender context', async () => {
+    it('does not push message directly (message goes via pending queue)', async () => {
       await manager.sendMessage('space-1', 'channel-1', 'agent-1', 'bob', 'Test message');
 
-      expect(orchestrator.sendCalls[0].content).toBe('Message from @bob: Test message');
-    });
-
-    it('updates agent state to thinking then idle', async () => {
-      const agentPromise = manager.sendMessage('space-1', 'channel-1', 'agent-1', 'user', 'Hi');
-      await agentPromise;
-
-      const agent = manager.getStatus('space-1', 'channel-1', 'agent-1');
-      expect(agent?.state).toBe('idle');
+      // No direct sendMessage to orchestrator - container will get message via checkin
+      expect(orchestrator.sendCalls).toHaveLength(0);
     });
   });
 
   describe('stop', () => {
-    it('stops a running agent', async () => {
-      await manager.getOrSpawn('space-1', 'channel-1', 'agent-1');
+    it('stops a container via orchestrator', async () => {
       await manager.stop('space-1', 'channel-1', 'agent-1');
 
       expect(orchestrator.stopCalls).toHaveLength(1);
       expect(orchestrator.stopCalls[0].threadId).toBe('space-1:channel-1:agent-1');
-
-      const agent = manager.getStatus('space-1', 'channel-1', 'agent-1');
-      expect(agent).toBeNull();
-    });
-
-    it('does nothing for non-existent agent', async () => {
-      await manager.stop('space-1', 'channel-1', 'nonexistent');
-      expect(orchestrator.stopCalls).toHaveLength(0);
-    });
-  });
-
-  describe('getChannelAgents', () => {
-    it('returns all agents in a channel', async () => {
-      await manager.getOrSpawn('space-1', 'channel-1', 'agent-1');
-      await manager.getOrSpawn('space-1', 'channel-1', 'agent-2');
-      await manager.getOrSpawn('space-1', 'channel-2', 'agent-3');
-
-      const agents = manager.getChannelAgents('channel-1');
-      expect(agents).toHaveLength(2);
-      expect(agents.map((a) => a.callsign)).toContain('agent-1');
-      expect(agents.map((a) => a.callsign)).toContain('agent-2');
     });
   });
 
   describe('shutdown', () => {
-    it('shuts down orchestrator and clears agents', async () => {
-      await manager.getOrSpawn('space-1', 'channel-1', 'agent-1');
-      await manager.getOrSpawn('space-1', 'channel-1', 'agent-2');
-
+    it('shuts down orchestrator', async () => {
       await manager.shutdown();
 
       expect(orchestrator.shutdown).toHaveBeenCalled();
-      expect(manager.getChannelAgents('channel-1')).toHaveLength(0);
     });
   });
 });

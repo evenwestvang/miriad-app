@@ -417,6 +417,7 @@ export function createApp(options: AppOptions): Hono {
 
   const agentInvoker = createAgentInvokerAdapter({
     agentManager,
+    storage,
     spaceId,
   });
 

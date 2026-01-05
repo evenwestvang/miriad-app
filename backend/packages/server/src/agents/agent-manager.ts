@@ -120,7 +120,9 @@ Keep comms effective and brief.`);
 
 export class AgentManager {
   private config: AgentManagerConfig;
-  private agents: Map<string, ManagedAgent> = new Map(); // threadId -> agent
+  // NOTE: In-memory Map removed - Lambda doesn't preserve state between invocations.
+  // Roster table (callbackUrl) is now the source of truth for running containers.
+  // See invoker-adapter.ts for the routing logic.
 
   constructor(config: AgentManagerConfig) {
     this.config = config;
@@ -135,27 +137,15 @@ export class AgentManager {
   }
 
   /**
-   * Get or spawn an agent for the given context.
+   * Spawn a new container for an agent.
+   * NOTE: No longer checks in-memory state - roster callbackUrl check happens in invoker-adapter.
+   * This method just spawns unconditionally.
    */
-  async getOrSpawn(
+  async spawn(
     spaceId: string,
     channelId: string,
     callsign: string
   ): Promise<ManagedAgent> {
-    const threadId = this.buildThreadId(spaceId, channelId, callsign);
-
-    // Check if already managed
-    let agent = this.agents.get(threadId);
-    if (agent && agent.state !== 'stopped' && agent.state !== 'error') {
-      // Verify container is still running
-      if (this.config.orchestrator.isRunning(threadId)) {
-        return agent;
-      }
-      // Container died, need to respawn
-      agent.state = 'stopped';
-    }
-
-    // Need to spawn
     console.log(`[AgentManager] Spawning agent ${callsign} in ${channelId}`);
 
     // Get channel context and roster for system prompt
@@ -183,8 +173,7 @@ export class AgentManager {
 
     const containerState = await this.config.orchestrator.spawn(spawnOptions);
 
-    // Create managed agent
-    agent = {
+    const agent: ManagedAgent = {
       callsign,
       channelId,
       spaceId,
@@ -192,15 +181,16 @@ export class AgentManager {
       containerState,
     };
 
-    this.agents.set(threadId, agent);
     console.log(`[AgentManager] Agent ${callsign} spawned, port ${containerState.port}`);
 
     return agent;
   }
 
   /**
-   * Send a message to an agent.
-   * Spawns the agent if not running.
+   * Spawn a container and send a message to it.
+   * NOTE: This always spawns - the invoker-adapter handles the "check roster first" logic.
+   * The message is NOT pushed directly here - it's saved to storage, and the container
+   * will receive it via the pending message queue when it checks in.
    */
   async sendMessage(
     spaceId: string,
@@ -209,62 +199,31 @@ export class AgentManager {
     sender: string,
     content: string
   ): Promise<void> {
-    const agent = await this.getOrSpawn(spaceId, channelId, callsign);
-    const threadId = this.buildThreadId(spaceId, channelId, callsign);
+    // Spawn container - it will checkin and receive pending messages
+    await this.spawn(spaceId, channelId, callsign);
 
-    // Format message with sender context
-    const userMessage = `Message from @${sender}: ${content}`;
-
-    // Update state
-    agent.state = 'thinking';
-
-    try {
-      // Send to container
-      await this.config.orchestrator.sendMessage(threadId, userMessage);
-      agent.state = 'idle';
-    } catch (error) {
-      agent.state = 'error';
-      console.error(`[AgentManager] Error sending to ${callsign}:`, error);
-      throw error;
-    }
+    // Note: We don't push the message here. The message is already saved to storage
+    // by the message handler. The container will receive it via getPendingMessages
+    // when it calls /agents/checkin.
+    console.log(`[AgentManager] Container spawned for ${callsign}, will receive message via checkin`);
   }
 
   /**
-   * Stop an agent.
+   * Stop an agent's container.
+   * NOTE: With roster as source of truth, you should also clear callbackUrl in roster.
    */
   async stop(spaceId: string, channelId: string, callsign: string): Promise<void> {
     const threadId = this.buildThreadId(spaceId, channelId, callsign);
-    const agent = this.agents.get(threadId);
-
-    if (agent) {
-      agent.state = 'stopped';
-      await this.config.orchestrator.stop(threadId, 'manual');
-      this.agents.delete(threadId);
-      console.log(`[AgentManager] Agent ${callsign} stopped`);
-    }
+    await this.config.orchestrator.stop(threadId, 'manual');
+    console.log(`[AgentManager] Agent ${callsign} stopped`);
+    // Note: Caller should also clear callbackUrl in roster via storage.updateRosterEntry()
   }
 
   /**
-   * Get agent status.
-   */
-  getStatus(spaceId: string, channelId: string, callsign: string): ManagedAgent | null {
-    const threadId = this.buildThreadId(spaceId, channelId, callsign);
-    return this.agents.get(threadId) ?? null;
-  }
-
-  /**
-   * Get all running agents in a channel.
-   */
-  getChannelAgents(channelId: string): ManagedAgent[] {
-    return Array.from(this.agents.values()).filter((a) => a.channelId === channelId);
-  }
-
-  /**
-   * Shutdown all agents.
+   * Shutdown all containers managed by the orchestrator.
    */
   async shutdown(): Promise<void> {
     console.log('[AgentManager] Shutting down all agents...');
     await this.config.orchestrator.shutdown();
-    this.agents.clear();
   }
 }
