@@ -5,6 +5,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# SAM build artifacts
+.aws-sam/
+
 # Environment files (keep .env.example)
 .env
 .env.local
@@ -30,3 +33,6 @@ coverage/
 # Temporary files
 tmp/
 temp/
+
+# Vitest
+.vite/
