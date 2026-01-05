@@ -56,6 +56,7 @@ Resources:
           ECS_TASK_DEFINITION: !Ref AgentTaskDefinition
           CONTAINER_STATE_TABLE: !Ref ContainerStateTable
           CONNECTIONS_TABLE: !Ref ConnectionsTable
+          WEBSOCKET_ENDPOINT: !Sub https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
           ANTHROPIC_API_KEY: !Ref AnthropicApiKey
       Events:
         RootPath:
@@ -252,6 +253,219 @@ Resources:
           Value: !Ref Stage
 
   # =============================================================================
+  # WebSocket API Gateway
+  # =============================================================================
+
+  # WebSocket API for real-time streaming
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub cast-websocket-${Stage}
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.action
+      Tags:
+        Environment: !Ref Stage
+
+  # WebSocket Stage
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebSocketApi
+      StageName: !Ref Stage
+      AutoDeploy: true
+
+  # $connect route - handles new WebSocket connections
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $connect
+      AuthorizationType: NONE
+      Target: !Sub integrations/${ConnectIntegration}
+
+  ConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketConnectFunction.Arn}/invocations
+
+  # $disconnect route - handles WebSocket disconnections
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $disconnect
+      AuthorizationType: NONE
+      Target: !Sub integrations/${DisconnectIntegration}
+
+  DisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketDisconnectFunction.Arn}/invocations
+
+  # $default route - handles all other WebSocket messages
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $default
+      AuthorizationType: NONE
+      Target: !Sub integrations/${DefaultIntegration}
+
+  DefaultIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketDefaultFunction.Arn}/invocations
+
+  # =============================================================================
+  # WebSocket Lambda Functions
+  # =============================================================================
+
+  # Shared execution role for WebSocket Lambdas
+  WebSocketFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub cast-websocket-lambda-${Stage}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt ConnectionsTable.Arn
+                  - !Sub ${ConnectionsTable.Arn}/index/*
+        - PolicyName: ApiGatewayManagement
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - execute-api:ManageConnections
+                Resource: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/${Stage}/*
+
+  # $connect handler
+  WebSocketConnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cast-ws-connect-${Stage}
+      Handler: websocket-handlers.connectHandler
+      CodeUri: dist/
+      Description: WebSocket $connect handler
+      Role: !GetAtt WebSocketFunctionRole.Arn
+      Environment:
+        Variables:
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+          WEBSOCKET_ENDPOINT: !Sub https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+          PLANETSCALE_URL: !Ref PlanetScaleUrl
+          SPACE_ID: !Ref SpaceId
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: esm
+        Sourcemap: true
+        EntryPoints:
+          - websocket-handlers.mjs
+        OutExtension:
+          - .js=.mjs
+
+  WebSocketConnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WebSocketConnectFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/$connect
+
+  # $disconnect handler
+  WebSocketDisconnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cast-ws-disconnect-${Stage}
+      Handler: websocket-handlers.disconnectHandler
+      CodeUri: dist/
+      Description: WebSocket $disconnect handler
+      Role: !GetAtt WebSocketFunctionRole.Arn
+      Environment:
+        Variables:
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: esm
+        Sourcemap: true
+        EntryPoints:
+          - websocket-handlers.mjs
+        OutExtension:
+          - .js=.mjs
+
+  WebSocketDisconnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WebSocketDisconnectFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/$disconnect
+
+  # $default handler
+  WebSocketDefaultFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cast-ws-default-${Stage}
+      Handler: websocket-handlers.defaultHandler
+      CodeUri: dist/
+      Description: WebSocket $default handler
+      Role: !GetAtt WebSocketFunctionRole.Arn
+      Environment:
+        Variables:
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+          WEBSOCKET_ENDPOINT: !Sub https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+          PLANETSCALE_URL: !Ref PlanetScaleUrl
+          SPACE_ID: !Ref SpaceId
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: esm
+        Sourcemap: true
+        EntryPoints:
+          - websocket-handlers.mjs
+        OutExtension:
+          - .js=.mjs
+
+  WebSocketDefaultPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WebSocketDefaultFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/$default
+
+  # =============================================================================
   # IAM Policies for Lambda → ECS/DynamoDB
   # =============================================================================
 
@@ -299,6 +513,11 @@ Resources:
               - !GetAtt ContainerStateTable.Arn
               - !GetAtt ConnectionsTable.Arn
               - !Sub ${ConnectionsTable.Arn}/index/*
+          # API Gateway Management API - for WebSocket broadcasts
+          - Effect: Allow
+            Action:
+              - execute-api:ManageConnections
+            Resource: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/${Stage}/*
 
   # Lambda execution role (referenced by policy above)
   ApiFunctionRole:
@@ -355,3 +574,11 @@ Outputs:
   ConnectionsTableArn:
     Description: DynamoDB table ARN for WebSocket connections
     Value: !GetAtt ConnectionsTable.Arn
+
+  # WebSocket Outputs
+  WebSocketApiId:
+    Description: WebSocket API ID
+    Value: !Ref WebSocketApi
+  WebSocketEndpoint:
+    Description: WebSocket API endpoint URL
+    Value: !Sub wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
