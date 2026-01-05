@@ -1,12 +1,15 @@
 /**
- * MCP HTTP Transport Handler
+ * MCP HTTP Transport Handler (JSON-RPC)
  *
  * Exposes board operations (artifacts, messages) via MCP HTTP transport.
- * Enables containerized agents to call board tools directly via HTTP.
+ * Implements JSON-RPC 2.0 protocol for MCP compatibility.
  *
- * Endpoints:
- * - POST /mcp/:channelId/tools/list - List available tools
- * - POST /mcp/:channelId/tools/call - Execute a tool
+ * Endpoint:
+ * - POST /mcp/:channel - JSON-RPC endpoint for all MCP operations
+ *
+ * JSON-RPC Methods:
+ * - tools/list - List available tools
+ * - tools/call - Execute a tool
  */
 
 import { Hono } from 'hono';
@@ -31,15 +34,37 @@ interface McpToolDefinition {
   };
 }
 
-interface McpToolResponse {
-  content: Array<{ type: 'text'; text: string }>;
-  isError?: boolean;
+interface JsonRpcRequest {
+  jsonrpc: '2.0';
+  id: string | number;
+  method: string;
+  params?: Record<string, unknown>;
+}
+
+interface JsonRpcResponse {
+  jsonrpc: '2.0';
+  id: string | number | null;
+  result?: unknown;
+  error?: {
+    code: number;
+    message: string;
+    data?: unknown;
+  };
 }
 
 interface McpHttpHandlerOptions {
   storage: Storage;
   spaceId: string;
 }
+
+// JSON-RPC error codes
+const JSONRPC_ERRORS = {
+  PARSE_ERROR: -32700,
+  INVALID_REQUEST: -32600,
+  METHOD_NOT_FOUND: -32601,
+  INVALID_PARAMS: -32602,
+  INTERNAL_ERROR: -32603,
+};
 
 // =============================================================================
 // Tool Definitions
@@ -432,6 +457,41 @@ const toolHandlers: Record<string, ToolHandler> = {
 // Route Factory
 // =============================================================================
 
+/**
+ * Resolve channel by name first, then by ID.
+ * This allows agents to use friendly channel names in URLs.
+ */
+async function resolveChannel(storage: Storage, spaceId: string, channelIdOrName: string) {
+  // Try by name first (more user-friendly)
+  const byName = await storage.getChannelByName(spaceId, channelIdOrName);
+  if (byName) return byName;
+
+  // Fall back to ID lookup
+  return storage.getChannel(spaceId, channelIdOrName);
+}
+
+/**
+ * Create JSON-RPC error response
+ */
+function jsonRpcError(id: string | number | null, code: number, message: string, data?: unknown): JsonRpcResponse {
+  return {
+    jsonrpc: '2.0',
+    id,
+    error: { code, message, data },
+  };
+}
+
+/**
+ * Create JSON-RPC success response
+ */
+function jsonRpcSuccess(id: string | number, result: unknown): JsonRpcResponse {
+  return {
+    jsonrpc: '2.0',
+    id,
+    result,
+  };
+}
+
 export function createMcpRoutes(opts: McpHttpHandlerOptions): Hono<{ Variables: ContainerAuthVariables }> {
   const { storage, spaceId } = opts;
   const app = new Hono<{ Variables: ContainerAuthVariables }>();
@@ -439,77 +499,99 @@ export function createMcpRoutes(opts: McpHttpHandlerOptions): Hono<{ Variables: 
   // Apply container auth to all MCP routes
   app.use('*', requireContainerAuth());
 
-  // POST /mcp/:channelId/tools/list
-  app.post('/:channelId/tools/list', async (c) => {
-    const channelId = c.req.param('channelId');
-
-    // Verify channel exists
-    const channel = await storage.getChannel(spaceId, channelId);
-    if (!channel) {
-      return c.json({ error: 'Channel not found' }, 404);
-    }
-
-    return c.json({ tools: TOOLS });
-  });
-
-  // POST /mcp/:channelId/tools/call
-  app.post('/:channelId/tools/call', async (c) => {
-    const channelId = c.req.param('channelId');
+  // POST /mcp/:channel - Single JSON-RPC endpoint
+  app.post('/:channel', async (c) => {
+    const channelIdOrName = c.req.param('channel');
     const container = getContainerAuth(c);
 
-    // Verify channel exists
-    const channel = await storage.getChannel(spaceId, channelId);
+    // Resolve channel by name or ID
+    const channel = await resolveChannel(storage, spaceId, channelIdOrName);
     if (!channel) {
       return c.json({ error: 'Channel not found' }, 404);
     }
 
-    let body: { name?: string; arguments?: Record<string, unknown> };
+    // Parse JSON-RPC request
+    let request: JsonRpcRequest;
     try {
-      body = await c.req.json();
+      request = await c.req.json();
     } catch {
-      const response: McpToolResponse = {
-        content: [{ type: 'text', text: 'Invalid JSON body' }],
-        isError: true,
-      };
-      return c.json(response, 400);
+      return c.json(jsonRpcError(null, JSONRPC_ERRORS.PARSE_ERROR, 'Parse error: Invalid JSON'));
     }
 
-    if (!body.name) {
-      const response: McpToolResponse = {
-        content: [{ type: 'text', text: 'Missing tool name' }],
-        isError: true,
-      };
-      return c.json(response, 400);
+    // Validate JSON-RPC request
+    if (!request.jsonrpc || request.jsonrpc !== '2.0') {
+      return c.json(jsonRpcError(request.id ?? null, JSONRPC_ERRORS.INVALID_REQUEST, 'Invalid Request: Missing or invalid jsonrpc version'));
     }
 
-    const handler = toolHandlers[body.name];
-    if (!handler) {
-      const response: McpToolResponse = {
-        content: [{ type: 'text', text: `Unknown tool: ${body.name}` }],
-        isError: true,
-      };
-      return c.json(response, 400);
+    if (!request.method || typeof request.method !== 'string') {
+      return c.json(jsonRpcError(request.id ?? null, JSONRPC_ERRORS.INVALID_REQUEST, 'Invalid Request: Missing method'));
     }
 
-    try {
-      const ctx: ToolContext = {
-        storage,
-        spaceId,
-        channelId,
-        callsign: container.callsign,
-      };
-      const result = await handler(body.arguments ?? {}, ctx);
-      const response: McpToolResponse = {
-        content: [{ type: 'text', text: result }],
-      };
-      return c.json(response);
-    } catch (err) {
-      const response: McpToolResponse = {
-        content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
-        isError: true,
-      };
-      // MCP returns 200 even for tool errors
-      return c.json(response);
+    if (request.id === undefined) {
+      return c.json(jsonRpcError(null, JSONRPC_ERRORS.INVALID_REQUEST, 'Invalid Request: Missing id'));
+    }
+
+    // Route by method
+    switch (request.method) {
+      case 'initialize': {
+        // MCP initialization handshake
+        return c.json(jsonRpcSuccess(request.id, {
+          protocolVersion: '2024-11-05',
+          capabilities: {
+            tools: {},
+          },
+          serverInfo: {
+            name: 'cast-mcp',
+            version: '0.0.1',
+          },
+        }));
+      }
+
+      case 'notifications/initialized': {
+        // Client acknowledgment - no response needed for notifications
+        return c.json(jsonRpcSuccess(request.id, {}));
+      }
+
+      case 'tools/list': {
+        return c.json(jsonRpcSuccess(request.id, { tools: TOOLS }));
+      }
+
+      case 'tools/call': {
+        const params = request.params as { name?: string; arguments?: Record<string, unknown> } | undefined;
+
+        if (!params?.name) {
+          return c.json(jsonRpcError(request.id, JSONRPC_ERRORS.INVALID_PARAMS, 'Invalid params: Missing tool name'));
+        }
+
+        const handler = toolHandlers[params.name];
+        if (!handler) {
+          return c.json(jsonRpcError(request.id, JSONRPC_ERRORS.METHOD_NOT_FOUND, `Unknown tool: ${params.name}`));
+        }
+
+        try {
+          const ctx: ToolContext = {
+            storage,
+            spaceId,
+            channelId: channel.id,
+            callsign: container.callsign,
+          };
+          const result = await handler(params.arguments ?? {}, ctx);
+
+          // Return MCP tool result format
+          return c.json(jsonRpcSuccess(request.id, {
+            content: [{ type: 'text', text: result }],
+          }));
+        } catch (err) {
+          // Tool errors are returned as successful JSON-RPC with isError in result
+          return c.json(jsonRpcSuccess(request.id, {
+            content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
+            isError: true,
+          }));
+        }
+      }
+
+      default:
+        return c.json(jsonRpcError(request.id, JSONRPC_ERRORS.METHOD_NOT_FOUND, `Method not found: ${request.method}`));
     }
   });
 

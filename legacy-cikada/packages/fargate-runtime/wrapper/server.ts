@@ -117,10 +117,9 @@ async function getCallbackHost(): Promise<string> {
   return getLocalIp();
 }
 
-// Get path to MCP artifact server (relative to this file's compiled location)
+// Get dirname for relative paths
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const MCP_ARTIFACT_SERVER_PATH = join(__dirname, "mcp-artifact-server.js");
 
 // Per-thread directory structure:
 // /workspace/threads/{threadId}/
@@ -179,22 +178,18 @@ function generateMcpConfig(
 ): string | null {
   const mcpServers: Record<string, McpServerConfig> = {};
 
-  // Add built-in cast-artifacts MCP if configured
-  if (CAST_CHANNEL_ID && CAST_CALLSIGN && existsSync(MCP_ARTIFACT_SERVER_PATH)) {
+  // Add built-in cast-artifacts MCP via HTTP transport
+  if (CAST_API_URL && CAST_CHANNEL_ID && CAST_AUTH_TOKEN) {
     mcpServers["cast-artifacts"] = {
-      type: "stdio",
-      command: "node",
-      args: [MCP_ARTIFACT_SERVER_PATH],
-      env: {
-        CAST_API_URL: CAST_API_URL,
-        CAST_CHANNEL_ID: CAST_CHANNEL_ID,
-        CAST_CALLSIGN: CAST_CALLSIGN,
-        CAST_AUTH_TOKEN: CAST_AUTH_TOKEN,
+      type: "http",
+      url: `${CAST_API_URL}/mcp/${CAST_CHANNEL_ID}`,
+      headers: {
+        Authorization: `Container ${CAST_AUTH_TOKEN}`,
       },
     };
-    console.log("[Server] Added built-in cast-artifacts MCP");
+    console.log("[Server] Added cast-artifacts MCP (HTTP transport)");
   } else {
-    console.log("[Server] Built-in cast-artifacts MCP disabled - missing config or server");
+    console.log("[Server] cast-artifacts MCP disabled - missing CAST_API_URL, CAST_CHANNEL_ID, or CAST_AUTH_TOKEN");
   }
 
   // Add resolved MCPs from orchestrator (already have env vars resolved)
@@ -690,12 +685,10 @@ server.listen(PORT, () => {
   console.log(`[Server] Idle timeout: ${IDLE_TIMEOUT_MS / 1000}s`);
 
   // MCP artifact tools status
-  const mcpEnabled = CAST_CHANNEL_ID && CAST_CALLSIGN;
-  console.log(`[Server] MCP artifact tools: ${mcpEnabled ? "enabled" : "disabled"}`);
+  const mcpEnabled = CAST_API_URL && CAST_CHANNEL_ID && CAST_AUTH_TOKEN;
+  console.log(`[Server] MCP artifact tools: ${mcpEnabled ? "enabled (HTTP)" : "disabled"}`);
   if (mcpEnabled) {
-    console.log(`[Server]   Channel: ${CAST_CHANNEL_ID}`);
-    console.log(`[Server]   Callsign: ${CAST_CALLSIGN}`);
-    console.log(`[Server]   Server path: ${MCP_ARTIFACT_SERVER_PATH}`);
+    console.log(`[Server]   URL: ${CAST_API_URL}/mcp/${CAST_CHANNEL_ID}`);
   }
 
   // Check for existing session on EFS (for resume after container restart)

@@ -10,13 +10,14 @@ import type { StoredMessage, StoredChannel } from '@cast/core';
 // =============================================================================
 
 const TEST_SPACE_ID = 'test-space';
-const TEST_CHANNEL_ID = 'test-channel';
+const TEST_CHANNEL_ID = '01ABCDEFGH123456789012345'; // ULID-style ID
+const TEST_CHANNEL_NAME = 'test-channel';
 const TEST_CALLSIGN = 'test-agent';
 
 const testChannel: StoredChannel = {
   id: TEST_CHANNEL_ID,
   spaceId: TEST_SPACE_ID,
-  name: 'test-channel',
+  name: TEST_CHANNEL_NAME,
   tagline: 'Test workspace',
   mission: 'Testing MCP',
   archived: false,
@@ -71,7 +72,10 @@ function createMockStorage(): Storage {
       if (channelId === TEST_CHANNEL_ID) return testChannel;
       return null;
     }),
-    getChannelByName: vi.fn(async () => null),
+    getChannelByName: vi.fn(async (spaceId: string, name: string) => {
+      if (name === TEST_CHANNEL_NAME) return testChannel;
+      return null;
+    }),
     listChannels: vi.fn(async () => []),
     createChannel: vi.fn(async () => testChannel),
     updateChannel: vi.fn(async () => {}),
@@ -113,10 +117,23 @@ function createMockStorage(): Storage {
 }
 
 // =============================================================================
+// Helper Functions
+// =============================================================================
+
+function jsonRpcRequest(method: string, params?: Record<string, unknown>, id: number | string = 1) {
+  return JSON.stringify({
+    jsonrpc: '2.0',
+    id,
+    method,
+    params,
+  });
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
-describe('MCP HTTP Routes', () => {
+describe('MCP HTTP Routes (JSON-RPC)', () => {
   let app: Hono;
   let mockStorage: Storage;
   let token: string;
@@ -142,9 +159,9 @@ describe('MCP HTTP Routes', () => {
 
   describe('Authentication', () => {
     it('rejects requests without Authorization header', async () => {
-      const res = await app.request('/mcp/test-channel/tools/list', {
+      const res = await app.request('/mcp/test-channel', {
         method: 'POST',
-        body: '{}',
+        body: jsonRpcRequest('tools/list'),
       });
 
       expect(res.status).toBe(401);
@@ -153,10 +170,10 @@ describe('MCP HTTP Routes', () => {
     });
 
     it('rejects requests with invalid token format', async () => {
-      const res = await app.request('/mcp/test-channel/tools/list', {
+      const res = await app.request('/mcp/test-channel', {
         method: 'POST',
         headers: { Authorization: 'Bearer invalid' },
-        body: '{}',
+        body: jsonRpcRequest('tools/list'),
       });
 
       expect(res.status).toBe(401);
@@ -165,10 +182,10 @@ describe('MCP HTTP Routes', () => {
     });
 
     it('rejects requests with invalid token', async () => {
-      const res = await app.request('/mcp/test-channel/tools/list', {
+      const res = await app.request('/mcp/test-channel', {
         method: 'POST',
         headers: { Authorization: 'Container invalid.token' },
-        body: '{}',
+        body: jsonRpcRequest('tools/list'),
       });
 
       expect(res.status).toBe(401);
@@ -177,22 +194,153 @@ describe('MCP HTTP Routes', () => {
     });
   });
 
-  describe('POST /mcp/:channelId/tools/list', () => {
-    it('returns all tool definitions with valid auth', async () => {
-      const res = await app.request('/mcp/test-channel/tools/list', {
+  describe('JSON-RPC Protocol', () => {
+    it('rejects invalid JSON', async () => {
+      const res = await app.request('/mcp/test-channel', {
         method: 'POST',
-        headers: { Authorization: `Container ${token}` },
-        body: '{}',
+        headers: {
+          Authorization: `Container ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: 'not json',
       });
 
       expect(res.status).toBe(200);
       const json = await res.json();
-      expect(json.tools).toBeDefined();
-      expect(Array.isArray(json.tools)).toBe(true);
-      expect(json.tools.length).toBe(9); // 7 artifact + 2 message tools
+      expect(json.jsonrpc).toBe('2.0');
+      expect(json.error.code).toBe(-32700); // Parse error
+    });
+
+    it('rejects missing jsonrpc version', async () => {
+      const res = await app.request('/mcp/test-channel', {
+        method: 'POST',
+        headers: {
+          Authorization: `Container ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id: 1, method: 'tools/list' }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.error.code).toBe(-32600); // Invalid request
+    });
+
+    it('rejects missing method', async () => {
+      const res = await app.request('/mcp/test-channel', {
+        method: 'POST',
+        headers: {
+          Authorization: `Container ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1 }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.error.code).toBe(-32600); // Invalid request
+    });
+
+    it('rejects missing id', async () => {
+      const res = await app.request('/mcp/test-channel', {
+        method: 'POST',
+        headers: {
+          Authorization: `Container ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list' }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.error.code).toBe(-32600); // Invalid request
+    });
+
+    it('rejects unknown method', async () => {
+      const res = await app.request('/mcp/test-channel', {
+        method: 'POST',
+        headers: {
+          Authorization: `Container ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: jsonRpcRequest('unknown/method'),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.error.code).toBe(-32601); // Method not found
+    });
+  });
+
+  describe('Channel Resolution', () => {
+    it('resolves channel by name', async () => {
+      const res = await app.request(`/mcp/${TEST_CHANNEL_NAME}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Container ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: jsonRpcRequest('tools/list'),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockStorage.getChannelByName).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_CHANNEL_NAME);
+    });
+
+    it('resolves channel by ID when name lookup fails', async () => {
+      const res = await app.request(`/mcp/${TEST_CHANNEL_ID}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Container ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: jsonRpcRequest('tools/list'),
+      });
+
+      expect(res.status).toBe(200);
+      // Name lookup tried first (returns null for ID)
+      expect(mockStorage.getChannelByName).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_CHANNEL_ID);
+      // Then ID lookup succeeds
+      expect(mockStorage.getChannel).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_CHANNEL_ID);
+    });
+
+    it('returns 404 for non-existent channel', async () => {
+      const res = await app.request('/mcp/non-existent', {
+        method: 'POST',
+        headers: {
+          Authorization: `Container ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: jsonRpcRequest('tools/list'),
+      });
+
+      expect(res.status).toBe(404);
+      const json = await res.json();
+      expect(json.error).toBe('Channel not found');
+    });
+  });
+
+  describe('tools/list', () => {
+    it('returns all tool definitions', async () => {
+      const res = await app.request('/mcp/test-channel', {
+        method: 'POST',
+        headers: {
+          Authorization: `Container ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: jsonRpcRequest('tools/list'),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.jsonrpc).toBe('2.0');
+      expect(json.id).toBe(1);
+      expect(json.result.tools).toBeDefined();
+      expect(Array.isArray(json.result.tools)).toBe(true);
+      expect(json.result.tools.length).toBe(9); // 7 artifact + 2 message tools
 
       // Verify tool names
-      const toolNames = json.tools.map((t: { name: string }) => t.name);
+      const toolNames = json.result.tools.map((t: { name: string }) => t.name);
       expect(toolNames).toContain('artifact_create');
       expect(toolNames).toContain('artifact_read');
       expect(toolNames).toContain('artifact_list');
@@ -204,27 +352,18 @@ describe('MCP HTTP Routes', () => {
       expect(toolNames).toContain('message_search');
     });
 
-    it('returns 404 for non-existent channel', async () => {
-      const res = await app.request('/mcp/non-existent/tools/list', {
-        method: 'POST',
-        headers: { Authorization: `Container ${token}` },
-        body: '{}',
-      });
-
-      expect(res.status).toBe(404);
-      const json = await res.json();
-      expect(json.error).toBe('Channel not found');
-    });
-
     it('includes proper inputSchema for each tool', async () => {
-      const res = await app.request('/mcp/test-channel/tools/list', {
+      const res = await app.request('/mcp/test-channel', {
         method: 'POST',
-        headers: { Authorization: `Container ${token}` },
-        body: '{}',
+        headers: {
+          Authorization: `Container ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: jsonRpcRequest('tools/list'),
       });
 
       const json = await res.json();
-      for (const tool of json.tools) {
+      for (const tool of json.result.tools) {
         expect(tool.inputSchema).toBeDefined();
         expect(tool.inputSchema.type).toBe('object');
         expect(tool.inputSchema.properties).toBeDefined();
@@ -232,88 +371,77 @@ describe('MCP HTTP Routes', () => {
     });
   });
 
-  describe('POST /mcp/:channelId/tools/call', () => {
+  describe('tools/call', () => {
     describe('message_get', () => {
       it('returns messages from storage', async () => {
-        const res = await app.request('/mcp/test-channel/tools/call', {
+        const res = await app.request('/mcp/test-channel', {
           method: 'POST',
           headers: {
             Authorization: `Container ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            name: 'message_get',
-            arguments: { limit: 10 },
-          }),
+          body: jsonRpcRequest('tools/call', { name: 'message_get', arguments: { limit: 10 } }),
         });
 
         expect(res.status).toBe(200);
         const json = await res.json();
-        expect(json.isError).toBeUndefined();
-        expect(json.content).toHaveLength(1);
-        expect(json.content[0].type).toBe('text');
+        expect(json.jsonrpc).toBe('2.0');
+        expect(json.result.isError).toBeUndefined();
+        expect(json.result.content).toHaveLength(1);
+        expect(json.result.content[0].type).toBe('text');
 
-        const result = JSON.parse(json.content[0].text);
+        const result = JSON.parse(json.result.content[0].text);
         expect(result.count).toBe(3);
         expect(result.messages).toHaveLength(3);
         expect(result.messages[0].sender).toBe('fox');
       });
 
       it('respects limit parameter', async () => {
-        const res = await app.request('/mcp/test-channel/tools/call', {
+        const res = await app.request('/mcp/test-channel', {
           method: 'POST',
           headers: {
             Authorization: `Container ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            name: 'message_get',
-            arguments: { limit: 2 },
-          }),
+          body: jsonRpcRequest('tools/call', { name: 'message_get', arguments: { limit: 2 } }),
         });
 
         const json = await res.json();
-        const result = JSON.parse(json.content[0].text);
+        const result = JSON.parse(json.result.content[0].text);
         expect(result.count).toBe(2);
       });
     });
 
     describe('message_search', () => {
       it('filters messages by sender', async () => {
-        const res = await app.request('/mcp/test-channel/tools/call', {
+        const res = await app.request('/mcp/test-channel', {
           method: 'POST',
           headers: {
             Authorization: `Container ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            name: 'message_search',
-            arguments: { sender: 'fox' },
-          }),
+          body: jsonRpcRequest('tools/call', { name: 'message_search', arguments: { sender: 'fox' } }),
         });
 
         expect(res.status).toBe(200);
         const json = await res.json();
-        const result = JSON.parse(json.content[0].text);
+        const result = JSON.parse(json.result.content[0].text);
         expect(result.count).toBe(2);
         expect(result.messages.every((m: { sender: string }) => m.sender === 'fox')).toBe(true);
       });
 
       it('filters messages by query', async () => {
-        const res = await app.request('/mcp/test-channel/tools/call', {
+        const res = await app.request('/mcp/test-channel', {
           method: 'POST',
           headers: {
             Authorization: `Container ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            name: 'message_search',
-            arguments: { query: 'search' },
-          }),
+          body: jsonRpcRequest('tools/call', { name: 'message_search', arguments: { query: 'search' } }),
         });
 
         const json = await res.json();
-        const result = JSON.parse(json.content[0].text);
+        const result = JSON.parse(json.result.content[0].text);
         expect(result.count).toBe(1);
         expect(result.messages[0].content).toContain('search');
       });
@@ -321,73 +449,64 @@ describe('MCP HTTP Routes', () => {
 
     describe('artifact reads (stubs)', () => {
       it('artifact_list returns empty array', async () => {
-        const res = await app.request('/mcp/test-channel/tools/call', {
+        const res = await app.request('/mcp/test-channel', {
           method: 'POST',
           headers: {
             Authorization: `Container ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            name: 'artifact_list',
-            arguments: {},
-          }),
+          body: jsonRpcRequest('tools/call', { name: 'artifact_list', arguments: {} }),
         });
 
         expect(res.status).toBe(200);
         const json = await res.json();
-        expect(json.isError).toBeUndefined();
+        expect(json.result.isError).toBeUndefined();
 
-        const result = JSON.parse(json.content[0].text);
+        const result = JSON.parse(json.result.content[0].text);
         expect(result.artifacts).toEqual([]);
       });
 
       it('artifact_glob returns empty tree', async () => {
-        const res = await app.request('/mcp/test-channel/tools/call', {
+        const res = await app.request('/mcp/test-channel', {
           method: 'POST',
           headers: {
             Authorization: `Container ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            name: 'artifact_glob',
-            arguments: { pattern: '/**' },
-          }),
+          body: jsonRpcRequest('tools/call', { name: 'artifact_glob', arguments: { pattern: '/**' } }),
         });
 
         expect(res.status).toBe(200);
         const json = await res.json();
-        expect(json.content[0].text).toBe('(empty)');
+        expect(json.result.content[0].text).toBe('(empty)');
       });
 
       it('artifact_read returns not found error', async () => {
-        const res = await app.request('/mcp/test-channel/tools/call', {
+        const res = await app.request('/mcp/test-channel', {
           method: 'POST',
           headers: {
             Authorization: `Container ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            name: 'artifact_read',
-            arguments: { slug: 'test-artifact' },
-          }),
+          body: jsonRpcRequest('tools/call', { name: 'artifact_read', arguments: { slug: 'test-artifact' } }),
         });
 
-        expect(res.status).toBe(200); // MCP returns 200 for tool errors
+        expect(res.status).toBe(200);
         const json = await res.json();
-        expect(json.isError).toBe(true);
-        expect(json.content[0].text).toContain('Artifact not found');
+        expect(json.result.isError).toBe(true);
+        expect(json.result.content[0].text).toContain('Artifact not found');
       });
     });
 
     describe('artifact writes (errors)', () => {
       it('artifact_create returns not implemented error', async () => {
-        const res = await app.request('/mcp/test-channel/tools/call', {
+        const res = await app.request('/mcp/test-channel', {
           method: 'POST',
           headers: {
             Authorization: `Container ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
+          body: jsonRpcRequest('tools/call', {
             name: 'artifact_create',
             arguments: {
               slug: 'test',
@@ -400,18 +519,18 @@ describe('MCP HTTP Routes', () => {
 
         expect(res.status).toBe(200);
         const json = await res.json();
-        expect(json.isError).toBe(true);
-        expect(json.content[0].text).toContain('not yet implemented');
+        expect(json.result.isError).toBe(true);
+        expect(json.result.content[0].text).toContain('not yet implemented');
       });
 
       it('artifact_update returns not implemented error', async () => {
-        const res = await app.request('/mcp/test-channel/tools/call', {
+        const res = await app.request('/mcp/test-channel', {
           method: 'POST',
           headers: {
             Authorization: `Container ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
+          body: jsonRpcRequest('tools/call', {
             name: 'artifact_update',
             arguments: {
               slug: 'test',
@@ -422,18 +541,18 @@ describe('MCP HTTP Routes', () => {
 
         expect(res.status).toBe(200);
         const json = await res.json();
-        expect(json.isError).toBe(true);
-        expect(json.content[0].text).toContain('not yet implemented');
+        expect(json.result.isError).toBe(true);
+        expect(json.result.content[0].text).toContain('not yet implemented');
       });
 
       it('artifact_edit returns not implemented error', async () => {
-        const res = await app.request('/mcp/test-channel/tools/call', {
+        const res = await app.request('/mcp/test-channel', {
           method: 'POST',
           headers: {
             Authorization: `Container ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
+          body: jsonRpcRequest('tools/call', {
             name: 'artifact_edit',
             arguments: {
               slug: 'test',
@@ -445,84 +564,58 @@ describe('MCP HTTP Routes', () => {
 
         expect(res.status).toBe(200);
         const json = await res.json();
-        expect(json.isError).toBe(true);
-        expect(json.content[0].text).toContain('not yet implemented');
+        expect(json.result.isError).toBe(true);
+        expect(json.result.content[0].text).toContain('not yet implemented');
       });
 
       it('artifact_archive returns not implemented error', async () => {
-        const res = await app.request('/mcp/test-channel/tools/call', {
+        const res = await app.request('/mcp/test-channel', {
           method: 'POST',
           headers: {
             Authorization: `Container ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            name: 'artifact_archive',
-            arguments: { slug: 'test' },
-          }),
+          body: jsonRpcRequest('tools/call', { name: 'artifact_archive', arguments: { slug: 'test' } }),
         });
 
         expect(res.status).toBe(200);
         const json = await res.json();
-        expect(json.isError).toBe(true);
-        expect(json.content[0].text).toContain('not yet implemented');
+        expect(json.result.isError).toBe(true);
+        expect(json.result.content[0].text).toContain('not yet implemented');
       });
     });
 
     describe('error handling', () => {
       it('returns error for unknown tool', async () => {
-        const res = await app.request('/mcp/test-channel/tools/call', {
+        const res = await app.request('/mcp/test-channel', {
           method: 'POST',
           headers: {
             Authorization: `Container ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            name: 'unknown_tool',
-            arguments: {},
-          }),
+          body: jsonRpcRequest('tools/call', { name: 'unknown_tool', arguments: {} }),
         });
 
-        expect(res.status).toBe(400);
+        expect(res.status).toBe(200);
         const json = await res.json();
-        expect(json.isError).toBe(true);
-        expect(json.content[0].text).toContain('Unknown tool');
+        expect(json.error.code).toBe(-32601); // Method not found
+        expect(json.error.message).toContain('Unknown tool');
       });
 
       it('returns error for missing tool name', async () => {
-        const res = await app.request('/mcp/test-channel/tools/call', {
+        const res = await app.request('/mcp/test-channel', {
           method: 'POST',
           headers: {
             Authorization: `Container ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            arguments: {},
-          }),
+          body: jsonRpcRequest('tools/call', { arguments: {} }),
         });
 
-        expect(res.status).toBe(400);
+        expect(res.status).toBe(200);
         const json = await res.json();
-        expect(json.isError).toBe(true);
-        expect(json.content[0].text).toContain('Missing tool name');
-      });
-
-      it('returns 404 for non-existent channel', async () => {
-        const res = await app.request('/mcp/non-existent/tools/call', {
-          method: 'POST',
-          headers: {
-            Authorization: `Container ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            name: 'message_get',
-            arguments: {},
-          }),
-        });
-
-        expect(res.status).toBe(404);
-        const json = await res.json();
-        expect(json.error).toBe('Channel not found');
+        expect(json.error.code).toBe(-32602); // Invalid params
+        expect(json.error.message).toContain('Missing tool name');
       });
     });
   });
