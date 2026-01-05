@@ -1,15 +1,15 @@
 /**
- * MCP Cikada Tools Server
+ * MCP Cast Tools Server
  *
- * Provides artifact and message tools that wrap Cikada's HTTP API.
+ * Provides artifact and message tools that wrap Cast's HTTP API.
  *
  * Artifact tools: create, read, list, glob, update, edit, archive
  * Message tools: get, search, context
  *
  * Configuration via environment:
- * - CIKADA_API_URL - Base URL (e.g., http://localhost:3001)
- * - CIKADA_CHANNEL_ID - Channel ID for the agent's context
- * - CIKADA_CALLSIGN - Agent's callsign (used as createdBy/updatedBy)
+ * - CAST_API_URL - Base URL (e.g., http://localhost:3001)
+ * - CAST_CHANNEL_ID - Channel ID for the agent's context
+ * - CAST_CALLSIGN - Agent's callsign (used as createdBy/updatedBy)
  *
  * All tools accept an optional `channel` parameter to override the default channel.
  */
@@ -24,13 +24,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 // Configuration from environment
-const CIKADA_API_URL = process.env.CIKADA_API_URL ?? "";
-const CIKADA_CHANNEL_ID = process.env.CIKADA_CHANNEL_ID ?? "";
-const CIKADA_CALLSIGN = process.env.CIKADA_CALLSIGN ?? "";
-const CIKADA_SPACE_ID = process.env.CIKADA_SPACE_ID ?? "";
-const CIKADA_AUTH_TOKEN = process.env.CIKADA_AUTH_TOKEN ?? "";
+const CAST_API_URL = process.env.CAST_API_URL ?? "";
+const CAST_CHANNEL_ID = process.env.CAST_CHANNEL_ID ?? "";
+const CAST_CALLSIGN = process.env.CAST_CALLSIGN ?? "";
+const CAST_SPACE_ID = process.env.CAST_SPACE_ID ?? "";
+const CAST_AUTH_TOKEN = process.env.CAST_AUTH_TOKEN ?? "";
 
-const isConfigured = CIKADA_API_URL && CIKADA_CHANNEL_ID && CIKADA_CALLSIGN;
+const isConfigured = CAST_API_URL && CAST_CHANNEL_ID && CAST_CALLSIGN;
 
 // =============================================================================
 // HTTP Client
@@ -47,14 +47,14 @@ async function httpRequest(
   path: string,
   body?: unknown
 ): Promise<HttpResponse> {
-  const url = `${CIKADA_API_URL}${path}`;
+  const url = `${CAST_API_URL}${path}`;
 
   // Build headers - include auth token for container authentication
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  if (CIKADA_AUTH_TOKEN) {
-    headers["X-Cikada-Token"] = CIKADA_AUTH_TOKEN;
+  if (CAST_AUTH_TOKEN) {
+    headers["X-Cast-Token"] = CAST_AUTH_TOKEN;
   }
 
   const response = await fetch(url, {
@@ -74,7 +74,7 @@ async function httpRequest(
 
 // Helper to get channel ID (supports optional override for cross-channel access)
 function getChannelId(channelOverride?: string): string {
-  return channelOverride ?? CIKADA_CHANNEL_ID;
+  return channelOverride ?? CAST_CHANNEL_ID;
 }
 
 // =============================================================================
@@ -117,7 +117,7 @@ interface MultipartBodyOptions {
 
 function createMultipartBody(options: MultipartBodyOptions): { body: Buffer; boundary: string } {
   const { filename, fileData, mimeType, uploadedBy, title, description, messageId, customFilename } = options;
-  const boundary = "----CikadaBoundary" + Math.random().toString(36).slice(2);
+  const boundary = "----CastBoundary" + Math.random().toString(36).slice(2);
   const parts: Buffer[] = [];
 
   // Add uploadedBy field
@@ -201,7 +201,7 @@ async function artifactCreate(params: ArtifactCreateParams): Promise<string> {
     `/channels/${channelId}/artifacts`,
     {
       ...rest,
-      createdBy: CIKADA_CALLSIGN,
+      createdBy: CAST_CALLSIGN,
     }
   );
 
@@ -388,7 +388,7 @@ async function artifactUpdate(params: ArtifactUpdateParams): Promise<string> {
     `/channels/${channelId}/artifacts/${encodeURIComponent(params.slug)}`,
     {
       changes: transformedChanges,
-      updatedBy: CIKADA_CALLSIGN,
+      updatedBy: CAST_CALLSIGN,
     }
   );
 
@@ -449,7 +449,7 @@ async function artifactEdit(params: ArtifactEditParams): Promise<string> {
       changes: [
         { field: "content", oldValue: content, newValue: newContent },
       ],
-      updatedBy: CIKADA_CALLSIGN,
+      updatedBy: CAST_CALLSIGN,
     }
   );
 
@@ -478,7 +478,7 @@ async function artifactArchive(params: ArtifactArchiveParams): Promise<string> {
 
   const response = await httpRequest(
     "DELETE",
-    `/channels/${channelId}/artifacts/${encodeURIComponent(params.slug)}?updatedBy=${encodeURIComponent(CIKADA_CALLSIGN)}`
+    `/channels/${channelId}/artifacts/${encodeURIComponent(params.slug)}?updatedBy=${encodeURIComponent(CAST_CALLSIGN)}`
   );
 
   if (!response.ok) {
@@ -728,7 +728,7 @@ async function attachmentUpload(params: AttachmentUploadParams): Promise<string>
     filename,
     fileData,
     mimeType,
-    uploadedBy: CIKADA_CALLSIGN,
+    uploadedBy: CAST_CALLSIGN,
     title: params.title,
     description: params.description,
     messageId: params.messageId,
@@ -736,14 +736,14 @@ async function attachmentUpload(params: AttachmentUploadParams): Promise<string>
   });
 
   // POST to attachment endpoint
-  const url = `${CIKADA_API_URL}/channels/${channelId}/attachments`;
+  const url = `${CAST_API_URL}/channels/${channelId}/attachments`;
 
   // Build headers - include auth token for container authentication
   const headers: Record<string, string> = {
     "Content-Type": `multipart/form-data; boundary=${boundary}`,
   };
-  if (CIKADA_AUTH_TOKEN) {
-    headers["X-Cikada-Token"] = CIKADA_AUTH_TOKEN;
+  if (CAST_AUTH_TOKEN) {
+    headers["X-Cast-Token"] = CAST_AUTH_TOKEN;
   }
 
   const response = await fetch(url, {
@@ -804,7 +804,7 @@ async function attachmentLink(params: AttachmentLinkParams): Promise<string> {
 
 const server = new Server(
   {
-    name: "cikada-tools",
+    name: "cast-tools",
     version: "0.3.0",
   },
   {
@@ -824,7 +824,7 @@ const channelProperty = {
 const TOOLS = [
   {
     name: "artifact_create",
-    description: "Create a new artifact on the Cikada board",
+    description: "Create a new artifact on the Cast board",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -1154,10 +1154,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [
         {
           type: "text",
-          text: "Cikada artifact tools not configured. Missing environment variables: " +
-            (!CIKADA_API_URL ? "CIKADA_API_URL " : "") +
-            (!CIKADA_CHANNEL_ID ? "CIKADA_CHANNEL_ID " : "") +
-            (!CIKADA_CALLSIGN ? "CIKADA_CALLSIGN" : ""),
+          text: "Cast artifact tools not configured. Missing environment variables: " +
+            (!CAST_API_URL ? "CAST_API_URL " : "") +
+            (!CAST_CHANNEL_ID ? "CAST_CHANNEL_ID " : "") +
+            (!CAST_CALLSIGN ? "CAST_CALLSIGN" : ""),
         },
       ],
       isError: true,
@@ -1238,11 +1238,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // =============================================================================
 
 async function main() {
-  console.error("[MCP] Starting Cikada Tools server (artifacts + messages)");
-  console.error(`[MCP] API URL: ${CIKADA_API_URL || "(not set)"}`);
-  console.error(`[MCP] Channel ID: ${CIKADA_CHANNEL_ID || "(not set)"}`);
-  console.error(`[MCP] Callsign: ${CIKADA_CALLSIGN || "(not set)"}`);
-  console.error(`[MCP] Auth Token: ${CIKADA_AUTH_TOKEN ? "(set)" : "(not set)"}`);
+  console.error("[MCP] Starting Cast Tools server (artifacts + messages)");
+  console.error(`[MCP] API URL: ${CAST_API_URL || "(not set)"}`);
+  console.error(`[MCP] Channel ID: ${CAST_CHANNEL_ID || "(not set)"}`);
+  console.error(`[MCP] Callsign: ${CAST_CALLSIGN || "(not set)"}`);
+  console.error(`[MCP] Auth Token: ${CAST_AUTH_TOKEN ? "(set)" : "(not set)"}`);
   console.error(`[MCP] Configured: ${isConfigured}`);
 
   const transport = new StdioServerTransport();

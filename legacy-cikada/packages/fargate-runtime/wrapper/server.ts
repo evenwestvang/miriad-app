@@ -16,6 +16,7 @@ import { createInterface } from "node:readline";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { networkInterfaces } from "node:os";
 import { IdleMonitor } from "./idle-monitor.js";
 import { TymbalBridge, type ClaudeCodeEvent } from "./tymbal-bridge.js";
 
@@ -62,12 +63,32 @@ function convertToMcpServerConfig(resolved: ResolvedMcpConfig): McpServerConfig 
 // Configuration from environment
 const PORT = parseInt(process.env.PORT ?? "8080", 10);
 const THREAD_ID = process.env.THREAD_ID ?? "";
-const CIKADA_API_URL = process.env.CIKADA_API_URL ?? "";
-const CIKADA_CHANNEL_ID = process.env.CIKADA_CHANNEL_ID ?? "";
-const CIKADA_CALLSIGN = process.env.CIKADA_CALLSIGN ?? "";
-const CIKADA_AUTH_TOKEN = process.env.CIKADA_AUTH_TOKEN ?? "";
+const CAST_API_URL = process.env.CAST_API_URL ?? "";
+const CAST_CHANNEL_ID = process.env.CAST_CHANNEL_ID ?? "";
+const CAST_CALLSIGN = process.env.CAST_CALLSIGN ?? "";
+const CAST_AUTH_TOKEN = process.env.CAST_AUTH_TOKEN ?? "";
 const WORKSPACE_BASE = process.env.WORKSPACE_DIR ?? "/workspace";
 const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS ?? String(10 * 60 * 1000), 10);
+
+/**
+ * Get the container's local IP address for callback URL.
+ * Returns the first non-internal IPv4 address found.
+ */
+function getLocalIp(): string {
+  const nets = networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    const netList = nets[name];
+    if (!netList) continue;
+    for (const net of netList) {
+      // Skip internal (loopback) and non-IPv4 addresses
+      if (net.family === "IPv4" && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  // Fallback to localhost if no external IP found
+  return "127.0.0.1";
+}
 
 // Get path to MCP artifact server (relative to this file's compiled location)
 const __filename = fileURLToPath(import.meta.url);
@@ -131,22 +152,22 @@ function generateMcpConfig(
 ): string | null {
   const mcpServers: Record<string, McpServerConfig> = {};
 
-  // Add built-in cikada-artifacts MCP if configured
-  if (CIKADA_CHANNEL_ID && CIKADA_CALLSIGN && existsSync(MCP_ARTIFACT_SERVER_PATH)) {
-    mcpServers["cikada-artifacts"] = {
+  // Add built-in cast-artifacts MCP if configured
+  if (CAST_CHANNEL_ID && CAST_CALLSIGN && existsSync(MCP_ARTIFACT_SERVER_PATH)) {
+    mcpServers["cast-artifacts"] = {
       type: "stdio",
       command: "node",
       args: [MCP_ARTIFACT_SERVER_PATH],
       env: {
-        CIKADA_API_URL: CIKADA_API_URL,
-        CIKADA_CHANNEL_ID: CIKADA_CHANNEL_ID,
-        CIKADA_CALLSIGN: CIKADA_CALLSIGN,
-        CIKADA_AUTH_TOKEN: CIKADA_AUTH_TOKEN,
+        CAST_API_URL: CAST_API_URL,
+        CAST_CHANNEL_ID: CAST_CHANNEL_ID,
+        CAST_CALLSIGN: CAST_CALLSIGN,
+        CAST_AUTH_TOKEN: CAST_AUTH_TOKEN,
       },
     };
-    console.log("[Server] Added built-in cikada-artifacts MCP");
+    console.log("[Server] Added built-in cast-artifacts MCP");
   } else {
-    console.log("[Server] Built-in cikada-artifacts MCP disabled - missing config or server");
+    console.log("[Server] Built-in cast-artifacts MCP disabled - missing config or server");
   }
 
   // Add resolved MCPs from orchestrator (already have env vars resolved)
@@ -348,9 +369,9 @@ async function processMessage(message: QueuedMessage): Promise<void> {
   // Create Tymbal bridge for this conversation
   // Pass callsign so frames include correct sender for routing
   const tymbalBridge = new TymbalBridge({
-    cikadaApiUrl: CIKADA_API_URL,
+    cikadaApiUrl: CAST_API_URL,
     threadId,
-    callsign: CIKADA_CALLSIGN || undefined,
+    callsign: CAST_CALLSIGN || undefined,
   });
 
   // Check if we should use --continue:
@@ -493,6 +514,53 @@ async function handleShutdown(_req: IncomingMessage, res: ServerResponse): Promi
 }
 
 /**
+ * Register this container with the Cast API.
+ * Called on startup to provide our callback URL for message delivery.
+ */
+async function checkin(): Promise<void> {
+  // Skip checkin if not configured
+  if (!CAST_API_URL || !CAST_CHANNEL_ID || !CAST_CALLSIGN) {
+    console.log("[Server] Checkin skipped - missing CAST_API_URL, CAST_CHANNEL_ID, or CAST_CALLSIGN");
+    return;
+  }
+
+  const localIp = getLocalIp();
+  const endpoint = `http://${localIp}:${PORT}`;
+
+  console.log(`[Server] Checking in with Cast API at ${CAST_API_URL}`);
+  console.log(`[Server]   Channel: ${CAST_CHANNEL_ID}`);
+  console.log(`[Server]   Callsign: ${CAST_CALLSIGN}`);
+  console.log(`[Server]   Endpoint: ${endpoint}`);
+
+  try {
+    const response = await fetch(`${CAST_API_URL}/agents/checkin`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(CAST_AUTH_TOKEN ? { "Authorization": `Bearer ${CAST_AUTH_TOKEN}` } : {}),
+      },
+      body: JSON.stringify({
+        channelId: CAST_CHANNEL_ID,
+        callsign: CAST_CALLSIGN,
+        endpoint,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Server] Checkin failed: ${response.status} ${errorText}`);
+      // Don't throw - container can still receive messages if orchestrator knows our IP
+      return;
+    }
+
+    console.log("[Server] Checkin successful, waiting for messages...");
+  } catch (error) {
+    console.error("[Server] Checkin error:", error);
+    // Don't throw - container can still function without successful checkin
+  }
+}
+
+/**
  * Gracefully shut down the server.
  */
 async function gracefulShutdown(): Promise<void> {
@@ -569,8 +637,8 @@ process.on("SIGINT", () => {
 });
 
 // Validate configuration
-if (!CIKADA_API_URL) {
-  console.warn("[Server] Warning: CIKADA_API_URL not set, Tymbal streaming disabled");
+if (!CAST_API_URL) {
+  console.warn("[Server] Warning: CAST_API_URL not set, Tymbal streaming disabled");
 }
 
 // Start server
@@ -581,11 +649,11 @@ server.listen(PORT, () => {
   console.log(`[Server] Idle timeout: ${IDLE_TIMEOUT_MS / 1000}s`);
 
   // MCP artifact tools status
-  const mcpEnabled = CIKADA_CHANNEL_ID && CIKADA_CALLSIGN;
+  const mcpEnabled = CAST_CHANNEL_ID && CAST_CALLSIGN;
   console.log(`[Server] MCP artifact tools: ${mcpEnabled ? "enabled" : "disabled"}`);
   if (mcpEnabled) {
-    console.log(`[Server]   Channel: ${CIKADA_CHANNEL_ID}`);
-    console.log(`[Server]   Callsign: ${CIKADA_CALLSIGN}`);
+    console.log(`[Server]   Channel: ${CAST_CHANNEL_ID}`);
+    console.log(`[Server]   Callsign: ${CAST_CALLSIGN}`);
     console.log(`[Server]   Server path: ${MCP_ARTIFACT_SERVER_PATH}`);
   }
 
@@ -602,4 +670,9 @@ server.listen(PORT, () => {
 
   // Start idle monitor
   idleMonitor.start();
+
+  // Register with Cast API (fire-and-forget, don't block startup)
+  checkin().catch((err) => {
+    console.error("[Server] Checkin failed:", err);
+  });
 });

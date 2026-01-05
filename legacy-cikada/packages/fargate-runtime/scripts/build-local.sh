@@ -49,7 +49,10 @@ if [[ "$1" == "--run" ]]; then
     docker run -it --rm \
         -p 8080:8080 \
         -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
-        -e CIKADA_API_URL="${CIKADA_API_URL:-http://localhost:3000}" \
+        -e CAST_API_URL="${CAST_API_URL:-http://localhost:3000}" \
+        -e CAST_CHANNEL_ID="${CAST_CHANNEL_ID:-}" \
+        -e CAST_CALLSIGN="${CAST_CALLSIGN:-}" \
+        -e CAST_AUTH_TOKEN="${CAST_AUTH_TOKEN:-}" \
         -e THREAD_ID="${THREAD_ID:-test-thread}" \
         -e IDLE_TIMEOUT_MS="${IDLE_TIMEOUT_MS:-600000}" \
         -v "${PWD}/test-workspace:/workspace" \
