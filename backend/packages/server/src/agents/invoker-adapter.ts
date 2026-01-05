@@ -10,6 +10,7 @@
 
 import type { AgentManager } from './agent-manager.js';
 import type { Storage } from '@cast/storage';
+import type { ContainerOrchestrator } from '@cast/runtime';
 import type { AgentInvoker, Message } from '../handlers/messages.js';
 import { pushMessagesToContainer, compileMessages } from '../handlers/checkin.js';
 import { generateContainerToken } from '../auth/index.js';
@@ -25,6 +26,8 @@ export interface AgentInvokerAdapterOptions {
   storage: Storage;
   /** The space ID (all agents in this invoker belong to same space) */
   spaceId: string;
+  /** Container orchestrator for direct message routing (local Docker) */
+  orchestrator?: ContainerOrchestrator;
 }
 
 // =============================================================================
@@ -45,7 +48,7 @@ export interface AgentInvokerAdapterOptions {
 export function createAgentInvokerAdapter(
   options: AgentInvokerAdapterOptions
 ): AgentInvoker {
-  const { agentManager, storage, spaceId } = options;
+  const { agentManager, storage, spaceId, orchestrator } = options;
 
   return {
     invokeAgents: async (
@@ -66,15 +69,32 @@ export function createAgentInvokerAdapter(
       const results = await Promise.allSettled(
         targets.map(async (callsign) => {
           try {
-            // Step 1: Check roster for existing callbackUrl
+            const threadId = `${spaceId}:${channelId}:${callsign}`;
+            const userMessage = `Message from @${message.sender}: ${message.content}`;
+
+            // Step 1: For local Docker, check if orchestrator has container running
+            // This bypasses the roster callbackUrl which has host.docker.internal issues
+            if (orchestrator?.isRunning(threadId)) {
+              console.log(`[AgentInvoker] @${callsign} container running (via orchestrator), sending directly`);
+              await orchestrator.sendMessage(threadId, userMessage);
+
+              // Update readmark after successful delivery
+              const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+              if (rosterEntry) {
+                await storage.updateRosterEntry(channelId, rosterEntry.id, {
+                  readmark: message.id,
+                });
+              }
+              console.log(`[AgentInvoker] Successfully sent to @${callsign} via orchestrator`);
+              return;
+            }
+
+            // Step 2: Check roster for existing callbackUrl (Fargate path)
             const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
 
             if (rosterEntry?.callbackUrl) {
               // Step 2a: Container is running - push directly
               console.log(`[AgentInvoker] @${callsign} has callbackUrl, pushing directly to ${rosterEntry.callbackUrl}`);
-
-              const threadId = `${spaceId}:${channelId}:${callsign}`;
-              const userMessage = `Message from @${message.sender}: ${message.content}`;
 
               // Generate auth token for this agent (deterministic - same as container received at spawn)
               const authToken = generateContainerToken({ spaceId, channelId, callsign });

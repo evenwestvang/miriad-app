@@ -419,6 +419,7 @@ export function createApp(options: AppOptions): Hono {
     agentManager,
     storage,
     spaceId,
+    orchestrator, // For local Docker: use orchestrator's port mapping directly
   });
 
   // ---------------------------------------------------------------------------
