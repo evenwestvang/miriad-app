@@ -303,6 +303,80 @@ export function createApp(options: AppOptions): Hono {
   });
 
   // ---------------------------------------------------------------------------
+  // Mock Auth Endpoints (for local dev)
+  // ---------------------------------------------------------------------------
+
+  app.get('/mock-auth/login', (c) => {
+    // Return simple HTML that simulates login success
+    const redirectUrl = c.req.query('redirect') || '/';
+    return c.html(`
+      <!DOCTYPE html>
+      <html>
+        <head><title>Mock Login</title></head>
+        <body>
+          <h1>Mock Login</h1>
+          <p>Logging in as dev-user...</p>
+          <script>
+            document.cookie = "cast_session=dev-session; path=/";
+            setTimeout(() => window.location.href = "${redirectUrl}", 500);
+          </script>
+        </body>
+      </html>
+    `);
+  });
+
+  app.get('/mock-auth/callback', (c) => {
+    return c.redirect('/');
+  });
+
+  app.post('/mock-auth/logout', (c) => {
+    return c.json({ ok: true });
+  });
+
+  app.get('/mock-auth/user', (c) => {
+    return c.json({
+      user: {
+        id: 'dev-user',
+        name: 'Developer',
+        email: 'dev@local.test',
+      },
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Focus Types & Agent Types (stubs for frontend)
+  // ---------------------------------------------------------------------------
+
+  app.get('/focus-types', (c) => {
+    return c.json({
+      focusTypes: [
+        {
+          slug: 'general',
+          name: 'General',
+          description: 'Open workspace for any task',
+        },
+      ],
+    });
+  });
+
+  app.get('/agents', (c) => {
+    return c.json({
+      agentTypes: [
+        {
+          slug: 'engineer',
+          name: 'Engineer',
+          description: 'Software engineering agent',
+        },
+        {
+          slug: 'lead',
+          name: 'Lead',
+          description: 'Team lead agent',
+        },
+      ],
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Create Agent Manager
   // ---------------------------------------------------------------------------
 
