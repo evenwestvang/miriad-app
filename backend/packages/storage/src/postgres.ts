@@ -65,6 +65,7 @@ interface RosterRow {
   agent_type: string;
   status: string;
   created_at: Date;
+  callback_url: string | null;
 }
 
 // =============================================================================
@@ -399,11 +400,22 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     entryId: string,
     update: UpdateRosterInput
   ): Promise<void> {
-    if (update.status === undefined) return;
+    // Build update object for postgres.js dynamic columns
+    const updateObj: Record<string, unknown> = {};
 
+    if (update.status !== undefined) {
+      updateObj.status = update.status;
+    }
+    if (update.callbackUrl !== undefined) {
+      updateObj.callback_url = update.callbackUrl;
+    }
+
+    if (Object.keys(updateObj).length === 0) return;
+
+    // Use postgres.js dynamic column updates (same pattern as updateChannel)
     await sql`
       UPDATE roster
-      SET status = ${update.status}
+      SET ${sql(updateObj, ...Object.keys(updateObj))}
       WHERE channel_id = ${channelId} AND id = ${entryId}
     `;
   }
@@ -564,6 +576,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       agentType: row.agent_type,
       status: row.status as RosterStatus,
       createdAt: row.created_at.toISOString(),
+      callbackUrl: row.callback_url ?? undefined,
     };
   }
 

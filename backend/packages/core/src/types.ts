@@ -193,6 +193,9 @@ export interface RosterEntry {
 
   /** ISO timestamp of when agent joined */
   createdAt: string;
+
+  /** Callback URL for message delivery (set by container checkin) */
+  callbackUrl?: string;
 }
 
 /**
@@ -211,6 +214,8 @@ export interface AddToRosterInput {
  */
 export interface UpdateRosterInput {
   status?: RosterStatus;
+  /** Callback URL for message delivery */
+  callbackUrl?: string;
 }
 
 // =============================================================================

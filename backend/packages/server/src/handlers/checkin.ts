@@ -35,9 +35,7 @@ export interface CheckinHandlerOptions {
   storage: Storage;
   /** Default space ID */
   spaceId: string;
-  /** In-memory callback URL store (for local dev) */
-  callbackStore: Map<string, string>;
-  /** In-memory readmark store (for local dev) */
+  /** In-memory readmark store (for local dev - TODO: persist to DB) */
   readmarkStore: Map<string, string>;
 }
 
@@ -159,7 +157,7 @@ export async function pushMessagesToContainer(
  * Create the /agents/checkin route.
  */
 export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
-  const { storage, spaceId: defaultSpaceId, callbackStore, readmarkStore } = options;
+  const { storage, spaceId: defaultSpaceId, readmarkStore } = options;
 
   const app = new Hono();
 
@@ -189,11 +187,21 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
 
     console.log(`[Checkin] Agent ${callsign} checking in from ${endpoint}`);
 
-    // Store callback URL (in-memory for local dev)
-    const storeKey = `${channelId}:${callsign}`;
-    callbackStore.set(storeKey, endpoint);
+    // Store callback URL in roster table
+    const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+    if (!rosterEntry) {
+      console.error(`[Checkin] Agent ${callsign} not found in roster for channel ${channelId}`);
+      return c.json({ error: 'Agent not found in roster' }, 404);
+    }
 
-    // Get readmark (in-memory for local dev)
+    // Persist callbackUrl to roster
+    await storage.updateRosterEntry(channelId, rosterEntry.id, {
+      callbackUrl: endpoint,
+    });
+    console.log(`[Checkin] Stored callbackUrl for ${callsign} in roster`);
+
+    // Get readmark (in-memory for local dev - TODO: persist to DB)
+    const storeKey = `${channelId}:${callsign}`;
     const readmark = readmarkStore.get(storeKey) ?? null;
 
     // Return OK immediately
@@ -260,15 +268,15 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
   app.get('/status/:channelId/:callsign', async (c) => {
     const channelId = c.req.param('channelId');
     const callsign = c.req.param('callsign');
-    const storeKey = `${channelId}:${callsign}`;
 
-    const endpoint = callbackStore.get(storeKey);
+    const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+    const endpoint = rosterEntry?.callbackUrl ?? null;
 
     return c.json({
       channelId,
       callsign,
       online: !!endpoint,
-      endpoint: endpoint ?? null,
+      endpoint,
     });
   });
 
