@@ -36,5 +36,7 @@ disable_rollback = false
 parameter_overrides = [
     "Stage=stag",
     "PlanetScaleUrl=postgres://pscale_api_nmney6igy1w2.pwp8x47bv2br:pscale_pw_MdmptCQgW99vHwo4MILzUqRPdfn5iNAk@us-east-2.pg.psdb.cloud:6432/postgres",
-    "SpaceId=default-space"
+    "SpaceId=default-space",
+    "SubnetIds=subnet-0f7c23168eb2b784f,subnet-0873ce7dc641901f6,subnet-0ecf88ad31694eb5e",
+    "SecurityGroupIds=sg-05971dc75c23d1eff"
 ]
