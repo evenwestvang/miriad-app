@@ -187,28 +187,27 @@ export class FargateOrchestrator implements ContainerOrchestrator {
     const taskArn = task.taskArn;
     console.log(`[FargateOrchestrator] Task started: ${taskArn}`);
 
-    // Wait for task to get a public IP
-    const { publicIp, status } = await this.waitForTaskReady(taskArn);
+    // NOTE: Fire-and-forget pattern - don't wait for task to be ready
+    // The agent container has CIKADA_API_URL and will call back when ready
+    // This keeps Lambda response time under API Gateway's 29s timeout
+    console.log(`[FargateOrchestrator] Fire-and-forget - agent will callback to API`);
 
-    // Wait for container to be healthy
-    await this.waitForHealthy(publicIp, this.config.containerPort);
-
-    // Create state
+    // Create state (status='starting' since we don't wait for RUNNING)
     const now = new Date().toISOString();
     const containerState: ContainerState = {
       threadId,
       containerId: taskArn,
       port: this.config.containerPort,
-      status: 'running',
+      status: 'starting',
       lastActivity: now,
       createdAt: now,
     };
 
-    // Persist to DynamoDB
+    // Persist to DynamoDB (no IP yet - agent will update when it calls back)
     await this.saveStateToDynamoDB(threadId, {
       ...containerState,
       taskArn,
-      publicIp,
+      publicIp: 'pending',
     });
 
     // Update cache

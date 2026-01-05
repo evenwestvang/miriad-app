@@ -24,11 +24,14 @@ importers:
   deploy:
     dependencies:
       '@aws-sdk/client-apigatewaymanagementapi':
-        specifier: ^3.700.0
+        specifier: ^3.0.0
         version: 3.962.0
       '@aws-sdk/client-dynamodb':
-        specifier: ^3.700.0
+        specifier: ^3.0.0
         version: 3.962.0
+      '@aws-sdk/lib-dynamodb':
+        specifier: ^3.0.0
+        version: 3.962.0(@aws-sdk/client-dynamodb@3.962.0)
       '@cast/core':
         specifier: workspace:*
         version: link:../packages/core
@@ -216,6 +219,12 @@ packages:
   '@aws-sdk/endpoint-cache@3.957.0':
     resolution: {integrity: sha512-QxvFejXYYBZp/GBfT7B15gvmvuq+0f2U8RPHqArf5IqBi51ZyBqUD805tQ8TlsVrlLoi+Z4fEFw4HEM5pGvPUg==}
     engines: {node: '>=18.0.0'}
+
+  '@aws-sdk/lib-dynamodb@3.962.0':
+    resolution: {integrity: sha512-aUUqAO9GHHXEucuZgQiA/1rf8Q4UnitbNs3Y7y72ic8PmTrHAa64tVyd1Rlwwj27opy9BSdYRaUuMfAjSM1hXQ==}
+    engines: {node: '>=18.0.0'}
+    peerDependencies:
+      '@aws-sdk/client-dynamodb': ^3.962.0
 
   '@aws-sdk/middleware-endpoint-discovery@3.957.0':
     resolution: {integrity: sha512-MJjlw4mVJNTyR5dW6wpzKLRzFPIYAMA8qUWqgG4hGscmm4GFHvWVJ9mhhdpDu7Ie4Uaikmzfy0C4xzZ+lkf1+w==}
@@ -1968,6 +1977,16 @@ snapshots:
   '@aws-sdk/endpoint-cache@3.957.0':
     dependencies:
       mnemonist: 0.38.3
+      tslib: 2.8.1
+
+  '@aws-sdk/lib-dynamodb@3.962.0(@aws-sdk/client-dynamodb@3.962.0)':
+    dependencies:
+      '@aws-sdk/client-dynamodb': 3.962.0
+      '@aws-sdk/core': 3.957.0
+      '@aws-sdk/util-dynamodb': 3.962.0(@aws-sdk/client-dynamodb@3.962.0)
+      '@smithy/core': 3.20.0
+      '@smithy/smithy-client': 4.10.2
+      '@smithy/types': 4.11.0
       tslib: 2.8.1
 
   '@aws-sdk/middleware-endpoint-discovery@3.957.0':

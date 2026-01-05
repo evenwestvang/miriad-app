@@ -38,7 +38,7 @@ Parameters:
 
 Globals:
   Function:
-    Timeout: 30
+    Timeout: 120
     MemorySize: 256
     Runtime: nodejs20.x
     Architectures:
@@ -258,6 +258,10 @@ Resources:
               Value: '8080'
             - Name: STAGE
               Value: !Ref Stage
+            - Name: CIKADA_API_URL
+              Value: !Ref CastApiUrl
+            - Name: ANTHROPIC_API_KEY
+              Value: !Ref AnthropicApiKey
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -501,8 +505,10 @@ Resources:
               - ecs:RunTask
               - ecs:StopTask
               - ecs:DescribeTasks
+              - ecs:TagResource
             Resource:
               - !Sub arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task/${AgentCluster}/*
+              - !Sub arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/cast-agent-${Stage}:*
               - !Ref AgentTaskDefinition
           - Effect: Allow
             Action:
