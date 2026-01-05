@@ -29,7 +29,7 @@ export {
   type ThinkingValue,
   type StatusValue,
   type ErrorValue,
-  type AgentCompleteValue,
+  type IdleValue,
   type SetFrameValue,
   // Type guards
   isStartFrame,

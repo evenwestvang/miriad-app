@@ -146,7 +146,7 @@ export class TymbalBridge {
           if (needsStart) {
             await this.emitFrame({
               i: msgId,
-              m: { type: "assistant", sender: this.callsign, senderType: "agent" },
+              m: { type: "agent", sender: this.callsign, senderType: "agent" },
             });
           }
 
@@ -175,7 +175,7 @@ export class TymbalBridge {
             type: "tool_call",
             sender: this.callsign,
             senderType: "agent",
-            id: toolBlock.id,
+            toolCallId: toolBlock.id,
             name: toolBlock.name,
             args: toolBlock.input,
           },
@@ -218,7 +218,7 @@ export class TymbalBridge {
             type: "tool_result",
             sender: this.callsign,
             senderType: "agent",
-            call_id: resultBlock.tool_use_id,
+            toolCallId: resultBlock.tool_use_id,
             content: resultContent,
             isError,
           },
@@ -244,7 +244,7 @@ export class TymbalBridge {
         type: "tool_call",
         sender: this.callsign,
         senderType: "agent",
-        id: event.tool_use_id,
+        toolCallId: event.tool_use_id,
         name: event.name,
         args: event.input,
       },
@@ -278,7 +278,7 @@ export class TymbalBridge {
         type: "tool_result",
         sender: this.callsign,
         senderType: "agent",
-        call_id: event.tool_use_id,
+        toolCallId: event.tool_use_id,
         name: event.name,
         content,
         isError,
@@ -293,16 +293,13 @@ export class TymbalBridge {
     // Finalize any pending assistant message
     await this.finalizeAssistantMessage();
 
-    const completeId = generateId();
+    const idleId = generateId();
     await this.emitFrame({
-      i: completeId,
+      i: idleId,
       t: new Date().toISOString(),
       v: {
-        type: "agent_complete",
+        type: "idle",
         sender: this.callsign,
-        senderType: "agent",
-        status: "success",
-        result: event.result,
       },
     });
   }
@@ -311,16 +308,27 @@ export class TymbalBridge {
    * Handle error events.
    */
   private async handleError(event: ClaudeCodeEvent): Promise<void> {
+    // Emit error message first
     const errorId = generateId();
     await this.emitFrame({
       i: errorId,
       t: new Date().toISOString(),
       v: {
-        type: "agent_complete",
+        type: "error",
         sender: this.callsign,
         senderType: "agent",
-        status: "error",
         message: event.error?.message ?? "Unknown error",
+      },
+    });
+
+    // Then emit idle to signal we're done
+    const idleId = generateId();
+    await this.emitFrame({
+      i: idleId,
+      t: new Date().toISOString(),
+      v: {
+        type: "idle",
+        sender: this.callsign,
       },
     });
   }
@@ -334,7 +342,7 @@ export class TymbalBridge {
         i: this.currentAssistantMsgId,
         t: new Date().toISOString(),
         v: {
-          type: "assistant",
+          type: "agent",
           sender: this.callsign,
           senderType: "agent",
           content: this.assistantContent,

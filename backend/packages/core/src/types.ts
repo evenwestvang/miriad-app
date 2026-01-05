@@ -12,14 +12,13 @@ export type ParticipantType = 'user' | 'agent';
 
 export type StoredMessageType =
   | 'user'
-  | 'assistant'
+  | 'agent'
   | 'tool_call'
   | 'tool_result'
   | 'thinking'
   | 'status'
   | 'error'
-  | 'agent_message'
-  | 'agent_complete'
+  | 'idle'
   | 'structured_ask'
   | 'attachment';
 

@@ -154,13 +154,13 @@ export interface MessageMetadata {
  */
 export type MessageType =
   | 'user'
-  | 'assistant'
+  | 'agent'
   | 'tool_call'
   | 'tool_result'
   | 'thinking'
   | 'status'
   | 'error'
-  | 'agent_complete'
+  | 'idle'
   | 'structured_ask';
 
 /**
@@ -176,7 +176,7 @@ export interface SetFrameValueBase {
  * User or assistant message value.
  */
 export interface TextMessageValue extends SetFrameValueBase {
-  type: 'user' | 'assistant';
+  type: 'user' | 'agent';
   content: string;
 }
 
@@ -185,7 +185,7 @@ export interface TextMessageValue extends SetFrameValueBase {
  */
 export interface ToolCallValue extends SetFrameValueBase {
   type: 'tool_call';
-  id: string;
+  toolCallId: string;
   name: string;
   args: Record<string, unknown>;
 }
@@ -195,7 +195,7 @@ export interface ToolCallValue extends SetFrameValueBase {
  */
 export interface ToolResultValue extends SetFrameValueBase {
   type: 'tool_result';
-  call_id: string;
+  toolCallId: string;
   name: string;
   content: string;
   isError: boolean;
@@ -226,13 +226,11 @@ export interface ErrorValue extends SetFrameValueBase {
 }
 
 /**
- * Agent completion signal value.
+ * Idle signal value - agent is done with current turn.
  */
-export interface AgentCompleteValue extends SetFrameValueBase {
-  type: 'agent_complete';
-  status: 'success' | 'error';
-  result?: string;
-  message?: string;
+export interface IdleValue {
+  type: 'idle';
+  sender: string;
 }
 
 /**
@@ -245,7 +243,7 @@ export type SetFrameValue =
   | ThinkingValue
   | StatusValue
   | ErrorValue
-  | AgentCompleteValue;
+  | IdleValue;
 
 // =============================================================================
 // Type Guards

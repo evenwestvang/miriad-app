@@ -94,14 +94,13 @@ export interface Attachment {
 
 export type MessageType =
   | 'user'
-  | 'assistant'
+  | 'agent'
   | 'tool_call'
   | 'tool_result'
   | 'thinking'
   | 'status'
   | 'error'
-  | 'agent_message'
-  | 'agent_complete'
+  | 'idle'
   | 'agent_state'
   | 'agent_output'
   | 'artifact'

@@ -56,11 +56,10 @@ interface MessageValue {
   state?: AgentState
   toolName?: string
   // For tool_call frames (flat format)
-  id?: string
+  toolCallId?: string
   name?: string
   args?: Record<string, unknown>
   // For tool_result frames (flat format)
-  call_id?: string
   isError?: boolean
 }
 
@@ -148,7 +147,7 @@ export function useTymbalConnection({
       // Don't emit message yet - wait for first content to avoid empty bubbles
       if (isStartFrame(frame)) {
         // Start frames may have metadata (m) or be bare
-        const metadata: MessageMetadata = frame.m || { type: 'assistant' as MessageType, sender: 'unknown', senderType: 'agent' as const }
+        const metadata: MessageMetadata = frame.m || { type: 'agent' as MessageType, sender: 'unknown', senderType: 'agent' as const }
         pendingMessages.current.set(frame.i, {
           metadata,
           buffer: '',
@@ -248,7 +247,7 @@ export function useTymbalConnection({
               onMessage({
                 id: frame.i,
                 channelId: channelId!,
-                type: 'assistant',
+                type: 'agent',
                 content: buffer.buffer,
                 sender: value.sender,
                 senderType: 'agent',
@@ -326,7 +325,7 @@ export function useTymbalConnection({
             sender: value.sender || 'agent',
             senderType: 'agent',
             timestamp: frame.t,
-            toolCallId: value.id,
+            toolCallId: value.toolCallId,
             toolName: value.name,
             toolArgs: value.args,
           })
@@ -344,7 +343,7 @@ export function useTymbalConnection({
             sender: value.sender || 'agent',
             senderType: 'agent',
             timestamp: frame.t,
-            toolResultCallId: value.call_id,
+            toolResultCallId: value.toolCallId,
             toolResultStatus: isError ? 'error' : 'success',
             toolResultOutput: value.content,
             toolResultError: isError ? value.content : undefined,
@@ -354,20 +353,20 @@ export function useTymbalConnection({
 
         // Standard message handling - whitelist approach
         // Only render known renderable message types
-        const renderableTypes = ['user', 'assistant', 'error', 'status', 'attachment', 'structured_ask']
+        const renderableTypes = ['user', 'agent', 'error', 'status', 'attachment', 'structured_ask']
         if (!renderableTypes.includes(value.type)) {
           // Log unknown types for debugging, don't render as bubbles
           console.debug('[Tymbal] Ignoring non-renderable message type:', value.type, frame.i)
           return
         }
 
-        // Skip empty assistant messages to avoid empty bubbles
-        if (value.type === 'assistant' && !value.content) {
+        // Skip empty agent messages to avoid empty bubbles
+        if (value.type === 'agent' && !value.content) {
           return
         }
 
         // Clear waiting state when we get an agent message
-        if (value.senderType === 'agent' && value.type === 'assistant') {
+        if (value.senderType === 'agent' && value.type === 'agent') {
           setIsWaitingForResponse(false)
         }
         onMessage({

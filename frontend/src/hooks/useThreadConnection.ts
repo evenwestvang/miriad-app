@@ -78,7 +78,7 @@ export function useThreadConnection({
 
           if (frame.m !== undefined) {
             // Start frame - new streaming message
-            const msgType = frame.m?.type || 'assistant'
+            const msgType = frame.m?.type || 'agent'
 
             // Skip user messages from sync - we already show them optimistically
             if (msgType === 'user') {
@@ -114,7 +114,7 @@ export function useThreadConnection({
               onMessage({
                 id: msgId,
                 channelId: threadId!,
-                type: 'assistant' as MessageType,
+                type: 'agent' as MessageType,
                 content: frame.a,
                 sender: 'agent',
                 senderType: 'agent',
@@ -123,7 +123,7 @@ export function useThreadConnection({
             }
           } else if (frame.v !== undefined) {
             // Set frame - final value
-            const msgType = frame.v?.type || 'assistant'
+            const msgType = frame.v?.type || 'agent'
 
             // Skip user messages from sync - we already show them optimistically
             if (msgType === 'user') {
@@ -303,7 +303,7 @@ export function useThreadConnection({
           onMessage({
             id: data.msgId || `agent-${Date.now()}`,
             channelId: threadId,
-            type: 'assistant' as MessageType,
+            type: 'agent' as MessageType,
             content: data.response,
             sender: 'agent',
             senderType: 'agent',

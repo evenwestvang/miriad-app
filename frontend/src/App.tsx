@@ -16,13 +16,6 @@ import { API_HOST, apiFetch, checkAuth, logout } from './lib/api'
 import type { Agent, Channel, Message } from './types'
 import type { RosterAgent } from './components/channel/MentionAutocomplete'
 
-// Map API agent status to frontend RosterAgent status
-function mapAgentStatus(apiStatus: string): RosterAgent['status'] {
-  if (apiStatus === 'running') return 'thinking'
-  if (apiStatus === 'idle') return 'idle'
-  return 'offline'
-}
-
 export function App() {
   // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null) // null = checking
@@ -98,8 +91,8 @@ export function App() {
       return [...prev, msg]
     })
 
-    // Any assistant/tool response means container is ready
-    if (msg.type === 'assistant' || msg.type === 'tool_call') {
+    // Any agent/tool response means container is ready
+    if (msg.type === 'agent' || msg.type === 'tool_call') {
       setIsStartingWorkspace(false)
     }
   }, [])
