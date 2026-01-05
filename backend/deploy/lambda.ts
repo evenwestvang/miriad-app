@@ -14,6 +14,7 @@ import { Hono } from 'hono';
 import { handle } from 'hono/aws-lambda';
 import { createApp, createDynamoDBConnectionManager } from '@cast/server';
 import { createPostgresStorage } from '@cast/storage';
+import { FargateOrchestrator } from '@cast/runtime';
 
 // =============================================================================
 // Configuration
@@ -21,6 +22,15 @@ import { createPostgresStorage } from '@cast/storage';
 
 const CONNECTIONS_TABLE = process.env.CONNECTIONS_TABLE!;
 const WEBSOCKET_ENDPOINT = process.env.WEBSOCKET_ENDPOINT ?? '';
+
+// ECS/Fargate config
+const ECS_CLUSTER_ARN = process.env.ECS_CLUSTER_ARN;
+const ECS_TASK_DEFINITION = process.env.ECS_TASK_DEFINITION;
+const CONTAINER_STATE_TABLE = process.env.CONTAINER_STATE_TABLE;
+const SUBNET_IDS = process.env.SUBNET_IDS;
+const SECURITY_GROUP_IDS = process.env.SECURITY_GROUP_IDS;
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const CAST_API_URL = process.env.CAST_API_URL;
 
 // =============================================================================
 // Real Storage
@@ -64,14 +74,29 @@ const connectionManager = CONNECTIONS_TABLE && WEBSOCKET_ENDPOINT
       closeAll: () => {},
     };
 
-// Placeholder orchestrator - in production, use FargateOrchestrator
+// Placeholder orchestrator - used when Fargate config not available
 const placeholderOrchestrator = {
-  spawn: async () => ({ threadId: '', containerId: '', status: 'running' as const }),
+  spawn: async () => ({ threadId: '', containerId: '', port: 8080, status: 'running' as const, lastActivity: '', createdAt: '' }),
   sendMessage: async () => {},
-  getState: async () => null,
   stop: async () => {},
-  stopAll: async () => {},
+  getStatus: () => null,
+  isRunning: () => false,
+  getAllRunning: () => [],
+  shutdown: async () => {},
 };
+
+// Use FargateOrchestrator when all required env vars are present
+const orchestrator = ECS_CLUSTER_ARN && ECS_TASK_DEFINITION && CONTAINER_STATE_TABLE && SUBNET_IDS && SECURITY_GROUP_IDS && ANTHROPIC_API_KEY && CAST_API_URL
+  ? new FargateOrchestrator({
+      clusterArn: ECS_CLUSTER_ARN,
+      taskDefinitionArn: ECS_TASK_DEFINITION,
+      tableName: CONTAINER_STATE_TABLE,
+      subnetIds: SUBNET_IDS.split(','),
+      securityGroupIds: SECURITY_GROUP_IDS.split(','),
+      castApiUrl: CAST_API_URL,
+      anthropicApiKey: ANTHROPIC_API_KEY,
+    })
+  : placeholderOrchestrator;
 
 // =============================================================================
 // Create App
@@ -79,7 +104,7 @@ const placeholderOrchestrator = {
 
 const app = createApp({
   storage,
-  orchestrator: placeholderOrchestrator,
+  orchestrator,
   connectionManager,
   spaceId: process.env.SPACE_ID ?? 'default-space',
 });
