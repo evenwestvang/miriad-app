@@ -9,6 +9,14 @@ Parameters:
     AllowedValues:
       - stag
       - prod
+  PlanetScaleUrl:
+    Type: String
+    Description: PlanetScale PostgreSQL connection URL
+    NoEcho: true
+  SpaceId:
+    Type: String
+    Default: default-space
+    Description: Multi-tenant space ID
 
 Globals:
   Function:
@@ -21,6 +29,8 @@ Globals:
       Variables:
         STAGE: !Ref Stage
         NODE_OPTIONS: --enable-source-maps
+        PLANETSCALE_URL: !Ref PlanetScaleUrl
+        SPACE_ID: !Ref SpaceId
 
 Resources:
   # Main API Lambda

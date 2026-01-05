@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@cast/server": "workspace:*",
+    "@cast/storage": "workspace:*",
     "hono": "^4.0.0"
   },
   "devDependencies": {

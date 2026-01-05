@@ -26,6 +26,9 @@ importers:
       '@cast/server':
         specifier: workspace:*
         version: link:../packages/server
+      '@cast/storage':
+        specifier: workspace:*
+        version: link:../packages/storage
       hono:
         specifier: ^4.0.0
         version: 4.11.3

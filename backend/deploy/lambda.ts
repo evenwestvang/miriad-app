@@ -4,47 +4,34 @@
  * Uses Hono's AWS Lambda adapter to handle API Gateway requests.
  * Strips the API Gateway stage prefix from paths.
  *
- * NOTE: This is a minimal Lambda handler for Phase 3.
- * In production, you'll need to:
- * - Wire up actual storage (PlanetScale or DynamoDB)
- * - Wire up container orchestrator (Fargate)
- * - Implement WebSocket via API Gateway WebSocket API
+ * This handler uses real PlanetScale storage but placeholder orchestrator.
+ * Agent spawning requires Fargate (not yet implemented).
+ * WebSocket requires API Gateway WebSocket API (not yet implemented).
  */
 
 import type { APIGatewayProxyEventV2, Context } from 'aws-lambda';
 import { Hono } from 'hono';
 import { handle } from 'hono/aws-lambda';
 import { createApp } from '@cast/server';
+import { createPostgresStorage } from '@cast/storage';
 
 // =============================================================================
-// Placeholder Dependencies
+// Real Storage
 // =============================================================================
 
-// For Phase 3, we create a minimal working handler
-// Production will need real implementations of these interfaces
+// PlanetScale Postgres - same database as local dev
+const storage = createPostgresStorage({
+  connectionString: process.env.PLANETSCALE_URL!,
+});
 
-// Placeholder storage - in production, use createPostgresStorage or DynamoDB adapter
-const placeholderStorage = {
-  saveMessage: async () => ({} as never),
-  getMessage: async () => null,
-  getMessages: async () => [],
-  updateMessage: async () => {},
-  deleteMessage: async () => {},
-  createChannel: async () => ({} as never),
-  getChannel: async () => null,
-  getChannelByName: async () => null,
-  listChannels: async () => [],
-  updateChannel: async () => {},
-  archiveChannel: async () => {},
-  addToRoster: async () => ({} as never),
-  getRosterEntry: async () => null,
-  getRosterByCallsign: async () => null,
-  listRoster: async () => [],
-  updateRosterEntry: async () => {},
-  removeFromRoster: async () => {},
-  initialize: async () => {},
-  close: async () => {},
-};
+// Initialize storage (create tables if not exists)
+let storageInitialized = false;
+async function ensureStorageInitialized() {
+  if (!storageInitialized) {
+    await storage.initialize();
+    storageInitialized = true;
+  }
+}
 
 // Placeholder orchestrator - in production, use FargateOrchestrator
 const placeholderOrchestrator = {
@@ -73,7 +60,7 @@ const placeholderConnectionManager = {
 // =============================================================================
 
 const app = createApp({
-  storage: placeholderStorage,
+  storage,
   orchestrator: placeholderOrchestrator,
   connectionManager: placeholderConnectionManager,
   spaceId: process.env.SPACE_ID ?? 'default-space',
@@ -86,6 +73,9 @@ const app = createApp({
 const honoHandler = handle(app);
 
 export const handler = async (event: APIGatewayProxyEventV2, context: Context) => {
+  // Ensure storage is initialized on first request
+  await ensureStorageInitialized();
+
   // Strip the stage prefix from the path if present
   // API Gateway sends /stag/health but Hono expects /health
   const stage = event.requestContext?.stage;

@@ -34,5 +34,7 @@ s3_prefix = "cast-backend"
 region = "us-east-1"
 disable_rollback = false
 parameter_overrides = [
-    "Stage=stag"
+    "Stage=stag",
+    "PlanetScaleUrl=postgres://pscale_api_nmney6igy1w2.pwp8x47bv2br:pscale_pw_MdmptCQgW99vHwo4MILzUqRPdfn5iNAk@us-east-2.pg.psdb.cloud:6432/postgres",
+    "SpaceId=default-space"
 ]
