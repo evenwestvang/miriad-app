@@ -25,6 +25,12 @@ Parameters:
     Type: String
     Description: ECR URI for the agent container image
     Default: ''
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnet IDs for Fargate tasks (must have internet access)
+  SecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    Description: Security group IDs for Fargate tasks (allow outbound HTTPS)
 
 Globals:
   Function:
@@ -58,6 +64,8 @@ Resources:
           CONNECTIONS_TABLE: !Ref ConnectionsTable
           WEBSOCKET_ENDPOINT: !Sub https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
           ANTHROPIC_API_KEY: !Ref AnthropicApiKey
+          SUBNET_IDS: !Join [',', !Ref SubnetIds]
+          SECURITY_GROUP_IDS: !Join [',', !Ref SecurityGroupIds]
       Events:
         RootPath:
           Type: HttpApi
