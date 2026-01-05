@@ -11,7 +11,7 @@ import { cors } from 'hono/cors';
 import type { Storage } from '@cast/storage';
 import type { ContainerOrchestrator } from '@cast/runtime';
 import type { ChannelRoster, StoredMessage, RosterEntry, StoredMessageType, SetFrame } from '@cast/core';
-import { parseFrame, isSetFrame, isResetFrame } from '@cast/core';
+import { parseFrame, isSetFrame, isResetFrame, tymbal, generateMessageId } from '@cast/core';
 import { createTymbalRoutes } from './handlers/tymbal.js';
 import { createMessageRoutes, type MessageStorage, type RosterProvider, type Message } from './handlers/messages.js';
 import { createCheckinRoutes } from './handlers/checkin.js';
@@ -48,7 +48,7 @@ function createMessageStorageAdapter(storage: Storage, spaceId: string): Message
         spaceId,
         channelId,
         sender: message.sender,
-        senderType: message.senderType === 'human' ? 'user' : 'agent',
+        senderType: message.senderType,
         type: message.type as 'user' | 'assistant' | 'agent_message',
         content: message.content,
         isComplete: message.isComplete,
@@ -70,7 +70,7 @@ function createMessageStorageAdapter(storage: Storage, spaceId: string): Message
         id: msg.id,
         channelId: msg.channelId,
         sender: msg.sender,
-        senderType: msg.senderType === 'user' ? 'human' : 'agent',
+        senderType: msg.senderType,
         type: msg.type,
         content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
         timestamp: msg.timestamp,
@@ -162,7 +162,7 @@ function createChannelRoutes(storage: Storage, spaceId: string): Hono {
     }
   });
 
-  // GET /channels/:id - Get a channel
+  // GET /channels/:id - Get a channel (with roster per spec)
   app.get('/:channelId', async (c) => {
     const channelId = c.req.param('channelId');
 
@@ -171,7 +171,11 @@ function createChannelRoutes(storage: Storage, spaceId: string): Hono {
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);
       }
-      return c.json({ channel });
+
+      // Include roster per spec
+      const roster = await storage.listRoster(channelId);
+
+      return c.json({ channel, roster });
     } catch (error) {
       console.error('[Channels] Error getting channel:', error);
       return c.json({ error: 'Failed to get channel' }, 500);
@@ -258,6 +262,134 @@ function createRosterRoutes(storage: Storage): Hono {
     } catch (error) {
       console.error('[Roster] Error removing from roster:', error);
       return c.json({ error: 'Failed to remove from roster' }, 500);
+    }
+  });
+
+  return app;
+}
+
+// =============================================================================
+// Agent Routes (POST /channels/:id/agents - Add agent to channel)
+// =============================================================================
+
+interface AgentRoutesOptions {
+  storage: Storage;
+  spaceId: string;
+  connectionManager: ConnectionManager;
+  agentManager: AgentManager;
+}
+
+function createAgentRoutes(options: AgentRoutesOptions): Hono {
+  const { storage, spaceId, connectionManager, agentManager } = options;
+  const app = new Hono();
+
+  /**
+   * POST /channels/:id/agents - Add an agent to a channel
+   *
+   * Flow:
+   * 1. Add to roster via storage.addToRoster()
+   * 2. Create "Summoning {callsign}..." status message (save + broadcast)
+   * 3. Set that message ID as initial readmark
+   * 4. Spawn container via agentManager
+   * 5. Return agent info
+   */
+  app.post('/:channelId/agents', async (c) => {
+    const channelId = c.req.param('channelId');
+
+    let body: { callsign?: string; agentType?: string };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const { callsign, agentType } = body;
+
+    if (!callsign || !agentType) {
+      return c.json({ error: 'callsign and agentType are required' }, 400);
+    }
+
+    try {
+      // Verify channel exists
+      const channel = await storage.getChannel(spaceId, channelId);
+      if (!channel) {
+        return c.json({ error: 'Channel not found' }, 404);
+      }
+
+      // Check if agent already exists in roster
+      const existingEntry = await storage.getRosterByCallsign(channelId, callsign);
+      if (existingEntry) {
+        return c.json({ error: 'Agent already in roster' }, 409);
+      }
+
+      console.log(`[Agents] Adding ${callsign} (${agentType}) to channel ${channelId}`);
+
+      // Step 1: Add to roster
+      const rosterEntry = await storage.addToRoster({
+        channelId,
+        callsign,
+        agentType,
+        status: 'active',
+      });
+      console.log(`[Agents] Added ${callsign} to roster, entry ID: ${rosterEntry.id}`);
+
+      // Step 2: Create summoning message (save + broadcast)
+      const messageId = generateMessageId();
+      const now = new Date().toISOString();
+      const summoningContent = `Summoning ${callsign}...`;
+
+      // Save message to storage
+      await storage.saveMessage({
+        id: messageId,
+        spaceId,
+        channelId,
+        sender: 'system',
+        senderType: 'agent',
+        type: 'status',
+        content: summoningContent,
+        isComplete: true,
+      });
+      console.log(`[Agents] Created summoning message: ${messageId}`);
+
+      // Broadcast to WebSocket clients
+      const frame = tymbal.set(messageId, {
+        type: 'status',
+        sender: 'system',
+        senderType: 'agent',
+        content: summoningContent,
+        timestamp: now,
+      });
+      await connectionManager.broadcast(channelId, frame);
+      console.log(`[Agents] Broadcast summoning message to channel`);
+
+      // Step 3: Set summoning message ID as initial readmark
+      await storage.updateRosterEntry(channelId, rosterEntry.id, {
+        readmark: messageId,
+      });
+      console.log(`[Agents] Set initial readmark to ${messageId}`);
+
+      // Step 4: Spawn container
+      try {
+        await agentManager.spawn(spaceId, channelId, callsign);
+        console.log(`[Agents] Container spawned for ${callsign}`);
+      } catch (spawnError) {
+        console.error(`[Agents] Failed to spawn container for ${callsign}:`, spawnError);
+        // Don't fail the request - agent is in roster, container spawn can retry
+      }
+
+      // Step 5: Return agent info
+      return c.json({
+        success: true,
+        agent: {
+          id: rosterEntry.id,
+          callsign: rosterEntry.callsign,
+          agentType: rosterEntry.agentType,
+          status: rosterEntry.status,
+        },
+      }, 201);
+    } catch (error) {
+      console.error('[Agents] Error adding agent:', error);
+      return c.json({ error: 'Failed to add agent' }, 500);
     }
   });
 
@@ -536,6 +668,15 @@ export function createApp(options: AppOptions): Hono {
   // Roster routes (mounted under /channels/:id/roster)
   const rosterRoutes = createRosterRoutes(storage);
   app.route('/channels', rosterRoutes);
+
+  // Agent routes (POST /channels/:id/agents - Add agent to channel)
+  const agentRoutes = createAgentRoutes({
+    storage,
+    spaceId,
+    connectionManager,
+    agentManager,
+  });
+  app.route('/channels', agentRoutes);
 
   // Agent checkin routes (container → server registration)
   // Both callbackUrl and readmark are persisted to roster table in PlanetScale

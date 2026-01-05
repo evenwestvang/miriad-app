@@ -24,7 +24,7 @@ export interface Message {
   id: string;
   channelId: string;
   sender: string;
-  senderType: 'human' | 'agent';
+  senderType: 'user' | 'agent';  // Per spec: 'user' or 'agent'
   type: string;
   content: string;
   timestamp: string;
@@ -189,17 +189,22 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
   app.post('/:channelId/messages', async (c) => {
     const channelId = c.req.param('channelId');
 
-    let body: { content?: string; sender?: string; senderType?: 'human' | 'agent' };
+    let body: { content?: string; sender?: string; senderType?: 'user' | 'agent' };
     try {
       body = await c.req.json();
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
 
-    const { content, sender, senderType = 'human' } = body;
+    const { content, sender, senderType = 'user' } = body;
 
     if (!content) {
       return c.json({ error: 'Message content required' }, 400);
+    }
+
+    // Strict validation: senderType must be 'user' or 'agent' per spec
+    if (senderType !== 'user' && senderType !== 'agent') {
+      return c.json({ error: `Invalid senderType: ${senderType}. Must be 'user' or 'agent'` }, 400);
     }
 
     // Get roster for routing
@@ -212,7 +217,7 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
     // Determine addressed agents
     const { addressedAgents, isBroadcast } = getAddressedAgents(
       content,
-      senderType === 'human',
+      senderType === 'user',
       roster
     );
     console.log('[Messages] Addressed agents:', addressedAgents, 'isBroadcast:', isBroadcast);
@@ -220,12 +225,15 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
     const messageId = generateMessageId();
     const now = new Date().toISOString();
 
+    // Determine message type based on sender type (per StoredMessageType spec)
+    const messageType = senderType === 'user' ? 'user' : 'agent_message';
+
     const message: Message = {
       id: messageId,
       channelId,
       sender: sender || 'anonymous',
       senderType,
-      type: 'message',
+      type: messageType,
       content,
       timestamp: now,
       isComplete: true,
