@@ -281,7 +281,13 @@ export function createApp(options: AppOptions): Hono {
 
   app.use('*', logger());
   app.use('*', cors({
-    origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3233'],
+    origin: (origin) => {
+      // Allow any localhost origin for local development
+      if (origin && origin.match(/^http:\/\/localhost(:\d+)?$/)) {
+        return origin;
+      }
+      return null;
+    },
     credentials: true,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
