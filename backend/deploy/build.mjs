@@ -11,15 +11,13 @@ import { dirname, join } from 'path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 async function build() {
-  console.log('Building Lambda bundle...');
+  console.log('Building Lambda bundles...');
 
-  await esbuild.build({
-    entryPoints: [join(__dirname, 'lambda.ts')],
+  const commonOptions = {
     bundle: true,
     platform: 'node',
     target: 'node20',
     format: 'esm',
-    outfile: join(__dirname, 'dist', 'lambda.mjs'),
     external: [],
     minify: true,
     sourcemap: true,
@@ -29,9 +27,23 @@ async function build() {
         const require = createRequire(import.meta.url);
       `.trim(),
     },
-  });
+  };
 
+  // Build main API Lambda
+  await esbuild.build({
+    ...commonOptions,
+    entryPoints: [join(__dirname, 'lambda.ts')],
+    outfile: join(__dirname, 'dist', 'lambda.mjs'),
+  });
   console.log('Build complete: deploy/dist/lambda.mjs');
+
+  // Build WebSocket handlers Lambda
+  await esbuild.build({
+    ...commonOptions,
+    entryPoints: [join(__dirname, 'websocket-handlers.ts')],
+    outfile: join(__dirname, 'dist', 'websocket-handlers.mjs'),
+  });
+  console.log('Build complete: deploy/dist/websocket-handlers.mjs');
 }
 
 build().catch((err) => {

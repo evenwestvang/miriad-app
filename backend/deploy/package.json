@@ -9,8 +9,8 @@
     "deploy:stag": "sam deploy --config-env cast-stag"
   },
   "dependencies": {
-    "@aws-sdk/client-apigatewaymanagementapi": "^3.0.0",
-    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.700.0",
+    "@aws-sdk/client-dynamodb": "^3.700.0",
     "@cast/core": "workspace:*",
     "@cast/runtime": "workspace:*",
     "@cast/server": "workspace:*",
