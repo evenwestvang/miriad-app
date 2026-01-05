@@ -56,6 +56,12 @@ See `.env.example` for all available options:
 - `POST /channels/:id/roster` - Add agent to roster
 - `DELETE /channels/:id/roster/:entryId` - Remove agent
 
+### Agents
+- `GET /agents` - List available agent types
+- `POST /channels/:id/agents` - Add agent to channel (creates roster entry + spawns container)
+- `DELETE /channels/:id/agents/:callsign` - Remove agent from channel
+- `POST /agents/checkin` - Container registration (called by agent on startup)
+
 ### Messages
 - `GET /channels/:id/messages` - Get messages (supports `forAgent` scoping)
 - `POST /channels/:id/messages` - Send message (triggers agent invocation on @mentions)
@@ -100,3 +106,64 @@ pnpm typecheck
 - Storage operations (messages, channels, roster)
 - Docker orchestrator lifecycle
 - E2E integration flow
+
+## AWS Deployment
+
+### Quick Deploy
+
+```bash
+# Deploy everything (container + backend) to staging
+./scripts/deploy-staging.sh
+
+# Deploy backend only (faster, no container rebuild)
+./scripts/deploy-staging.sh --backend
+
+# Deploy container only
+./scripts/deploy-staging.sh --container
+```
+
+### Prerequisites
+
+- AWS CLI configured with `cikada-stag` profile
+- Docker running
+- SAM CLI installed (`brew install aws-sam-cli`)
+
+### What Gets Deployed
+
+1. **Agent Container** → ECR (`cast-agent:latest`)
+2. **Backend API** → Lambda + API Gateway via SAM
+
+### Staging Environment
+
+- **API**: `https://9xq1buuixd.execute-api.us-east-1.amazonaws.com/stag`
+- **ECR**: `455626925815.dkr.ecr.us-east-1.amazonaws.com/cast-agent:latest`
+- **ECS Cluster**: `cast-agent-cluster`
+
+### Debugging
+
+```bash
+# List running ECS tasks
+aws ecs list-tasks --cluster cast-agent-cluster --profile cikada-stag
+
+# Stop a stale container
+aws ecs stop-task --cluster cast-agent-cluster --task <task-arn> --profile cikada-stag
+
+# View container logs (CloudWatch)
+# Log group: /ecs/cast-agent
+
+# Clear agent callbackUrl for fresh spawn (PlanetScale)
+# UPDATE roster SET callback_url = NULL WHERE callsign = 'agent-name';
+```
+
+### Agent Checkin Flow
+
+When a container starts, it:
+1. Calls `POST /agents/checkin` with its callback URL
+2. Backend stores the URL in roster table
+3. Backend pushes any pending messages to the container
+4. Subsequent messages route directly to the container
+
+If an agent isn't responding, check:
+- Is the ECS task running? (`aws ecs list-tasks`)
+- Did checkin succeed? (Check container logs)
+- Is callbackUrl set in roster? (Check PlanetScale)
