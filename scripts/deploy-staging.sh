@@ -48,7 +48,7 @@ deploy_container() {
     echo "  Full URI: ${ECR_URI}:${IMAGE_TAG}"
     echo ""
 
-    cd "$REPO_ROOT/legacy-cikada/packages/fargate-runtime"
+    cd "$REPO_ROOT/agents/sandbox"
 
     # Build TypeScript
     echo "Building TypeScript..."
