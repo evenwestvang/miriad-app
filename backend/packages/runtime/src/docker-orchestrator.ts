@@ -9,7 +9,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -193,9 +193,15 @@ export class DockerOrchestrator implements ContainerOrchestrator {
       body.systemPrompt = systemPrompt;
     }
 
+    // Generate auth token from threadId (deterministic - same as container received at spawn)
+    const authToken = this.generateAuthToken(threadId);
+
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`,
+      },
       body: JSON.stringify(body),
     });
 
@@ -406,5 +412,17 @@ export class DockerOrchestrator implements ContainerOrchestrator {
 
   private hashThreadId(threadId: string): string {
     return createHash('sha256').update(threadId).digest('hex').substring(0, 12);
+  }
+
+  /**
+   * Generate a container auth token from threadId.
+   * Duplicates logic from @cast/server/auth/container-token.ts for package isolation.
+   * Token format: base64url(spaceId:channelId:callsign).hmac
+   */
+  private generateAuthToken(threadId: string): string {
+    const secret = process.env.CAST_CONTAINER_SECRET ?? 'cast-dev-container-secret-do-not-use-in-production';
+    const encodedData = Buffer.from(threadId).toString('base64url');
+    const hmac = createHmac('sha256', secret).update(threadId).digest('base64url');
+    return `${encodedData}.${hmac}`;
   }
 }
