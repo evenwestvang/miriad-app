@@ -17,6 +17,14 @@ Parameters:
     Type: String
     Default: default-space
     Description: Multi-tenant space ID
+  AnthropicApiKey:
+    Type: String
+    Description: Anthropic API key for agent containers
+    NoEcho: true
+  AgentImageUri:
+    Type: String
+    Description: ECR URI for the agent container image
+    Default: ''
 
 Globals:
   Function:
@@ -41,6 +49,14 @@ Resources:
       Handler: lambda.handler
       CodeUri: dist/
       Description: Cast Backend API
+      Role: !GetAtt ApiFunctionRole.Arn
+      Environment:
+        Variables:
+          ECS_CLUSTER_ARN: !GetAtt AgentCluster.Arn
+          ECS_TASK_DEFINITION: !Ref AgentTaskDefinition
+          CONTAINER_STATE_TABLE: !Ref ContainerStateTable
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+          ANTHROPIC_API_KEY: !Ref AnthropicApiKey
       Events:
         RootPath:
           Type: HttpApi
@@ -79,6 +95,237 @@ Resources:
         AllowMethods:
           - '*'
 
+  # =============================================================================
+  # DynamoDB Tables
+  # =============================================================================
+
+  # Container state table - tracks Fargate task state for each agent thread
+  ContainerStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub cast-container-state-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: threadId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: threadId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+
+  # WebSocket connections table - tracks API Gateway WebSocket connections
+  ConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub cast-connections-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connectionId
+          AttributeType: S
+        - AttributeName: channelId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connectionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: ChannelIndex
+          KeySchema:
+            - AttributeName: channelId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+
+  # =============================================================================
+  # ECS Cluster & Task Definition
+  # =============================================================================
+
+  # ECS Cluster for agent containers
+  AgentCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub cast-agents-${Stage}
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+
+  # CloudWatch Log Group for agent containers
+  AgentLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/cast-agents-${Stage}
+      RetentionInDays: 14
+
+  # ECS Task Execution Role - allows ECS to pull images and write logs
+  EcsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub cast-ecs-execution-${Stage}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:cast/*
+
+  # ECS Task Role - permissions for the running agent container
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub cast-ecs-task-${Stage}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AgentPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Allow agent to write logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt AgentLogGroup.Arn
+
+  # ECS Task Definition for claude-code agent
+  AgentTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub cast-agent-${Stage}
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn: !GetAtt EcsTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt EcsTaskRole.Arn
+      ContainerDefinitions:
+        - Name: agent
+          Image: !Ref AgentImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: PORT
+              Value: '8080'
+            - Name: STAGE
+              Value: !Ref Stage
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AgentLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: agent
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+
+  # =============================================================================
+  # IAM Policies for Lambda → ECS/DynamoDB
+  # =============================================================================
+
+  # Policy for Lambda to manage ECS tasks and DynamoDB
+  LambdaOrchestratorPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub cast-lambda-orchestrator-${Stage}
+      Roles:
+        - !Ref ApiFunctionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # ECS permissions
+          - Effect: Allow
+            Action:
+              - ecs:RunTask
+              - ecs:StopTask
+              - ecs:DescribeTasks
+            Resource:
+              - !Sub arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task/${AgentCluster}/*
+              - !Ref AgentTaskDefinition
+          - Effect: Allow
+            Action:
+              - ecs:DescribeClusters
+            Resource:
+              - !GetAtt AgentCluster.Arn
+          # Pass role to ECS
+          - Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource:
+              - !GetAtt EcsTaskExecutionRole.Arn
+              - !GetAtt EcsTaskRole.Arn
+          # DynamoDB permissions for container state
+          - Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:Query
+              - dynamodb:Scan
+            Resource:
+              - !GetAtt ContainerStateTable.Arn
+              - !GetAtt ConnectionsTable.Arn
+              - !Sub ${ConnectionsTable.Arn}/index/*
+
+  # Lambda execution role (referenced by policy above)
+  ApiFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub cast-api-lambda-${Stage}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: VpcAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+
 Outputs:
   ApiEndpoint:
     Description: API Gateway endpoint URL
@@ -86,3 +333,25 @@ Outputs:
   ApiFunctionArn:
     Description: API Lambda Function ARN
     Value: !GetAtt ApiFunction.Arn
+
+  # ECS Outputs
+  AgentClusterArn:
+    Description: ECS Cluster ARN for agent containers
+    Value: !GetAtt AgentCluster.Arn
+  AgentTaskDefinitionArn:
+    Description: ECS Task Definition ARN
+    Value: !Ref AgentTaskDefinition
+
+  # DynamoDB Outputs
+  ContainerStateTableName:
+    Description: DynamoDB table for container state
+    Value: !Ref ContainerStateTable
+  ContainerStateTableArn:
+    Description: DynamoDB table ARN for container state
+    Value: !GetAtt ContainerStateTable.Arn
+  ConnectionsTableName:
+    Description: DynamoDB table for WebSocket connections
+    Value: !Ref ConnectionsTable
+  ConnectionsTableArn:
+    Description: DynamoDB table ARN for WebSocket connections
+    Value: !GetAtt ConnectionsTable.Arn
