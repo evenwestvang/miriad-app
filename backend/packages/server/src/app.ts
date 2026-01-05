@@ -723,26 +723,20 @@ export function createApp(options: AppOptions): Hono {
         const data = await assetStorage.readAsset(channel.id, slug);
         const mimeType = artifact.contentType || getMimeType(slug);
 
-        return new Response(data, {
-          headers: {
-            'Content-Type': mimeType,
-            'Content-Length': data.length.toString(),
-            'Cache-Control': 'public, max-age=31536000, immutable',
-          },
-        });
+        c.header('Content-Type', mimeType);
+        c.header('Content-Length', data.length.toString());
+        c.header('Cache-Control', 'public, max-age=31536000, immutable');
+        return c.body(data);
       }
 
       // For text artifacts, serve content directly with appropriate Content-Type
       const content = artifact.content || '';
       const mimeType = getMimeType(slug);
 
-      return new Response(content, {
-        headers: {
-          'Content-Type': mimeType,
-          'Content-Length': Buffer.byteLength(content).toString(),
-          'Cache-Control': 'public, max-age=3600',
-        },
-      });
+      c.header('Content-Type', mimeType);
+      c.header('Content-Length', Buffer.byteLength(content).toString());
+      c.header('Cache-Control', 'public, max-age=3600');
+      return c.body(content);
     } catch (error) {
       if (error instanceof Error && error.message.includes('not found')) {
         return c.json({ error: error.message }, 404);
