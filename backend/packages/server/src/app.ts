@@ -11,7 +11,7 @@ import { cors } from 'hono/cors';
 import type { Storage } from '@cast/storage';
 import type { ContainerOrchestrator } from '@cast/runtime';
 import type { ChannelRoster, StoredMessage, RosterEntry, StoredMessageType, SetFrame } from '@cast/core';
-import { parseFrame, isSetFrame, isResetFrame, tymbal, generateMessageId } from '@cast/core';
+import { parseFrame, isSetFrame, isResetFrame, tymbal, generateMessageId, getMimeType } from '@cast/core';
 import { createTymbalRoutes } from './handlers/tymbal.js';
 import { createMessageRoutes, type MessageStorage, type RosterProvider, type Message } from './handlers/messages.js';
 import { createCheckinRoutes } from './handlers/checkin.js';
@@ -692,6 +692,65 @@ export function createApp(options: AppOptions): Hono {
 
   // Asset storage for binary files
   const assetStorage = createFilesystemAssetStorage();
+
+  // ---------------------------------------------------------------------------
+  // /boards/:channel/:slug - PowPow-compatible artifact content serving
+  // Serves artifact content with appropriate Content-Type headers.
+  // For file-encoded artifacts (binary assets), serves via assetStorage.
+  // For text artifacts, serves content directly.
+  // ---------------------------------------------------------------------------
+  app.get('/boards/:channel/:slug', async (c) => {
+    const channelParam = c.req.param('channel');
+    const slug = c.req.param('slug');
+
+    try {
+      // Resolve channel by name or ID (support both formats)
+      const channel = await storage.getChannelByName(spaceId, channelParam)
+        ?? await storage.getChannel(spaceId, channelParam);
+
+      if (!channel) {
+        return c.json({ error: 'Channel not found' }, 404);
+      }
+
+      // Get artifact by slug
+      const artifact = await storage.getArtifact(channel.id, slug);
+      if (!artifact) {
+        return c.json({ error: `Artifact not found: ${slug}` }, 404);
+      }
+
+      // For binary assets (encoding: 'file'), serve via assetStorage
+      if (artifact.encoding === 'file') {
+        const data = await assetStorage.readAsset(channel.id, slug);
+        const mimeType = artifact.contentType || getMimeType(slug);
+
+        return new Response(data, {
+          headers: {
+            'Content-Type': mimeType,
+            'Content-Length': data.length.toString(),
+            'Cache-Control': 'public, max-age=31536000, immutable',
+          },
+        });
+      }
+
+      // For text artifacts, serve content directly with appropriate Content-Type
+      const content = artifact.content || '';
+      const mimeType = getMimeType(slug);
+
+      return new Response(content, {
+        headers: {
+          'Content-Type': mimeType,
+          'Content-Length': Buffer.byteLength(content).toString(),
+          'Cache-Control': 'public, max-age=3600',
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('not found')) {
+        return c.json({ error: error.message }, 404);
+      }
+      console.error('[Boards] Error serving artifact content:', error);
+      return c.json({ error: 'Failed to serve artifact content' }, 500);
+    }
+  });
 
   // MCP HTTP routes (container → server board operations)
   const mcpRoutes = createMcpRoutes({

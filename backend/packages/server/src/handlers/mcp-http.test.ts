@@ -452,7 +452,7 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
       expect(json.id).toBe(1);
       expect(json.result.tools).toBeDefined();
       expect(Array.isArray(json.result.tools)).toBe(true);
-      expect(json.result.tools.length).toBe(12); // 10 artifact + 2 message tools
+      expect(json.result.tools.length).toBe(13); // 10 artifact + 2 message + 1 instructions tool
 
       // Verify tool names
       const toolNames = json.result.tools.map((t: { name: string }) => t.name);
@@ -468,6 +468,7 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
       expect(toolNames).toContain('upload_asset');
       expect(toolNames).toContain('message_get');
       expect(toolNames).toContain('message_search');
+      expect(toolNames).toContain('read_instructions');
     });
 
     it('includes proper inputSchema for each tool', async () => {
@@ -882,6 +883,89 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
             fileSize: 1024, // from mock
           })
         );
+      });
+    });
+
+    describe('read_instructions', () => {
+      it('returns instruction content for valid article', async () => {
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'read_instructions',
+            arguments: { article: 'interactive-artifacts' },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.error).toBeUndefined();
+        expect(json.result).toBeDefined();
+        expect(json.result.content).toHaveLength(1);
+        expect(json.result.content[0].type).toBe('text');
+        // Content should include key interactive artifact info
+        expect(json.result.content[0].text).toContain('.app.js');
+        expect(json.result.content[0].text).toContain('render');
+      });
+
+      it('returns instruction content for binary-assets article', async () => {
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'read_instructions',
+            arguments: { article: 'binary-assets' },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.error).toBeUndefined();
+        expect(json.result.content[0].text).toContain('upload_asset');
+      });
+
+      it('returns instruction content for system-mcp article', async () => {
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'read_instructions',
+            arguments: { article: 'system-mcp' },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.error).toBeUndefined();
+        expect(json.result.content[0].text).toContain('MCP');
+      });
+
+      it('returns error for unknown article', async () => {
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'read_instructions',
+            arguments: { article: 'nonexistent-article' },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.result.content[0].text).toContain('Unknown article');
+        expect(json.result.content[0].text).toContain('nonexistent-article');
       });
     });
 

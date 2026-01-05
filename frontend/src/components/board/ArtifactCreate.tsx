@@ -36,6 +36,7 @@ const DEFAULT_STATUS: Record<ArtifactType, ArtifactStatus> = {
   decision: 'draft',
   code: 'draft',
   knowledgebase: 'published',
+  asset: 'published',
   'system.mcp': 'published',
   'system.agent': 'published',
   'system.focus': 'published',

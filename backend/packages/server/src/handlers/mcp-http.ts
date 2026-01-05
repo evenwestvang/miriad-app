@@ -14,6 +14,9 @@
 
 import { Hono } from 'hono';
 import * as fs from 'node:fs/promises';
+import * as fsSync from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Storage } from '@cast/storage';
 import {
   requireContainerAuth,
@@ -21,6 +24,69 @@ import {
   type ContainerAuthVariables,
 } from '../auth/container-middleware.js';
 import type { AssetStorage } from '../assets/index.js';
+
+// =============================================================================
+// Instruction Loading (Phase F)
+// =============================================================================
+
+interface Instruction {
+  id: string;
+  summary: string;
+  content: string;
+}
+
+/**
+ * Load instruction markdown files from the defaults/instructions directory.
+ * Files have YAML frontmatter with a `summary` field.
+ */
+function loadInstructions(): Map<string, Instruction> {
+  const instructions = new Map<string, Instruction>();
+
+  // Get path relative to this file
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const instructionsDir = path.join(__dirname, '../defaults/instructions');
+
+  if (!fsSync.existsSync(instructionsDir)) {
+    console.warn('[MCP] Instructions directory not found:', instructionsDir);
+    return instructions;
+  }
+
+  const files = fsSync.readdirSync(instructionsDir).filter((f) => f.endsWith('.md'));
+
+  for (const file of files) {
+    const content = fsSync.readFileSync(path.join(instructionsDir, file), 'utf-8');
+    const slug = file.replace(/\.md$/, '');
+
+    // Parse YAML frontmatter: ---\n...\n---\n content
+    const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+
+    if (match) {
+      // Extract summary from frontmatter
+      const frontmatter = match[1];
+      const summaryMatch = frontmatter.match(/summary:\s*(.+)/);
+      const summary = summaryMatch ? summaryMatch[1].trim() : slug;
+
+      instructions.set(slug, {
+        id: slug,
+        summary,
+        content: match[2].trim(),
+      });
+    } else {
+      // No frontmatter - use file content as-is
+      instructions.set(slug, {
+        id: slug,
+        summary: slug,
+        content: content.trim(),
+      });
+    }
+  }
+
+  console.log(`[MCP] Loaded ${instructions.size} instruction articles:`, Array.from(instructions.keys()).join(', '));
+  return instructions;
+}
+
+// Load instructions at module initialization
+const instructions = loadInstructions();
 
 // =============================================================================
 // Types
@@ -407,7 +473,38 @@ const TOOLS: McpToolDefinition[] = [
       },
     },
   },
+  // ---------------------------------------------------------------------------
+  // Instruction Tools (Phase F)
+  // ---------------------------------------------------------------------------
+  {
+    name: 'read_instructions',
+    description: buildReadInstructionsDescription(),
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        article: {
+          type: 'string',
+          description: 'Article ID to read',
+        },
+      },
+      required: ['article'],
+    },
+  },
 ];
+
+/**
+ * Build dynamic description for read_instructions tool based on loaded articles.
+ */
+function buildReadInstructionsDescription(): string {
+  const articleList = Array.from(instructions.values())
+    .map((i) => `- ${i.id}: ${i.summary}`)
+    .join('\n');
+
+  return `Read documentation for special artifact types and capabilities.
+
+Available articles:
+${articleList || '(no instructions available)'}`;
+}
 
 // =============================================================================
 // Tool Handlers
@@ -799,6 +896,23 @@ const toolHandlers: Record<string, ToolHandler> = {
     }));
 
     return JSON.stringify({ count: formatted.length, messages: formatted }, null, 2);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Instruction Tools (Phase F)
+  // ---------------------------------------------------------------------------
+
+  async read_instructions(args) {
+    const { article } = args as { article: string };
+
+    const instruction = instructions.get(article);
+
+    if (!instruction) {
+      const availableIds = Array.from(instructions.keys()).join(', ');
+      throw new Error(`Unknown article: ${article}\n\nAvailable: ${availableIds || '(none)'}`);
+    }
+
+    return instruction.content;
   },
 };
 

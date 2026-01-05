@@ -695,10 +695,21 @@ export const ASSET_MIME_TYPES: Record<string, string> = {
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
-  // Other
+  // Archives
   '.zip': 'application/zip',
+  // Code
   '.wasm': 'application/wasm',
   '.json': 'application/json',
+  // Text (for artifact content serving)
+  '.js': 'text/javascript',
+  '.ts': 'text/typescript',
+  '.md': 'text/markdown',
+  '.html': 'text/html',
+  '.css': 'text/css',
+  '.txt': 'text/plain',
+  '.xml': 'application/xml',
+  '.yaml': 'text/yaml',
+  '.yml': 'text/yaml',
 };
 
 /**

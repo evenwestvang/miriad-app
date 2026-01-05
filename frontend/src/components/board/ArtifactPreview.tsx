@@ -3,6 +3,7 @@ import { Pencil, Download, ExternalLink } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { Artifact } from '../../types/artifact'
 import { McpPropsEditor, McpProps } from './McpPropsEditor'
+import { SpaRenderer, isSpaArtifact } from './SpaRenderer'
 
 interface ArtifactPreviewProps {
   artifact: Artifact
@@ -110,9 +111,15 @@ export function ArtifactPreview({ artifact, onEdit, onLinkClick, apiHost, channe
         </div>
       )}
 
-      {/* Content - check if this is an asset with preview */}
+      {/* Content - check for interactive app, asset, or regular content */}
       <div className="flex-1 overflow-y-auto px-3 py-3">
-        {isAsset && assetUrl ? (
+        {artifact.type === 'code' && isSpaArtifact(artifact.slug) && channelId ? (
+          <SpaRenderer
+            content={artifact.content}
+            channel={channelId}
+            slug={artifact.slug}
+          />
+        ) : isAsset && assetUrl ? (
           <AssetPreview
             slug={artifact.slug}
             url={assetUrl}

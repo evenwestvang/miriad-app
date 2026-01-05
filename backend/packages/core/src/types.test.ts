@@ -123,11 +123,17 @@ describe('MIME Type Utilities', () => {
       expect(isSupportedAssetType('data.json')).toBe(true);
     });
 
+    it('returns true for text types added in Phase F', () => {
+      expect(isSupportedAssetType('file.txt')).toBe(true);
+      expect(isSupportedAssetType('script.js')).toBe(true);
+      expect(isSupportedAssetType('readme.md')).toBe(true);
+      expect(isSupportedAssetType('styles.css')).toBe(true);
+    });
+
     it('returns false for unsupported types', () => {
-      expect(isSupportedAssetType('file.txt')).toBe(false);
       expect(isSupportedAssetType('doc.docx')).toBe(false);
       expect(isSupportedAssetType('image.bmp')).toBe(false);
-      expect(isSupportedAssetType('script.js')).toBe(false);
+      expect(isSupportedAssetType('file.exe')).toBe(false);
     });
 
     it('returns false for files without extensions', () => {

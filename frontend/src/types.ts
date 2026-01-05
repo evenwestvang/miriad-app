@@ -200,6 +200,7 @@ export type ArtifactType =
   | 'code'
   | 'decision'
   | 'knowledgebase'
+  | 'asset'
   | 'system.mcp'
   | 'system.agent'
   | 'system.focus'

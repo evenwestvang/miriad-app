@@ -1,4 +1,4 @@
-import { ChevronRight, FileText, CheckSquare, GitBranch, Code, Server, Bot, Target, BookOpen, Library } from 'lucide-react'
+import { ChevronRight, FileText, CheckSquare, GitBranch, Code, Server, Bot, Target, BookOpen, Library, SquarePlay } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { ArtifactType, ArtifactStatus } from '../../types/artifact'
 
@@ -23,10 +23,29 @@ const TYPE_ICONS: Record<ArtifactType, typeof FileText> = {
   decision: GitBranch,
   code: Code,
   knowledgebase: Library,
+  asset: FileText, // Binary assets use generic file icon
   'system.mcp': Server,
   'system.agent': Bot,
   'system.focus': Target,
   'system.playbook': BookOpen,
+}
+
+/**
+ * Check if an artifact slug represents an interactive app
+ */
+function isSpaArtifact(slug: string | undefined): boolean {
+  return slug?.endsWith('.app.js') ?? false
+}
+
+/**
+ * Get the appropriate icon for an artifact based on type and slug
+ */
+function getArtifactIcon(type: ArtifactType, slug: string): typeof FileText {
+  // Interactive apps get special icon
+  if (type === 'code' && isSpaArtifact(slug)) {
+    return SquarePlay
+  }
+  return TYPE_ICONS[type] || FileText
 }
 
 // Status indicators for tasks - matches PowPow colors
@@ -53,7 +72,7 @@ export function TreeItem({
   onToggle,
   onSelect,
 }: TreeItemProps) {
-  const Icon = TYPE_ICONS[type] || FileText
+  const Icon = getArtifactIcon(type, slug)
   // Show status indicator for tasks, and for other types when not 'published'
   const showStatus = type === 'task' || (status && status !== 'published')
   const statusIndicator = showStatus ? STATUS_INDICATORS[status] : null
