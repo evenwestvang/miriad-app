@@ -217,24 +217,25 @@ export function App() {
       return
     }
 
-    // Fetch channel details including roster
-    async function fetchChannelDetails() {
+    // Fetch channel roster from separate endpoint
+    async function fetchRoster() {
       try {
-        const response = await apiFetch(`${API_HOST}/channels/${selectedThread}`)
+        const response = await apiFetch(`${API_HOST}/channels/${selectedThread}/roster`)
         if (!response.ok) {
-          throw new Error(`Failed to fetch channel details: ${response.status}`)
+          throw new Error(`Failed to fetch roster: ${response.status}`)
         }
         const data = await response.json()
-        // Map roster to RosterAgent format
+        // Map backend RosterEntry to frontend RosterAgent format
         if (data.roster && Array.isArray(data.roster)) {
           const rosterAgents: RosterAgent[] = data.roster.map((r: {
-            id: string
-            name: string
-            type: string
+            callsign: string
+            agentType: string
             status: string
+            callbackUrl?: string
           }) => ({
-            callsign: r.id,  // Use id (the actual callsign), not name (display name)
-            status: mapAgentStatus(r.status),
+            callsign: r.callsign,
+            // Map status based on callbackUrl presence (has container = idle, no container = offline)
+            status: r.callbackUrl ? 'idle' : 'offline' as const,
           }))
           setRoster(rosterAgents)
         } else {
@@ -243,14 +244,14 @@ export function App() {
         // Channel doesn't have a leader concept in local runtime
         setLeader(undefined)
       } catch (error) {
-        console.error('Failed to fetch channel details:', error)
+        console.error('Failed to fetch roster:', error)
         setRoster([])
         setLeader(undefined)
       }
     }
 
-    // Fetch channel details - message history comes via WebSocket sync
-    fetchChannelDetails()
+    // Fetch roster - message history comes via WebSocket sync
+    fetchRoster()
     // Note: fetchMessageHistory() removed - WebSocket sync handles message replay
     // This eliminates the race condition between HTTP fetch and WebSocket sync
   }, [selectedThread, currentUser])
