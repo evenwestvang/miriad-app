@@ -280,7 +280,12 @@ export function createApp(options: AppOptions): Hono {
   // ---------------------------------------------------------------------------
 
   app.use('*', logger());
-  app.use('*', cors());
+  app.use('*', cors({
+    origin: ['http://localhost:5173', 'http://localhost:3233'],
+    credentials: true,
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+  }));
 
   // ---------------------------------------------------------------------------
   // Health & Info Endpoints
