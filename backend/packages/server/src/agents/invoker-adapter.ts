@@ -12,6 +12,7 @@ import type { AgentManager } from './agent-manager.js';
 import type { Storage } from '@cast/storage';
 import type { AgentInvoker, Message } from '../handlers/messages.js';
 import { pushMessagesToContainer, compileMessages } from '../handlers/checkin.js';
+import { generateContainerToken } from '../auth/index.js';
 
 // =============================================================================
 // Types
@@ -75,10 +76,14 @@ export function createAgentInvokerAdapter(
               const threadId = `${spaceId}:${channelId}:${callsign}`;
               const userMessage = `Message from @${message.sender}: ${message.content}`;
 
+              // Generate auth token for this agent (deterministic - same as container received at spawn)
+              const authToken = generateContainerToken({ spaceId, channelId, callsign });
+
               const success = await pushMessagesToContainer(
                 rosterEntry.callbackUrl,
                 userMessage,
-                threadId
+                threadId,
+                authToken
               );
 
               if (success) {

@@ -14,6 +14,7 @@
 import { Hono } from 'hono';
 import type { Storage } from '@cast/storage';
 import type { StoredMessage } from '@cast/core';
+import { generateContainerToken } from '../auth/index.js';
 
 // =============================================================================
 // Types
@@ -108,11 +109,18 @@ export async function getPendingMessages(
 
 /**
  * Push messages to container callback URL.
+ *
+ * @param endpoint - Container callback URL (e.g., http://10.0.1.45:8080)
+ * @param compiledContent - Compiled message content
+ * @param threadId - Thread ID for the conversation
+ * @param authToken - Auth token for the container (generated via generateContainerToken)
+ * @param systemPrompt - Optional system prompt to include
  */
 export async function pushMessagesToContainer(
   endpoint: string,
   compiledContent: string,
   threadId: string,
+  authToken?: string,
   systemPrompt?: string
 ): Promise<boolean> {
   try {
@@ -127,9 +135,16 @@ export async function pushMessagesToContainer(
 
     console.log(`[Checkin] Pushing message to ${url}`);
 
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     });
 
@@ -231,11 +246,15 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
         // Build thread ID
         const threadId = `${spaceId}:${channelId}:${callsign}`;
 
+        // Generate auth token for this agent (deterministic - same as container received at spawn)
+        const authToken = generateContainerToken({ spaceId, channelId, callsign });
+
         // Push to container (blocking)
         const success = await pushMessagesToContainer(
           endpoint,
           compiledContent,
-          threadId
+          threadId,
+          authToken
         );
 
         if (success) {
