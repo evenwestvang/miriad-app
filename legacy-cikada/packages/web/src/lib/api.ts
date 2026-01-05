@@ -7,8 +7,8 @@
 // API host - use env var or default to local dev server
 export const API_HOST = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3001' : '')
 
-// OAuth login URL - server handles the OAuth flow and redirects back
-const OAUTH_LOGIN_URL = `${API_HOST}/auth/sanity/login`
+// Mock auth login URL - for local dev (prod uses OAuth)
+const OAUTH_LOGIN_URL = `${API_HOST}/mock-auth/login`
 
 /**
  * Event name for auth required notifications.
@@ -38,7 +38,7 @@ export function redirectToLogin(): void {
  */
 export async function logout(): Promise<void> {
   try {
-    await fetch(`${API_HOST}/auth/sanity/logout`, {
+    await fetch(`${API_HOST}/mock-auth/logout`, {
       method: 'POST',
       credentials: 'include',
     })

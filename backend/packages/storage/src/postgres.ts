@@ -66,6 +66,7 @@ interface RosterRow {
   status: string;
   created_at: Date;
   callback_url: string | null;
+  readmark: string | null;
 }
 
 // =============================================================================
@@ -409,6 +410,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     if (update.callbackUrl !== undefined) {
       updateObj.callback_url = update.callbackUrl;
     }
+    if (update.readmark !== undefined) {
+      updateObj.readmark = update.readmark;
+    }
 
     if (Object.keys(updateObj).length === 0) return;
 
@@ -577,6 +581,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       status: row.status as RosterStatus,
       createdAt: row.created_at.toISOString(),
       callbackUrl: row.callback_url ?? undefined,
+      readmark: row.readmark ?? undefined,
     };
   }
 

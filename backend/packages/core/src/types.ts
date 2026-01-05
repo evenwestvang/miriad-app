@@ -196,6 +196,9 @@ export interface RosterEntry {
 
   /** Callback URL for message delivery (set by container checkin) */
   callbackUrl?: string;
+
+  /** Last delivered message ID (for tracking what's been pushed to agent) */
+  readmark?: string;
 }
 
 /**
@@ -216,6 +219,8 @@ export interface UpdateRosterInput {
   status?: RosterStatus;
   /** Callback URL for message delivery */
   callbackUrl?: string;
+  /** Last delivered message ID */
+  readmark?: string;
 }
 
 // =============================================================================

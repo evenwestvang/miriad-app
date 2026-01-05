@@ -204,6 +204,7 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
 
     // Get roster for routing
     const roster = await rosterProvider.getRoster(channelId);
+    console.log('[Messages] Roster for channel', channelId, ':', JSON.stringify(roster));
     if (!roster) {
       return c.json({ error: 'Channel not found or has no roster' }, 404);
     }
@@ -214,6 +215,7 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
       senderType === 'human',
       roster
     );
+    console.log('[Messages] Addressed agents:', addressedAgents, 'isBroadcast:', isBroadcast);
 
     const messageId = generateMessageId();
     const now = new Date().toISOString();

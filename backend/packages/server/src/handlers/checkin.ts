@@ -35,8 +35,6 @@ export interface CheckinHandlerOptions {
   storage: Storage;
   /** Default space ID */
   spaceId: string;
-  /** In-memory readmark store (for local dev - TODO: persist to DB) */
-  readmarkStore: Map<string, string>;
 }
 
 // =============================================================================
@@ -157,7 +155,7 @@ export async function pushMessagesToContainer(
  * Create the /agents/checkin route.
  */
 export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
-  const { storage, spaceId: defaultSpaceId, readmarkStore } = options;
+  const { storage, spaceId: defaultSpaceId } = options;
 
   const app = new Hono();
 
@@ -200,9 +198,8 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
     });
     console.log(`[Checkin] Stored callbackUrl for ${callsign} in roster`);
 
-    // Get readmark (in-memory for local dev - TODO: persist to DB)
-    const storeKey = `${channelId}:${callsign}`;
-    const readmark = readmarkStore.get(storeKey) ?? null;
+    // Get readmark from roster entry (persisted in DB)
+    const readmark = rosterEntry.readmark ?? null;
 
     // Block on pending message delivery before returning
     // (Lambda freezes async work after response is sent)
@@ -243,9 +240,11 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
 
         if (success) {
           delivered = pendingMessages.length;
-          // Update readmark to latest message ID
+          // Update readmark to latest message ID (persisted in roster)
           const latestMessageId = pendingMessages[pendingMessages.length - 1].id;
-          readmarkStore.set(storeKey, latestMessageId);
+          await storage.updateRosterEntry(channelId, rosterEntry.id, {
+            readmark: latestMessageId,
+          });
           console.log(`[Checkin] Updated readmark to ${latestMessageId}`);
         }
       }

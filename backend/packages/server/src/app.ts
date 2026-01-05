@@ -536,14 +536,10 @@ export function createApp(options: AppOptions): Hono {
   app.route('/channels', rosterRoutes);
 
   // Agent checkin routes (container → server registration)
-  // callbackUrl is now persisted to roster table in PlanetScale
-  // readmarkStore is still in-memory (TODO: persist to DB)
-  const readmarkStore = new Map<string, string>();
-
+  // Both callbackUrl and readmark are persisted to roster table in PlanetScale
   const checkinRoutes = createCheckinRoutes({
     storage,
     spaceId,
-    readmarkStore,
   });
   app.route('/agents', checkinRoutes);
 
