@@ -452,7 +452,7 @@ export function useTymbalConnection({
           // Extract host from VITE_API_URL (e.g., "http://localhost:3131" -> "localhost:3131")
           wsHost = apiUrl.replace(/^https?:\/\//, '')
         } else {
-          wsHost = import.meta.env.DEV ? 'localhost:3001' : window.location.host
+          wsHost = import.meta.env.DEV ? 'localhost:3233' : window.location.host
         }
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
         wsUrl = `${protocol}//${wsHost}/channels/${channelId}/stream`

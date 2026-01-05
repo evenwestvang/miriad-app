@@ -36,7 +36,7 @@ export async function apiFetch(
 
   const response = await fetch(url, {
     ...init,
-    credentials: 'include',
+    // No credentials needed for MVP (no auth yet)
   })
 
   return response
