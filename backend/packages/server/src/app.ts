@@ -542,6 +542,7 @@ export function createApp(options: AppOptions): Hono {
   const checkinRoutes = createCheckinRoutes({
     storage,
     spaceId,
+    orchestrator, // For local Docker: use orchestrator's port mapping for pending messages
   });
   app.route('/agents', checkinRoutes);
 

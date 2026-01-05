@@ -14,6 +14,7 @@
 import { Hono } from 'hono';
 import type { Storage } from '@cast/storage';
 import type { StoredMessage } from '@cast/core';
+import type { ContainerOrchestrator } from '@cast/runtime';
 import { generateContainerToken } from '../auth/index.js';
 
 // =============================================================================
@@ -36,6 +37,8 @@ export interface CheckinHandlerOptions {
   storage: Storage;
   /** Default space ID */
   spaceId: string;
+  /** Container orchestrator for local Docker (uses port mapping instead of callbackUrl) */
+  orchestrator?: ContainerOrchestrator;
 }
 
 // =============================================================================
@@ -170,7 +173,7 @@ export async function pushMessagesToContainer(
  * Create the /agents/checkin route.
  */
 export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
-  const { storage, spaceId: defaultSpaceId } = options;
+  const { storage, spaceId: defaultSpaceId, orchestrator } = options;
 
   const app = new Hono();
 
@@ -246,16 +249,30 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
         // Build thread ID
         const threadId = `${spaceId}:${channelId}:${callsign}`;
 
-        // Generate auth token for this agent (deterministic - same as container received at spawn)
-        const authToken = generateContainerToken({ spaceId, channelId, callsign });
+        let success = false;
 
-        // Push to container (blocking)
-        const success = await pushMessagesToContainer(
-          endpoint,
-          compiledContent,
-          threadId,
-          authToken
-        );
+        // For local Docker, use orchestrator's port mapping (bypasses host.docker.internal issue)
+        if (orchestrator?.isRunning(threadId)) {
+          console.log(`[Checkin] Using orchestrator for pending message delivery`);
+          try {
+            await orchestrator.sendMessage(threadId, compiledContent);
+            success = true;
+          } catch (error) {
+            console.error(`[Checkin] Orchestrator push failed:`, error);
+          }
+        } else {
+          // Fargate path: use container's reported endpoint
+          // Generate auth token for this agent (deterministic - same as container received at spawn)
+          const authToken = generateContainerToken({ spaceId, channelId, callsign });
+
+          // Push to container (blocking)
+          success = await pushMessagesToContainer(
+            endpoint,
+            compiledContent,
+            threadId,
+            authToken
+          );
+        }
 
         if (success) {
           delivered = pendingMessages.length;
