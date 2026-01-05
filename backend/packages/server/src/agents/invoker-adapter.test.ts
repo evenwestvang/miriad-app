@@ -127,7 +127,7 @@ describe('createAgentInvokerAdapter', () => {
     id: 'msg-1',
     channelId: 'channel-1',
     sender: 'alice',
-    senderType: 'human',
+    senderType: 'user',
     type: 'message',
     content: '@fox @bear help me please',
     timestamp: new Date().toISOString(),

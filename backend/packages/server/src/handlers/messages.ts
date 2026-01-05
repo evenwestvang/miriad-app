@@ -184,7 +184,7 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
    * POST /channels/:id/messages
    *
    * Send a message to a channel.
-   * Body: { content: string, sender?: string, senderType?: 'human' | 'agent' }
+   * Body: { content: string, sender?: string, senderType?: 'user' | 'agent' }
    */
   app.post('/:channelId/messages', async (c) => {
     const channelId = c.req.param('channelId');
