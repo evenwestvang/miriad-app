@@ -31,6 +31,10 @@ Parameters:
   SecurityGroupIds:
     Type: List<AWS::EC2::SecurityGroup::Id>
     Description: Security group IDs for Fargate tasks (allow outbound HTTPS)
+  CastApiUrl:
+    Type: String
+    Description: HTTP API URL for agent containers to call back (e.g., https://api.staging.clanker.is)
+    Default: ''
 
 Globals:
   Function:
@@ -66,6 +70,7 @@ Resources:
           ANTHROPIC_API_KEY: !Ref AnthropicApiKey
           SUBNET_IDS: !Join [',', !Ref SubnetIds]
           SECURITY_GROUP_IDS: !Join [',', !Ref SecurityGroupIds]
+          CAST_API_URL: !Ref CastApiUrl
       Events:
         RootPath:
           Type: HttpApi
