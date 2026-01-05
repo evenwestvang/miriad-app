@@ -670,5 +670,44 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     }
   });
 
+  // ---------------------------------------------------------------------------
+  // GET /channels/:channelId/artifacts/:slug/diff - Diff versions
+  // ---------------------------------------------------------------------------
+  app.get('/:channelId/artifacts/:slug/diff', async (c) => {
+    const channelId = c.req.param('channelId');
+    const slug = c.req.param('slug');
+    const fromVersion = c.req.query('from');
+    const toVersion = c.req.query('to');
+
+    if (!fromVersion) {
+      return c.json({ error: "'from' query parameter is required" }, 400);
+    }
+
+    try {
+      // Resolve channel by name or ID
+      const channel = await storage.getChannelByName(spaceId, channelId)
+        || await storage.getChannel(spaceId, channelId);
+
+      if (!channel) {
+        return c.json({ error: 'Channel not found' }, 404);
+      }
+
+      const diff = await storage.diffArtifactVersions(
+        channel.id,
+        slug,
+        fromVersion,
+        toVersion || undefined
+      );
+
+      return c.json({ diff });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('not found')) {
+        return c.json({ error: error.message }, 404);
+      }
+      console.error('[Artifacts] Error generating diff:', error);
+      return c.json({ error: 'Failed to generate diff' }, 500);
+    }
+  });
+
   return app;
 }

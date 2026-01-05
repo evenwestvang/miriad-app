@@ -1065,6 +1065,183 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     }));
   }
 
+  /**
+   * Generate a unified diff between two strings.
+   * Simple line-by-line implementation without external dependencies.
+   */
+  function generateUnifiedDiff(
+    oldContent: string,
+    newContent: string,
+    oldLabel: string,
+    newLabel: string
+  ): string {
+    const oldLines = oldContent.split('\n');
+    const newLines = newContent.split('\n');
+
+    // Simple LCS-based diff algorithm
+    const lcs = computeLCS(oldLines, newLines);
+
+    const diff: string[] = [];
+    diff.push(`--- ${oldLabel}`);
+    diff.push(`+++ ${newLabel}`);
+
+    let oldIdx = 0;
+    let newIdx = 0;
+    let hunkOldStart = 0;
+    let hunkNewStart = 0;
+    let hunkLines: string[] = [];
+
+    function flushHunk() {
+      if (hunkLines.length > 0) {
+        const hunkOldCount = hunkLines.filter(l => l.startsWith('-') || l.startsWith(' ')).length;
+        const hunkNewCount = hunkLines.filter(l => l.startsWith('+') || l.startsWith(' ')).length;
+        diff.push(`@@ -${hunkOldStart + 1},${hunkOldCount} +${hunkNewStart + 1},${hunkNewCount} @@`);
+        diff.push(...hunkLines);
+        hunkLines = [];
+      }
+    }
+
+    for (const match of lcs) {
+      // Output removed lines
+      while (oldIdx < match.oldIdx) {
+        if (hunkLines.length === 0) {
+          hunkOldStart = oldIdx;
+          hunkNewStart = newIdx;
+        }
+        hunkLines.push(`-${oldLines[oldIdx]}`);
+        oldIdx++;
+      }
+      // Output added lines
+      while (newIdx < match.newIdx) {
+        if (hunkLines.length === 0) {
+          hunkOldStart = oldIdx;
+          hunkNewStart = newIdx;
+        }
+        hunkLines.push(`+${newLines[newIdx]}`);
+        newIdx++;
+      }
+      // Output context (matching line)
+      if (hunkLines.length > 0) {
+        hunkLines.push(` ${oldLines[oldIdx]}`);
+      }
+      oldIdx++;
+      newIdx++;
+
+      // Flush hunk if we have enough trailing context
+      const lastFewAreContext = hunkLines.slice(-3).every(l => l.startsWith(' '));
+      if (lastFewAreContext && hunkLines.length > 6) {
+        // Remove trailing context, flush, reset
+        const trailing = hunkLines.splice(-3);
+        flushHunk();
+        hunkOldStart = oldIdx - 3;
+        hunkNewStart = newIdx - 3;
+        hunkLines = trailing;
+      }
+    }
+
+    // Handle remaining lines after last match
+    while (oldIdx < oldLines.length) {
+      if (hunkLines.length === 0) {
+        hunkOldStart = oldIdx;
+        hunkNewStart = newIdx;
+      }
+      hunkLines.push(`-${oldLines[oldIdx]}`);
+      oldIdx++;
+    }
+    while (newIdx < newLines.length) {
+      if (hunkLines.length === 0) {
+        hunkOldStart = oldIdx;
+        hunkNewStart = newIdx;
+      }
+      hunkLines.push(`+${newLines[newIdx]}`);
+      newIdx++;
+    }
+
+    flushHunk();
+
+    return diff.join('\n');
+  }
+
+  /**
+   * Compute Longest Common Subsequence for diff algorithm.
+   * Returns array of matching indices.
+   */
+  function computeLCS(
+    oldLines: string[],
+    newLines: string[]
+  ): Array<{ oldIdx: number; newIdx: number }> {
+    const m = oldLines.length;
+    const n = newLines.length;
+
+    // Build LCS table
+    const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (oldLines[i - 1] === newLines[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1] + 1;
+        } else {
+          dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+        }
+      }
+    }
+
+    // Backtrack to find matches
+    const matches: Array<{ oldIdx: number; newIdx: number }> = [];
+    let i = m, j = n;
+    while (i > 0 && j > 0) {
+      if (oldLines[i - 1] === newLines[j - 1]) {
+        matches.unshift({ oldIdx: i - 1, newIdx: j - 1 });
+        i--;
+        j--;
+      } else if (dp[i - 1][j] > dp[i][j - 1]) {
+        i--;
+      } else {
+        j--;
+      }
+    }
+
+    return matches;
+  }
+
+  async function diffArtifactVersions(
+    channelId: string,
+    slug: string,
+    fromVersion: string,
+    toVersion?: string
+  ): Promise<string> {
+    // Get the "from" version
+    const fromVer = await getArtifactVersion(channelId, slug, fromVersion);
+    if (!fromVer) {
+      throw new Error(`Version '${fromVersion}' not found for artifact '${slug}'`);
+    }
+
+    let toContent: string;
+    let toLabel: string;
+
+    if (toVersion) {
+      // Get the "to" version
+      const toVer = await getArtifactVersion(channelId, slug, toVersion);
+      if (!toVer) {
+        throw new Error(`Version '${toVersion}' not found for artifact '${slug}'`);
+      }
+      toContent = toVer.content;
+      toLabel = `${slug}@${toVersion}`;
+    } else {
+      // Compare against current content
+      const artifact = await getArtifact(channelId, slug);
+      if (!artifact) {
+        throw new Error(`Artifact not found: ${slug}`);
+      }
+      toContent = artifact.content;
+      toLabel = `${slug} (current)`;
+    }
+
+    const fromLabel = `${slug}@${fromVersion}`;
+
+    return generateUnifiedDiff(fromVer.content, toContent, fromLabel, toLabel);
+  }
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
@@ -1363,6 +1540,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     checkpointArtifact,
     getArtifactVersion,
     listArtifactVersions,
+    diffArtifactVersions,
     // Lifecycle
     initialize,
     close,

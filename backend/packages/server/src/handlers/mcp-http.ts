@@ -295,6 +295,29 @@ const TOOLS: McpToolDefinition[] = [
       required: ['slug', 'version'],
     },
   },
+  {
+    name: 'artifact_diff',
+    description: 'Compare two versions of an artifact, or a version against current state. Returns unified diff format.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        slug: {
+          type: 'string',
+          description: 'Artifact slug to diff',
+        },
+        from: {
+          type: 'string',
+          description: "Starting version name (required, e.g., 'v1.0')",
+        },
+        to: {
+          type: 'string',
+          description: "Ending version name (optional - if omitted, compares against current content)",
+        },
+        channel: channelProperty,
+      },
+      required: ['slug', 'from'],
+    },
+  },
   // ---------------------------------------------------------------------------
   // Message Tools
   // ---------------------------------------------------------------------------
@@ -557,6 +580,20 @@ const toolHandlers: Record<string, ToolHandler> = {
       createdBy: artifactVersion.versionCreatedBy,
       createdAt: artifactVersion.versionCreatedAt,
     }, null, 2);
+  },
+
+  async artifact_diff(args, { storage, channelId }) {
+    const { slug, from, to, channel } = args as {
+      slug: string;
+      from: string;
+      to?: string;
+      channel?: string;
+    };
+    const targetChannel = channel || channelId;
+
+    const diff = await storage.diffArtifactVersions(targetChannel, slug, from, to);
+
+    return diff;
   },
 
   // ---------------------------------------------------------------------------

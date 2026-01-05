@@ -268,6 +268,20 @@ export interface Storage {
     slug: string
   ): Promise<ArtifactVersion[]>;
 
+  /**
+   * Compare two versions of an artifact, or a version against current content.
+   * Returns unified diff format.
+   *
+   * @param fromVersion - Starting version name (required)
+   * @param toVersion - Ending version name (optional, defaults to current content)
+   */
+  diffArtifactVersions(
+    channelId: string,
+    slug: string,
+    fromVersion: string,
+    toVersion?: string
+  ): Promise<string>;
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
