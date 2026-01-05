@@ -36,3 +36,9 @@ temp/
 
 # Vitest
 .vite/
+
+# Package locks (using pnpm)
+package-lock.json
+
+# Legacy/reference code
+legacy-cikada/

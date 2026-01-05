@@ -24,13 +24,13 @@ importers:
   deploy:
     dependencies:
       '@aws-sdk/client-apigatewaymanagementapi':
-        specifier: ^3.0.0
+        specifier: ^3.700.0
         version: 3.962.0
       '@aws-sdk/client-dynamodb':
-        specifier: ^3.0.0
+        specifier: ^3.700.0
         version: 3.962.0
       '@aws-sdk/lib-dynamodb':
-        specifier: ^3.0.0
+        specifier: ^3.700.0
         version: 3.962.0(@aws-sdk/client-dynamodb@3.962.0)
       '@cast/core':
         specifier: workspace:*

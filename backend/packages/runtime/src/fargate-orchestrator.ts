@@ -188,7 +188,7 @@ export class FargateOrchestrator implements ContainerOrchestrator {
     console.log(`[FargateOrchestrator] Task started: ${taskArn}`);
 
     // NOTE: Fire-and-forget pattern - don't wait for task to be ready
-    // The agent container has CIKADA_API_URL and will call back when ready
+    // The agent container has CAST_API_URL and will call back when ready
     // This keeps Lambda response time under API Gateway's 29s timeout
     console.log(`[FargateOrchestrator] Fire-and-forget - agent will callback to API`);
 
