@@ -20,7 +20,7 @@ import { createArtifactRoutes } from './handlers/artifacts.js';
 import { createFilesystemAssetStorage } from './assets/index.js';
 import type { ConnectionManager } from './websocket/index.js';
 import { AgentManager, createAgentInvokerAdapter } from './agents/index.js';
-import { createDevAuthRoutes, requireAuth, getSpaceId } from './auth/index.js';
+import { createDevAuthRoutes, createWorkOSAuthRoutes, requireAuth, getSpaceId } from './auth/index.js';
 
 // =============================================================================
 // Types
@@ -463,11 +463,17 @@ export function createApp(options: AppOptions): Hono {
   });
 
   // ---------------------------------------------------------------------------
-  // Auth Routes (Dev Mode)
+  // Auth Routes
   // ---------------------------------------------------------------------------
 
+  // Dev auth routes (local development)
   const devAuthRoutes = createDevAuthRoutes({ storage });
   app.route('/auth/dev', devAuthRoutes);
+
+  // WorkOS auth routes (production)
+  // These are always mounted - they'll return errors if WorkOS env vars aren't set
+  const workosAuthRoutes = createWorkOSAuthRoutes({ storage });
+  app.route('/auth', workosAuthRoutes);
 
   // GET /auth/me and POST /auth/logout are mounted at /auth level
   // (shared between dev and workos modes)
