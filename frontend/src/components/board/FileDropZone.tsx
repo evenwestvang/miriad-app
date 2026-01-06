@@ -410,7 +410,7 @@ export function FileDropZone({
 
   return (
     <div
-      className="relative h-full"
+      className="relative flex-1 flex flex-col min-h-0"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}

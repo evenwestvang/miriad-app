@@ -456,7 +456,7 @@ export function ArtifactDetail({
   const hasChanges = buildChanges().length > 0
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Header */}
       <div className="px-3 py-2 border-b border-border space-y-1">
         {/* Row 1: Back + Icon + Title + Status */}
@@ -709,7 +709,7 @@ export function ArtifactDetail({
       )}
 
       {/* Content area */}
-      <div className={cn("flex-1", isInteractiveApp ? "overflow-hidden" : "overflow-y-auto")}>
+      <div className={cn("flex-1 min-h-0", isInteractiveApp ? "overflow-hidden flex flex-col" : "overflow-y-auto")}>
         {versionLoading ? (
           <div className="flex items-center justify-center h-20">
             <span className="text-sm text-muted-foreground">Loading version...</span>
@@ -728,13 +728,11 @@ export function ArtifactDetail({
             />
           </div>
         ) : isInteractiveApp ? (
-          <div className="h-full p-2">
-            <SpaRenderer
-              content={isViewingHistory ? versionData!.content : artifact.content}
-              channel={channelId}
-              slug={artifact.slug}
-            />
-          </div>
+          <SpaRenderer
+            content={isViewingHistory ? versionData!.content : artifact.content}
+            channel={channelId}
+            slug={artifact.slug}
+          />
         ) : isAsset ? (
           <div className="p-3">
             <AssetPreview

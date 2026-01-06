@@ -264,7 +264,7 @@ export function SpaRenderer({ content, channel, slug }: SpaRendererProps) {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-[200px]">
+    <div className="flex flex-col flex-1 min-h-0 p-2">
       {/* Error display */}
       {error && (
         <div className="flex items-center gap-2 p-2 mb-2 rounded bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-xs">
@@ -281,7 +281,7 @@ export function SpaRenderer({ content, channel, slug }: SpaRendererProps) {
       )}
 
       {/* App container */}
-      <div className="flex-1 relative min-h-[160px]">
+      <div className="flex-1 relative min-h-0">
         <div
           ref={inlineContainerRef}
           className="absolute inset-0 bg-black rounded overflow-hidden"
