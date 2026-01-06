@@ -55,6 +55,14 @@ interface CompleteOnboardingBody {
 const ONBOARDING_TOKEN_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
 /**
+ * Get frontend URL for redirects.
+ * Required for cross-origin deployments where API and frontend are on different domains.
+ */
+function getFrontendUrl(): string {
+  return process.env.FRONTEND_URL || 'http://localhost:5173';
+}
+
+/**
  * Get WorkOS configuration from environment.
  * All values are required in production.
  */
@@ -208,14 +216,16 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
     const error = c.req.query('error');
     const errorDescription = c.req.query('error_description');
 
+    const frontendUrl = getFrontendUrl();
+
     // Handle OAuth errors
     if (error) {
       console.error(`[WorkOS] OAuth error: ${error} - ${errorDescription}`);
-      return c.redirect(`/auth-error?error=${encodeURIComponent(error)}`);
+      return c.redirect(`${frontendUrl}/auth-error?error=${encodeURIComponent(error)}`);
     }
 
     if (!code) {
-      return c.redirect('/auth-error?error=missing_code');
+      return c.redirect(`${frontendUrl}/auth-error?error=missing_code`);
     }
 
     try {
@@ -248,7 +258,7 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
         if (spaces.length === 0) {
           // User exists but has no space - this shouldn't happen, but handle it
           console.error(`[WorkOS] User ${existingUser.id} has no spaces`);
-          return c.redirect('/auth-error?error=no_space');
+          return c.redirect(`${frontendUrl}/auth-error?error=no_space`);
         }
 
         // Use first space (multi-space support can come later)
@@ -258,7 +268,7 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
         const token = await createSession(existingUser.id, space.id, 'workos');
         setSessionCookie(c, token);
 
-        return c.redirect(returnTo);
+        return c.redirect(`${frontendUrl}${returnTo}`);
       }
 
       // New user - redirect to onboarding
@@ -275,11 +285,12 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
       );
 
       // Redirect to onboarding page with token
-      const onboardingUrl = `/onboarding?token=${encodeURIComponent(onboardingToken)}&returnTo=${encodeURIComponent(returnTo)}`;
+      // Frontend reads token from query params on root route (/?token=xxx)
+      const onboardingUrl = `${frontendUrl}/?token=${encodeURIComponent(onboardingToken)}&returnTo=${encodeURIComponent(returnTo)}`;
       return c.redirect(onboardingUrl);
     } catch (error) {
       console.error('[WorkOS] Callback error:', error);
-      return c.redirect('/auth-error?error=callback_failed');
+      return c.redirect(`${frontendUrl}/auth-error?error=callback_failed`);
     }
   });
 
