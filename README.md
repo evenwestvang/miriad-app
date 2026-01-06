@@ -42,6 +42,23 @@ cd frontend && pnpm install
 cd agents/sandbox && pnpm install
 ```
 
+### Configure Environment
+
+```bash
+# Copy environment template
+cd backend && cp .env.example .env
+```
+
+Edit `backend/.env` with your credentials:
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `PLANETSCALE_URL` | PostgreSQL connection string | Yes |
+| `ANTHROPIC_API_KEY` | API key for Claude in containers | Yes |
+| `AUTH_MODE` | Set to `dev` for local development | Yes (local) |
+| `PORT` | Server port (default: 3234) | No |
+| `AGENT_IMAGE` | Docker image for agents | No |
+
 ### Build
 
 ```bash

@@ -39,9 +39,10 @@ See `.env.example` for all available options:
 |----------|-------------|
 | `PLANETSCALE_URL` | PostgreSQL connection string |
 | `ANTHROPIC_API_KEY` | API key for Claude in containers |
-| `PORT` | Server port (default: 3232) |
+| `PORT` | Server port (default: 3234) |
 | `SPACE_ID` | Multi-tenant space ID (default: default-space) |
 | `AGENT_IMAGE` | Docker image for agents (default: claude-code:local) |
+| `AUTH_MODE` | **Required for local dev**: Set to `dev` to enable dev auth routes |
 
 ## API Endpoints
 
