@@ -121,6 +121,28 @@ export async function logout(): Promise<void> {
 }
 
 /**
+ * Complete onboarding for new WorkOS users.
+ * Called after OAuth when user needs to pick callsign and space name.
+ */
+export async function completeOnboarding(params: {
+  callsign: string
+  spaceName: string
+  onboardingToken: string
+}): Promise<{ userId: string; spaceId: string }> {
+  const response = await fetch(`${API_HOST}/auth/complete-onboarding`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(params),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || `Onboarding failed: ${response.status}`)
+  }
+  return response.json()
+}
+
+/**
  * Fetch wrapper for API calls.
  * Includes credentials for session cookie authentication.
  */
