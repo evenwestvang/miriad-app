@@ -701,15 +701,19 @@ export function createApp(options: AppOptions): Hono {
         return c.json({ error: `Artifact not found: ${slug}` }, 404);
       }
 
-      // For binary assets (encoding: 'file'), serve via assetStorage
-      if (artifact.encoding === 'file') {
+      // For asset artifacts, serve binary file via assetStorage
+      if (artifact.type === 'asset') {
         const data = await assetStorage.readAsset(channel.id, slug);
         const mimeType = artifact.contentType || getMimeType(slug);
 
-        c.header('Content-Type', mimeType);
-        c.header('Content-Length', data.length.toString());
-        c.header('Cache-Control', 'public, max-age=31536000, immutable');
-        return c.body(data);
+        return new Response(data, {
+          status: 200,
+          headers: {
+            'Content-Type': mimeType,
+            'Content-Length': data.length.toString(),
+            'Cache-Control': 'public, max-age=31536000, immutable',
+          },
+        });
       }
 
       // For text artifacts, serve content directly with appropriate Content-Type

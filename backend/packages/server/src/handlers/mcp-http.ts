@@ -160,8 +160,8 @@ const TOOLS: McpToolDefinition[] = [
         },
         type: {
           type: 'string',
-          enum: ['doc', 'task', 'decision', 'code', 'asset'],
-          description: 'Artifact type',
+          enum: ['doc', 'task', 'decision', 'code'],
+          description: 'Artifact type (use upload_asset tool for binary files like images/PDFs)',
         },
         tldr: {
           type: 'string',
@@ -393,7 +393,7 @@ const TOOLS: McpToolDefinition[] = [
   {
     name: 'upload_asset',
     description:
-      'Upload a binary file (image, PDF, etc.) to the channel. Provide either a local file path OR base64-encoded data.',
+      'Upload a binary file (image, PDF, audio, video) to the channel. THIS IS THE ONLY WAY to upload images and other binary files - do NOT use artifact_create for binary assets. Provide either a local file path OR base64-encoded data. The file will be stored and served at /channels/:channelId/assets/:slug',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -807,7 +807,6 @@ const toolHandlers: Record<string, ToolHandler> = {
       tldr,
       content: '', // Assets have no text content
       parentSlug,
-      encoding: 'file',
       contentType: result.contentType,
       fileSize: result.fileSize,
       createdBy: callsign,

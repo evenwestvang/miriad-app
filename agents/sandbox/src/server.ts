@@ -69,7 +69,7 @@ const WORKSPACE_BASE = process.env.WORKSPACE_DIR ?? "/workspace";
 const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS ?? String(10 * 60 * 1000), 10);
 
 // Model configuration
-const DEFAULT_MODEL = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-20250514";
+const DEFAULT_MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-4-5-20251101";
 
 /**
  * Get the container's local IP address for callback URL.

@@ -104,6 +104,8 @@ interface ArtifactRow {
   labels: string[];
   refs: string[];
   props: Record<string, unknown> | null;
+  content_type: string | null;
+  file_size: number | null;
   version: number;
   created_by: string;
   created_at: Date;
@@ -566,6 +568,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       labels: row.labels ?? [],
       refs: row.refs ?? [],
       props: row.props ?? undefined,
+      contentType: row.content_type ?? undefined,
+      fileSize: row.file_size ?? undefined,
       version: row.version,
       createdBy: row.created_by,
       createdAt: row.created_at.toISOString(),
@@ -603,8 +607,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       const result = await sql<ArtifactRow[]>`
         INSERT INTO artifacts (
           id, channel_id, slug, type, title, tldr, content, parent_slug, path,
-          order_key, status, assignees, labels, refs, props, version,
-          created_by, created_at
+          order_key, status, assignees, labels, refs, props,
+          content_type, file_size,
+          version, created_by, created_at
         )
         VALUES (
           ${id},
@@ -622,6 +627,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           ${sql.array(input.labels ?? [])},
           ${sql.array(refs)},
           ${input.props ? JSON.stringify(input.props) : null},
+          ${input.contentType ?? null},
+          ${input.fileSize ?? null},
           1,
           ${input.createdBy},
           ${now}
@@ -1434,6 +1441,16 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     await sql`
       CREATE INDEX IF NOT EXISTS idx_artifact_versions_artifact
       ON artifact_versions(channel_id, slug)
+    `;
+
+    // Add content_type, file_size columns if they don't exist (migration for existing databases)
+    await sql`
+      DO $$ BEGIN
+        ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS content_type VARCHAR(255);
+        ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS file_size BIGINT;
+      EXCEPTION
+        WHEN duplicate_column THEN NULL;
+      END $$;
     `;
   }
 

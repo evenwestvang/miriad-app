@@ -817,7 +817,6 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
         content: '', // Binary content is stored separately
         parentSlug,
         status: 'published',
-        encoding: 'file',
         contentType: result.contentType,
         fileSize: result.fileSize,
         createdBy: sender,
@@ -872,8 +871,8 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
       if (!artifact) {
         return c.json({ error: `Asset not found: ${slug}` }, 404);
       }
-      if (artifact.encoding !== 'file') {
-        return c.json({ error: `Not a file asset: ${slug}` }, 400);
+      if (artifact.type !== 'asset') {
+        return c.json({ error: `Not an asset artifact: ${slug}` }, 400);
       }
 
       // Read and serve the file

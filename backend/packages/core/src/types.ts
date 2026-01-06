@@ -280,14 +280,6 @@ export type ArtifactType =
   | 'system.playbook';
 
 /**
- * Content encoding for artifacts.
- * - undefined: Text content stored in `content` field
- * - 'file': Binary stored on filesystem
- * - 's3': Binary stored in S3 (not implemented - will throw)
- */
-export type ArtifactEncoding = 'file' | 's3';
-
-/**
  * Artifact status values.
  * - draft/published/archived: For documents
  * - pending/in_progress/done/blocked: For tasks
@@ -351,9 +343,6 @@ export interface StoredArtifact {
   /** Type-specific properties (e.g., MCP config, agent definition) */
   props?: Record<string, unknown>;
 
-  /** Content encoding (undefined = text, 'file' = filesystem, 's3' = S3) */
-  encoding?: ArtifactEncoding;
-
   /** MIME type for binary assets (e.g., 'image/png') */
   contentType?: string;
 
@@ -412,9 +401,6 @@ export interface CreateArtifactInput {
 
   /** Type-specific properties */
   props?: Record<string, unknown>;
-
-  /** Content encoding for binary assets */
-  encoding?: ArtifactEncoding;
 
   /** MIME type for binary assets */
   contentType?: string;
