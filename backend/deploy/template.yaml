@@ -55,6 +55,10 @@ Parameters:
     Type: String
     Description: HTTP API URL for agent containers to call back (e.g., https://api.staging.clanker.is)
     Default: ''
+  FrontendUrl:
+    Type: String
+    Description: Frontend URL for OAuth redirects (e.g., https://staging.clanker.is)
+    Default: 'http://localhost:5173'
 
 Globals:
   Function:
@@ -95,6 +99,7 @@ Resources:
           WORKOS_API_KEY: !Ref WorkOsApiKey
           WORKOS_CLIENT_ID: !Ref WorkOsClientId
           WORKOS_REDIRECT_URI: !Ref WorkOsRedirectUri
+          FRONTEND_URL: !Ref FrontendUrl
       Events:
         RootPath:
           Type: HttpApi
@@ -421,6 +426,7 @@ Resources:
           CONNECTIONS_TABLE: !Ref ConnectionsTable
           WEBSOCKET_ENDPOINT: !Sub https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
           PLANETSCALE_URL: !Ref PlanetScaleUrl
+          JWT_SECRET: !Ref JwtSecret
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
