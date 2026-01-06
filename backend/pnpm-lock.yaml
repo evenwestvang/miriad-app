@@ -113,6 +113,9 @@ importers:
       hono:
         specifier: ^4.0.0
         version: 4.11.3
+      ulid:
+        specifier: ^3.0.2
+        version: 3.0.2
       ws:
         specifier: ^8.18.3
         version: 8.18.3
