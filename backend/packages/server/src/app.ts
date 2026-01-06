@@ -20,6 +20,7 @@ import { createArtifactRoutes } from './handlers/artifacts.js';
 import { createFilesystemAssetStorage } from './assets/index.js';
 import type { ConnectionManager } from './websocket/index.js';
 import { AgentManager, createAgentInvokerAdapter } from './agents/index.js';
+import { createDevAuthRoutes } from './auth/index.js';
 
 // =============================================================================
 // Types
@@ -446,6 +447,44 @@ export function createApp(options: AppOptions): Hono {
       name: 'Cast Backend',
       version: '0.0.1',
       docs: '/health',
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Auth Routes (Dev Mode)
+  // ---------------------------------------------------------------------------
+
+  const devAuthRoutes = createDevAuthRoutes({ storage });
+  app.route('/auth/dev', devAuthRoutes);
+
+  // GET /auth/me and POST /auth/logout are mounted at /auth level
+  // (shared between dev and workos modes)
+  app.get('/auth/me', async (c) => {
+    // Forward to dev routes for now (WorkOS will add its own handler later)
+    const response = await devAuthRoutes.request(
+      new Request(new URL('/me', c.req.url), { headers: c.req.raw.headers }),
+      {}
+    );
+    // Copy response headers (including cookies)
+    const headers = new Headers(response.headers);
+    return new Response(response.body, {
+      status: response.status,
+      headers,
+    });
+  });
+
+  app.post('/auth/logout', async (c) => {
+    const response = await devAuthRoutes.request(
+      new Request(new URL('/logout', c.req.url), {
+        method: 'POST',
+        headers: c.req.raw.headers,
+      }),
+      {}
+    );
+    const headers = new Headers(response.headers);
+    return new Response(response.body, {
+      status: response.status,
+      headers,
     });
   });
 
