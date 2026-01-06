@@ -36,10 +36,17 @@ disable_rollback = false
 parameter_overrides = [
     "Stage=stag",
     "PlanetScaleUrl=postgres://pscale_api_nmney6igy1w2.pwp8x47bv2br:pscale_pw_MdmptCQgW99vHwo4MILzUqRPdfn5iNAk@us-east-2.pg.psdb.cloud:6432/postgres",
-    "SpaceId=default-space",
     "SubnetIds=subnet-0f7c23168eb2b784f,subnet-0873ce7dc641901f6,subnet-0ecf88ad31694eb5e",
     "SecurityGroupIds=sg-05971dc75c23d1eff",
     "AgentImageUri=455626925815.dkr.ecr.us-east-1.amazonaws.com/cast-agent:latest",
-    "CastApiUrl=https://9xq1buuixd.execute-api.us-east-1.amazonaws.com/stag",
-    "AnthropicApiKey=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"
+    "CastApiUrl=https://api.staging.clanker.is",
+    "AnthropicApiKey=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",
+    # Auth config (task-2-4 complete)
+    "AuthMode=workos",
+    "JwtSecret=yyPAyy+mBXWqq2dtUcYzWetur1ufJxMpOQkUqBypruY=",
+    "WorkOsApiKey=sk_test_a2V5XzAxS0U5Rk05WEdGNEhINkMyTVJXSlEzM1FNLDN6d0xkc3BBTnhEa29CVUhzeXc3SGptOWo",
+    "WorkOsClientId=client_01KE9FMAF763G9BXEJVMABHFHW",
+    "WorkOsRedirectUri=https://api.staging.clanker.is/auth/callback",
+    # Frontend URL for OAuth redirects
+    "FrontendUrl=https://staging.clanker.is"
 ]

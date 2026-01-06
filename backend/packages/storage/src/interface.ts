@@ -18,6 +18,11 @@ import type {
   RosterEntry,
   AddToRosterInput,
   UpdateRosterInput,
+  // User/Space types (Spaces & Auth)
+  StoredUser,
+  CreateUserInput,
+  StoredSpace,
+  CreateSpaceInput,
   // Artifact types (Phase A)
   StoredArtifact,
   CreateArtifactInput,
@@ -75,6 +80,50 @@ export interface Storage {
   deleteMessage(spaceId: string, messageId: string): Promise<void>;
 
   // ---------------------------------------------------------------------------
+  // User Operations (Spaces & Auth)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Create a new user.
+   */
+  createUser(input: CreateUserInput): Promise<StoredUser>;
+
+  /**
+   * Get a user by ID.
+   */
+  getUser(userId: string): Promise<StoredUser | null>;
+
+  /**
+   * Get a user by external ID (e.g., WorkOS user_id).
+   */
+  getUserByExternalId(externalId: string): Promise<StoredUser | null>;
+
+  // ---------------------------------------------------------------------------
+  // Space Operations (Spaces & Auth)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Create a new space.
+   */
+  createSpace(input: CreateSpaceInput): Promise<StoredSpace>;
+
+  /**
+   * Get a space by ID.
+   */
+  getSpace(spaceId: string): Promise<StoredSpace | null>;
+
+  /**
+   * Get all spaces owned by a user.
+   */
+  getSpacesByOwner(ownerId: string): Promise<StoredSpace[]>;
+
+  /**
+   * List all spaces with their owners.
+   * Used for dev login screen to show available spaces.
+   */
+  listSpacesWithOwners(): Promise<Array<{ space: StoredSpace; owner: StoredUser }>>;
+
+  // ---------------------------------------------------------------------------
   // Channel Operations (Phase 2)
   // ---------------------------------------------------------------------------
 
@@ -84,9 +133,16 @@ export interface Storage {
   createChannel(input: CreateChannelInput): Promise<StoredChannel>;
 
   /**
-   * Get a channel by ID.
+   * Get a channel by ID (requires spaceId for scoping).
    */
   getChannel(spaceId: string, channelId: string): Promise<StoredChannel | null>;
+
+  /**
+   * Get a channel by ID only (no spaceId required).
+   * Channel IDs are globally unique (ULIDs), so this is safe.
+   * Returns the channel with its spaceId for access control checks.
+   */
+  getChannelById(channelId: string): Promise<StoredChannel | null>;
 
   /**
    * Get a channel by name.

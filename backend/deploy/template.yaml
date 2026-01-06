@@ -13,10 +13,30 @@ Parameters:
     Type: String
     Description: PlanetScale PostgreSQL connection URL
     NoEcho: true
-  SpaceId:
+  AuthMode:
     Type: String
-    Default: default-space
-    Description: Multi-tenant space ID
+    Default: workos
+    AllowedValues:
+      - dev
+      - workos
+    Description: Authentication mode (dev for local testing, workos for production)
+  WorkOsApiKey:
+    Type: String
+    Description: WorkOS API key
+    NoEcho: true
+    Default: ''
+  WorkOsClientId:
+    Type: String
+    Description: WorkOS client ID
+    Default: ''
+  WorkOsRedirectUri:
+    Type: String
+    Description: WorkOS OAuth redirect URI
+    Default: ''
+  JwtSecret:
+    Type: String
+    Description: Secret key for signing session JWTs
+    NoEcho: true
   AnthropicApiKey:
     Type: String
     Description: Anthropic API key for agent containers
@@ -35,6 +55,10 @@ Parameters:
     Type: String
     Description: HTTP API URL for agent containers to call back (e.g., https://api.staging.clanker.is)
     Default: ''
+  FrontendUrl:
+    Type: String
+    Description: Frontend URL for OAuth redirects (e.g., https://staging.clanker.is)
+    Default: 'http://localhost:5173'
 
 Globals:
   Function:
@@ -48,7 +72,8 @@ Globals:
         STAGE: !Ref Stage
         NODE_OPTIONS: --enable-source-maps
         PLANETSCALE_URL: !Ref PlanetScaleUrl
-        SPACE_ID: !Ref SpaceId
+        AUTH_MODE: !Ref AuthMode
+        JWT_SECRET: !Ref JwtSecret
 
 Resources:
   # Main API Lambda
@@ -71,6 +96,10 @@ Resources:
           SUBNET_IDS: !Join [',', !Ref SubnetIds]
           SECURITY_GROUP_IDS: !Join [',', !Ref SecurityGroupIds]
           CAST_API_URL: !Ref CastApiUrl
+          WORKOS_API_KEY: !Ref WorkOsApiKey
+          WORKOS_CLIENT_ID: !Ref WorkOsClientId
+          WORKOS_REDIRECT_URI: !Ref WorkOsRedirectUri
+          FRONTEND_URL: !Ref FrontendUrl
       Events:
         RootPath:
           Type: HttpApi
@@ -103,11 +132,22 @@ Resources:
       StageName: !Ref Stage
       CorsConfiguration:
         AllowOrigins:
-          - '*'
+          - 'http://localhost:3000'
+          - 'http://localhost:3232'
+          - 'http://localhost:5173'
+          - 'https://staging.clanker.is'
+          - 'https://clanker.is'
         AllowHeaders:
-          - '*'
+          - Content-Type
+          - Authorization
         AllowMethods:
-          - '*'
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+        AllowCredentials: true
 
   # =============================================================================
   # DynamoDB Tables
@@ -397,7 +437,7 @@ Resources:
           CONNECTIONS_TABLE: !Ref ConnectionsTable
           WEBSOCKET_ENDPOINT: !Sub https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
           PLANETSCALE_URL: !Ref PlanetScaleUrl
-          SPACE_ID: !Ref SpaceId
+          JWT_SECRET: !Ref JwtSecret
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -464,7 +504,6 @@ Resources:
           CONNECTIONS_TABLE: !Ref ConnectionsTable
           WEBSOCKET_ENDPOINT: !Sub https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
           PLANETSCALE_URL: !Ref PlanetScaleUrl
-          SPACE_ID: !Ref SpaceId
     Metadata:
       BuildMethod: esbuild
       BuildProperties:

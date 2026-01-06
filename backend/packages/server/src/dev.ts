@@ -26,6 +26,7 @@ import { createPostgresStorage, type Storage } from '@cast/storage';
 import { DockerOrchestrator } from '@cast/runtime';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Duplex } from 'stream';
+import { parseSessionCookie, verifySessionToken } from './auth/index.js';
 
 // =============================================================================
 // Configuration
@@ -80,7 +81,14 @@ async function main() {
     onSyncRequest: async (connection: ConnectionInfo, since?: string) => {
       // Fetch message history and send to client
       try {
-        const messages = await storage.getMessages(spaceId, connection.channelId, {
+        // Look up channel to get its spaceId (channels are globally unique by ID)
+        const channel = await storage.getChannelById(connection.channelId);
+        if (!channel) {
+          console.error('[Sync] Channel not found:', connection.channelId);
+          return;
+        }
+
+        const messages = await storage.getMessages(channel.spaceId, connection.channelId, {
           since,
           limit: 100,
         });
@@ -127,7 +135,6 @@ async function main() {
     storage,
     orchestrator,
     connectionManager,
-    spaceId,
   });
 
   // ---------------------------------------------------------------------------
@@ -182,7 +189,7 @@ async function main() {
   // WebSocket server for /channels/:channelId/stream
   const wss = new WebSocketServer({ noServer: true });
 
-  server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+  server.on('upgrade', async (request: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(request.url ?? '/', `http://localhost:${port}`);
     const pathname = url.pathname;
 
@@ -196,8 +203,35 @@ async function main() {
 
     const channelId = match[1];
 
+    // Authenticate via session cookie
+    const sessionToken = parseSessionCookie(request.headers.cookie);
+    const session = sessionToken ? await verifySessionToken(sessionToken) : null;
+
+    if (!session) {
+      console.log(`[WebSocket] Unauthorized connection attempt to channel: ${channelId}`);
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    // Verify user has access to the channel's space
+    const channel = await storage.getChannelById(channelId);
+    if (!channel) {
+      console.log(`[WebSocket] Channel not found: ${channelId}`);
+      socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    if (channel.spaceId !== session.spaceId) {
+      console.log(`[WebSocket] User ${session.userId} not authorized for channel ${channelId} (space mismatch)`);
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
     wss.handleUpgrade(request, socket, head, (ws) => {
-      console.log(`[WebSocket] Client connected to channel: ${channelId}`);
+      console.log(`[WebSocket] User ${session.userId} connected to channel: ${channelId}`);
       connectionManager.addConnection(ws, channelId);
     });
   });

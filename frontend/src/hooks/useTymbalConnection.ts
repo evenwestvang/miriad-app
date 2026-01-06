@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Message, MessageType, AgentState, AgentOutput } from '../types'
-import { apiFetch } from '../lib/api'
+import { apiFetch, API_HOST } from '../lib/api'
 
 // Artifact event from WebSocket stream
 export interface ArtifactEvent {
@@ -460,17 +460,10 @@ export function useTymbalConnection({
           wsUrl = `${wsUrlEnv}/channels/${channelId}/stream`
         }
       } else {
-        // Derive from API URL or use defaults
-        const apiUrl = import.meta.env.VITE_API_URL
-        let wsHost: string
-        if (apiUrl) {
-          // Extract host from VITE_API_URL (e.g., "http://localhost:3131" -> "localhost:3131")
-          wsHost = apiUrl.replace(/^https?:\/\//, '')
-        } else {
-          wsHost = import.meta.env.DEV ? 'localhost:3233' : window.location.host
-        }
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-        wsUrl = `${protocol}//${wsHost}/channels/${channelId}/stream`
+        // Derive from API_HOST (single source of truth for backend URL)
+        // Convert http(s):// to ws(s)://
+        const wsBase = API_HOST.replace(/^http/, 'ws')
+        wsUrl = `${wsBase}/channels/${channelId}/stream`
       }
 
       const ws = new WebSocket(wsUrl)

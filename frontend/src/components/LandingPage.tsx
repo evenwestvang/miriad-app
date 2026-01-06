@@ -17,8 +17,8 @@ export function LandingPage({ onLogin }: LandingPageProps) {
     if (onLogin) {
       onLogin()
     }
-    // Redirect to OAuth login endpoint
-    window.location.href = `${API_HOST}/auth/sanity/login`
+    // Redirect to OAuth login endpoint (backend handles provider routing)
+    window.location.href = `${API_HOST}/auth/login`
   }
 
   return (
@@ -44,7 +44,7 @@ export function LandingPage({ onLogin }: LandingPageProps) {
           onClick={handleLogin}
           className="w-full py-3 px-6 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors"
         >
-          Login with Sanity
+          Sign In
         </button>
 
         {/* Footer */}

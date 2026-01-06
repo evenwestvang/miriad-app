@@ -122,7 +122,8 @@ interface JsonRpcResponse {
 
 interface McpHttpHandlerOptions {
   storage: Storage;
-  spaceId: string;
+  /** @deprecated spaceId is now extracted from container auth */
+  spaceId?: string;
   assetStorage?: AssetStorage;
 }
 
@@ -955,7 +956,7 @@ function jsonRpcSuccess(id: string | number, result: unknown): JsonRpcResponse {
 }
 
 export function createMcpRoutes(opts: McpHttpHandlerOptions): Hono<{ Variables: ContainerAuthVariables }> {
-  const { storage, spaceId, assetStorage } = opts;
+  const { storage, assetStorage } = opts;
   const app = new Hono<{ Variables: ContainerAuthVariables }>();
 
   // Apply container auth to all MCP routes
@@ -965,6 +966,7 @@ export function createMcpRoutes(opts: McpHttpHandlerOptions): Hono<{ Variables: 
   app.post('/:channel', async (c) => {
     const channelIdOrName = c.req.param('channel');
     const container = getContainerAuth(c);
+    const spaceId = container.spaceId;
 
     // Resolve channel by name or ID
     const channel = await resolveChannel(storage, spaceId, channelIdOrName);

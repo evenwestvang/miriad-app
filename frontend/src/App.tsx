@@ -12,13 +12,26 @@ import { useUrlState } from './hooks/useUrlState'
 import { useTheme } from './hooks/useTheme'
 import { EmptyStateChannelCreation } from './components/focus'
 import { cn } from './lib/utils'
-import { API_HOST, apiFetch, checkAuth, logout } from './lib/api'
+import { API_HOST, apiFetch, checkAuth, logout, type AuthSession } from './lib/api'
+import { LoginPage } from './components/LoginPage'
+import { OnboardingPage } from './components/OnboardingPage'
+import { AuthErrorPage } from './components/AuthErrorPage'
+
+// Auth mode: 'dev' (show LoginPage) or 'workos' (redirect to /auth/login)
+const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || 'dev'
 import type { Agent, Channel, Message } from './types'
 import type { RosterAgent } from './components/channel/MentionAutocomplete'
 
 export function App() {
   // Auth state
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null) // null = checking
+  const [authSession, setAuthSession] = useState<AuthSession | null | undefined>(undefined) // undefined = checking
+
+  // Onboarding state (for new WorkOS users)
+  const [onboardingToken, setOnboardingToken] = useState<string | null>(null)
+  const [suggestedName, setSuggestedName] = useState<string | undefined>(undefined)
+
+  // Auth error state (for OAuth errors)
+  const [authError, setAuthError] = useState<string | null>(null)
 
   // URL-based routing state
   const {
@@ -43,7 +56,8 @@ export function App() {
   const [threadsLoading, setThreadsLoading] = useState(true)
   const [channels] = useState<Channel[]>([]) // Placeholder for phase 2
   const [messages, setMessages] = useState<Message[]>([])
-  const [currentUser] = useState('user') // TODO: Get from auth
+  // Get current user from auth session
+  const currentUser = authSession?.user.callsign || 'user'
   const [isCreatingThread, setIsCreatingThread] = useState(false)
   const [roster, setRoster] = useState<RosterAgent[]>([])
   const [leader, setLeader] = useState<string | undefined>(undefined)
@@ -56,10 +70,62 @@ export function App() {
   // Artifact event counter - increment to trigger board refresh
   const [artifactEventTrigger, setArtifactEventTrigger] = useState(0)
 
-  // Check authentication on mount (always true for now - no auth in MVP)
+  // Check authentication on mount
   useEffect(() => {
-    checkAuth().then(setIsAuthenticated)
+    const params = new URLSearchParams(window.location.search)
+
+    // Check for auth error in URL (OAuth errors redirect here)
+    const error = params.get('error')
+    if (error || window.location.pathname === '/auth-error') {
+      setAuthError(error || 'unknown')
+      // Clear URL params but keep path for bookmarking
+      window.history.replaceState({}, '', '/')
+      return
+    }
+
+    // Check for onboarding token in URL (new WorkOS users)
+    const token = params.get('token')
+    const name = params.get('name')
+
+    if (token) {
+      // New user needs onboarding
+      setOnboardingToken(token)
+      setSuggestedName(name || undefined)
+      // Clear URL params
+      window.history.replaceState({}, '', window.location.pathname)
+      return
+    }
+
+    checkAuth().then((session) => {
+      if (session) {
+        setAuthSession(session)
+      } else if (AUTH_MODE === 'workos') {
+        // In prod mode, redirect to backend login endpoint
+        window.location.href = `${API_HOST}/auth/login`
+      } else {
+        // In dev mode, show login page
+        setAuthSession(null)
+      }
+    })
   }, [])
+
+  // Handle successful login
+  const handleLogin = () => {
+    // Re-check auth to get full session
+    checkAuth().then((session) => {
+      setAuthSession(session)
+    })
+  }
+
+  // Handle onboarding completion
+  const handleOnboardingComplete = () => {
+    setOnboardingToken(null)
+    setSuggestedName(undefined)
+    // Re-check auth to get full session
+    checkAuth().then((session) => {
+      setAuthSession(session)
+    })
+  }
 
   // Get the current thread's agent name for display
   const currentThread = threads.find(t => t.id === selectedThread)
@@ -398,13 +464,41 @@ export function App() {
     }
   }, [selectedThread])
 
+  // Show auth error page if there was an OAuth error
+  if (authError) {
+    const handleRetryAuth = () => {
+      setAuthError(null)
+      if (AUTH_MODE === 'workos') {
+        window.location.href = `${API_HOST}/auth/login`
+      }
+    }
+    return <AuthErrorPage error={authError} onRetry={handleRetryAuth} />
+  }
+
+  // Show onboarding page for new WorkOS users
+  if (onboardingToken) {
+    return (
+      <OnboardingPage
+        suggestedName={suggestedName}
+        onboardingToken={onboardingToken}
+        onComplete={handleOnboardingComplete}
+        apiHost={API_HOST}
+      />
+    )
+  }
+
   // Show loading while checking auth
-  if (isAuthenticated === null) {
+  if (authSession === undefined) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <p className="text-muted-foreground">Loading...</p>
       </div>
     )
+  }
+
+  // Show login page if not authenticated (dev mode only - prod redirects to /auth/login)
+  if (authSession === null) {
+    return <LoginPage onLogin={handleLogin} apiHost={API_HOST} />
   }
 
   return (

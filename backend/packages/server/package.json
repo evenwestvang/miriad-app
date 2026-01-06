@@ -22,8 +22,10 @@
     "@cast/runtime": "workspace:*",
     "@cast/storage": "workspace:*",
     "@hono/node-server": "^1.8.0",
+    "@workos-inc/node": "^7.79.3",
     "dotenv": "^17.2.3",
     "hono": "^4.0.0",
+    "ulid": "^3.0.2",
     "ws": "^8.18.3",
     "zod": "^3.23.0"
   },

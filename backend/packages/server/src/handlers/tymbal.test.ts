@@ -50,9 +50,9 @@ describe('Tymbal Routes', () => {
 
     // Generate a valid container token
     token = generateContainerToken({
+      spaceId: 'space-1',
       channelId: 'channel-1',
-      agentCallsign: 'fox',
-      containerId: 'container-123',
+      callsign: 'fox',
     });
   });
 
@@ -128,7 +128,7 @@ describe('Tymbal Routes', () => {
       expect(onSetFrame).toHaveBeenCalledWith('channel-1', expect.objectContaining({
         i: '01J001',
         v: expect.objectContaining({ type: 'assistant', content: 'Hello!' }),
-      }));
+      }), 'space-1');
     });
 
     it('normalizes tool_call input to args', async () => {
@@ -174,7 +174,7 @@ describe('Tymbal Routes', () => {
 
       expect(res.status).toBe(200);
       expect(mockConnectionManager.broadcastCalls).toHaveLength(1);
-      expect(onResetFrame).toHaveBeenCalledWith('channel-1', '01J001');
+      expect(onResetFrame).toHaveBeenCalledWith('channel-1', '01J001', 'space-1');
     });
 
     it('rejects empty body', async () => {

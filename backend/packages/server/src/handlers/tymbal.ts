@@ -23,10 +23,10 @@ import type { ConnectionManager } from '../websocket/index.js';
 export interface TymbalHandlerOptions {
   /** Connection manager for broadcasting frames */
   connectionManager: ConnectionManager;
-  /** Optional: persist SetFrames to storage */
-  onSetFrame?: (channelId: string, frame: SetFrame) => Promise<void>;
-  /** Optional: handle ResetFrames (deletions) */
-  onResetFrame?: (channelId: string, messageId: string) => Promise<void>;
+  /** Optional: persist SetFrames to storage (spaceId from container auth) */
+  onSetFrame?: (channelId: string, frame: SetFrame, spaceId: string) => Promise<void>;
+  /** Optional: handle ResetFrames (deletions) (spaceId from container auth) */
+  onResetFrame?: (channelId: string, messageId: string, spaceId: string) => Promise<void>;
 }
 
 // =============================================================================
@@ -81,6 +81,7 @@ export function createTymbalRoutes(options: TymbalHandlerOptions): Hono<{ Variab
   app.post('/:channelId', async (c) => {
     const channelId = c.req.param('channelId');
     const auth = getContainerAuth(c);
+    const spaceId = auth.spaceId;
 
     // Get raw body
     const body = await c.req.text();
@@ -104,7 +105,7 @@ export function createTymbalRoutes(options: TymbalHandlerOptions): Hono<{ Variab
 
         // Persist if handler provided
         if (onSetFrame) {
-          await onSetFrame(channelId, normalizedFrame);
+          await onSetFrame(channelId, normalizedFrame, spaceId);
         }
       } else if (isResetFrame(frame)) {
         // Broadcast ResetFrame
@@ -112,7 +113,7 @@ export function createTymbalRoutes(options: TymbalHandlerOptions): Hono<{ Variab
 
         // Handle deletion if handler provided
         if (onResetFrame) {
-          await onResetFrame(channelId, frame.i);
+          await onResetFrame(channelId, frame.i, spaceId);
         }
       } else {
         // All other frames (Start, Append) just get broadcast
@@ -137,6 +138,8 @@ export function createTymbalRoutes(options: TymbalHandlerOptions): Hono<{ Variab
    */
   app.post('/:channelId/batch', async (c) => {
     const channelId = c.req.param('channelId');
+    const auth = getContainerAuth(c);
+    const spaceId = auth.spaceId;
 
     const body = await c.req.text();
     if (!body.trim()) {
@@ -160,12 +163,12 @@ export function createTymbalRoutes(options: TymbalHandlerOptions): Hono<{ Variab
           const { frame: normalizedFrame, serialized } = normalizeSetFrame(frame);
           await connectionManager.broadcast(channelId, serialized);
           if (onSetFrame) {
-            await onSetFrame(channelId, normalizedFrame);
+            await onSetFrame(channelId, normalizedFrame, spaceId);
           }
         } else if (isResetFrame(frame)) {
           await connectionManager.broadcast(channelId, line);
           if (onResetFrame) {
-            await onResetFrame(channelId, frame.i);
+            await onResetFrame(channelId, frame.i, spaceId);
           }
         } else {
           await connectionManager.broadcast(channelId, line);

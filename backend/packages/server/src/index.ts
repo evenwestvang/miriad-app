@@ -21,3 +21,6 @@ export * from './agents/index.js';
 
 // Asset storage
 export * from './assets/index.js';
+
+// Space seeding
+export { seedSpace } from './seed.js';

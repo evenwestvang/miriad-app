@@ -20,7 +20,7 @@
  * - GET    /channels/:channelId/assets/:slug                - Serve asset file
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { Storage } from '@cast/storage';
 import {
@@ -41,12 +41,22 @@ import type { AssetStorage } from '../assets/index.js';
 export interface ArtifactHandlerOptions {
   /** Storage backend */
   storage: Storage;
-  /** Default space ID */
-  spaceId: string;
+  /** @deprecated spaceId is now extracted from session context via c.get('spaceId') */
+  spaceId?: string;
   /** WebSocket connection manager for broadcasts */
   connectionManager: ConnectionManager;
   /** Asset storage backend (optional - required for asset uploads) */
   assetStorage?: AssetStorage;
+}
+
+/**
+ * Get spaceId from request context. Falls back to options.spaceId for backwards compatibility.
+ */
+function getSpaceIdFromContext(c: Context, fallback?: string): string {
+  const spaceId = c.get('spaceId');
+  if (spaceId) return spaceId;
+  if (fallback) return fallback;
+  throw new Error('spaceId not found in context and no fallback provided');
 }
 
 // =============================================================================
@@ -180,8 +190,11 @@ async function broadcastArtifactEvent(
 // =============================================================================
 
 export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
-  const { storage, spaceId, connectionManager, assetStorage } = options;
+  const { storage, spaceId: fallbackSpaceId, connectionManager, assetStorage } = options;
   const app = new Hono();
+
+  // Helper to get spaceId from context or fallback
+  const getSpaceId = (c: Context): string => getSpaceIdFromContext(c, fallbackSpaceId);
 
   // ---------------------------------------------------------------------------
   // GET /channels/:channelId/artifacts/tree - Tree view (glob)
@@ -192,6 +205,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     const format = c.req.query('format') || 'json';
 
     try {
+      const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
       const channel = await storage.getChannelByName(spaceId, channelId)
         || await storage.getChannel(spaceId, channelId);
@@ -249,6 +263,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     }
 
     try {
+      const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
       const channel = await storage.getChannelByName(spaceId, channelId)
         || await storage.getChannel(spaceId, channelId);
@@ -284,6 +299,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     const versionName = c.req.query('version');
 
     try {
+      const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
       const channel = await storage.getChannelByName(spaceId, channelId)
         || await storage.getChannel(spaceId, channelId);
@@ -346,6 +362,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     const { slug, type, tldr, content, title, parentSlug, status, assignees, labels, props, sender, replace } = parsed.data;
 
     try {
+      const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
       const channel = await storage.getChannelByName(spaceId, channelId)
         || await storage.getChannel(spaceId, channelId);
@@ -448,6 +465,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     const { changes, sender } = parsed.data;
 
     try {
+      const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
       const channel = await storage.getChannelByName(spaceId, channelId)
         || await storage.getChannel(spaceId, channelId);
@@ -516,6 +534,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     const { old_string, new_string, sender } = parsed.data;
 
     try {
+      const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
       const channel = await storage.getChannelByName(spaceId, channelId)
         || await storage.getChannel(spaceId, channelId);
@@ -570,6 +589,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     const recursive = c.req.query('recursive') === 'true';
 
     try {
+      const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
       const channel = await storage.getChannelByName(spaceId, channelId)
         || await storage.getChannel(spaceId, channelId);
@@ -642,6 +662,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     const { version: versionName, message: versionMessage, sender } = parsed.data;
 
     try {
+      const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
       const channel = await storage.getChannelByName(spaceId, channelId)
         || await storage.getChannel(spaceId, channelId);
@@ -681,6 +702,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     const slug = c.req.param('slug');
 
     try {
+      const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
       const channel = await storage.getChannelByName(spaceId, channelId)
         || await storage.getChannel(spaceId, channelId);
@@ -718,6 +740,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     }
 
     try {
+      const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
       const channel = await storage.getChannelByName(spaceId, channelId)
         || await storage.getChannel(spaceId, channelId);
@@ -758,6 +781,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     const channelId = c.req.param('channelId');
 
     try {
+      const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
       const channel = await storage.getChannelByName(spaceId, channelId)
         || await storage.getChannel(spaceId, channelId);
@@ -882,6 +906,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     const slug = c.req.param('slug');
 
     try {
+      const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
       const channel = await storage.getChannelByName(spaceId, channelId)
         || await storage.getChannel(spaceId, channelId);
