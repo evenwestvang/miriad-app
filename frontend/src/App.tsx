@@ -70,8 +70,8 @@ export function App() {
   useEffect(() => {
     // Check for onboarding token in URL (new WorkOS users)
     const params = new URLSearchParams(window.location.search)
-    const token = params.get('onboarding_token')
-    const name = params.get('suggested_name')
+    const token = params.get('token')
+    const name = params.get('name')
 
     if (token) {
       // New user needs onboarding
