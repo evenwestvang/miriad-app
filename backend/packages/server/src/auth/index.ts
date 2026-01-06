@@ -42,3 +42,6 @@ export {
 
 // Dev auth routes
 export { createDevAuthRoutes, type DevAuthOptions } from './dev.js';
+
+// WorkOS auth routes (production)
+export { createWorkOSAuthRoutes, type WorkOSAuthOptions } from './workos.js';
