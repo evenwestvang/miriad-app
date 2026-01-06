@@ -335,6 +335,16 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     return rowToChannel(result[0]);
   }
 
+  async function getChannelById(channelId: string): Promise<StoredChannel | null> {
+    const result = await sql<ChannelRow[]>`
+      SELECT * FROM channels
+      WHERE id = ${channelId}
+    `;
+
+    if (result.length === 0) return null;
+    return rowToChannel(result[0]);
+  }
+
   async function getChannelByName(
     spaceId: string,
     name: string
@@ -1809,6 +1819,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     // Channel operations
     createChannel,
     getChannel,
+    getChannelById,
     getChannelByName,
     listChannels,
     updateChannel,

@@ -139,3 +139,61 @@ export function clearSessionCookie(c: Context): void {
     path: '/',
   });
 }
+
+/**
+ * Verify a session token directly (without Hono context).
+ * Useful for WebSocket upgrade handlers that only have raw cookies.
+ */
+export async function verifySessionToken(token: string): Promise<SessionData | null> {
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const payload = (await verify(token, getJwtSecret())) as unknown as SessionPayload;
+
+    // Check expiration
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp && payload.exp < now) {
+      return null;
+    }
+
+    // Validate required fields exist
+    if (!payload.userId || !payload.spaceId || !payload.mode) {
+      return null;
+    }
+
+    return {
+      userId: payload.userId,
+      spaceId: payload.spaceId,
+      mode: payload.mode,
+    };
+  } catch {
+    // Invalid or expired token
+    return null;
+  }
+}
+
+/**
+ * Parse session cookie from a raw cookie header string.
+ * Returns the session token if found.
+ */
+export function parseSessionCookie(cookieHeader: string | undefined): string | null {
+  if (!cookieHeader) {
+    return null;
+  }
+
+  // Parse cookie header: "name1=value1; name2=value2"
+  const cookies = cookieHeader.split(';').reduce(
+    (acc, cookie) => {
+      const [name, ...rest] = cookie.trim().split('=');
+      if (name) {
+        acc[name] = rest.join('=');
+      }
+      return acc;
+    },
+    {} as Record<string, string>
+  );
+
+  return cookies[COOKIE_NAME] || null;
+}

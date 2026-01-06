@@ -27,6 +27,8 @@ export {
   parseSession,
   setSessionCookie,
   clearSessionCookie,
+  verifySessionToken,
+  parseSessionCookie,
   type SessionData,
   type AuthMode,
 } from './session.js';

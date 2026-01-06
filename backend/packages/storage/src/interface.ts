@@ -133,9 +133,16 @@ export interface Storage {
   createChannel(input: CreateChannelInput): Promise<StoredChannel>;
 
   /**
-   * Get a channel by ID.
+   * Get a channel by ID (requires spaceId for scoping).
    */
   getChannel(spaceId: string, channelId: string): Promise<StoredChannel | null>;
+
+  /**
+   * Get a channel by ID only (no spaceId required).
+   * Channel IDs are globally unique (ULIDs), so this is safe.
+   * Returns the channel with its spaceId for access control checks.
+   */
+  getChannelById(channelId: string): Promise<StoredChannel | null>;
 
   /**
    * Get a channel by name.
