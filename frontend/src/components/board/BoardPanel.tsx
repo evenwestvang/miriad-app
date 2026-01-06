@@ -7,6 +7,7 @@ import { ArtifactTree } from './ArtifactTree'
 import { ArtifactDetail } from './ArtifactDetail'
 import { ArtifactCreate } from './ArtifactCreate'
 import { AssetUpload, type Asset } from './AssetUpload'
+import { FileDropZone } from './FileDropZone'
 import { TreeSearch } from './TreeSearch'
 import type { Artifact, ArtifactTreeNode, ArtifactType } from '../../types/artifact'
 
@@ -247,6 +248,17 @@ export function BoardPanel({
     }
   }, [channelId, apiHost, setSelectedSlug])
 
+  // Handle drag-drop upload complete
+  const handleDropComplete = useCallback(() => {
+    // Refetch tree to include new artifacts
+    if (channelId) {
+      apiFetch(`${apiHost}/channels/${channelId}/artifacts/tree?pattern=/**&format=json`)
+        .then(res => res.json())
+        .then(data => setTree(data.tree || []))
+        .catch(console.error)
+    }
+  }, [channelId, apiHost])
+
   // ESC key closes artifact detail
   useEffect(() => {
     if (!isOpen || !selectedArtifactData) return
@@ -286,80 +298,89 @@ export function BoardPanel({
       />
 
       {/* Main content area - shows EITHER tree OR detail/create/upload */}
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <div className="flex-1 overflow-y-auto">
-          {isUploading ? (
-            <AssetUpload
-              channelId={channelId!}
-              apiHost={apiHost}
-              onComplete={handleUploadSuccess}
-              onCancel={() => setIsUploading(false)}
-            />
-          ) : isCreating ? (
-            <ArtifactCreate
-              channelId={channelId!}
-              apiHost={apiHost}
-              tree={tree}
-              initialType={createType}
-              onSuccess={handleCreateSuccess}
-              onCancel={() => setIsCreating(false)}
-            />
-          ) : selectedArtifactData ? (
-            <ArtifactDetail
-              artifact={selectedArtifactData}
-              channelId={channelId!}
-              apiHost={apiHost}
-              tree={tree}
-              onUpdate={handleArtifactUpdate}
-              onLinkClick={handleSelect}
-              onBack={() => setSelectedSlug(null)}
-            />
-          ) : !channelId ? (
-            <div className="flex flex-col items-center justify-center h-40 px-4 text-center">
-              <p className="text-muted-foreground text-sm">Select a channel to view artifacts</p>
-            </div>
-          ) : treeLoading ? (
-            <div className="flex items-center justify-center h-20">
-              <span className="text-sm text-muted-foreground">Loading...</span>
-            </div>
-          ) : tree.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 px-4 text-center">
-              <p className="text-muted-foreground text-sm mb-2">No artifacts yet</p>
-              <button
-                className="flex items-center gap-1 px-3 py-1.5 text-sm border border-[var(--cast-border-default)] hover:bg-[var(--cast-bg-hover)] transition-colors"
-                onClick={() => setIsCreating(true)}
-              >
-                <Plus className="w-4 h-4" />
-                Create First Artifact
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-col h-full">
-              {/* Search filter */}
-              <div className="px-3 py-2 border-b border-[var(--cast-border-default)]">
-                <TreeSearch
-                  value={filterInput}
-                  onChange={setFilterInput}
-                  onClear={handleClearFilter}
-                  placeholder="Filter artifacts... (/ or ⌘K)"
-                />
+      {/* FileDropZone wraps content when channel is selected and we're in tree view */}
+      <FileDropZone
+        channelId={channelId || ''}
+        apiHost={apiHost}
+        onComplete={handleDropComplete}
+        disabled={!channelId || isCreating || isUploading || !!selectedArtifactData}
+      >
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 overflow-y-auto">
+            {isUploading ? (
+              <AssetUpload
+                channelId={channelId!}
+                apiHost={apiHost}
+                onComplete={handleUploadSuccess}
+                onCancel={() => setIsUploading(false)}
+              />
+            ) : isCreating ? (
+              <ArtifactCreate
+                channelId={channelId!}
+                apiHost={apiHost}
+                tree={tree}
+                initialType={createType}
+                onSuccess={handleCreateSuccess}
+                onCancel={() => setIsCreating(false)}
+              />
+            ) : selectedArtifactData ? (
+              <ArtifactDetail
+                artifact={selectedArtifactData}
+                channelId={channelId!}
+                apiHost={apiHost}
+                tree={tree}
+                onUpdate={handleArtifactUpdate}
+                onLinkClick={handleSelect}
+                onBack={() => setSelectedSlug(null)}
+              />
+            ) : !channelId ? (
+              <div className="flex flex-col items-center justify-center h-40 px-4 text-center">
+                <p className="text-muted-foreground text-sm">Select a channel to view artifacts</p>
               </div>
-              {/* Tree */}
-              <div className="flex-1 overflow-y-auto">
-                <ArtifactTree
-                  nodes={tree}
-                  expanded={expanded}
-                  selectedSlug={selectedSlug}
-                  onToggle={toggleExpanded}
-                  onSelect={handleSelect}
-                  onActivate={handleSelect}
-                  filterText={filterText}
-                />
+            ) : treeLoading ? (
+              <div className="flex items-center justify-center h-20">
+                <span className="text-sm text-muted-foreground">Loading...</span>
               </div>
-            </div>
-          )}
+            ) : tree.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-40 px-4 text-center">
+                <p className="text-muted-foreground text-sm mb-2">No artifacts yet</p>
+                <p className="text-muted-foreground text-xs mb-3">Drop files here or click below</p>
+                <button
+                  className="flex items-center gap-1 px-3 py-1.5 text-sm border border-[var(--cast-border-default)] hover:bg-[var(--cast-bg-hover)] transition-colors"
+                  onClick={() => setIsCreating(true)}
+                >
+                  <Plus className="w-4 h-4" />
+                  Create First Artifact
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col h-full">
+                {/* Search filter */}
+                <div className="px-3 py-2 border-b border-[var(--cast-border-default)]">
+                  <TreeSearch
+                    value={filterInput}
+                    onChange={setFilterInput}
+                    onClear={handleClearFilter}
+                    placeholder="Filter artifacts... (/ or ⌘K)"
+                  />
+                </div>
+                {/* Tree */}
+                <div className="flex-1 overflow-y-auto">
+                  <ArtifactTree
+                    nodes={tree}
+                    expanded={expanded}
+                    selectedSlug={selectedSlug}
+                    onToggle={toggleExpanded}
+                    onSelect={handleSelect}
+                    onActivate={handleSelect}
+                    filterText={filterText}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </FileDropZone>
     </aside>
   )
 }
