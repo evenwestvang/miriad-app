@@ -132,11 +132,22 @@ Resources:
       StageName: !Ref Stage
       CorsConfiguration:
         AllowOrigins:
-          - '*'
+          - 'http://localhost:3000'
+          - 'http://localhost:3232'
+          - 'http://localhost:5173'
+          - 'https://staging.clanker.is'
+          - 'https://clanker.is'
         AllowHeaders:
-          - '*'
+          - Content-Type
+          - Authorization
         AllowMethods:
-          - '*'
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+        AllowCredentials: true
 
   # =============================================================================
   # DynamoDB Tables
