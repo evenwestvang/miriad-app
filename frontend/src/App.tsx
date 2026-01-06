@@ -14,12 +14,20 @@ import { EmptyStateChannelCreation } from './components/focus'
 import { cn } from './lib/utils'
 import { API_HOST, apiFetch, checkAuth, logout, type AuthSession } from './lib/api'
 import { LoginPage } from './components/LoginPage'
+import { OnboardingPage } from './components/OnboardingPage'
+
+// Auth mode: 'dev' (show LoginPage) or 'workos' (redirect to /auth/login)
+const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || 'dev'
 import type { Agent, Channel, Message } from './types'
 import type { RosterAgent } from './components/channel/MentionAutocomplete'
 
 export function App() {
   // Auth state
   const [authSession, setAuthSession] = useState<AuthSession | null | undefined>(undefined) // undefined = checking
+
+  // Onboarding state (for new WorkOS users)
+  const [onboardingToken, setOnboardingToken] = useState<string | null>(null)
+  const [suggestedName, setSuggestedName] = useState<string | undefined>(undefined)
 
   // URL-based routing state
   const {
@@ -60,13 +68,45 @@ export function App() {
 
   // Check authentication on mount
   useEffect(() => {
+    // Check for onboarding token in URL (new WorkOS users)
+    const params = new URLSearchParams(window.location.search)
+    const token = params.get('onboarding_token')
+    const name = params.get('suggested_name')
+
+    if (token) {
+      // New user needs onboarding
+      setOnboardingToken(token)
+      setSuggestedName(name || undefined)
+      // Clear URL params
+      window.history.replaceState({}, '', window.location.pathname)
+      return
+    }
+
     checkAuth().then((session) => {
-      setAuthSession(session)
+      if (session) {
+        setAuthSession(session)
+      } else if (AUTH_MODE === 'workos') {
+        // In prod mode, redirect to backend login endpoint
+        window.location.href = `${API_HOST}/auth/login`
+      } else {
+        // In dev mode, show login page
+        setAuthSession(null)
+      }
     })
   }, [])
 
   // Handle successful login
   const handleLogin = () => {
+    // Re-check auth to get full session
+    checkAuth().then((session) => {
+      setAuthSession(session)
+    })
+  }
+
+  // Handle onboarding completion
+  const handleOnboardingComplete = () => {
+    setOnboardingToken(null)
+    setSuggestedName(undefined)
     // Re-check auth to get full session
     checkAuth().then((session) => {
       setAuthSession(session)
@@ -410,6 +450,18 @@ export function App() {
     }
   }, [selectedThread])
 
+  // Show onboarding page for new WorkOS users
+  if (onboardingToken) {
+    return (
+      <OnboardingPage
+        suggestedName={suggestedName}
+        onboardingToken={onboardingToken}
+        onComplete={handleOnboardingComplete}
+        apiHost={API_HOST}
+      />
+    )
+  }
+
   // Show loading while checking auth
   if (authSession === undefined) {
     return (
@@ -419,7 +471,7 @@ export function App() {
     )
   }
 
-  // Show login page if not authenticated
+  // Show login page if not authenticated (dev mode only - prod redirects to /auth/login)
   if (authSession === null) {
     return <LoginPage onLogin={handleLogin} apiHost={API_HOST} />
   }
