@@ -31,5 +31,14 @@ export {
   type AuthMode,
 } from './session.js';
 
+// Session middleware
+export {
+  sessionMiddleware,
+  requireAuth,
+  getSpaceId,
+  getUserId,
+  type SessionVariables,
+} from './session-middleware.js';
+
 // Dev auth routes
 export { createDevAuthRoutes, type DevAuthOptions } from './dev.js';

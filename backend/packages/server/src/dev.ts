@@ -127,7 +127,6 @@ async function main() {
     storage,
     orchestrator,
     connectionManager,
-    spaceId,
   });
 
   // ---------------------------------------------------------------------------
