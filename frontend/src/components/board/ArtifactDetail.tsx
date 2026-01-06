@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react'
-import { Pencil, Save, AlertTriangle, Download, ExternalLink, Copy, Check, ArrowLeft, ChevronDown, History, RotateCcw } from 'lucide-react'
+import { Pencil, Save, AlertTriangle, Download, ExternalLink, Copy, Check, ArrowLeft, ChevronDown, History, RotateCcw, Archive } from 'lucide-react'
 import Markdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -37,6 +37,8 @@ interface ArtifactDetailProps {
   onLinkClick: (slug: string) => void
   /** Callback to go back to tree view */
   onBack?: () => void
+  /** Callback to archive the artifact (recursive) */
+  onArchive?: () => void
 }
 
 interface ConflictInfo {
@@ -123,6 +125,31 @@ const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac']
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.avi', '.mkv']
 
 // =============================================================================
+// Helpers
+// =============================================================================
+
+/**
+ * Format a timestamp as relative time (e.g., "2 hours ago") or absolute date for older items.
+ */
+function formatRelativeTime(isoTimestamp: string): string {
+  const date = new Date(isoTimestamp)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffSec = Math.floor(diffMs / 1000)
+  const diffMin = Math.floor(diffSec / 60)
+  const diffHour = Math.floor(diffMin / 60)
+  const diffDay = Math.floor(diffHour / 24)
+
+  if (diffSec < 60) return 'just now'
+  if (diffMin < 60) return `${diffMin}m ago`
+  if (diffHour < 24) return `${diffHour}h ago`
+  if (diffDay < 7) return `${diffDay}d ago`
+
+  // For older items, show date
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// =============================================================================
 // Main Component
 // =============================================================================
 
@@ -134,6 +161,7 @@ export function ArtifactDetail({
   onUpdate,
   onLinkClick,
   onBack,
+  onArchive,
 }: ArtifactDetailProps) {
   // Edit state
   const [isEditing, setIsEditing] = useState(false)
@@ -539,6 +567,21 @@ export function ArtifactDetail({
                 >
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
+                {onArchive && (
+                  <button
+                    className={cn(
+                      "p-1 rounded transition-colors",
+                      isViewingHistory
+                        ? "text-muted-foreground/50 cursor-not-allowed"
+                        : "hover:bg-secondary/50 text-muted-foreground hover:text-destructive"
+                    )}
+                    onClick={isViewingHistory ? undefined : onArchive}
+                    title={isViewingHistory ? "Cannot archive historical version" : "Archive"}
+                    disabled={isViewingHistory}
+                  >
+                    <Archive className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -717,11 +760,20 @@ export function ArtifactDetail({
       </div>
 
       {/* Metadata footer */}
-      {!isEditing && ((artifact.assignees?.length ?? 0) > 0 || (artifact.labels?.length ?? 0) > 0) && (
-        <div className="px-3 py-2 border-t border-border text-xs text-muted-foreground">
+      {!isEditing && (
+        <div className="px-3 py-2 border-t border-border text-xs text-muted-foreground space-y-1">
+          {/* Created/Updated info */}
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+            <span>Created by <span className="text-foreground">@{artifact.createdBy}</span> · {formatRelativeTime(artifact.createdAt)}</span>
+            {artifact.updatedAt && artifact.updatedAt !== artifact.createdAt && (
+              <span>Updated {formatRelativeTime(artifact.updatedAt)}</span>
+            )}
+          </div>
+          {/* Assignees */}
           {(artifact.assignees?.length ?? 0) > 0 && (
             <div>Assignees: {artifact.assignees?.map(a => `@${a}`).join(', ')}</div>
           )}
+          {/* Labels */}
           {(artifact.labels?.length ?? 0) > 0 && (
             <div>Labels: {artifact.labels?.join(', ')}</div>
           )}

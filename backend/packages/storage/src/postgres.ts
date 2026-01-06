@@ -32,6 +32,8 @@ import type {
   CreateArtifactVersionInput,
   ArtifactType,
   ArtifactStatus,
+  RecursiveArchiveResult,
+  ArchivedItem,
 } from '@cast/core';
 // Import functions separately (not as types)
 import {
@@ -829,6 +831,60 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     return updated!;
   }
 
+  async function archiveArtifactRecursive(
+    channelId: string,
+    slug: string,
+    updatedBy: string
+  ): Promise<RecursiveArchiveResult> {
+    // First, get the artifact to find its path
+    const artifact = await getArtifact(channelId, slug);
+    if (!artifact) {
+      throw new Error(`Artifact not found: ${slug}`);
+    }
+
+    const now = new Date();
+
+    // Find all artifacts that are descendants (path starts with this artifact's path)
+    // Using ltree path for efficient hierarchical query
+    // Also include the artifact itself
+    const toArchive = await sql<{ slug: string; status: string }[]>`
+      SELECT slug, status
+      FROM artifacts
+      WHERE channel_id = ${channelId}
+        AND status != 'archived'
+        AND (slug = ${slug} OR path <@ ${artifact.path}::ltree)
+      ORDER BY path
+    `;
+
+    if (toArchive.length === 0) {
+      return { archived: [], count: 0 };
+    }
+
+    // Store previous statuses for undo
+    const archivedItems: ArchivedItem[] = toArchive.map(row => ({
+      slug: row.slug,
+      previousStatus: row.status as ArtifactStatus,
+    }));
+
+    // Archive all in one UPDATE using the same path query
+    await sql`
+      UPDATE artifacts
+      SET
+        status = 'archived',
+        version = version + 1,
+        updated_by = ${updatedBy},
+        updated_at = ${now}
+      WHERE channel_id = ${channelId}
+        AND status != 'archived'
+        AND (slug = ${slug} OR path <@ ${artifact.path}::ltree)
+    `;
+
+    return {
+      archived: archivedItems,
+      count: archivedItems.length,
+    };
+  }
+
   async function listArtifacts(
     channelId: string,
     params?: ListArtifactsParams
@@ -1552,6 +1608,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     updateArtifactWithCAS,
     editArtifact,
     archiveArtifact,
+    archiveArtifactRecursive,
     listArtifacts,
     globArtifacts,
     checkpointArtifact,

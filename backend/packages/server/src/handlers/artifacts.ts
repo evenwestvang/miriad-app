@@ -163,7 +163,7 @@ async function broadcastArtifactEvent(
   connectionManager: ConnectionManager,
   channelId: string,
   action: 'create' | 'update' | 'archive',
-  artifact: { slug: string; type: string; title?: string; tldr?: string; status: string }
+  artifact: { slug: string; type?: string; title?: string; tldr?: string; status: string }
 ) {
   const frame = JSON.stringify({
     artifact: {
@@ -561,11 +561,13 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
 
   // ---------------------------------------------------------------------------
   // DELETE /channels/:channelId/artifacts/:slug - Archive (soft delete)
+  // Supports ?recursive=true to archive artifact and all descendants
   // ---------------------------------------------------------------------------
   app.delete('/:channelId/artifacts/:slug', async (c) => {
     const channelId = c.req.param('channelId');
     const slug = c.req.param('slug');
     const sender = c.req.query('sender') || 'system';
+    const recursive = c.req.query('recursive') === 'true';
 
     try {
       // Resolve channel by name or ID
@@ -576,18 +578,39 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
         return c.json({ error: 'Channel not found' }, 404);
       }
 
-      const artifact = await storage.archiveArtifact(channel.id, slug, sender);
+      if (recursive) {
+        // Archive artifact and all descendants
+        const result = await storage.archiveArtifactRecursive(channel.id, slug, sender);
 
-      // Broadcast event
-      await broadcastArtifactEvent(connectionManager, channel.id, 'archive', {
-        slug: artifact.slug,
-        type: artifact.type,
-        title: artifact.title,
-        tldr: artifact.tldr,
-        status: artifact.status,
-      });
+        // Broadcast events for each archived artifact
+        for (const item of result.archived) {
+          await broadcastArtifactEvent(connectionManager, channel.id, 'archive', {
+            slug: item.slug,
+            status: 'archived',
+          });
+        }
 
-      return c.json({ archived: true, artifact });
+        return c.json({
+          archived: true,
+          recursive: true,
+          count: result.count,
+          items: result.archived,
+        });
+      } else {
+        // Archive single artifact
+        const artifact = await storage.archiveArtifact(channel.id, slug, sender);
+
+        // Broadcast event
+        await broadcastArtifactEvent(connectionManager, channel.id, 'archive', {
+          slug: artifact.slug,
+          type: artifact.type,
+          title: artifact.title,
+          tldr: artifact.tldr,
+          status: artifact.status,
+        });
+
+        return c.json({ archived: true, artifact });
+      }
     } catch (error) {
       console.error('[Artifacts] Error archiving artifact:', error);
       if (error instanceof Error && error.message.includes('not found')) {

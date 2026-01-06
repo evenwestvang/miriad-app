@@ -446,6 +446,29 @@ export interface ArtifactCASResult {
 }
 
 /**
+ * Item archived during a recursive archive operation.
+ * Contains info needed for undo.
+ */
+export interface ArchivedItem {
+  /** Artifact slug */
+  slug: string;
+
+  /** Previous status before archiving (for undo) */
+  previousStatus: ArtifactStatus;
+}
+
+/**
+ * Result of a recursive archive operation.
+ */
+export interface RecursiveArchiveResult {
+  /** List of all archived items with their previous statuses */
+  archived: ArchivedItem[];
+
+  /** Total count of archived items */
+  count: number;
+}
+
+/**
  * Input for surgical content edit (find-replace).
  */
 export interface ArtifactEditInput {

@@ -29,6 +29,7 @@ import type {
   ArtifactTreeNode,
   ArtifactVersion,
   CreateArtifactVersionInput,
+  RecursiveArchiveResult,
 } from '@cast/core';
 
 // =============================================================================
@@ -208,6 +209,17 @@ export interface Storage {
     slug: string,
     updatedBy: string
   ): Promise<StoredArtifact>;
+
+  /**
+   * Archive an artifact and all its descendants recursively.
+   * Returns list of all archived items with their previous statuses (for undo).
+   * Uses ltree path for efficient hierarchical query.
+   */
+  archiveArtifactRecursive(
+    channelId: string,
+    slug: string,
+    updatedBy: string
+  ): Promise<RecursiveArchiveResult>;
 
   /**
    * List artifacts with optional filters.

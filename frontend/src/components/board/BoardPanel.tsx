@@ -9,6 +9,7 @@ import { ArtifactCreate } from './ArtifactCreate'
 import { AssetUpload, type Asset } from './AssetUpload'
 import { FileDropZone } from './FileDropZone'
 import { TreeSearch } from './TreeSearch'
+import { ArchiveToast, type ArchivedItem } from './ArchiveToast'
 import type { Artifact, ArtifactTreeNode, ArtifactType } from '../../types/artifact'
 
 interface BoardPanelProps {
@@ -63,6 +64,9 @@ export function BoardPanel({
   // Filter state (with debouncing)
   const [filterInput, setFilterInput] = useState('')
   const [filterText, setFilterText] = useState('')
+
+  // Archive toast state
+  const [archivedItems, setArchivedItems] = useState<ArchivedItem[]>([])
 
   // Debounce filter input
   useEffect(() => {
@@ -199,9 +203,10 @@ export function BoardPanel({
     })
   }, [])
 
-  // Select artifact
+  // Select artifact (also dismisses archive toast)
   const handleSelect = useCallback((slug: string) => {
     setSelectedSlug(slug)
+    setArchivedItems([]) // Clear archive toast on selection
   }, [setSelectedSlug])
 
   // Clear filter
@@ -210,10 +215,76 @@ export function BoardPanel({
     setFilterText('')
   }, [])
 
-  // Handle artifact creation success
+  // Dismiss archive toast (called on user actions like select, create, close)
+  const dismissArchiveToast = useCallback(() => {
+    setArchivedItems([])
+  }, [])
+
+  // Archive current artifact (recursive)
+  const handleArchive = useCallback(async () => {
+    if (!channelId || !selectedSlug) return
+
+    try {
+      const response = await apiFetch(
+        `${apiHost}/channels/${channelId}/artifacts/${selectedSlug}?recursive=true&sender=user`,
+        { method: 'DELETE' }
+      )
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        console.error('Failed to archive:', data.error || 'Unknown error')
+        return
+      }
+
+      const data = await response.json()
+      // data.items contains { slug, previousStatus } for each archived item
+      setArchivedItems(data.items || [{ slug: selectedSlug, previousStatus: 'published' }])
+
+      // Clear selection and go back to tree
+      setSelectedSlug(null)
+
+      // Refresh tree
+      apiFetch(`${apiHost}/channels/${channelId}/artifacts/tree?pattern=/**&format=json`)
+        .then(res => res.json())
+        .then(treeData => setTree(treeData.tree || []))
+        .catch(console.error)
+    } catch (err) {
+      console.error('Archive error:', err)
+    }
+  }, [channelId, selectedSlug, apiHost, setSelectedSlug])
+
+  // Undo archive (restore previous statuses)
+  const handleUndoArchive = useCallback(async (items: ArchivedItem[]) => {
+    if (!channelId) return
+
+    // Restore each item's previous status via CAS update
+    for (const item of items) {
+      try {
+        await apiFetch(`${apiHost}/channels/${channelId}/artifacts/${item.slug}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            changes: [{ field: 'status', oldValue: 'archived', newValue: item.previousStatus }],
+            sender: 'user',
+          }),
+        })
+      } catch (err) {
+        console.error(`Failed to restore ${item.slug}:`, err)
+      }
+    }
+
+    // Refresh tree after undo
+    apiFetch(`${apiHost}/channels/${channelId}/artifacts/tree?pattern=/**&format=json`)
+      .then(res => res.json())
+      .then(treeData => setTree(treeData.tree || []))
+      .catch(console.error)
+  }, [channelId, apiHost])
+
+  // Handle artifact creation success (also dismisses archive toast)
   const handleCreateSuccess = useCallback((artifact: Artifact) => {
     setIsCreating(false)
     setSelectedSlug(artifact.slug)
+    setArchivedItems([]) // Clear archive toast on creation
     // Refetch tree to include new artifact
     if (channelId) {
       apiFetch(`${apiHost}/channels/${channelId}/artifacts?pattern=/**`)
@@ -291,9 +362,16 @@ export function BoardPanel({
         onCreateClick={(type) => {
           setCreateType(type)
           setIsCreating(true)
+          setArchivedItems([]) // Clear archive toast on create
         }}
-        onUploadClick={() => setIsUploading(true)}
-        onClose={onClose}
+        onUploadClick={() => {
+          setIsUploading(true)
+          setArchivedItems([]) // Clear archive toast on upload
+        }}
+        onClose={() => {
+          setArchivedItems([]) // Clear archive toast on close
+          onClose()
+        }}
         canCreate={!!channelId}
       />
 
@@ -332,6 +410,7 @@ export function BoardPanel({
                 onUpdate={handleArtifactUpdate}
                 onLinkClick={handleSelect}
                 onBack={() => setSelectedSlug(null)}
+                onArchive={handleArchive}
               />
             ) : !channelId ? (
               <div className="flex flex-col items-center justify-center h-40 px-4 text-center">
@@ -374,6 +453,15 @@ export function BoardPanel({
           </div>
         </div>
       </FileDropZone>
+
+      {/* Archive undo toast - persistent banner at bottom */}
+      {archivedItems.length > 0 && (
+        <ArchiveToast
+          archivedItems={archivedItems}
+          onUndo={handleUndoArchive}
+          onDismiss={dismissArchiveToast}
+        />
+      )}
     </aside>
   )
 }
