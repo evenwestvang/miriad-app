@@ -8,24 +8,121 @@
 // API host - use env var or default to local dev server
 export const API_HOST = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3233' : '')
 
+// =============================================================================
+// Auth Types
+// =============================================================================
+
+export interface StoredUser {
+  id: string
+  externalId: string
+  callsign: string
+  email?: string
+  avatarUrl?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface StoredSpace {
+  id: string
+  name: string
+  ownerId: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AuthSession {
+  userId: string
+  spaceId: string
+  user: StoredUser
+  space: StoredSpace
+}
+
+export interface SpaceWithOwner {
+  space: StoredSpace
+  owner: StoredUser
+}
+
+// =============================================================================
+// Auth Functions
+// =============================================================================
+
 /**
  * Check if user is authenticated.
- * For now, always returns true (no auth in MVP).
+ * Calls /auth/me endpoint and returns session info if authenticated.
  */
-export async function checkAuth(): Promise<boolean> {
-  return true
+export async function checkAuth(): Promise<AuthSession | null> {
+  try {
+    const response = await fetch(`${API_HOST}/auth/me`, {
+      credentials: 'include',
+    })
+    if (response.status === 401) {
+      return null
+    }
+    if (!response.ok) {
+      console.error('Auth check failed:', response.status)
+      return null
+    }
+    return response.json()
+  } catch (error) {
+    console.error('Auth check error:', error)
+    return null
+  }
 }
 
 /**
- * Log out - placeholder for future WorkOS integration.
+ * Fetch available spaces for dev mode login.
+ */
+export async function fetchDevSpaces(): Promise<SpaceWithOwner[]> {
+  const response = await fetch(`${API_HOST}/auth/dev/spaces`, {
+    credentials: 'include',
+  })
+  if (!response.ok) {
+    throw new Error(`Failed to fetch spaces: ${response.status}`)
+  }
+  const data = await response.json()
+  return data.spaces || []
+}
+
+/**
+ * Dev mode login - either login to existing space or create new user+space.
+ */
+export async function devLogin(params: {
+  spaceId?: string
+  callsign?: string
+  spaceName?: string
+}): Promise<{ userId: string; spaceId: string }> {
+  const response = await fetch(`${API_HOST}/auth/dev/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(params),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || `Login failed: ${response.status}`)
+  }
+  return response.json()
+}
+
+/**
+ * Log out - clears session cookie.
  */
 export async function logout(): Promise<void> {
-  // No-op for now - will integrate with WorkOS later
-  console.log('Logout called - no auth configured yet')
+  try {
+    await fetch(`${API_HOST}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+  } catch (error) {
+    console.error('Logout error:', error)
+  }
+  // Reload page to reset state
+  window.location.reload()
 }
 
 /**
  * Fetch wrapper for API calls.
+ * Includes credentials for session cookie authentication.
  */
 export async function apiFetch(
   input: string,
@@ -36,7 +133,7 @@ export async function apiFetch(
 
   const response = await fetch(url, {
     ...init,
-    // No credentials needed for MVP (no auth yet)
+    credentials: 'include',
   })
 
   return response

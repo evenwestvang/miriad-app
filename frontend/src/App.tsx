@@ -12,13 +12,14 @@ import { useUrlState } from './hooks/useUrlState'
 import { useTheme } from './hooks/useTheme'
 import { EmptyStateChannelCreation } from './components/focus'
 import { cn } from './lib/utils'
-import { API_HOST, apiFetch, checkAuth, logout } from './lib/api'
+import { API_HOST, apiFetch, checkAuth, logout, type AuthSession } from './lib/api'
+import { LoginPage } from './components/LoginPage'
 import type { Agent, Channel, Message } from './types'
 import type { RosterAgent } from './components/channel/MentionAutocomplete'
 
 export function App() {
   // Auth state
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null) // null = checking
+  const [authSession, setAuthSession] = useState<AuthSession | null | undefined>(undefined) // undefined = checking
 
   // URL-based routing state
   const {
@@ -43,7 +44,8 @@ export function App() {
   const [threadsLoading, setThreadsLoading] = useState(true)
   const [channels] = useState<Channel[]>([]) // Placeholder for phase 2
   const [messages, setMessages] = useState<Message[]>([])
-  const [currentUser] = useState('user') // TODO: Get from auth
+  // Get current user from auth session
+  const currentUser = authSession?.user.callsign || 'user'
   const [isCreatingThread, setIsCreatingThread] = useState(false)
   const [roster, setRoster] = useState<RosterAgent[]>([])
   const [leader, setLeader] = useState<string | undefined>(undefined)
@@ -56,10 +58,20 @@ export function App() {
   // Artifact event counter - increment to trigger board refresh
   const [artifactEventTrigger, setArtifactEventTrigger] = useState(0)
 
-  // Check authentication on mount (always true for now - no auth in MVP)
+  // Check authentication on mount
   useEffect(() => {
-    checkAuth().then(setIsAuthenticated)
+    checkAuth().then((session) => {
+      setAuthSession(session)
+    })
   }, [])
+
+  // Handle successful login
+  const handleLogin = () => {
+    // Re-check auth to get full session
+    checkAuth().then((session) => {
+      setAuthSession(session)
+    })
+  }
 
   // Get the current thread's agent name for display
   const currentThread = threads.find(t => t.id === selectedThread)
@@ -399,12 +411,17 @@ export function App() {
   }, [selectedThread])
 
   // Show loading while checking auth
-  if (isAuthenticated === null) {
+  if (authSession === undefined) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <p className="text-muted-foreground">Loading...</p>
       </div>
     )
+  }
+
+  // Show login page if not authenticated
+  if (authSession === null) {
+    return <LoginPage onLogin={handleLogin} apiHost={API_HOST} />
   }
 
   return (
