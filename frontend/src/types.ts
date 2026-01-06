@@ -298,6 +298,8 @@ export interface ArtifactTreeNode {
   title?: string
   status: ArtifactStatus
   assignees: string[]
+  /** Lexicographic sort key for ordering within parent */
+  orderKey: string
   /** Binary asset encoding (e.g., 'file') for icon detection */
   encoding?: string | null
   /** Binary asset MIME type (e.g., 'image/png') for icon detection */

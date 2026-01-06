@@ -1,5 +1,5 @@
-import { useMemo, useRef, useEffect, useCallback } from 'react'
-import { TreeItem } from './TreeItem'
+import { useMemo, useRef, useEffect, useCallback, useState } from 'react'
+import { TreeItem, type DropZone } from './TreeItem'
 import type { ArtifactTreeNode } from '../../types/artifact'
 
 interface ArtifactTreeProps {
@@ -12,11 +12,13 @@ interface ArtifactTreeProps {
   onActivate?: (slug: string) => void
   /** Filter text to search by (matches slug and title) */
   filterText?: string
+  /** Callback when an artifact is moved via drag-drop */
+  onMove?: (slug: string, newParentSlug: string | null, position: 'before' | 'after' | 'into', targetSlug?: string) => void
 }
 
 /**
- * Sort tree nodes: folders first, then by orderKey
- * This matches PowPow's sorting behavior
+ * Sort tree nodes by orderKey only.
+ * orderKey is the single source of truth for sibling ordering.
  */
 function sortNodes(nodes: ArtifactTreeNode[]): ArtifactTreeNode[] {
   // Guard against non-array input (e.g., if API returns object instead of array)
@@ -26,16 +28,9 @@ function sortNodes(nodes: ArtifactTreeNode[]): ArtifactTreeNode[] {
   const validNodes = nodes.filter(n => n && n.slug)
 
   return [...validNodes].sort((a, b) => {
-    const aHasChildren = a.children && a.children.length > 0
-    const bHasChildren = b.children && b.children.length > 0
-
-    // Folders (nodes with children) come first
-    if (aHasChildren && !bHasChildren) return -1
-    if (!aHasChildren && bHasChildren) return 1
-
-    // Then sort by orderKey (if available) or slug
-    const aKey = (a as ArtifactTreeNode & { orderKey?: string }).orderKey || a.slug || ''
-    const bKey = (b as ArtifactTreeNode & { orderKey?: string }).orderKey || b.slug || ''
+    // Sort by orderKey only - it's the single source of truth
+    const aKey = a.orderKey || a.slug || ''
+    const bKey = b.orderKey || b.slug || ''
     return aKey.localeCompare(bKey)
   })
 }
@@ -146,6 +141,21 @@ function filterTree(
   return { filtered, autoExpand: new Set(autoExpandSlugs) }
 }
 
+/**
+ * Get parent slug for a node.
+ * Returns undefined if not found (to distinguish from null = root level).
+ */
+function getParentSlug(nodes: ArtifactTreeNode[], targetSlug: string, parentSlug: string | null = null): string | null | undefined {
+  for (const node of nodes) {
+    if (node.slug === targetSlug) return parentSlug
+    if (node.children) {
+      const found = getParentSlug(node.children, targetSlug, node.slug)
+      if (found !== undefined) return found
+    }
+  }
+  return undefined  // Not found in this subtree - continue searching siblings
+}
+
 export function ArtifactTree({
   nodes,
   expanded,
@@ -154,8 +164,13 @@ export function ArtifactTree({
   onSelect,
   onActivate,
   filterText = '',
+  onMove,
 }: ArtifactTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Drag-drop state
+  const [draggedSlug, setDraggedSlug] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ slug: string; zone: DropZone } | null>(null)
 
   // Filter and auto-expand based on filterText
   const { filtered: filteredNodes, autoExpand } = useMemo(
@@ -184,6 +199,34 @@ export function ArtifactTree({
     return visibleNodes.findIndex(n => n.slug === selectedSlug)
   }, [visibleNodes, selectedSlug])
 
+  // Build set of invalid drop targets (self and descendants of dragged item)
+  const invalidDropTargets = useMemo(() => {
+    if (!draggedSlug) return new Set<string>()
+
+    const invalid = new Set<string>([draggedSlug])
+
+    // Add all descendants
+    function addDescendants(nodeList: ArtifactTreeNode[]) {
+      for (const node of nodeList) {
+        if (node.slug === draggedSlug) {
+          // Found the dragged node - add all its descendants
+          function collectDescendants(children: ArtifactTreeNode[]) {
+            for (const child of children) {
+              invalid.add(child.slug)
+              if (child.children) collectDescendants(child.children)
+            }
+          }
+          if (node.children) collectDescendants(node.children)
+        } else if (node.children) {
+          addDescendants(node.children)
+        }
+      }
+    }
+
+    addDescendants(nodes)
+    return invalid
+  }, [draggedSlug, nodes])
+
   // Scroll selected item into view when selection changes
   useEffect(() => {
     if (selectedSlug && containerRef.current) {
@@ -191,6 +234,49 @@ export function ArtifactTree({
       selectedElement?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     }
   }, [selectedSlug])
+
+  // Drag handlers
+  const handleDragStart = useCallback((slug: string) => {
+    setDraggedSlug(slug)
+  }, [])
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedSlug(null)
+    setDropTarget(null)
+  }, [])
+
+  const handleDragOver = useCallback((slug: string, zone: DropZone) => {
+    setDropTarget({ slug, zone })
+  }, [])
+
+  const handleDragLeave = useCallback(() => {
+    setDropTarget(null)
+  }, [])
+
+  const handleDrop = useCallback((targetSlug: string, zone: DropZone) => {
+    if (!draggedSlug || !zone || !onMove) {
+      setDraggedSlug(null)
+      setDropTarget(null)
+      return
+    }
+
+    // Calculate new parent and position
+    const targetParentSlug = getParentSlug(nodes, targetSlug) ?? null
+
+    if (zone === 'on') {
+      // Drop as child of target
+      onMove(draggedSlug, targetSlug, 'into')
+    } else if (zone === 'above') {
+      // Drop before target (same parent as target)
+      onMove(draggedSlug, targetParentSlug, 'before', targetSlug)
+    } else if (zone === 'below') {
+      // Drop after target (same parent as target)
+      onMove(draggedSlug, targetParentSlug, 'after', targetSlug)
+    }
+
+    setDraggedSlug(null)
+    setDropTarget(null)
+  }, [draggedSlug, nodes, onMove])
 
   // Keyboard navigation handler
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -300,6 +386,15 @@ export function ArtifactTree({
             selectedSlug={selectedSlug}
             onToggle={onToggle}
             onSelect={onSelect}
+            // Drag-drop props
+            draggedSlug={draggedSlug}
+            dropTarget={dropTarget}
+            invalidDropTargets={invalidDropTargets}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
           />
         ))
       )}
@@ -314,6 +409,15 @@ interface TreeNodeProps {
   selectedSlug: string | null
   onToggle: (slug: string) => void
   onSelect: (slug: string) => void
+  // Drag-drop props
+  draggedSlug: string | null
+  dropTarget: { slug: string; zone: DropZone } | null
+  invalidDropTargets: Set<string>
+  onDragStart: (slug: string) => void
+  onDragEnd: () => void
+  onDragOver: (slug: string, zone: DropZone) => void
+  onDragLeave: () => void
+  onDrop: (targetSlug: string, zone: DropZone) => void
 }
 
 function TreeNode({
@@ -323,6 +427,14 @@ function TreeNode({
   selectedSlug,
   onToggle,
   onSelect,
+  draggedSlug,
+  dropTarget,
+  invalidDropTargets,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: TreeNodeProps) {
   const isExpanded = expanded.has(node.slug)
   const hasChildren = node.children && node.children.length > 0
@@ -332,6 +444,9 @@ function TreeNode({
     () => hasChildren ? sortNodes(node.children!) : [],
     [node.children, hasChildren]
   )
+
+  // Get drop zone for this node
+  const dropZone = dropTarget?.slug === node.slug ? dropTarget.zone : null
 
   return (
     <>
@@ -349,6 +464,15 @@ function TreeNode({
         isSelected={selectedSlug === node.slug}
         onToggle={() => onToggle(node.slug)}
         onSelect={() => onSelect(node.slug)}
+        // Drag-drop props
+        draggedSlug={draggedSlug}
+        dropZone={dropZone}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        isInvalidDropTarget={invalidDropTargets.has(node.slug)}
       />
       {hasChildren && isExpanded && (
         <>
@@ -361,6 +485,14 @@ function TreeNode({
               selectedSlug={selectedSlug}
               onToggle={onToggle}
               onSelect={onSelect}
+              draggedSlug={draggedSlug}
+              dropTarget={dropTarget}
+              invalidDropTargets={invalidDropTargets}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
             />
           ))}
         </>

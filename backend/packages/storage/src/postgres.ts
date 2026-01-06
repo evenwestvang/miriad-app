@@ -731,6 +731,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         case 'props':
           updateObj.props = change.newValue ? JSON.stringify(change.newValue) : null;
           break;
+        case 'orderKey':
+          updateObj.order_key = change.newValue ?? null;
+          break;
       }
     }
 
@@ -743,6 +746,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const assignees = 'assignees' in updateObj ? (updateObj.assignees as string[]) : artifact.assignees;
     const labels = 'labels' in updateObj ? (updateObj.labels as string[]) : artifact.labels;
     const props = 'props' in updateObj ? (updateObj.props as string | null) : (artifact.props ? JSON.stringify(artifact.props) : null);
+    const orderKey = 'order_key' in updateObj ? (updateObj.order_key as string | null) : (artifact.orderKey ?? null);
 
     // Increment version
     await sql`
@@ -756,6 +760,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         assignees = ${sql.array(assignees)},
         labels = ${sql.array(labels)},
         props = ${props},
+        order_key = ${orderKey},
         version = version + 1,
         updated_by = ${updatedBy},
         updated_at = ${now}
@@ -1030,6 +1035,18 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         rootNodes.push(node);
       }
     }
+
+    // Sort all children arrays by orderKey
+    const sortByOrderKey = (nodes: ArtifactTreeNode[]) => {
+      nodes.sort((a, b) => (a.orderKey || '').localeCompare(b.orderKey || ''));
+      for (const node of nodes) {
+        if (node.children.length > 0) {
+          sortByOrderKey(node.children);
+        }
+      }
+    };
+
+    sortByOrderKey(rootNodes);
 
     return rootNodes;
   }

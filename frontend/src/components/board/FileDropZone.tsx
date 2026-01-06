@@ -274,11 +274,18 @@ export function FileDropZone({
   // Process the drop
   const handleDrop = useCallback(async (e: DragEvent) => {
     e.preventDefault()
-    e.stopPropagation()
     setIsDragging(false)
     dragCounter.current = 0
 
     if (disabled || !e.dataTransfer) return
+
+    // Ignore internal tree drags (they set text/plain with artifact slug)
+    // Only handle external file drops
+    if (!e.dataTransfer.types.includes('Files')) {
+      return
+    }
+
+    e.stopPropagation()
 
     // Phase 1: Scan files
     setProgress({
@@ -373,15 +380,17 @@ export function FileDropZone({
 
   const handleDragEnter = useCallback((e: DragEvent) => {
     e.preventDefault()
+    // Only handle external file drops, not internal tree drags
+    if (!e.dataTransfer?.types.includes('Files')) return
     e.stopPropagation()
     dragCounter.current++
-    if (e.dataTransfer?.types.includes('Files')) {
-      setIsDragging(true)
-    }
+    setIsDragging(true)
   }, [])
 
   const handleDragLeave = useCallback((e: DragEvent) => {
     e.preventDefault()
+    // Only handle external file drops, not internal tree drags
+    if (!e.dataTransfer?.types.includes('Files')) return
     e.stopPropagation()
     dragCounter.current--
     if (dragCounter.current === 0) {
@@ -390,6 +399,8 @@ export function FileDropZone({
   }, [])
 
   const handleDragOver = useCallback((e: DragEvent) => {
+    // Only intercept external file drops, not internal tree drags
+    if (!e.dataTransfer?.types.includes('Files')) return
     e.preventDefault()
     e.stopPropagation()
   }, [])

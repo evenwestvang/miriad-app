@@ -418,7 +418,7 @@ export interface CreateArtifactInput {
  */
 export interface ArtifactCASChange {
   /** Field to update */
-  field: 'title' | 'tldr' | 'status' | 'parentSlug' | 'assignees' | 'labels' | 'props';
+  field: 'title' | 'tldr' | 'status' | 'parentSlug' | 'orderKey' | 'assignees' | 'labels' | 'props';
 
   /** Expected current value (null if field should be unset) */
   oldValue: unknown;

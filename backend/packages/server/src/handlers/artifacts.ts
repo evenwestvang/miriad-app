@@ -98,7 +98,7 @@ const CreateArtifactSchema = z.object({
 
 // Accept both camelCase (oldValue/newValue) and snake_case (old_value/new_value) for flexibility
 const CASChangeSchema = z.object({
-  field: z.enum(['title', 'tldr', 'status', 'parentSlug', 'assignees', 'labels', 'props']),
+  field: z.enum(['title', 'tldr', 'status', 'parentSlug', 'orderKey', 'assignees', 'labels', 'props']),
   // Support both naming conventions
   old_value: z.unknown().optional(),
   new_value: z.unknown().optional(),

@@ -284,7 +284,7 @@ const TOOLS: McpToolDefinition[] = [
             properties: {
               field: {
                 type: 'string',
-                description: 'Field name: title, tldr, status, parentSlug, assignees, labels, props',
+                description: 'Field name: title, tldr, status, parentSlug, orderKey, assignees, labels, props',
               },
               oldValue: {
                 description: 'Expected current value (null if unset)',
@@ -645,7 +645,7 @@ const toolHandlers: Record<string, ToolHandler> = {
 
     // Convert from MCP format to storage format
     const storageChanges = changes.map((change) => ({
-      field: change.field as 'title' | 'tldr' | 'status' | 'parentSlug' | 'assignees' | 'labels' | 'props',
+      field: change.field as 'title' | 'tldr' | 'status' | 'parentSlug' | 'orderKey' | 'assignees' | 'labels' | 'props',
       oldValue: change.oldValue,
       newValue: change.newValue,
     }));

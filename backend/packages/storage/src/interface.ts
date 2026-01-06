@@ -177,7 +177,7 @@ export interface Storage {
    * Only updates if all oldValue fields match current values.
    * Returns conflict info if any value doesn't match.
    *
-   * Allowed fields: title, tldr, status, parentSlug, assignees, labels, props
+   * Allowed fields: title, tldr, status, parentSlug, orderKey, assignees, labels, props
    * Content changes should use editArtifact for surgical find-replace.
    */
   updateArtifactWithCAS(

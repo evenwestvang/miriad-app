@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { LayoutGrid } from 'lucide-react'
+import { generateKeyBetween } from 'fractional-indexing'
 import { cn } from '../../lib/utils'
 import { apiFetch } from '../../lib/api'
 import { BoardHeader } from './BoardHeader'
@@ -330,6 +331,147 @@ export function BoardPanel({
     }
   }, [channelId, apiHost])
 
+  // Handle artifact move (drag-drop reordering)
+  const handleMove = useCallback(async (
+    slug: string,
+    newParentSlug: string | null,
+    position: 'before' | 'after' | 'into',
+    targetSlug?: string
+  ) => {
+    console.log('[handleMove] Called:', { slug, newParentSlug, position, targetSlug })
+    if (!channelId) return
+
+    try {
+      // Find the current parent of the artifact being moved
+      const findParentSlug = (nodes: typeof tree, target: string, parentSlug: string | null = null): string | null | undefined => {
+        for (const node of nodes) {
+          if (node.slug === target) return parentSlug
+          if (node.children) {
+            const found = findParentSlug(node.children, target, node.slug)
+            if (found !== undefined) return found
+          }
+        }
+        return undefined
+      }
+
+      // Find a node by slug
+      const findNode = (nodes: typeof tree, target: string): ArtifactTreeNode | null => {
+        for (const node of nodes) {
+          if (node.slug === target) return node
+          if (node.children) {
+            const found = findNode(node.children, target)
+            if (found) return found
+          }
+        }
+        return null
+      }
+
+      // Get siblings of a node (nodes at the same level with same parent)
+      const getSiblings = (parentSlug: string | null): ArtifactTreeNode[] => {
+        if (parentSlug === null) {
+          // Root level
+          return tree
+        }
+        const parentNode = findNode(tree, parentSlug)
+        return parentNode?.children || []
+      }
+
+      const currentParentSlug = findParentSlug(tree, slug) ?? null
+      const movingNode = findNode(tree, slug)
+      // Use ?? to preserve empty string (|| would treat '' as falsy and cause CAS mismatch)
+      const currentOrderKey = movingNode?.orderKey ?? null
+
+      console.log('[handleMove] Current state:', { currentParentSlug, currentOrderKey, movingNode })
+
+      // Calculate new orderKey based on position
+      let newOrderKey: string | null = null
+
+      if (position === 'into') {
+        // Drop as last child of target
+        const children = getSiblings(newParentSlug)
+          .filter(n => n.slug !== slug) // Exclude the node being moved
+          .sort((a, b) => (a.orderKey ?? '').localeCompare(b.orderKey ?? ''))
+        const lastKey = children.length > 0 ? (children[children.length - 1].orderKey ?? null) : null
+        newOrderKey = generateKeyBetween(lastKey, null)
+      } else if (targetSlug) {
+        // Drop before or after target sibling
+        const siblings = getSiblings(newParentSlug)
+          .filter(n => n.slug !== slug) // Exclude the node being moved
+          .sort((a, b) => (a.orderKey ?? '').localeCompare(b.orderKey ?? ''))
+
+        const targetIndex = siblings.findIndex(n => n.slug === targetSlug)
+        if (targetIndex === -1) {
+          // Target not found, append at end
+          const lastKey = siblings.length > 0 ? (siblings[siblings.length - 1].orderKey ?? null) : null
+          newOrderKey = generateKeyBetween(lastKey, null)
+        } else if (position === 'before') {
+          // generateKeyBetween expects null not undefined, so coalesce
+          const prevKey = targetIndex > 0 ? (siblings[targetIndex - 1].orderKey ?? null) : null
+          const nextKey = siblings[targetIndex].orderKey ?? null
+          newOrderKey = generateKeyBetween(prevKey, nextKey)
+        } else {
+          // position === 'after'
+          const prevKey = siblings[targetIndex].orderKey ?? null
+          const nextKey = targetIndex < siblings.length - 1 ? (siblings[targetIndex + 1].orderKey ?? null) : null
+          newOrderKey = generateKeyBetween(prevKey, nextKey)
+        }
+      }
+
+      // Build changes for CAS update
+      const changes: Array<{ field: string; oldValue: unknown; newValue: unknown }> = []
+
+      // Update parentSlug if it changed
+      if (newParentSlug !== currentParentSlug) {
+        changes.push({
+          field: 'parentSlug',
+          oldValue: currentParentSlug,
+          newValue: newParentSlug,
+        })
+      }
+
+      // Update orderKey if calculated
+      if (newOrderKey && newOrderKey !== currentOrderKey) {
+        changes.push({
+          field: 'orderKey',
+          oldValue: currentOrderKey,
+          newValue: newOrderKey,
+        })
+      }
+
+      console.log('[handleMove] Calculated newOrderKey:', newOrderKey)
+      console.log('[handleMove] Changes to send:', changes)
+
+      if (changes.length === 0) {
+        console.log('[handleMove] No changes needed, skipping PATCH')
+        return
+      }
+
+      const response = await apiFetch(`${apiHost}/channels/${channelId}/artifacts/${slug}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          changes,
+          sender: 'user',
+        }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        console.error('[handleMove] PATCH failed:', data.error || 'Unknown error', data)
+        return
+      }
+
+      console.log('[handleMove] PATCH succeeded, refetching tree')
+      // Refetch tree to show new structure
+      apiFetch(`${apiHost}/channels/${channelId}/artifacts/tree?pattern=/**&format=json`)
+        .then(res => res.json())
+        .then(data => setTree(data.tree || []))
+        .catch(console.error)
+    } catch (err) {
+      console.error('Move error:', err)
+    }
+  }, [channelId, apiHost, tree])
+
   // ESC key closes artifact detail
   useEffect(() => {
     if (!isOpen || !selectedArtifactData) return
@@ -450,6 +592,7 @@ export function BoardPanel({
                     onSelect={handleSelect}
                     onActivate={handleSelect}
                     filterText={filterText}
+                    onMove={handleMove}
                   />
                 </div>
               </div>
