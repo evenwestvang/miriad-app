@@ -309,8 +309,8 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
     if (trimmedCallsign.length < 2 || trimmedCallsign.length > 20) {
       return c.json({ error: 'Callsign must be 2-20 characters' }, 400);
     }
-    if (!/^[a-z0-9]+$/.test(trimmedCallsign)) {
-      return c.json({ error: 'Callsign must contain only lowercase letters and numbers' }, 400);
+    if (!/^[a-z0-9-]+$/.test(trimmedCallsign)) {
+      return c.json({ error: 'Callsign must contain only lowercase letters, numbers, and hyphens' }, 400);
     }
 
     // Verify onboarding token
