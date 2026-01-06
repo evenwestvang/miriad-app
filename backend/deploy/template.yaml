@@ -421,6 +421,7 @@ Resources:
           CONNECTIONS_TABLE: !Ref ConnectionsTable
           WEBSOCKET_ENDPOINT: !Sub https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
           PLANETSCALE_URL: !Ref PlanetScaleUrl
+          JWT_SECRET: !Ref JwtSecret
     Metadata:
       BuildMethod: esbuild
       BuildProperties:

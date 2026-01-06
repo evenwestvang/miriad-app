@@ -466,9 +466,12 @@ export function createApp(options: AppOptions): Hono {
   // Auth Routes
   // ---------------------------------------------------------------------------
 
-  // Dev auth routes (local development)
+  // Dev auth routes (local development only)
+  // SECURITY: Only mount when AUTH_MODE=dev to prevent auth bypass in production
   const devAuthRoutes = createDevAuthRoutes({ storage });
-  app.route('/auth/dev', devAuthRoutes);
+  if (process.env.AUTH_MODE === 'dev') {
+    app.route('/auth/dev', devAuthRoutes);
+  }
 
   // WorkOS auth routes (production)
   // These are always mounted - they'll return errors if WorkOS env vars aren't set
