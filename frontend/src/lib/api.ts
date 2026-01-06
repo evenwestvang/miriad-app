@@ -6,7 +6,8 @@
  */
 
 // API host - use env var or default to local dev server (port 3234 to avoid conflicts)
-export const API_HOST = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3234' : '')
+// This is the single source of truth for backend URL - all HTTP and WebSocket calls should use this
+export const API_HOST = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3234'
 
 // =============================================================================
 // Auth Types
