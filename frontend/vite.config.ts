@@ -13,13 +13,6 @@ export default defineConfig(({ mode }) => ({
   server: {
     port: 5174, // Use non-default port to avoid conflicts
     allowedHosts: true, // Allow all hosts (for VPN/Tailscale access)
-    proxy: {
-      // Proxy OAuth callback - browser lands on frontend origin, then redirects to backend
-      // All other API/WS calls go direct via API_HOST
-      '/auth/callback': {
-        target: BACKEND_URL,
-        changeOrigin: true,
-      },
-    },
+    // No proxy - all API/WS calls go direct to backend via API_HOST
   },
 }))
