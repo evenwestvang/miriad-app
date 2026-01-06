@@ -7,26 +7,7 @@
 
 import { useState, useEffect } from 'react'
 import { User, Plus, Loader2 } from 'lucide-react'
-
-// Types matching backend response shapes
-interface StoredSpace {
-  id: string
-  name: string
-  ownerId: string
-  createdAt: string
-}
-
-interface StoredUser {
-  id: string
-  callsign: string
-  email?: string
-  avatarUrl?: string
-}
-
-interface SpaceWithOwner {
-  space: StoredSpace
-  owner: StoredUser
-}
+import type { SpaceWithOwner } from '../lib/api'
 
 interface LoginPageProps {
   /** Called after successful login with user and space info */
