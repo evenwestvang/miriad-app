@@ -19,6 +19,11 @@ import type {
   AddToRosterInput,
   UpdateRosterInput,
   RosterStatus,
+  // User/Space types (Spaces & Auth)
+  StoredUser,
+  CreateUserInput,
+  StoredSpace,
+  CreateSpaceInput,
   // Artifact types (Phase A)
   StoredArtifact,
   CreateArtifactInput,
@@ -88,6 +93,24 @@ interface RosterRow {
   created_at: Date;
   callback_url: string | null;
   readmark: string | null;
+}
+
+interface UserRow {
+  id: string;
+  external_id: string;
+  callsign: string;
+  email: string | null;
+  avatar_url: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface SpaceRow {
+  id: string;
+  owner_id: string;
+  name: string | null;
+  created_at: Date;
+  updated_at: Date;
 }
 
 interface ArtifactRow {
@@ -486,6 +509,149 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       DELETE FROM roster
       WHERE channel_id = ${channelId} AND id = ${entryId}
     `;
+  }
+
+  // ---------------------------------------------------------------------------
+  // User Operations (Spaces & Auth)
+  // ---------------------------------------------------------------------------
+
+  function rowToUser(row: UserRow): StoredUser {
+    return {
+      id: row.id,
+      externalId: row.external_id,
+      callsign: row.callsign,
+      email: row.email ?? undefined,
+      avatarUrl: row.avatar_url ?? undefined,
+      createdAt: row.created_at.toISOString(),
+      updatedAt: row.updated_at.toISOString(),
+    };
+  }
+
+  function rowToSpace(row: SpaceRow): StoredSpace {
+    return {
+      id: row.id,
+      ownerId: row.owner_id,
+      name: row.name ?? undefined,
+      createdAt: row.created_at.toISOString(),
+      updatedAt: row.updated_at.toISOString(),
+    };
+  }
+
+  async function createUser(input: CreateUserInput): Promise<StoredUser> {
+    const id = input.id ?? ulid();
+    const now = new Date();
+
+    const result = await sql<UserRow[]>`
+      INSERT INTO users (
+        id, external_id, callsign, email, avatar_url, created_at, updated_at
+      )
+      VALUES (
+        ${id},
+        ${input.externalId},
+        ${input.callsign},
+        ${input.email ?? null},
+        ${input.avatarUrl ?? null},
+        ${now},
+        ${now}
+      )
+      RETURNING *
+    `;
+
+    return rowToUser(result[0]);
+  }
+
+  async function getUser(userId: string): Promise<StoredUser | null> {
+    const result = await sql<UserRow[]>`
+      SELECT * FROM users WHERE id = ${userId}
+    `;
+
+    if (result.length === 0) return null;
+    return rowToUser(result[0]);
+  }
+
+  async function getUserByExternalId(externalId: string): Promise<StoredUser | null> {
+    const result = await sql<UserRow[]>`
+      SELECT * FROM users WHERE external_id = ${externalId}
+    `;
+
+    if (result.length === 0) return null;
+    return rowToUser(result[0]);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Space Operations (Spaces & Auth)
+  // ---------------------------------------------------------------------------
+
+  async function createSpace(input: CreateSpaceInput): Promise<StoredSpace> {
+    const id = input.id ?? ulid();
+    const now = new Date();
+
+    const result = await sql<SpaceRow[]>`
+      INSERT INTO spaces (
+        id, owner_id, name, created_at, updated_at
+      )
+      VALUES (
+        ${id},
+        ${input.ownerId},
+        ${input.name ?? null},
+        ${now},
+        ${now}
+      )
+      RETURNING *
+    `;
+
+    return rowToSpace(result[0]);
+  }
+
+  async function getSpace(spaceId: string): Promise<StoredSpace | null> {
+    const result = await sql<SpaceRow[]>`
+      SELECT * FROM spaces WHERE id = ${spaceId}
+    `;
+
+    if (result.length === 0) return null;
+    return rowToSpace(result[0]);
+  }
+
+  async function getSpacesByOwner(ownerId: string): Promise<StoredSpace[]> {
+    const result = await sql<SpaceRow[]>`
+      SELECT * FROM spaces
+      WHERE owner_id = ${ownerId}
+      ORDER BY created_at DESC
+    `;
+
+    return result.map(rowToSpace);
+  }
+
+  async function listSpacesWithOwners(): Promise<Array<{ space: StoredSpace; owner: StoredUser }>> {
+    const result = await sql<(SpaceRow & { user_id: string; user_external_id: string; user_callsign: string; user_email: string | null; user_avatar_url: string | null; user_created_at: Date; user_updated_at: Date })[]>`
+      SELECT
+        s.id, s.owner_id, s.name, s.created_at, s.updated_at,
+        u.id as user_id, u.external_id as user_external_id, u.callsign as user_callsign,
+        u.email as user_email, u.avatar_url as user_avatar_url,
+        u.created_at as user_created_at, u.updated_at as user_updated_at
+      FROM spaces s
+      JOIN users u ON s.owner_id = u.id
+      ORDER BY s.created_at DESC
+    `;
+
+    return result.map(row => ({
+      space: {
+        id: row.id,
+        ownerId: row.owner_id,
+        name: row.name ?? undefined,
+        createdAt: row.created_at.toISOString(),
+        updatedAt: row.updated_at.toISOString(),
+      },
+      owner: {
+        id: row.user_id,
+        externalId: row.user_external_id,
+        callsign: row.user_callsign,
+        email: row.user_email ?? undefined,
+        avatarUrl: row.user_avatar_url ?? undefined,
+        createdAt: row.user_created_at.toISOString(),
+        updatedAt: row.user_updated_at.toISOString(),
+      },
+    }));
   }
 
   // ---------------------------------------------------------------------------
@@ -1339,6 +1505,49 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       ON messages(space_id, channel_id, turn_id)
     `;
 
+    // ---------------------------------------------------------------------------
+    // Users Table (Spaces & Auth)
+    // ---------------------------------------------------------------------------
+    await sql`
+      CREATE TABLE IF NOT EXISTS users (
+        id VARCHAR(26) PRIMARY KEY,
+        external_id VARCHAR(255) NOT NULL,
+        callsign VARCHAR(255) NOT NULL,
+        email VARCHAR(255),
+        avatar_url TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_external_id
+      ON users(external_id)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_users_callsign
+      ON users(callsign)
+    `;
+
+    // ---------------------------------------------------------------------------
+    // Spaces Table (Spaces & Auth)
+    // ---------------------------------------------------------------------------
+    await sql`
+      CREATE TABLE IF NOT EXISTS spaces (
+        id VARCHAR(26) PRIMARY KEY,
+        owner_id VARCHAR(26) NOT NULL REFERENCES users(id),
+        name VARCHAR(255),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_spaces_owner
+      ON spaces(owner_id)
+    `;
+
     // Create channels table (Phase 2)
     await sql`
       CREATE TABLE IF NOT EXISTS channels (
@@ -1588,6 +1797,15 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     getMessages,
     updateMessage,
     deleteMessage,
+    // User operations (Spaces & Auth)
+    createUser,
+    getUser,
+    getUserByExternalId,
+    // Space operations (Spaces & Auth)
+    createSpace,
+    getSpace,
+    getSpacesByOwner,
+    listSpacesWithOwners,
     // Channel operations
     createChannel,
     getChannel,
