@@ -13,6 +13,7 @@ import {
   FileAudio,
   FileVideo,
   File,
+  Folder,
   Bot,
   BookOpen,
   Target,
@@ -30,6 +31,7 @@ const BINARY_EXTENSIONS = [...IMAGE_EXTENSIONS, ...AUDIO_EXTENSIONS, ...VIDEO_EX
 // Type-based icons
 const TYPE_ICONS: Record<string, LucideIcon> = {
   doc: FileText,
+  folder: Folder,
   code: Code,
   task: CheckSquare,
   decision: HelpCircle,
@@ -166,6 +168,7 @@ export function getArtifactTypeLabel(artifact: {
   // Type-based label
   const labels: Record<string, string> = {
     doc: 'Document',
+    folder: 'Folder',
     code: 'Code',
     task: 'Task',
     decision: 'Decision',

@@ -214,6 +214,7 @@ export interface ArtifactVersion {
 
 export type ArtifactType =
   | 'doc'
+  | 'folder'
   | 'task'
   | 'code'
   | 'decision'

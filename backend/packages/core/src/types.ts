@@ -262,13 +262,14 @@ export function isRosterEntry(value: unknown): value is RosterEntry {
 
 /**
  * Artifact type discriminator.
- * - doc, task, code, decision: User content types
+ * - doc, folder, task, code, decision: User content types
  * - knowledgebase: Searchable documentation
  * - asset: Binary files (images, PDFs, etc.)
  * - system.*: System configuration types
  */
 export type ArtifactType =
   | 'doc'
+  | 'folder'
   | 'task'
   | 'code'
   | 'decision'

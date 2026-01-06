@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, LayoutGrid } from 'lucide-react'
+import { LayoutGrid } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { apiFetch } from '../../lib/api'
 import { BoardHeader } from './BoardHeader'
@@ -343,15 +343,8 @@ export function BoardPanel({
               </div>
             ) : tree.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 px-4 text-center">
-                <p className="text-muted-foreground text-sm mb-2">No artifacts yet</p>
-                <p className="text-muted-foreground text-xs mb-3">Drop files here or click below</p>
-                <button
-                  className="flex items-center gap-1 px-3 py-1.5 text-sm border border-[var(--cast-border-default)] hover:bg-[var(--cast-bg-hover)] transition-colors"
-                  onClick={() => setIsCreating(true)}
-                >
-                  <Plus className="w-4 h-4" />
-                  Create First Artifact
-                </button>
+                <p className="text-muted-foreground text-sm mb-1">Nothing here yet</p>
+                <p className="text-muted-foreground text-xs">Drop files or create artifacts to share with your team.</p>
               </div>
             ) : (
               <div className="flex flex-col h-full">

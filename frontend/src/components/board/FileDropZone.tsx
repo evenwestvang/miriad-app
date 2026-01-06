@@ -211,7 +211,7 @@ export function FileDropZone({
       // Build payload, only include parentSlug if it's set
       const payload: Record<string, unknown> = {
         slug,
-        type: 'doc',
+        type: 'folder',
         title: folderName,
         tldr: `Folder: ${folderPath}`,
         content: '',

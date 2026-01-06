@@ -16,9 +16,10 @@ interface ArtifactCreateProps {
   onCancel: () => void
 }
 
-// Available types for creation (all types are user-creatable)
+// Available types for creation
 const ARTIFACT_TYPES: { value: ArtifactType; label: string }[] = [
   { value: 'doc', label: 'Document' },
+  { value: 'folder', label: 'Folder' },
   { value: 'task', label: 'Task' },
   { value: 'decision', label: 'Decision' },
   { value: 'code', label: 'Code' },
@@ -32,6 +33,7 @@ const ARTIFACT_TYPES: { value: ArtifactType; label: string }[] = [
 // Default status based on type
 const DEFAULT_STATUS: Record<ArtifactType, ArtifactStatus> = {
   doc: 'draft',
+  folder: 'published',
   task: 'pending',
   decision: 'draft',
   code: 'draft',

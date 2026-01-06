@@ -59,6 +59,7 @@ const SlugSchema = z.string()
 
 const ArtifactTypeSchema = z.enum([
   'doc',
+  'folder',
   'task',
   'code',
   'decision',

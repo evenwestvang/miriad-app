@@ -160,7 +160,7 @@ const TOOLS: McpToolDefinition[] = [
         },
         type: {
           type: 'string',
-          enum: ['doc', 'task', 'decision', 'code'],
+          enum: ['doc', 'folder', 'task', 'decision', 'code'],
           description: 'Artifact type (use upload_asset tool for binary files like images/PDFs)',
         },
         tldr: {
@@ -541,7 +541,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     const artifact = await storage.createArtifact(channelId, {
       slug,
       channelId,
-      type: type as 'doc' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook',
+      type: type as 'doc' | 'folder' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook',
       title,
       tldr,
       content,
@@ -599,7 +599,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     const targetChannel = channel || channelId;
 
     const artifacts = await storage.listArtifacts(targetChannel, {
-      type: type as 'doc' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook' | undefined,
+      type: type as 'doc' | 'folder' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook' | undefined,
       status: status as 'draft' | 'published' | 'archived' | 'pending' | 'in_progress' | 'done' | 'blocked' | undefined,
       assignee,
       parentSlug: parentSlug as string | 'root' | undefined,
