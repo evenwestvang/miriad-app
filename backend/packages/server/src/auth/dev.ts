@@ -17,6 +17,7 @@ import {
   setSessionCookie,
   clearSessionCookie,
 } from './session.js';
+import { seedSpace } from '../seed.js';
 
 // =============================================================================
 // Types
@@ -142,6 +143,9 @@ export function createDevAuthRoutes(options: DevAuthOptions): Hono {
           ownerId: user.id,
           name: spaceName,
         });
+
+        // Seed space with default content (#root channel, lead agent, etc.)
+        await seedSpace(storage, space.id);
 
         // Create session
         const token = await createSession(user.id, space.id, 'dev');
