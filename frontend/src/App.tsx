@@ -15,6 +15,7 @@ import { cn } from './lib/utils'
 import { API_HOST, apiFetch, checkAuth, logout, type AuthSession } from './lib/api'
 import { LoginPage } from './components/LoginPage'
 import { OnboardingPage } from './components/OnboardingPage'
+import { AuthErrorPage } from './components/AuthErrorPage'
 
 // Auth mode: 'dev' (show LoginPage) or 'workos' (redirect to /auth/login)
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || 'dev'
@@ -28,6 +29,9 @@ export function App() {
   // Onboarding state (for new WorkOS users)
   const [onboardingToken, setOnboardingToken] = useState<string | null>(null)
   const [suggestedName, setSuggestedName] = useState<string | undefined>(undefined)
+
+  // Auth error state (for OAuth errors)
+  const [authError, setAuthError] = useState<string | null>(null)
 
   // URL-based routing state
   const {
@@ -68,8 +72,18 @@ export function App() {
 
   // Check authentication on mount
   useEffect(() => {
-    // Check for onboarding token in URL (new WorkOS users)
     const params = new URLSearchParams(window.location.search)
+
+    // Check for auth error in URL (OAuth errors redirect here)
+    const error = params.get('error')
+    if (error || window.location.pathname === '/auth-error') {
+      setAuthError(error || 'unknown')
+      // Clear URL params but keep path for bookmarking
+      window.history.replaceState({}, '', '/')
+      return
+    }
+
+    // Check for onboarding token in URL (new WorkOS users)
     const token = params.get('token')
     const name = params.get('name')
 
@@ -449,6 +463,17 @@ export function App() {
       console.error('Failed to dismiss agent:', error)
     }
   }, [selectedThread])
+
+  // Show auth error page if there was an OAuth error
+  if (authError) {
+    const handleRetryAuth = () => {
+      setAuthError(null)
+      if (AUTH_MODE === 'workos') {
+        window.location.href = `${API_HOST}/auth/login`
+      }
+    }
+    return <AuthErrorPage error={authError} onRetry={handleRetryAuth} />
+  }
 
   // Show onboarding page for new WorkOS users
   if (onboardingToken) {
