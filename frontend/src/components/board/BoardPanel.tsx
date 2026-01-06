@@ -386,18 +386,22 @@ export function BoardPanel({
       // Calculate new orderKey based on position
       let newOrderKey: string | null = null
 
+      // Helper for orderKey comparison - use simple string comparison (not localeCompare)
+      // because fractional-indexing generates keys designed for ASCII/Unicode code point ordering
+      const compareOrderKey = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0
+
       if (position === 'into') {
         // Drop as last child of target
         const children = getSiblings(newParentSlug)
           .filter(n => n.slug !== slug) // Exclude the node being moved
-          .sort((a, b) => (a.orderKey ?? '').localeCompare(b.orderKey ?? ''))
+          .sort((a, b) => compareOrderKey(a.orderKey ?? '', b.orderKey ?? ''))
         const lastKey = children.length > 0 ? (children[children.length - 1].orderKey ?? null) : null
         newOrderKey = generateKeyBetween(lastKey, null)
       } else if (targetSlug) {
         // Drop before or after target sibling
         const siblings = getSiblings(newParentSlug)
           .filter(n => n.slug !== slug) // Exclude the node being moved
-          .sort((a, b) => (a.orderKey ?? '').localeCompare(b.orderKey ?? ''))
+          .sort((a, b) => compareOrderKey(a.orderKey ?? '', b.orderKey ?? ''))
 
         const targetIndex = siblings.findIndex(n => n.slug === targetSlug)
         if (targetIndex === -1) {

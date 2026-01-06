@@ -1,5 +1,5 @@
 import { useRef, useCallback } from 'react'
-import { ChevronRight, GripVertical } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { getArtifactIcon } from '../../lib/artifact-icons'
 import type { ArtifactType, ArtifactStatus } from '../../types/artifact'
@@ -47,9 +47,6 @@ const STATUS_INDICATORS: Record<string, { icon: string; className: string }> = {
   blocked: { icon: '⊘', className: 'text-red-500' },
 }
 
-// Types that can have children (accept 'on' drops)
-const PARENT_CAPABLE_TYPES: ArtifactType[] = ['doc', 'folder', 'task', 'decision']
-
 export function TreeItem({
   slug,
   title,
@@ -72,7 +69,7 @@ export function TreeItem({
   onDragOver,
   onDragLeave,
   onDrop,
-  canHaveChildren = PARENT_CAPABLE_TYPES.includes(type),
+  canHaveChildren = true, // All items can accept children
   isInvalidDropTarget = false,
 }: TreeItemProps) {
   const rowRef = useRef<HTMLDivElement>(null)
@@ -142,17 +139,20 @@ export function TreeItem({
       role="treeitem"
       aria-selected={isSelected}
       aria-expanded={hasChildren ? isExpanded : undefined}
+      draggable
       className={cn(
-        "group relative flex items-center gap-1 py-1.5 cursor-pointer",
+        "group relative flex items-center gap-1 py-1.5 cursor-grab",
         "hover:bg-[var(--cast-bg-hover)] transition-colors",
         isSelected && "bg-[var(--cast-bg-active)] ring-1 ring-inset ring-primary/30",
         // Drag states
-        isDragging && "opacity-50",
+        isDragging && "opacity-50 cursor-grabbing",
         dropZone === 'on' && "bg-primary/20 ring-1 ring-inset ring-primary",
         isInvalidDropTarget && isDragActive && "cursor-not-allowed"
       )}
       style={{ paddingLeft: `${8 + depth * 12}px`, paddingRight: '16px' }}
       onClick={onSelect}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -172,20 +172,6 @@ export function TreeItem({
           style={{ marginLeft: `${8 + depth * 12}px` }}
         />
       )}
-
-      {/* Drag handle - visible on hover */}
-      <div
-        draggable
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        className={cn(
-          "w-4 h-4 flex items-center justify-center flex-shrink-0 cursor-grab",
-          "opacity-0 group-hover:opacity-100 transition-opacity",
-          isDragActive && "opacity-100"
-        )}
-      >
-        <GripVertical className="w-3 h-3 text-muted-foreground" />
-      </div>
 
       {/* Expand/collapse chevron */}
       <button

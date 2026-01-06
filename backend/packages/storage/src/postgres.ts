@@ -1037,8 +1037,14 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     }
 
     // Sort all children arrays by orderKey
+    // Use simple string comparison (not localeCompare) because fractional-indexing
+    // generates keys designed for ASCII/Unicode code point ordering
     const sortByOrderKey = (nodes: ArtifactTreeNode[]) => {
-      nodes.sort((a, b) => (a.orderKey || '').localeCompare(b.orderKey || ''));
+      nodes.sort((a, b) => {
+        const aKey = a.orderKey || '';
+        const bKey = b.orderKey || '';
+        return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
+      });
       for (const node of nodes) {
         if (node.children.length > 0) {
           sortByOrderKey(node.children);

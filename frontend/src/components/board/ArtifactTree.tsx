@@ -29,9 +29,11 @@ function sortNodes(nodes: ArtifactTreeNode[]): ArtifactTreeNode[] {
 
   return [...validNodes].sort((a, b) => {
     // Sort by orderKey only - it's the single source of truth
+    // Use simple string comparison (not localeCompare) because fractional-indexing
+    // generates keys designed for ASCII/Unicode code point ordering
     const aKey = a.orderKey || a.slug || ''
     const bKey = b.orderKey || b.slug || ''
-    return aKey.localeCompare(bKey)
+    return aKey < bKey ? -1 : aKey > bKey ? 1 : 0
   })
 }
 
