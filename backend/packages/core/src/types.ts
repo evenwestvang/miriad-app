@@ -257,6 +257,117 @@ export function isRosterEntry(value: unknown): value is RosterEntry {
 }
 
 // =============================================================================
+// User Types (Spaces & Auth)
+// =============================================================================
+
+/**
+ * A user as stored in the database.
+ */
+export interface StoredUser {
+  /** Unique user identifier (ULID) */
+  id: string;
+
+  /** External identity provider ID (e.g., WorkOS user_id) */
+  externalId: string;
+
+  /** Display name in chat (e.g., "simen") */
+  callsign: string;
+
+  /** User's email address */
+  email?: string;
+
+  /** URL to user's avatar image */
+  avatarUrl?: string;
+
+  /** ISO timestamp of creation */
+  createdAt: string;
+
+  /** ISO timestamp of last update */
+  updatedAt: string;
+}
+
+/**
+ * Input for creating a new user.
+ */
+export interface CreateUserInput {
+  /** Optional ID (will generate ULID if not provided) */
+  id?: string;
+
+  /** External identity provider ID */
+  externalId: string;
+
+  /** Display name in chat */
+  callsign: string;
+
+  /** User's email address */
+  email?: string;
+
+  /** URL to user's avatar image */
+  avatarUrl?: string;
+}
+
+// =============================================================================
+// Space Types (Spaces & Auth)
+// =============================================================================
+
+/**
+ * A space (tenant workspace) as stored in the database.
+ */
+export interface StoredSpace {
+  /** Unique space identifier (ULID) */
+  id: string;
+
+  /** User ID of the space owner */
+  ownerId: string;
+
+  /** Display name for the space */
+  name?: string;
+
+  /** ISO timestamp of creation */
+  createdAt: string;
+
+  /** ISO timestamp of last update */
+  updatedAt: string;
+}
+
+/**
+ * Input for creating a new space.
+ */
+export interface CreateSpaceInput {
+  /** Optional ID (will generate ULID if not provided) */
+  id?: string;
+
+  /** User ID of the space owner */
+  ownerId: string;
+
+  /** Display name for the space */
+  name?: string;
+}
+
+// =============================================================================
+// User/Space Type Guards
+// =============================================================================
+
+export function isStoredUser(value: unknown): value is StoredUser {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as StoredUser).id === 'string' &&
+    typeof (value as StoredUser).externalId === 'string' &&
+    typeof (value as StoredUser).callsign === 'string'
+  );
+}
+
+export function isStoredSpace(value: unknown): value is StoredSpace {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as StoredSpace).id === 'string' &&
+    typeof (value as StoredSpace).ownerId === 'string'
+  );
+}
+
+// =============================================================================
 // Artifact Types (Phase A)
 // =============================================================================
 
