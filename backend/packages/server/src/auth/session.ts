@@ -120,12 +120,22 @@ export async function parseSession(c: Context): Promise<SessionData | null> {
 
 /**
  * Set the session cookie on the response.
+ *
+ * Note: We use SameSite=None for cross-origin cookie support since the
+ * backend (API Gateway) and frontend (Vercel) are on different domains.
+ * This requires Secure=true (HTTPS only).
  */
 export function setSessionCookie(c: Context, token: string): void {
+  // In production/staging, we need SameSite=None for cross-origin requests
+  // In dev (localhost), we use Lax since same-origin
+  const isProduction = process.env.NODE_ENV === 'production' ||
+    process.env.STAGE === 'stag' ||
+    process.env.STAGE === 'prod';
+
   setCookie(c, COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'Lax',
+    secure: isProduction, // Required when SameSite=None
+    sameSite: isProduction ? 'None' : 'Lax',
     path: '/',
     maxAge: Math.floor(SESSION_DURATION_MS / 1000),
   });
