@@ -435,6 +435,15 @@ export function createApp(options: AppOptions): Hono {
       if (origin && origin.match(/^http:\/\/localhost(:\d+)?$/)) {
         return origin;
       }
+      // Allow staging and production frontend domains
+      if (origin === 'https://staging.clanker.is' || origin === 'https://clanker.is') {
+        return origin;
+      }
+      // Allow FRONTEND_URL if set (for flexible deployment configurations)
+      const frontendUrl = process.env.FRONTEND_URL;
+      if (frontendUrl && origin === frontendUrl) {
+        return origin;
+      }
       return null;
     },
     credentials: true,

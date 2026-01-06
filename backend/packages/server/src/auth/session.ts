@@ -120,13 +120,25 @@ export async function parseSession(c: Context): Promise<SessionData | null> {
 
 /**
  * Set the session cookie on the response.
+ *
+ * Cookie is scoped to .clanker.is so it's shared between:
+ * - api.staging.clanker.is (backend)
+ * - staging.clanker.is (frontend)
+ * - api.clanker.is / clanker.is (production)
+ *
+ * In dev (localhost), we omit the domain so cookie is scoped to localhost.
  */
 export function setSessionCookie(c: Context, token: string): void {
+  const isProduction = process.env.NODE_ENV === 'production' ||
+    process.env.STAGE === 'stag' ||
+    process.env.STAGE === 'prod';
+
   setCookie(c, COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isProduction,
     sameSite: 'Lax',
     path: '/',
+    domain: isProduction ? '.clanker.is' : undefined,
     maxAge: Math.floor(SESSION_DURATION_MS / 1000),
   });
 }
@@ -135,8 +147,13 @@ export function setSessionCookie(c: Context, token: string): void {
  * Clear the session cookie.
  */
 export function clearSessionCookie(c: Context): void {
+  const isProduction = process.env.NODE_ENV === 'production' ||
+    process.env.STAGE === 'stag' ||
+    process.env.STAGE === 'prod';
+
   deleteCookie(c, COOKIE_NAME, {
     path: '/',
+    domain: isProduction ? '.clanker.is' : undefined,
   });
 }
 
