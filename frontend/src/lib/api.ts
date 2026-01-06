@@ -5,8 +5,8 @@
  * Auth will be added later via WorkOS.
  */
 
-// API host - use env var or default to local dev server
-export const API_HOST = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3233' : '')
+// API host - use env var or default to local dev server (port 3234 to avoid conflicts)
+export const API_HOST = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3234' : '')
 
 // =============================================================================
 // Auth Types
