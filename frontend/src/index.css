@@ -244,10 +244,12 @@
   font-size: 13px;
   line-height: 1.625;
   padding: 16px;
+  color: #1a1a1a;
 }
 
 .dark .message-content pre {
   @apply bg-[#1a1a1a];
+  color: #e5e5e5;
 }
 
 /* Thinking Indicator */
@@ -306,10 +308,12 @@
   font-size: 13px;
   line-height: 1.625;
   padding: 16px;
+  color: #1a1a1a;
 }
 
 .dark .markdown-content pre {
   @apply bg-[#1a1a1a];
+  color: #e5e5e5;
 }
 
 .markdown-content pre code {
@@ -361,9 +365,33 @@
   @apply bg-card font-semibold;
 }
 
-/* @mention highlighting */
+/* @mention highlighting - color-coded by type (aligned with design manual) */
 .mention {
-  @apply text-primary font-medium;
+  @apply font-medium;
+}
+
+/* @channel - Cast orange (broadcast to everyone) */
+.mention-channel {
+  color: #de946a;
+}
+
+/* @me - Cast orange with subtle highlight (needs my attention) */
+.mention-me {
+  color: #de946a;
+  background-color: rgba(222, 148, 106, 0.15);
+  padding: 0 0.25rem;
+  border-radius: 2px;
+}
+
+/* @other - Primary text, emphasized (someone else mentioned) */
+.mention-other {
+  color: #1a1a1a;
+  font-weight: 500;
+}
+
+/* Dark mode adjustments for mentions */
+.dark .mention-other {
+  color: #e5e5e5;
 }
 
 /* [[artifact]] links */

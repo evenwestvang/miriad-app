@@ -1,14 +1,15 @@
-import { useEffect, useRef, useCallback, useMemo } from 'react'
+import { useEffect, useRef, useCallback, useMemo, useState } from 'react'
 import Markdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Message, StructuredAskMessage } from '../../types'
-import { highlightMentions } from '../../utils'
+import { highlightMentions, type ArtifactInfo } from '../../utils'
 import { ToolMessage } from './ToolMessage'
 import { StructuredAskForm } from '../structured-ask'
 import { AttachmentList, AttachmentRenderer } from './AttachmentRenderer'
 import type { AttachmentMessageContent, Attachment } from '../../types'
 import { AgentAvatar, UserAvatar } from './AgentAvatar'
 import type { RosterAgent } from './AgentRoster'
+import { apiFetch } from '../../lib/api'
 
 interface MessageListProps {
   messages: Message[]
@@ -29,6 +30,42 @@ export function MessageList({ messages, threadName = 'Agent', threadAgentType, m
   const bottomRef = useRef<HTMLDivElement>(null)
   const wasAtBottomRef = useRef(true)
   const isInitialLoadRef = useRef(true)
+
+  // Artifact map for [[slug]] title lookup
+  const [artifactMap, setArtifactMap] = useState<Map<string, ArtifactInfo>>(new Map())
+
+  // Fetch artifacts for title lookup when channel changes
+  useEffect(() => {
+    if (!channelId || !apiHost) {
+      setArtifactMap(new Map())
+      return
+    }
+
+    async function fetchArtifacts() {
+      try {
+        const response = await apiFetch(`${apiHost}/channels/${channelId}/artifacts?limit=500`)
+        if (!response.ok) return
+        const data = await response.json()
+        const artifacts = data.artifacts || []
+
+        const map = new Map<string, ArtifactInfo>()
+        for (const artifact of artifacts) {
+          map.set(artifact.slug.toLowerCase(), {
+            slug: artifact.slug,
+            title: artifact.title,
+            type: artifact.type,
+            encoding: artifact.encoding,
+            contentType: artifact.contentType,
+          })
+        }
+        setArtifactMap(map)
+      } catch (error) {
+        console.warn('Failed to fetch artifacts for title lookup:', error)
+      }
+    }
+
+    fetchArtifacts()
+  }, [channelId, apiHost])
 
   // Build callsign to roster index map for avatar assignment
   const callsignIndexMap = useMemo(() => {
@@ -107,6 +144,7 @@ export function MessageList({ messages, threadName = 'Agent', threadAgentType, m
               apiHost={apiHost}
               channelId={channelId}
               agentIndex={callsignIndexMap.get(message.sender || '') ?? -1}
+              artifacts={artifactMap}
               onStructuredAskSubmit={onStructuredAskSubmit}
             />
           </div>
@@ -127,6 +165,8 @@ interface MessageItemProps {
   channelId?: string
   /** Agent's index in roster for avatar (-1 if not found) */
   agentIndex?: number
+  /** Artifact map for [[slug]] title lookup */
+  artifacts?: Map<string, ArtifactInfo>
   onStructuredAskSubmit?: (messageId: string, response: Record<string, unknown>) => void
 }
 
@@ -135,7 +175,7 @@ function formatTime(timestamp: string): string {
 }
 
 
-function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '', channelId = '', agentIndex = -1, onStructuredAskSubmit }: MessageItemProps) {
+function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '', channelId = '', agentIndex = -1, artifacts, onStructuredAskSubmit }: MessageItemProps) {
   const isUser = message.senderType === 'user'
   const isAgent = message.senderType === 'agent'
   const hasAttachments = message.attachments && message.attachments.length > 0
@@ -233,7 +273,7 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
     return (
       <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md">
         <span>❌</span>
-        <span>{highlightMentions(getTextContent(message.content))}</span>
+        <span>{highlightMentions(getTextContent(message.content), { myName, artifacts })}</span>
       </div>
     )
   }
@@ -243,7 +283,7 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-2">
         <span>⏳</span>
-        <span>{highlightMentions(getTextContent(message.content))}</span>
+        <span>{highlightMentions(getTextContent(message.content), { myName, artifacts })}</span>
       </div>
     )
   }
@@ -341,7 +381,7 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
           </span>
         </div>
         <div className="message-content">
-          {renderMessageContent(message)}
+          {renderMessageContent(message, myName, artifacts)}
         </div>
         {/* Render attachments below the message */}
         {hasAttachments && apiHost && (
@@ -357,36 +397,43 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
   )
 }
 
-// Custom markdown components that highlight @mentions
-const markdownComponents: Components = {
-  // Override text rendering to highlight @mentions
-  p: ({ children }) => <p>{processChildren(children)}</p>,
-  li: ({ children }) => <li>{processChildren(children)}</li>,
-  td: ({ children }) => <td>{processChildren(children)}</td>,
-  th: ({ children }) => <th>{processChildren(children)}</th>,
+/**
+ * Create markdown components that highlight @mentions and [[slug]] links.
+ */
+function createMarkdownComponents(myName: string, artifacts?: Map<string, ArtifactInfo>): Components {
+  // Process children to highlight @mentions and [[slug]] links in text nodes
+  const processChildren = (children: React.ReactNode): React.ReactNode => {
+    if (typeof children === 'string') {
+      return highlightMentions(children, { myName, artifacts })
+    }
+    if (Array.isArray(children)) {
+      return children.map((child, i) => {
+        if (typeof child === 'string') {
+          return <span key={i}>{highlightMentions(child, { myName, artifacts })}</span>
+        }
+        return child
+      })
+    }
+    return children
+  }
+
+  return {
+    // Override text rendering to highlight @mentions and [[slug]] links
+    p: ({ children }) => <p>{processChildren(children)}</p>,
+    li: ({ children }) => <li>{processChildren(children)}</li>,
+    td: ({ children }) => <td>{processChildren(children)}</td>,
+    th: ({ children }) => <th>{processChildren(children)}</th>,
+  }
 }
 
-// Process children to highlight @mentions in text nodes
-function processChildren(children: React.ReactNode): React.ReactNode {
-  if (typeof children === 'string') {
-    return highlightMentions(children)
-  }
-  if (Array.isArray(children)) {
-    return children.map((child, i) => {
-      if (typeof child === 'string') {
-        return <span key={i}>{highlightMentions(child)}</span>
-      }
-      return child
-    })
-  }
-  return children
-}
-
-function renderMessageContent(message: Message): React.ReactNode {
+function renderMessageContent(message: Message, myName: string = '', artifacts?: Map<string, ArtifactInfo>): React.ReactNode {
   // Handle content that may be a string or { text: "..." } object
   const content = typeof message.content === 'string'
     ? message.content
     : (message.content as { text?: string })?.text || ''
+
+  // Create markdown components with myName for @mention highlighting and artifacts for [[slug]] lookup
+  const markdownComponents = createMarkdownComponents(myName, artifacts)
 
   // For user/assistant/thinking messages, render markdown
   return (

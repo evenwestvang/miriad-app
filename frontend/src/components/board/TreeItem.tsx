@@ -1,5 +1,6 @@
-import { ChevronRight, FileText, CheckSquare, GitBranch, Code, Server, Bot, Target, BookOpen, Library, SquarePlay } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { getArtifactIcon } from '../../lib/artifact-icons'
 import type { ArtifactType, ArtifactStatus } from '../../types/artifact'
 
 interface TreeItemProps {
@@ -12,40 +13,12 @@ interface TreeItemProps {
   hasChildren: boolean
   isExpanded: boolean
   isSelected: boolean
+  /** Binary asset encoding (e.g., 'file') */
+  encoding?: string | null
+  /** Binary asset content type (e.g., 'image/png') */
+  contentType?: string | null
   onToggle: () => void
   onSelect: () => void
-}
-
-// Type icons
-const TYPE_ICONS: Record<ArtifactType, typeof FileText> = {
-  doc: FileText,
-  task: CheckSquare,
-  decision: GitBranch,
-  code: Code,
-  knowledgebase: Library,
-  asset: FileText, // Binary assets use generic file icon
-  'system.mcp': Server,
-  'system.agent': Bot,
-  'system.focus': Target,
-  'system.playbook': BookOpen,
-}
-
-/**
- * Check if an artifact slug represents an interactive app
- */
-function isSpaArtifact(slug: string | undefined): boolean {
-  return slug?.endsWith('.app.js') ?? false
-}
-
-/**
- * Get the appropriate icon for an artifact based on type and slug
- */
-function getArtifactIcon(type: ArtifactType, slug: string): typeof FileText {
-  // Interactive apps get special icon
-  if (type === 'code' && isSpaArtifact(slug)) {
-    return SquarePlay
-  }
-  return TYPE_ICONS[type] || FileText
 }
 
 // Status indicators for tasks - matches PowPow colors
@@ -69,20 +42,26 @@ export function TreeItem({
   hasChildren,
   isExpanded,
   isSelected,
+  encoding,
+  contentType,
   onToggle,
   onSelect,
 }: TreeItemProps) {
-  const Icon = getArtifactIcon(type, slug)
+  const Icon = getArtifactIcon({ slug, type, status, encoding, contentType })
   // Show status indicator for tasks, and for other types when not 'published'
   const showStatus = type === 'task' || (status && status !== 'published')
   const statusIndicator = showStatus ? STATUS_INDICATORS[status] : null
 
   return (
     <div
+      data-slug={slug}
+      role="treeitem"
+      aria-selected={isSelected}
+      aria-expanded={hasChildren ? isExpanded : undefined}
       className={cn(
         "flex items-center gap-1.5 py-1.5 cursor-pointer",
         "hover:bg-[var(--cast-bg-hover)] transition-colors",
-        isSelected && "bg-[var(--cast-bg-active)]"
+        isSelected && "bg-[var(--cast-bg-active)] ring-1 ring-inset ring-primary/30"
       )}
       style={{ paddingLeft: `${16 + depth * 12}px`, paddingRight: '16px' }}
       onClick={onSelect}

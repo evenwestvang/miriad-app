@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, X, Server } from 'lucide-react'
 import { EditableField } from '../ui/editable-field'
 import { SegmentedControl } from '../ui/segmented-control'
-import { apiFetch } from '../../lib/api'
+import { apiFetch, fetchBackends, type BackendInfo } from '../../lib/api'
 import { cn } from '../../lib/utils'
 
 // Agent props types - matches server schema
@@ -26,8 +26,8 @@ interface AgentPropsEditorProps {
   apiHost: string
 }
 
-// Common engine options
-const ENGINE_OPTIONS = [
+// Fallback engine options if API fails
+const FALLBACK_ENGINE_OPTIONS = [
   { value: 'claude', label: 'Claude' },
   { value: 'openai', label: 'OpenAI' },
   { value: 'codex', label: 'Codex' },
@@ -45,6 +45,27 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
   const [availableMcps, setAvailableMcps] = useState<McpArtifact[]>([])
   const [mcpLoading, setMcpLoading] = useState(false)
   const [showMcpPicker, setShowMcpPicker] = useState(false)
+  const [engineOptions, setEngineOptions] = useState(FALLBACK_ENGINE_OPTIONS)
+
+  // Fetch available backends/engines
+  useEffect(() => {
+    async function loadBackends() {
+      try {
+        const backends = await fetchBackends()
+        const options = backends.map((b: BackendInfo) => ({
+          value: b.name,
+          label: b.name.charAt(0).toUpperCase() + b.name.slice(1),
+        }))
+        if (options.length > 0) {
+          setEngineOptions(options)
+        }
+      } catch (error) {
+        console.warn('Failed to fetch backends, using fallback:', error)
+        // Keep fallback options
+      }
+    }
+    loadBackends()
+  }, [])
 
   // Fetch available MCPs from current channel and root
   useEffect(() => {
@@ -130,7 +151,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
         label="Engine"
         value={props.engine || 'claude'}
         onChange={(value) => onChange({ engine: value })}
-        options={ENGINE_OPTIONS}
+        options={engineOptions}
       />
 
       {/* Model */}

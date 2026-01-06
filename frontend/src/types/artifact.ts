@@ -4,4 +4,5 @@ export type {
   ArtifactType,
   ArtifactStatus,
   ArtifactTreeNode,
+  ArtifactVersion,
 } from '../types'

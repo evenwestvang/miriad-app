@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { Pencil, Download, ExternalLink } from 'lucide-react'
+import Markdown, { Components } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { cn } from '../../lib/utils'
 import type { Artifact } from '../../types/artifact'
 import { McpPropsEditor, McpProps } from './McpPropsEditor'
 import { SpaRenderer, isSpaArtifact } from './SpaRenderer'
+import { highlightMentions, type ArtifactInfo } from '../../utils'
 
 interface ArtifactPreviewProps {
   artifact: Artifact
@@ -15,6 +18,8 @@ interface ArtifactPreviewProps {
   channelId?: string
   /** Callback when props are updated (for system.* artifacts) */
   onPropsUpdate?: (props: Record<string, unknown>) => Promise<void>
+  /** Artifact map for [[slug]] title lookup */
+  artifacts?: Map<string, ArtifactInfo>
 }
 
 // File extensions that are treated as viewable assets
@@ -43,7 +48,7 @@ const STATUS_COLORS: Record<string, string> = {
   blocked: 'bg-red-200 text-red-700',
 }
 
-export function ArtifactPreview({ artifact, onEdit, onLinkClick, apiHost, channelId, onPropsUpdate }: ArtifactPreviewProps) {
+export function ArtifactPreview({ artifact, onEdit, onLinkClick, apiHost, channelId, onPropsUpdate, artifacts }: ArtifactPreviewProps) {
   const { isAsset, isImage, isPdf } = isAssetSlug(artifact.slug)
   const assetUrl = apiHost && channelId ? `${apiHost}/channels/${channelId}/assets/${artifact.slug}` : null
   const [saving, setSaving] = useState(false)
@@ -127,7 +132,7 @@ export function ArtifactPreview({ artifact, onEdit, onLinkClick, apiHost, channe
             isPdf={isPdf}
           />
         ) : (
-          <ArtifactContent content={artifact.content} onLinkClick={onLinkClick} />
+          <ArtifactContent content={artifact.content} onLinkClick={onLinkClick} artifacts={artifacts} />
         )}
       </div>
 
@@ -149,84 +154,54 @@ export function ArtifactPreview({ artifact, onEdit, onLinkClick, apiHost, channe
 interface ArtifactContentProps {
   content: string
   onLinkClick: (slug: string) => void
+  artifacts?: Map<string, ArtifactInfo>
 }
 
 /**
- * Render artifact content with [[slug]] links made clickable.
- * For now, uses simple text rendering with link parsing.
- * Could be enhanced with full markdown support later.
+ * Create markdown components that highlight @mentions and [[slug]] links.
  */
-function ArtifactContent({ content, onLinkClick }: ArtifactContentProps) {
-  // Parse content and replace [[slug]] with clickable links
-  const parts = parseContentWithLinks(content)
-
-  return (
-    <div className="prose prose-sm dark:prose-invert max-w-none">
-      {parts.map((part, index) => {
-        if (part.type === 'link') {
-          return (
-            <button
-              key={index}
-              className="text-primary hover:underline font-medium bg-transparent border-none cursor-pointer"
-              onClick={() => onLinkClick(part.slug!)}
-            >
-              [[{part.slug}]]
-            </button>
-          )
+function createMarkdownComponents(onLinkClick: (slug: string) => void, artifacts?: Map<string, ArtifactInfo>): Components {
+  // Process children to highlight @mentions and [[slug]] links in text nodes
+  const processChildren = (children: React.ReactNode): React.ReactNode => {
+    if (typeof children === 'string') {
+      return highlightMentions(children, { onArtifactClick: onLinkClick, artifacts })
+    }
+    if (Array.isArray(children)) {
+      return children.map((child, i) => {
+        if (typeof child === 'string') {
+          return <span key={i}>{highlightMentions(child, { onArtifactClick: onLinkClick, artifacts })}</span>
         }
-        // Render text with basic whitespace preservation
-        return (
-          <span key={index} className="whitespace-pre-wrap">
-            {part.text}
-          </span>
-        )
-      })}
-    </div>
-  )
-}
-
-interface ContentPart {
-  type: 'text' | 'link'
-  text?: string
-  slug?: string
-}
-
-/**
- * Parse content string and extract [[slug]] references.
- */
-function parseContentWithLinks(content: string): ContentPart[] {
-  const parts: ContentPart[] = []
-  const regex = /\[\[([a-z0-9-]+(?:\.[a-z0-9]+)*)\]\]/g
-  let lastIndex = 0
-  let match
-
-  while ((match = regex.exec(content)) !== null) {
-    // Add text before the match
-    if (match.index > lastIndex) {
-      parts.push({
-        type: 'text',
-        text: content.slice(lastIndex, match.index),
+        return child
       })
     }
-
-    // Add the link
-    parts.push({
-      type: 'link',
-      slug: match[1],
-    })
-
-    lastIndex = match.index + match[0].length
+    return children
   }
 
-  // Add remaining text
-  if (lastIndex < content.length) {
-    parts.push({
-      type: 'text',
-      text: content.slice(lastIndex),
-    })
+  return {
+    // Override text rendering to highlight @mentions and [[slug]] links
+    p: ({ children }) => <p>{processChildren(children)}</p>,
+    li: ({ children }) => <li>{processChildren(children)}</li>,
+    td: ({ children }) => <td>{processChildren(children)}</td>,
+    th: ({ children }) => <th>{processChildren(children)}</th>,
+    blockquote: ({ children }) => <blockquote>{children}</blockquote>,
   }
+}
 
-  return parts
+/**
+ * Render artifact content with markdown, @mentions, and [[slug]] links.
+ */
+function ArtifactContent({ content, onLinkClick, artifacts }: ArtifactContentProps) {
+  const markdownComponents = createMarkdownComponents(onLinkClick, artifacts)
+
+  return (
+    <Markdown
+      className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+      components={markdownComponents}
+      remarkPlugins={[remarkGfm]}
+    >
+      {content}
+    </Markdown>
+  )
 }
 
 interface AssetPreviewProps {

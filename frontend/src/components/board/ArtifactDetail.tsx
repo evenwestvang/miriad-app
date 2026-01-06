@@ -8,19 +8,21 @@
  * - CAS (compare-and-swap) for conflict handling
  */
 
-import React, { useState, useCallback } from 'react'
-import { Pencil, Save, AlertTriangle, Download, ExternalLink, Copy, Check, ArrowLeft, FileText, CheckSquare, Scale, Code, Settings, ChevronDown } from 'lucide-react'
+import React, { useState, useCallback, useMemo, useEffect } from 'react'
+import { Pencil, Save, AlertTriangle, Download, ExternalLink, Copy, Check, ArrowLeft, ChevronDown, History, RotateCcw } from 'lucide-react'
 import Markdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { cn } from '../../lib/utils'
 import { apiFetch } from '../../lib/api'
-import type { Artifact, ArtifactStatus, ArtifactTreeNode } from '../../types/artifact'
+import { getArtifactIcon, isSpaArtifact } from '../../lib/artifact-icons'
+import type { Artifact, ArtifactStatus, ArtifactTreeNode, ArtifactVersion } from '../../types/artifact'
 import { McpPropsEditor, type McpProps } from './McpPropsEditor'
 import { AgentPropsEditor, type AgentProps } from './AgentPropsEditor'
 import { FocusPropsEditor, type FocusProps } from './FocusPropsEditor'
-import { SpaRenderer, isSpaArtifact } from './SpaRenderer'
+import { SpaRenderer } from './SpaRenderer'
+import { highlightMentions, type ArtifactInfo } from '../../utils'
 
 // =============================================================================
 // Types
@@ -72,20 +74,6 @@ const STATUS_COLORS: Record<string, string> = {
 // Status options based on type
 const DOC_STATUSES: ArtifactStatus[] = ['draft', 'published', 'archived']
 const TASK_STATUSES: ArtifactStatus[] = ['pending', 'in_progress', 'done', 'blocked']
-
-// Type icon mapping
-const TYPE_ICONS: Record<string, typeof FileText> = {
-  doc: FileText,
-  task: CheckSquare,
-  decision: Scale,
-  code: Code,
-}
-
-// Get icon for artifact type
-function getTypeIcon(type: string): typeof FileText {
-  if (type.startsWith('system.')) return Settings
-  return TYPE_ICONS[type] || FileText
-}
 
 // File extensions for syntax highlighting
 const EXT_TO_LANG: Record<string, string> = {
@@ -160,6 +148,50 @@ export function ArtifactDetail({
   const [propsValidationError, setPropsValidationError] = useState<PropsValidationError | null>(null)
   const [copied, setCopied] = useState(false)
 
+  // Version history state
+  const [selectedVersion, setSelectedVersion] = useState<string | null>(null)
+  const [versionData, setVersionData] = useState<ArtifactVersion | null>(null)
+  const [versionLoading, setVersionLoading] = useState(false)
+
+  // Fetch version content when a historical version is selected
+  useEffect(() => {
+    if (!selectedVersion || !channelId) {
+      setVersionData(null)
+      return
+    }
+
+    async function fetchVersion() {
+      setVersionLoading(true)
+      setError(null)
+      try {
+        const response = await apiFetch(
+          `${apiHost}/channels/${channelId}/artifacts/${artifact.slug}/versions/${selectedVersion}`
+        )
+        if (!response.ok) {
+          throw new Error('Failed to load version')
+        }
+        const data = await response.json()
+        setVersionData(data)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load version')
+        setVersionData(null)
+      } finally {
+        setVersionLoading(false)
+      }
+    }
+
+    fetchVersion()
+  }, [selectedVersion, channelId, apiHost, artifact.slug])
+
+  // Clear version selection when artifact changes
+  useEffect(() => {
+    setSelectedVersion(null)
+    setVersionData(null)
+  }, [artifact.slug])
+
+  // Check if viewing a historical version
+  const isViewingHistory = selectedVersion !== null && versionData !== null
+
   // Asset detection
   const { isAsset, isImage, isPdf } = isAssetSlug(artifact.slug)
   const assetUrl = `${apiHost}/channels/${channelId}/assets/${artifact.slug}`
@@ -171,6 +203,9 @@ export function ArtifactDetail({
 
   // Get available parent options
   const parentOptions = getParentOptions(tree, artifact.slug)
+
+  // Build artifact map for mention highlighting (title lookup)
+  const artifactMap = useMemo(() => buildArtifactMap(tree), [tree])
 
   // Get status options based on type
   const statusOptions = artifact.type === 'task' ? TASK_STATUSES : DOC_STATUSES
@@ -418,7 +453,7 @@ export function ArtifactDetail({
           ) : (
             <div className="flex items-center gap-1.5 min-w-0 flex-1">
               {(() => {
-                const Icon = getTypeIcon(artifact.type)
+                const Icon = getArtifactIcon(artifact)
                 return <Icon className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
               })()}
               <span className="font-semibold text-sm text-foreground truncate">
@@ -433,6 +468,15 @@ export function ArtifactDetail({
             onChange={isEditing ? setEditStatus : handleStatusChange}
             disabled={saving}
           />
+          {/* Version dropdown - only show if artifact has versions and not editing */}
+          {!isEditing && artifact.versions && artifact.versions.length > 0 && (
+            <VersionDropdown
+              versions={artifact.versions}
+              selectedVersion={selectedVersion}
+              onSelectVersion={setSelectedVersion}
+              loading={versionLoading}
+            />
+          )}
         </div>
 
         {/* Row 2: Path + Action icons */}
@@ -481,9 +525,15 @@ export function ArtifactDetail({
                   </button>
                 )}
                 <button
-                  className="p-1 rounded hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground"
-                  onClick={startEditing}
-                  title="Edit"
+                  className={cn(
+                    "p-1 rounded transition-colors",
+                    isViewingHistory
+                      ? "text-muted-foreground/50 cursor-not-allowed"
+                      : "hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
+                  )}
+                  onClick={isViewingHistory ? undefined : startEditing}
+                  title={isViewingHistory ? "Cannot edit historical version" : "Edit"}
+                  disabled={isViewingHistory}
                 >
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
@@ -492,6 +542,14 @@ export function ArtifactDetail({
           </div>
         </div>
       </div>
+
+      {/* Historical version banner */}
+      {isViewingHistory && (
+        <HistoricalVersionBanner
+          versionName={selectedVersion!}
+          onViewCurrent={() => setSelectedVersion(null)}
+        />
+      )}
 
       {/* Error display */}
       {error && (
@@ -529,7 +587,9 @@ export function ArtifactDetail({
             rows={2}
           />
         ) : (
-          <p className="text-sm text-muted-foreground">{artifact.tldr}</p>
+          <p className="text-sm text-muted-foreground">
+            {isViewingHistory ? versionData!.tldr : artifact.tldr}
+          </p>
         )}
       </div>
 
@@ -605,7 +665,11 @@ export function ArtifactDetail({
 
       {/* Content area */}
       <div className={cn("flex-1", isInteractiveApp ? "overflow-hidden" : "overflow-y-auto")}>
-        {isEditing ? (
+        {versionLoading ? (
+          <div className="flex items-center justify-center h-20">
+            <span className="text-sm text-muted-foreground">Loading version...</span>
+          </div>
+        ) : isEditing ? (
           <div className="h-full p-3">
             <textarea
               value={editContent}
@@ -621,7 +685,7 @@ export function ArtifactDetail({
         ) : isInteractiveApp ? (
           <div className="h-full p-2">
             <SpaRenderer
-              content={artifact.content}
+              content={isViewingHistory ? versionData!.content : artifact.content}
               channel={channelId}
               slug={artifact.slug}
             />
@@ -636,10 +700,14 @@ export function ArtifactDetail({
             />
           </div>
         ) : isCodeArtifact ? (
-          <CodeContent content={artifact.content} language={codeLanguage} />
+          <CodeContent content={isViewingHistory ? versionData!.content : artifact.content} language={codeLanguage} />
         ) : (
           <div className="p-3">
-            <ArtifactContent content={artifact.content} onLinkClick={onLinkClick} />
+            <ArtifactContent
+              content={isViewingHistory ? versionData!.content : artifact.content}
+              onLinkClick={onLinkClick}
+              artifacts={artifactMap}
+            />
           </div>
         )}
       </div>
@@ -726,6 +794,122 @@ function StatusDropdown({
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/**
+ * Version dropdown for viewing artifact version history.
+ * Shows "Current" when viewing latest, or version name when viewing history.
+ */
+function VersionDropdown({
+  versions,
+  selectedVersion,
+  onSelectVersion,
+  loading,
+}: {
+  versions: string[]
+  selectedVersion: string | null
+  onSelectVersion: (version: string | null) => void
+  loading?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="relative flex-shrink-0">
+      <button
+        onClick={() => setOpen(!open)}
+        disabled={loading}
+        className={cn(
+          "flex items-center gap-1 px-2 py-0.5 text-xs rounded transition-colors",
+          selectedVersion
+            ? "bg-amber-200/50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+            : "text-muted-foreground hover:text-foreground hover:bg-secondary/50",
+          loading && "opacity-50 cursor-wait"
+        )}
+        title="Version history"
+      >
+        <History className="w-3 h-3" />
+        <span>{selectedVersion || 'Current'}</span>
+        <ChevronDown className="w-3 h-3" />
+      </button>
+
+      {/* Dropdown menu */}
+      {open && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-10"
+            onClick={() => setOpen(false)}
+          />
+          {/* Menu */}
+          <div className="absolute right-0 top-full mt-1 z-20 bg-popover border border-border rounded shadow-lg py-1 min-w-[160px] max-h-[300px] overflow-y-auto">
+            {/* Current option */}
+            <button
+              onClick={() => {
+                onSelectVersion(null)
+                setOpen(false)
+              }}
+              className={cn(
+                "w-full px-3 py-1.5 text-xs text-left hover:bg-secondary transition-colors flex items-center gap-2",
+                !selectedVersion && "bg-secondary/50"
+              )}
+            >
+              <span className="font-medium">Current</span>
+            </button>
+            {/* Divider */}
+            <div className="border-t border-border my-1" />
+            {/* Version list (newest first) */}
+            {[...versions].reverse().map((version) => (
+              <button
+                key={version}
+                onClick={() => {
+                  onSelectVersion(version)
+                  setOpen(false)
+                }}
+                className={cn(
+                  "w-full px-3 py-1.5 text-xs text-left hover:bg-secondary transition-colors",
+                  version === selectedVersion && "bg-secondary/50"
+                )}
+              >
+                <span>{version}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Banner shown when viewing a historical version (not current).
+ * Amber/yellow tint to indicate non-current state without being alarming.
+ */
+function HistoricalVersionBanner({
+  versionName,
+  onViewCurrent,
+}: {
+  versionName: string
+  onViewCurrent: () => void
+}) {
+  return (
+    <div className="px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+          <History className="w-4 h-4 flex-shrink-0" />
+          <span className="text-sm">
+            Viewing <span className="font-medium">{versionName}</span> (not current)
+          </span>
+        </div>
+        <button
+          onClick={onViewCurrent}
+          className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-amber-200/50 dark:hover:bg-amber-800/50 text-amber-700 dark:text-amber-300 transition-colors"
+        >
+          <RotateCcw className="w-3 h-3" />
+          View Current
+        </button>
+      </div>
     </div>
   )
 }
@@ -829,14 +1013,35 @@ function CodeContent({ content, language }: { content: string; language: string 
   )
 }
 
-function ArtifactContent({ content, onLinkClick }: { content: string; onLinkClick: (slug: string) => void }) {
-  // Custom components to handle [[artifact]] links within markdown
+interface ArtifactContentProps {
+  content: string
+  onLinkClick: (slug: string) => void
+  artifacts?: Map<string, ArtifactInfo>
+}
+
+function ArtifactContent({ content, onLinkClick, artifacts }: ArtifactContentProps) {
+  // Process children to highlight @mentions and [[artifact]] links
+  const processChildren = (children: React.ReactNode): React.ReactNode => {
+    if (typeof children === 'string') {
+      return highlightMentions(children, { onArtifactClick: onLinkClick, artifacts })
+    }
+    if (Array.isArray(children)) {
+      return children.map((child, i) => {
+        if (typeof child === 'string') {
+          return <span key={i}>{highlightMentions(child, { onArtifactClick: onLinkClick, artifacts })}</span>
+        }
+        return child
+      })
+    }
+    return children
+  }
+
+  // Custom components to handle @mentions and [[artifact]] links within markdown
   const markdownComponents: Components = {
-    // Override paragraph to process [[links]]
-    p: ({ children }) => <p>{processArtifactLinks(children, onLinkClick)}</p>,
-    li: ({ children }) => <li>{processArtifactLinks(children, onLinkClick)}</li>,
-    td: ({ children }) => <td>{processArtifactLinks(children, onLinkClick)}</td>,
-    th: ({ children }) => <th>{processArtifactLinks(children, onLinkClick)}</th>,
+    p: ({ children }) => <p>{processChildren(children)}</p>,
+    li: ({ children }) => <li>{processChildren(children)}</li>,
+    td: ({ children }) => <td>{processChildren(children)}</td>,
+    th: ({ children }) => <th>{processChildren(children)}</th>,
   }
 
   return (
@@ -848,51 +1053,6 @@ function ArtifactContent({ content, onLinkClick }: { content: string; onLinkClic
       {content}
     </Markdown>
   )
-}
-
-/**
- * Process children to convert [[slug]] patterns into clickable links.
- */
-function processArtifactLinks(
-  children: React.ReactNode,
-  onLinkClick: (slug: string) => void
-): React.ReactNode {
-  if (typeof children === 'string') {
-    return renderTextWithLinks(children, onLinkClick)
-  }
-  if (Array.isArray(children)) {
-    return children.map((child, i) => {
-      if (typeof child === 'string') {
-        return <span key={i}>{renderTextWithLinks(child, onLinkClick)}</span>
-      }
-      return child
-    })
-  }
-  return children
-}
-
-/**
- * Render a text string, converting [[slug]] into clickable buttons.
- */
-function renderTextWithLinks(text: string, onLinkClick: (slug: string) => void): React.ReactNode {
-  const parts = parseContentWithLinks(text)
-  if (parts.length === 1 && parts[0].type === 'text') {
-    return text
-  }
-  return parts.map((part, index) => {
-    if (part.type === 'link') {
-      return (
-        <button
-          key={index}
-          className="text-primary hover:underline font-medium bg-transparent border-none cursor-pointer p-0"
-          onClick={() => onLinkClick(part.slug!)}
-        >
-          [[{part.slug}]]
-        </button>
-      )
-    }
-    return part.text
-  })
 }
 
 function AssetPreview({ slug, url, isImage, isPdf }: { slug: string; url: string; isImage: boolean; isPdf: boolean }) {
@@ -966,33 +1126,6 @@ function AssetPreview({ slug, url, isImage, isPdf }: { slug: string; url: string
 // Helper functions
 // =============================================================================
 
-interface ContentPart {
-  type: 'text' | 'link'
-  text?: string
-  slug?: string
-}
-
-function parseContentWithLinks(content: string): ContentPart[] {
-  const parts: ContentPart[] = []
-  const regex = /\[\[([a-z0-9-]+(?:\.[a-z0-9]+)*)\]\]/g
-  let lastIndex = 0
-  let match
-
-  while ((match = regex.exec(content)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push({ type: 'text', text: content.slice(lastIndex, match.index) })
-    }
-    parts.push({ type: 'link', slug: match[1] })
-    lastIndex = match.index + match[0].length
-  }
-
-  if (lastIndex < content.length) {
-    parts.push({ type: 'text', text: content.slice(lastIndex) })
-  }
-
-  return parts
-}
-
 function isAssetSlug(slug: string | undefined): { isAsset: boolean; isImage: boolean; isPdf: boolean } {
   if (!slug) return { isAsset: false, isImage: false, isPdf: false }
   const lower = slug.toLowerCase()
@@ -1062,4 +1195,29 @@ function getArtifactPath(nodes: ArtifactTreeNode[], targetSlug: string, path: st
     }
   }
   return null
+}
+
+/**
+ * Flatten the artifact tree into a Map<slug, ArtifactInfo> for mention highlighting.
+ */
+function buildArtifactMap(nodes: ArtifactTreeNode[]): Map<string, ArtifactInfo> {
+  const map = new Map<string, ArtifactInfo>()
+
+  function traverse(nodeList: ArtifactTreeNode[]) {
+    for (const node of nodeList) {
+      map.set(node.slug.toLowerCase(), {
+        slug: node.slug,
+        title: node.title,
+        type: node.type,
+        encoding: node.encoding,
+        contentType: node.contentType,
+      })
+      if (node.children) {
+        traverse(node.children)
+      }
+    }
+  }
+
+  traverse(nodes)
+  return map
 }

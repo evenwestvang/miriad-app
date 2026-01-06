@@ -7,6 +7,7 @@ import { ArtifactTree } from './ArtifactTree'
 import { ArtifactDetail } from './ArtifactDetail'
 import { ArtifactCreate } from './ArtifactCreate'
 import { AssetUpload, type Asset } from './AssetUpload'
+import { TreeSearch } from './TreeSearch'
 import type { Artifact, ArtifactTreeNode, ArtifactType } from '../../types/artifact'
 
 interface BoardPanelProps {
@@ -57,6 +58,24 @@ export function BoardPanel({
   const [isCreating, setIsCreating] = useState(false)
   const [createType, setCreateType] = useState<ArtifactType>('doc')
   const [isUploading, setIsUploading] = useState(false)
+
+  // Filter state (with debouncing)
+  const [filterInput, setFilterInput] = useState('')
+  const [filterText, setFilterText] = useState('')
+
+  // Debounce filter input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setFilterText(filterInput)
+    }, 150)
+    return () => clearTimeout(timer)
+  }, [filterInput])
+
+  // Clear filter when channel changes
+  useEffect(() => {
+    setFilterInput('')
+    setFilterText('')
+  }, [channelId])
 
   // Unified selection handler
   const setSelectedSlug = useCallback((slug: string | null) => {
@@ -184,6 +203,12 @@ export function BoardPanel({
     setSelectedSlug(slug)
   }, [setSelectedSlug])
 
+  // Clear filter
+  const handleClearFilter = useCallback(() => {
+    setFilterInput('')
+    setFilterText('')
+  }, [])
+
   // Handle artifact creation success
   const handleCreateSuccess = useCallback((artifact: Artifact) => {
     setIsCreating(false)
@@ -309,13 +334,29 @@ export function BoardPanel({
               </button>
             </div>
           ) : (
-            <ArtifactTree
-              nodes={tree}
-              expanded={expanded}
-              selectedSlug={selectedSlug}
-              onToggle={toggleExpanded}
-              onSelect={handleSelect}
-            />
+            <div className="flex flex-col h-full">
+              {/* Search filter */}
+              <div className="px-3 py-2 border-b border-[var(--cast-border-default)]">
+                <TreeSearch
+                  value={filterInput}
+                  onChange={setFilterInput}
+                  onClear={handleClearFilter}
+                  placeholder="Filter artifacts... (/ or ⌘K)"
+                />
+              </div>
+              {/* Tree */}
+              <div className="flex-1 overflow-y-auto">
+                <ArtifactTree
+                  nodes={tree}
+                  expanded={expanded}
+                  selectedSlug={selectedSlug}
+                  onToggle={toggleExpanded}
+                  onSelect={handleSelect}
+                  onActivate={handleSelect}
+                  filterText={filterText}
+                />
+              </div>
+            </div>
           )}
         </div>
       </div>

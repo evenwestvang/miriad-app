@@ -101,3 +101,30 @@ export async function apiDelete(input: string): Promise<void> {
     throw new Error(error.error || `API error: ${response.status}`)
   }
 }
+
+// =============================================================================
+// Backend/Engine Types
+// =============================================================================
+
+export interface BackendCapabilities {
+  supportsMcp: boolean
+  supportsTools: boolean
+  supportsVision: boolean
+}
+
+export interface BackendInfo {
+  name: string
+  isBuiltIn: boolean
+  capabilities: BackendCapabilities
+}
+
+/**
+ * Fetch available backends/engines from the API.
+ */
+export async function fetchBackends(): Promise<BackendInfo[]> {
+  const response = await apiFetch('/api/backends')
+  if (!response.ok) {
+    throw new Error('Failed to fetch backends')
+  }
+  return response.json()
+}

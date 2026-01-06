@@ -192,6 +192,24 @@ export interface Artifact {
   createdBy: string
   assignees?: string[]
   labels?: string[]
+  /** Binary asset encoding (e.g., 'file') for icon detection */
+  encoding?: string | null
+  /** Binary asset MIME type (e.g., 'image/png') for icon detection */
+  contentType?: string | null
+  /** Named version checkpoints (e.g., ['v1.0', 'v2.0']) */
+  versions?: string[]
+}
+
+/** A named version snapshot of an artifact */
+export interface ArtifactVersion {
+  id: string
+  artifactId: string
+  versionName: string
+  message?: string
+  content: string
+  tldr: string
+  createdBy: string
+  createdAt: string
 }
 
 export type ArtifactType =
@@ -279,6 +297,10 @@ export interface ArtifactTreeNode {
   title?: string
   status: ArtifactStatus
   assignees: string[]
+  /** Binary asset encoding (e.g., 'file') for icon detection */
+  encoding?: string | null
+  /** Binary asset MIME type (e.g., 'image/png') for icon detection */
+  contentType?: string | null
   children?: ArtifactTreeNode[]
 }
 
