@@ -106,6 +106,21 @@ function sendCommand(socketPath: string, command: IPCCommand): Promise<IPCRespon
   return new Promise((resolve, reject) => {
     const socket: Socket = connect(socketPath);
     let buffer = "";
+    let resolved = false;
+
+    // Timeout after 10 seconds
+    const timeoutId = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        socket.destroy();
+        reject(new Error("Request timed out"));
+      }
+    }, 10000);
+
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      socket.destroy();
+    };
 
     socket.on("connect", () => {
       socket.write(JSON.stringify(command) + "\n");
@@ -116,38 +131,39 @@ function sendCommand(socketPath: string, command: IPCCommand): Promise<IPCRespon
 
       // Look for complete response (newline-delimited)
       const newlineIndex = buffer.indexOf("\n");
-      if (newlineIndex !== -1) {
+      if (newlineIndex !== -1 && !resolved) {
+        resolved = true;
         const responseStr = buffer.slice(0, newlineIndex);
         try {
           const response = JSON.parse(responseStr) as IPCResponse;
-          socket.end();
+          cleanup();
           resolve(response);
         } catch {
-          socket.end();
+          cleanup();
           reject(new Error("Invalid response from server"));
         }
       }
     });
 
     socket.on("error", (error: NodeJS.ErrnoException) => {
-      if (error.code === "ECONNREFUSED" || error.code === "ENOENT") {
-        reject(new Error("Server not running. Start local-agent-server first."));
-      } else {
-        reject(error);
+      if (!resolved) {
+        resolved = true;
+        cleanup();
+        if (error.code === "ECONNREFUSED" || error.code === "ENOENT") {
+          reject(new Error("Server not running. Start local-agent-server first."));
+        } else {
+          reject(error);
+        }
       }
     });
 
     socket.on("close", () => {
-      if (!buffer.includes("\n")) {
+      if (!resolved && !buffer.includes("\n")) {
+        resolved = true;
+        cleanup();
         reject(new Error("Connection closed without response"));
       }
     });
-
-    // Timeout after 10 seconds
-    setTimeout(() => {
-      socket.destroy();
-      reject(new Error("Request timed out"));
-    }, 10000);
   });
 }
 
