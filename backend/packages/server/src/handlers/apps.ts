@@ -292,8 +292,9 @@ export function createAppRoutes(options: AppHandlerOptions): Hono {
       authUrl.searchParams.set('allow_signup', 'false');
     }
 
-    // Redirect to OAuth provider
-    return c.redirect(authUrl.toString());
+    // Return authorization URL for frontend to handle navigation
+    // (SPA pattern - avoids CORS issues with fetch following redirects)
+    return c.json({ authorizationUrl: authUrl.toString() });
   });
 
   // ---------------------------------------------------------------------------
