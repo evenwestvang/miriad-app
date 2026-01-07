@@ -35,7 +35,24 @@ import type {
   ArtifactVersion,
   CreateArtifactVersionInput,
   RecursiveArchiveResult,
+  // Secrets types (App Integrations)
+  SecretMetadata,
 } from '@cast/core';
+
+// =============================================================================
+// Secret Types
+// =============================================================================
+
+/**
+ * Input for setting a secret on an artifact.
+ */
+export interface SetSecretInput {
+  /** The secret value (plaintext - will be encrypted) */
+  value: string;
+
+  /** Optional expiry time (ISO 8601) */
+  expiresAt?: string;
+}
 
 // =============================================================================
 // Storage Interface
@@ -349,6 +366,73 @@ export interface Storage {
     fromVersion: string,
     toVersion?: string
   ): Promise<string>;
+
+  // ---------------------------------------------------------------------------
+  // Secrets Operations (App Integrations)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Set a secret on an artifact.
+   * The value is encrypted before storage.
+   * If the secret already exists, it is overwritten.
+   *
+   * @param spaceId - Space ID (used for key derivation)
+   * @param channelId - Channel the artifact belongs to
+   * @param slug - Artifact slug
+   * @param key - Secret key name
+   * @param input - Secret value and optional expiry
+   */
+  setSecret(
+    spaceId: string,
+    channelId: string,
+    slug: string,
+    key: string,
+    input: SetSecretInput
+  ): Promise<void>;
+
+  /**
+   * Delete a secret from an artifact.
+   *
+   * @param channelId - Channel the artifact belongs to
+   * @param slug - Artifact slug
+   * @param key - Secret key name
+   */
+  deleteSecret(
+    channelId: string,
+    slug: string,
+    key: string
+  ): Promise<void>;
+
+  /**
+   * Get the decrypted value of a secret.
+   * Only the server should call this - values are never exposed via API.
+   *
+   * @param spaceId - Space ID (used for key derivation)
+   * @param channelId - Channel the artifact belongs to
+   * @param slug - Artifact slug
+   * @param key - Secret key name
+   * @returns The decrypted value, or null if not found
+   */
+  getSecretValue(
+    spaceId: string,
+    channelId: string,
+    slug: string,
+    key: string
+  ): Promise<string | null>;
+
+  /**
+   * Get metadata for a secret (without the value).
+   *
+   * @param channelId - Channel the artifact belongs to
+   * @param slug - Artifact slug
+   * @param key - Secret key name
+   * @returns Secret metadata, or null if not found
+   */
+  getSecretMetadata(
+    channelId: string,
+    slug: string,
+    key: string
+  ): Promise<SecretMetadata | null>;
 
   // ---------------------------------------------------------------------------
   // Lifecycle

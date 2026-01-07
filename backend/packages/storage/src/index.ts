@@ -5,7 +5,7 @@
  */
 
 // Interface
-export type { Storage } from './interface.js';
+export type { Storage, SetSecretInput } from './interface.js';
 
 // Implementations
 export { createPostgresStorage } from './postgres.js';

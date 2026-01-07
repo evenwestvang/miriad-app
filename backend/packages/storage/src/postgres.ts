@@ -6,6 +6,7 @@
  */
 
 import postgres from 'postgres';
+import crypto from 'crypto';
 import { ulid } from 'ulid';
 import type {
   StoredMessage,
@@ -39,6 +40,9 @@ import type {
   ArtifactStatus,
   RecursiveArchiveResult,
   ArchivedItem,
+  // Secrets types (App Integrations)
+  SecretMetadata,
+  StoredSecret,
 } from '@cast/core';
 // Import functions separately (not as types)
 import {
@@ -46,7 +50,7 @@ import {
   getDefaultArtifactStatus,
   slugToPathSegment,
 } from '@cast/core';
-import type { Storage } from './interface.js';
+import type { Storage, SetSecretInput } from './interface.js';
 
 // =============================================================================
 // Types
@@ -129,6 +133,7 @@ interface ArtifactRow {
   labels: string[];
   refs: string[];
   props: Record<string, unknown> | null;
+  secrets: Record<string, StoredSecret> | null;
   content_type: string | null;
   file_size: number | null;
   version: number;
@@ -730,6 +735,18 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   function rowToArtifact(row: ArtifactRow): StoredArtifact {
+    // Convert stored secrets to metadata (strip encrypted values)
+    let secretsMetadata: Record<string, SecretMetadata> | undefined;
+    if (row.secrets) {
+      secretsMetadata = {};
+      for (const [key, storedSecret] of Object.entries(row.secrets)) {
+        secretsMetadata[key] = {
+          setAt: storedSecret.setAt,
+          expiresAt: storedSecret.expiresAt,
+        };
+      }
+    }
+
     return {
       id: row.id,
       channelId: row.channel_id,
@@ -746,6 +763,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       labels: row.labels ?? [],
       refs: row.refs ?? [],
       props: row.props ?? undefined,
+      secrets: secretsMetadata,
       contentType: row.content_type ?? undefined,
       fileSize: row.file_size ?? undefined,
       version: row.version,
@@ -1665,6 +1683,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         labels TEXT[] NOT NULL DEFAULT '{}',
         refs TEXT[] NOT NULL DEFAULT '{}',
         props JSONB,
+        secrets JSONB,
         version INTEGER NOT NULL DEFAULT 1,
         created_by VARCHAR(255) NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -1750,10 +1769,217 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         WHEN duplicate_column THEN NULL;
       END $$;
     `;
+
+    // Add secrets column if it doesn't exist (migration for App Integrations)
+    await sql`
+      DO $$ BEGIN
+        ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS secrets JSONB;
+      EXCEPTION
+        WHEN duplicate_column THEN NULL;
+      END $$;
+    `;
   }
 
   async function close(): Promise<void> {
     await sql.end();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Secrets Operations (App Integrations)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get the SECRET_KEY from environment.
+   * Required for encryption/decryption operations.
+   */
+  function getSecretKey(): string {
+    const key = process.env.SECRET_KEY;
+    if (!key) {
+      throw new Error('SECRET_KEY environment variable is required for secrets encryption');
+    }
+    if (key.length < 32) {
+      throw new Error('SECRET_KEY must be at least 32 characters');
+    }
+    return key;
+  }
+
+  /**
+   * Derive an encryption key from spaceId and server secret.
+   * Each space has a unique derived key for isolation.
+   */
+  function deriveKey(spaceId: string): Buffer {
+    const serverKey = getSecretKey();
+    return crypto.createHash('sha256')
+      .update(`${spaceId}:${serverKey}`)
+      .digest();
+  }
+
+  /**
+   * Encrypt a plaintext value using AES-256-GCM.
+   */
+  function encrypt(plaintext: string, spaceId: string): { encrypted: string; iv: string; tag: string } {
+    const key = deriveKey(spaceId);
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+    return {
+      encrypted: encrypted.toString('base64'),
+      iv: iv.toString('base64'),
+      tag: cipher.getAuthTag().toString('base64'),
+    };
+  }
+
+  /**
+   * Decrypt an encrypted value using AES-256-GCM.
+   */
+  function decrypt(encryptedData: { encrypted: string; iv: string; tag: string }, spaceId: string): string {
+    const key = deriveKey(spaceId);
+    const decipher = crypto.createDecipheriv(
+      'aes-256-gcm',
+      key,
+      Buffer.from(encryptedData.iv, 'base64')
+    );
+    decipher.setAuthTag(Buffer.from(encryptedData.tag, 'base64'));
+    return decipher.update(Buffer.from(encryptedData.encrypted, 'base64')) + decipher.final('utf8');
+  }
+
+  async function setSecret(
+    spaceId: string,
+    channelId: string,
+    slug: string,
+    key: string,
+    input: SetSecretInput
+  ): Promise<void> {
+    // Get current artifact to merge secrets
+    const artifact = await getArtifact(channelId, slug);
+    if (!artifact) {
+      throw new Error(`Artifact not found: ${slug}`);
+    }
+
+    // Encrypt the value
+    const encrypted = encrypt(input.value, spaceId);
+    const now = new Date().toISOString();
+
+    // Build the stored secret
+    const storedSecret: StoredSecret = {
+      setAt: now,
+      expiresAt: input.expiresAt,
+      encrypted: encrypted.encrypted,
+      iv: encrypted.iv,
+      tag: encrypted.tag,
+    };
+
+    // Get current secrets (need to fetch raw from DB to preserve encrypted values)
+    const currentSecrets = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+      SELECT secrets FROM artifacts
+      WHERE channel_id = ${channelId} AND slug = ${slug}
+    `;
+
+    const secrets = currentSecrets[0]?.secrets ?? {};
+    secrets[key] = storedSecret;
+
+    // Update the artifact with new secrets (JSON.stringify for JSONB column)
+    await sql`
+      UPDATE artifacts
+      SET secrets = ${JSON.stringify(secrets)}::jsonb,
+          version = version + 1,
+          updated_at = NOW()
+      WHERE channel_id = ${channelId} AND slug = ${slug}
+    `;
+  }
+
+  async function deleteSecret(
+    channelId: string,
+    slug: string,
+    key: string
+  ): Promise<void> {
+    // Get current secrets
+    const currentSecrets = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+      SELECT secrets FROM artifacts
+      WHERE channel_id = ${channelId} AND slug = ${slug}
+    `;
+
+    if (currentSecrets.length === 0) {
+      throw new Error(`Artifact not found: ${slug}`);
+    }
+
+    const secrets = currentSecrets[0]?.secrets ?? {};
+    if (!(key in secrets)) {
+      return; // Secret doesn't exist, nothing to delete
+    }
+
+    delete secrets[key];
+
+    // Update with null if no secrets remain, otherwise update with remaining secrets (JSON.stringify for JSONB column)
+    const secretsJson = Object.keys(secrets).length > 0 ? JSON.stringify(secrets) : null;
+
+    await sql`
+      UPDATE artifacts
+      SET secrets = ${secretsJson}::jsonb,
+          version = version + 1,
+          updated_at = NOW()
+      WHERE channel_id = ${channelId} AND slug = ${slug}
+    `;
+  }
+
+  async function getSecretValue(
+    spaceId: string,
+    channelId: string,
+    slug: string,
+    key: string
+  ): Promise<string | null> {
+    // Get the raw secrets from DB
+    const result = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+      SELECT secrets FROM artifacts
+      WHERE channel_id = ${channelId} AND slug = ${slug}
+    `;
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    const secrets = result[0]?.secrets;
+    if (!secrets || !(key in secrets)) {
+      return null;
+    }
+
+    const storedSecret = secrets[key];
+
+    // Decrypt and return
+    return decrypt(
+      {
+        encrypted: storedSecret.encrypted,
+        iv: storedSecret.iv,
+        tag: storedSecret.tag,
+      },
+      spaceId
+    );
+  }
+
+  async function getSecretMetadata(
+    channelId: string,
+    slug: string,
+    key: string
+  ): Promise<SecretMetadata | null> {
+    const result = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+      SELECT secrets FROM artifacts
+      WHERE channel_id = ${channelId} AND slug = ${slug}
+    `;
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    const secrets = result[0]?.secrets;
+    if (!secrets || !(key in secrets)) {
+      return null;
+    }
+
+    const storedSecret = secrets[key];
+    return {
+      setAt: storedSecret.setAt,
+      expiresAt: storedSecret.expiresAt,
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -1867,6 +2093,11 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     getArtifactVersion,
     listArtifactVersions,
     diffArtifactVersions,
+    // Secrets operations (App Integrations)
+    setSecret,
+    deleteSecret,
+    getSecretValue,
+    getSecretMetadata,
     // Lifecycle
     initialize,
     close,
