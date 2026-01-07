@@ -674,6 +674,10 @@ export interface ArtifactSummary {
   orderKey: string;
   assignees: string[];
   parentSlug?: string;
+  /** Channel ID (needed for app integrations to locate secrets) */
+  channelId: string;
+  /** Type-specific props (needed for app integrations to get provider info) */
+  props?: Record<string, unknown>;
 }
 
 /**
