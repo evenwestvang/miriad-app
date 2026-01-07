@@ -152,3 +152,77 @@ export const ErrorCodes = {
   CHANNEL_NOT_FOUND: "CHANNEL_NOT_FOUND",
   INVALID_MESSAGE: "INVALID_MESSAGE",
 } as const;
+
+// ============================================================================
+// IPC Protocol (Stage 2 - Multi-Agent Server)
+// ============================================================================
+
+/** IPC Commands from CLI to Server */
+export interface IPCAddCommand {
+  type: "add";
+  channelId: string;
+  callsign: string;
+  workspace: string;
+}
+
+export interface IPCRemoveCommand {
+  type: "remove";
+  channelId: string;
+  callsign: string;
+}
+
+export interface IPCListCommand {
+  type: "list";
+}
+
+export interface IPCStatusCommand {
+  type: "status";
+}
+
+export type IPCCommand = IPCAddCommand | IPCRemoveCommand | IPCListCommand | IPCStatusCommand;
+
+/** IPC Responses from Server to CLI */
+export interface IPCOkResponse {
+  type: "ok";
+  message?: string;
+}
+
+export interface IPCErrorResponse {
+  type: "error";
+  message: string;
+}
+
+export interface IPCAgentInfo {
+  channelId: string;
+  callsign: string;
+  workspace: string;
+  status: "idle" | "processing" | "disconnected";
+  registeredAt: string;
+}
+
+export interface IPCAgentsResponse {
+  type: "agents";
+  agents: IPCAgentInfo[];
+}
+
+export interface IPCStatusResponse {
+  type: "status";
+  connected: boolean;
+  wsHost: string;
+  agentCount: number;
+  uptime: number;
+}
+
+export type IPCResponse = IPCOkResponse | IPCErrorResponse | IPCAgentsResponse | IPCStatusResponse;
+
+// ============================================================================
+// Agent Instance (Stage 2)
+// ============================================================================
+
+export interface AgentInstanceConfig {
+  channelId: string;
+  callsign: string;
+  workspace: string;
+}
+
+export type AgentStatus = "idle" | "processing" | "disconnected";

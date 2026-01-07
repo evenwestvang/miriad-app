@@ -108,6 +108,13 @@ export class TymbalBridge {
   }
 
   /**
+   * Get the agent callsign.
+   */
+  getCallsign(): string {
+    return this.callsign;
+  }
+
+  /**
    * Process an SDK message and emit appropriate Tymbal frames.
    */
   async processSDKMessage(message: SDKMessage): Promise<void> {
