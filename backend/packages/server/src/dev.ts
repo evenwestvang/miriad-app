@@ -33,7 +33,7 @@ import { parseSessionCookie, verifySessionToken } from './auth/index.js';
 // Configuration
 // =============================================================================
 
-const port = parseInt(process.env.PORT ?? '3232', 10);
+const port = parseInt(process.env.PORT ?? '3234', 10);
 const spaceId = process.env.SPACE_ID ?? 'default-space';
 
 // Database connection
