@@ -1,17 +1,21 @@
 {
   "name": "@anthropic/local-agent-engine",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local agent server for running CAST agents on your machine",
   "type": "module",
   "main": "dist/src/local-agent.js",
   "bin": {
-    "local-agent": "dist/src/local-agent.js"
+    "local-agent": "dist/src/local-agent.js",
+    "local-agent-server": "dist/src/local-agent-server.js",
+    "connect-local-agent": "dist/src/connect-local-agent.js"
   },
   "scripts": {
     "build": "tsc",
     "start": "node dist/src/local-agent.js",
     "dev": "tsx src/local-agent.ts",
-    "local-agent": "tsx src/local-agent.ts"
+    "local-agent": "tsx src/local-agent.ts",
+    "local-agent-server": "tsx src/local-agent-server.ts",
+    "connect-local-agent": "tsx src/connect-local-agent.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.76",
