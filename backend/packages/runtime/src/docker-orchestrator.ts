@@ -133,8 +133,16 @@ export class DockerOrchestrator implements ContainerOrchestrator {
       '-e', `CAST_CALLBACK_HOST=host.docker.internal`,
       '-e', `THREAD_ID=${threadId}`,
       '-e', `IDLE_TIMEOUT_MS=${this.config.idleTimeoutMs}`,
-      this.config.imageName,
     ];
+
+    // Add MCP servers if provided
+    if (options.mcpServers && options.mcpServers.length > 0) {
+      const mcpServersJson = JSON.stringify(options.mcpServers);
+      args.push('-e', `MCP_SERVERS=${mcpServersJson}`);
+      console.log(`[DockerOrchestrator] Passing ${options.mcpServers.length} MCP server(s) to container`);
+    }
+
+    args.push(this.config.imageName);
 
     console.log(`[DockerOrchestrator] Starting container on port ${port}`);
 

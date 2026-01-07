@@ -165,6 +165,10 @@ export class FargateOrchestrator implements ContainerOrchestrator {
                 { name: 'CAST_CALLSIGN', value: options.callsign },
                 { name: 'CAST_AUTH_TOKEN', value: options.authToken },
                 { name: 'THREAD_ID', value: threadId },
+                // Pass MCP servers config if provided
+                ...(options.mcpServers && options.mcpServers.length > 0
+                  ? [{ name: 'MCP_SERVERS', value: JSON.stringify(options.mcpServers) }]
+                  : []),
               ],
             },
           ],
