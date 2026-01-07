@@ -99,10 +99,11 @@ function validateProviderId(provider: string): void {
 
 /**
  * Fetch available apps from the registry.
- * GET /auth/apps
+ * GET /auth/apps → { apps: AppDefinition[] }
  */
 export async function fetchAvailableApps(): Promise<AppDefinition[]> {
-  return apiJson<AppDefinition[]>('/auth/apps')
+  const response = await apiJson<{ apps: AppDefinition[] }>('/auth/apps')
+  return response.apps
 }
 
 /**
