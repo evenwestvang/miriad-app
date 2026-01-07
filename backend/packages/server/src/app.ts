@@ -616,6 +616,31 @@ export function createApp(options: AppOptions): Hono {
         status: e.status === 'active' ? 'active' : 'inactive',
       }));
     },
+    // App integrations: get system.app artifacts for MCP derivation
+    getApps: async (sid, cid) => {
+      // Get apps from this channel and from #root (space-wide apps)
+      const channelApps = await storage.listArtifacts(cid, { type: 'system.app' });
+
+      // Get root channel for space-wide apps
+      const rootChannel = await storage.getChannelByName(sid, 'root');
+      const rootApps = rootChannel
+        ? await storage.listArtifacts(rootChannel.id, { type: 'system.app' })
+        : [];
+
+      return [...channelApps, ...rootApps];
+    },
+    // App secrets accessor for token retrieval
+    appSecrets: {
+      getAccessToken: async (sid, cid, slug) => {
+        return storage.getSecretValue(sid, cid, slug, 'accessToken');
+      },
+      getRefreshToken: async (sid, cid, slug) => {
+        return storage.getSecretValue(sid, cid, slug, 'refreshToken');
+      },
+      getMetadata: async (cid, slug, key) => {
+        return storage.getSecretMetadata(cid, slug, key);
+      },
+    },
   });
 
   // ---------------------------------------------------------------------------

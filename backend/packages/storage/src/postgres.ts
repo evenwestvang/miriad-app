@@ -785,6 +785,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       orderKey: row.order_key,
       assignees: row.assignees ?? [],
       parentSlug: row.parent_slug ?? undefined,
+      channelId: row.channel_id,
+      props: row.props ?? undefined,
     };
   }
 
@@ -1136,7 +1138,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     values.push(limit, offset);
 
     const query = `
-      SELECT slug, type, title, tldr, status, path, order_key, assignees, parent_slug
+      SELECT slug, type, title, tldr, status, path, order_key, assignees, parent_slug, channel_id, props
       FROM artifacts
       WHERE ${conditions.join(' AND ')}
       ORDER BY path ASC

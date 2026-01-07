@@ -9,8 +9,11 @@ import type {
   ContainerOrchestrator,
   ContainerSpawnOptions,
   ContainerState,
+  McpServerConfig,
 } from '@cast/runtime';
+import type { ArtifactSummary } from '@cast/core';
 import { generateContainerToken } from '../auth/index.js';
+import { getAppDefinition, type TokenSet } from '../apps/index.js';
 
 // =============================================================================
 // Types
@@ -44,6 +47,15 @@ export interface RosterEntry {
   status: 'active' | 'inactive';
 }
 
+export interface AppSecrets {
+  /** Get decrypted access token */
+  getAccessToken: (spaceId: string, channelId: string, slug: string) => Promise<string | null>;
+  /** Get decrypted refresh token */
+  getRefreshToken: (spaceId: string, channelId: string, slug: string) => Promise<string | null>;
+  /** Get secret metadata */
+  getMetadata: (channelId: string, slug: string, key: string) => Promise<{ expiresAt?: string } | null>;
+}
+
 export interface AgentManagerConfig {
   /** Container orchestrator (Docker for local, Fargate for prod) */
   orchestrator: ContainerOrchestrator;
@@ -53,6 +65,10 @@ export interface AgentManagerConfig {
   getChannel: (spaceId: string, channelId: string) => Promise<ChannelContext | null>;
   /** Get roster for channel */
   getRoster: (spaceId: string, channelId: string) => Promise<RosterEntry[]>;
+  /** Get system.app artifacts for a channel (includes root) */
+  getApps?: (spaceId: string, channelId: string) => Promise<ArtifactSummary[]>;
+  /** App secrets accessor */
+  appSecrets?: AppSecrets;
 }
 
 // =============================================================================
@@ -137,6 +153,111 @@ export class AgentManager {
   }
 
   /**
+   * Derive MCP configs from connected system.app artifacts.
+   * For each connected app, generates MCP config using the app registry.
+   */
+  private async deriveMcpConfigsFromApps(
+    spaceId: string,
+    channelId: string
+  ): Promise<McpServerConfig[]> {
+    const { getApps, appSecrets } = this.config;
+
+    // Skip if app derivation not configured
+    if (!getApps || !appSecrets) {
+      return [];
+    }
+
+    const mcpConfigs: McpServerConfig[] = [];
+
+    try {
+      // Get all system.app artifacts for this channel (includes root)
+      const apps = await getApps(spaceId, channelId);
+
+      for (const app of apps) {
+        // Get provider from props
+        const provider = (app.props as Record<string, unknown> | undefined)?.provider as string | undefined;
+        if (!provider) {
+          console.log(`[AgentManager] Skipping app ${app.slug}: no provider in props`);
+          continue;
+        }
+
+        // Get app definition from registry
+        const appDef = getAppDefinition(provider);
+        if (!appDef) {
+          console.log(`[AgentManager] Skipping app ${app.slug}: unknown provider ${provider}`);
+          continue;
+        }
+
+        // Check if connected (has accessToken secret)
+        const accessTokenMeta = await appSecrets.getMetadata(app.channelId, app.slug, 'accessToken');
+        if (!accessTokenMeta) {
+          console.log(`[AgentManager] Skipping app ${app.slug}: not connected`);
+          continue;
+        }
+
+        // Check if token expired (with 1 minute buffer)
+        const bufferMs = 60 * 1000;
+        const isExpired = accessTokenMeta.expiresAt &&
+          new Date(accessTokenMeta.expiresAt).getTime() < Date.now() + bufferMs;
+
+        if (isExpired) {
+          console.log(`[AgentManager] Skipping app ${app.slug}: token expired`);
+          // Note: In a more robust implementation, we would try to refresh here
+          // For now, the user needs to reconnect or call /refresh manually
+          continue;
+        }
+
+        // Get the access token
+        const accessToken = await appSecrets.getAccessToken(spaceId, app.channelId, app.slug);
+        if (!accessToken) {
+          console.log(`[AgentManager] Skipping app ${app.slug}: failed to get access token`);
+          continue;
+        }
+
+        // Get refresh token (optional)
+        const refreshToken = await appSecrets.getRefreshToken(spaceId, app.channelId, app.slug);
+
+        // Build token set
+        const tokens: TokenSet = {
+          accessToken,
+          refreshToken: refreshToken ?? undefined,
+          expiresAt: accessTokenMeta.expiresAt
+            ? new Date(accessTokenMeta.expiresAt).getTime()
+            : undefined,
+        };
+
+        // Get app settings from props
+        const settings = (app.props as Record<string, unknown> | undefined)?.settings as
+          | Record<string, unknown>
+          | undefined;
+
+        // Derive MCP config
+        const derivedConfig = appDef.deriveMcp(tokens, settings);
+
+        // Convert to McpServerConfig format
+        const mcpConfig: McpServerConfig = {
+          name: app.slug, // Use artifact slug as MCP name
+          slug: app.slug,
+          transport: derivedConfig.transport,
+          command: derivedConfig.command,
+          args: derivedConfig.args,
+          env: derivedConfig.env,
+          url: derivedConfig.url,
+          headers: derivedConfig.headers,
+        };
+
+        mcpConfigs.push(mcpConfig);
+        console.log(`[AgentManager] Derived MCP config for ${app.slug} (${provider})`);
+      }
+    } catch (error) {
+      console.error('[AgentManager] Error deriving MCP configs from apps:', error);
+      // Don't fail spawn if app derivation fails — just skip app MCPs
+    }
+
+    return mcpConfigs;
+  }
+
+  /**
    * Spawn a new container for an agent.
    * NOTE: No longer checks in-memory state - roster callbackUrl check happens in invoker-adapter.
    * This method just spawns unconditionally.
@@ -162,6 +283,12 @@ export class AgentManager {
     // Generate auth token
     const authToken = generateContainerToken({ spaceId, channelId, callsign });
 
+    // Derive MCP configs from connected apps
+    const appMcpConfigs = await this.deriveMcpConfigsFromApps(spaceId, channelId);
+    if (appMcpConfigs.length > 0) {
+      console.log(`[AgentManager] Derived ${appMcpConfigs.length} MCP configs from connected apps`);
+    }
+
     // Spawn container
     const spawnOptions: ContainerSpawnOptions = {
       spaceId,
@@ -169,6 +296,7 @@ export class AgentManager {
       callsign,
       authToken,
       systemPrompt,
+      mcpServers: appMcpConfigs.length > 0 ? appMcpConfigs : undefined,
     };
 
     const containerState = await this.config.orchestrator.spawn(spawnOptions);
