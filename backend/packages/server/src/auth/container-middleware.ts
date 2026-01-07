@@ -24,9 +24,9 @@ export interface ContainerAuthVariables {
 // =============================================================================
 
 /**
- * Middleware that requires a valid container token.
+ * Middleware that requires a valid container or agent token.
  *
- * Expects token in Authorization header: `Container <token>`
+ * Expects token in Authorization header: `Container <token>` or `Agent <token>`
  *
  * On success, sets `c.get('container')` with the decoded payload.
  * On failure, returns 401 Unauthorized.
@@ -39,13 +39,13 @@ export function requireContainerAuth() {
       return c.json({ error: 'Missing Authorization header' }, 401);
     }
 
-    // Parse "Container <token>" format
-    const match = authHeader.match(/^Container\s+(.+)$/i);
+    // Parse "Container <token>" or "Agent <token>" format
+    const match = authHeader.match(/^(Container|Agent)\s+(.+)$/i);
     if (!match) {
-      return c.json({ error: 'Invalid Authorization format (expected: Container <token>)' }, 401);
+      return c.json({ error: 'Invalid Authorization format (expected: Container <token> or Agent <token>)' }, 401);
     }
 
-    const token = match[1];
+    const token = match[2];
     const payload = verifyContainerToken(token);
 
     if (!payload) {
@@ -73,9 +73,9 @@ export function optionalContainerAuth() {
     const authHeader = c.req.header('Authorization');
 
     if (authHeader) {
-      const match = authHeader.match(/^Container\s+(.+)$/i);
+      const match = authHeader.match(/^(Container|Agent)\s+(.+)$/i);
       if (match) {
-        const payload = verifyContainerToken(match[1]);
+        const payload = verifyContainerToken(match[2]);
         if (payload) {
           c.set('container', payload);
         }
