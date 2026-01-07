@@ -19,6 +19,22 @@ import { generateContainerToken } from '../auth/index.js';
 // Types
 // =============================================================================
 
+/** Interface for local agent manager */
+export interface LocalAgentRouter {
+  /** Check if a local agent is connected */
+  isAgentConnected: (channelId: string, callsign: string) => boolean;
+  /** Send a message to a local agent */
+  sendToAgent: (channelId: string, callsign: string, message: {
+    type: 'message';
+    id: string;
+    channelId: string;
+    callsign: string;
+    content: string;
+    sender: string;
+    systemPrompt: string;
+  }) => boolean;
+}
+
 export interface AgentInvokerAdapterOptions {
   /** The AgentManager instance to delegate to (for spawning new containers) */
   agentManager: AgentManager;
@@ -28,6 +44,10 @@ export interface AgentInvokerAdapterOptions {
   spaceId: string;
   /** Container orchestrator for direct message routing (local Docker) */
   orchestrator?: ContainerOrchestrator;
+  /** Local agent manager for routing to local-agent-engine connections */
+  localAgentRouter?: LocalAgentRouter;
+  /** Build system prompt for an agent */
+  buildSystemPrompt?: (spaceId: string, channelId: string, callsign: string) => Promise<string>;
 }
 
 // =============================================================================
@@ -48,7 +68,7 @@ export interface AgentInvokerAdapterOptions {
 export function createAgentInvokerAdapter(
   options: AgentInvokerAdapterOptions
 ): AgentInvoker {
-  const { agentManager, storage, spaceId, orchestrator } = options;
+  const { agentManager, storage, spaceId, orchestrator, localAgentRouter, buildSystemPrompt } = options;
 
   return {
     invokeAgents: async (
@@ -71,6 +91,41 @@ export function createAgentInvokerAdapter(
           try {
             const threadId = `${spaceId}:${channelId}:${callsign}`;
             const userMessage = `Message from @${message.sender}: ${message.content}`;
+
+            // Step 0: Check if local agent is connected (local-agent-engine)
+            if (localAgentRouter?.isAgentConnected(channelId, callsign)) {
+              console.log(`[AgentInvoker] @${callsign} is a local agent, sending via WebSocket`);
+
+              // Build system prompt
+              const systemPrompt = buildSystemPrompt
+                ? await buildSystemPrompt(spaceId, channelId, callsign)
+                : `You are ${callsign}, an agent in this channel.`;
+
+              const sent = localAgentRouter.sendToAgent(channelId, callsign, {
+                type: 'message',
+                id: message.id,
+                channelId,
+                callsign,
+                content: message.content,
+                sender: message.sender,
+                systemPrompt,
+              });
+
+              if (sent) {
+                // Update readmark after successful delivery
+                const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+                if (rosterEntry) {
+                  await storage.updateRosterEntry(channelId, rosterEntry.id, {
+                    readmark: message.id,
+                  });
+                }
+                console.log(`[AgentInvoker] Successfully sent to local agent @${callsign}`);
+                return;
+              } else {
+                console.warn(`[AgentInvoker] Failed to send to local agent @${callsign}, falling back`);
+                // Fall through to other methods
+              }
+            }
 
             // Step 1: For local Docker, check if orchestrator has container running
             // This bypasses the roster callbackUrl which has host.docker.internal issues

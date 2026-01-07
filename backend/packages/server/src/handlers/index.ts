@@ -30,3 +30,8 @@ export {
   getValidAccessToken,
   type AppHandlerOptions,
 } from './apps.js';
+export {
+  createLocalAgentManager,
+  type LocalAgentManager,
+  type LocalAgentManagerOptions,
+} from './local-agents.js';
