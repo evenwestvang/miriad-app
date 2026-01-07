@@ -198,6 +198,8 @@ export interface Artifact {
   contentType?: string | null
   /** Named version checkpoints (e.g., ['v1.0', 'v2.0']) */
   versions?: string[]
+  /** Secrets metadata (values never exposed, only setAt/expiresAt) */
+  secrets?: Record<string, { setAt: string; expiresAt?: string }>
 }
 
 /** A named version snapshot of an artifact */
@@ -224,6 +226,7 @@ export type ArtifactType =
   | 'system.agent'
   | 'system.focus'
   | 'system.playbook'
+  | 'system.app'
 
 export type ArtifactStatus =
   | 'draft'

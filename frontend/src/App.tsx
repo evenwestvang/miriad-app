@@ -668,6 +668,7 @@ export function App() {
           isOpen={boardOpen}
           onClose={closeBoard}
           apiHost={API_HOST}
+          spaceId={authSession?.spaceId}
           refreshTrigger={artifactEventTrigger}
           selectedArtifact={urlState.artifactSlug}
           onSelectArtifact={focusArtifact}

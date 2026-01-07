@@ -5,6 +5,7 @@ import type { Artifact, ArtifactType, ArtifactStatus, ArtifactTreeNode } from '.
 import { McpPropsEditor, type McpProps } from './McpPropsEditor'
 import { AgentPropsEditor, type AgentProps } from './AgentPropsEditor'
 import { FocusPropsEditor, type FocusProps } from './FocusPropsEditor'
+import { AppPropsEditor, type AppProps } from './AppPropsEditor'
 
 interface ArtifactCreateProps {
   channelId: string
@@ -28,6 +29,7 @@ const ARTIFACT_TYPES: { value: ArtifactType; label: string }[] = [
   { value: 'system.agent', label: 'Agent' },
   { value: 'system.focus', label: 'Focus' },
   { value: 'system.playbook', label: 'Playbook' },
+  { value: 'system.app', label: 'App' },
 ]
 
 // Default status based on type
@@ -43,6 +45,7 @@ const DEFAULT_STATUS: Record<ArtifactType, ArtifactStatus> = {
   'system.agent': 'published',
   'system.focus': 'published',
   'system.playbook': 'published',
+  'system.app': 'published',
 }
 
 // Slug validation regex
@@ -68,6 +71,7 @@ export function ArtifactCreate({
   const [mcpProps, setMcpProps] = useState<McpProps>({ transport: 'stdio' })
   const [agentProps, setAgentProps] = useState<AgentProps>({ engine: 'claude' })
   const [focusProps, setFocusProps] = useState<FocusProps>({ agents: [] })
+  const [appProps, setAppProps] = useState<AppProps>({ provider: '' })
 
   // Whether type is locked (when initialType provided)
   const typeLocked = !!initialType
@@ -105,6 +109,10 @@ export function ArtifactCreate({
     setFocusProps((prev) => ({ ...prev, ...updates }))
   }, [])
 
+  const handleAppPropsChange = useCallback((updates: Partial<AppProps>) => {
+    setAppProps((prev) => ({ ...prev, ...updates }))
+  }, [])
+
   // Get current props based on type
   const getCurrentProps = () => {
     switch (type) {
@@ -115,6 +123,9 @@ export function ArtifactCreate({
       case 'system.focus':
         // Validate at least one agent selected
         return focusProps.agents.length > 0 ? focusProps : null
+      case 'system.app':
+        // Validate provider is selected
+        return appProps.provider ? appProps : null
       default:
         return undefined
     }
@@ -125,6 +136,8 @@ export function ArtifactCreate({
     switch (type) {
       case 'system.focus':
         return focusProps.agents.length > 0
+      case 'system.app':
+        return !!appProps.provider
       default:
         return true
     }
@@ -341,6 +354,23 @@ export function ArtifactCreate({
             {focusProps.agents.length === 0 && (
               <p className="text-xs text-destructive mt-2">
                 At least one starting agent is required
+              </p>
+            )}
+          </div>
+        )}
+
+        {type === 'system.app' && (
+          <div className="border-t border-border pt-4">
+            <h3 className="text-xs font-medium text-muted-foreground uppercase mb-3">
+              App Configuration
+            </h3>
+            <AppPropsEditor
+              props={appProps}
+              onChange={handleAppPropsChange}
+            />
+            {!appProps.provider && (
+              <p className="text-xs text-destructive mt-2">
+                Please select a provider
               </p>
             )}
           </div>
