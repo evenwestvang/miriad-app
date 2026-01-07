@@ -1793,11 +1793,19 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   /**
    * Get the SECRET_KEY from environment.
    * Required for encryption/decryption operations.
+   * In production, SECRET_KEY must be explicitly set.
+   * In development, falls back to a default (DO NOT use in production).
    */
   function getSecretKey(): string {
     const key = process.env.SECRET_KEY;
     if (!key) {
-      throw new Error('SECRET_KEY environment variable is required for secrets encryption');
+      // Fail hard in production — no fallback allowed
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('SECRET_KEY environment variable is required in production');
+      }
+      // Dev fallback — never use in production
+      console.warn('[Storage] WARNING: Using default SECRET_KEY — DO NOT use in production');
+      return 'cast-dev-secret-key-min-32-characters!!';
     }
     if (key.length < 32) {
       throw new Error('SECRET_KEY must be at least 32 characters');
