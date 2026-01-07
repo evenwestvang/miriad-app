@@ -16,6 +16,8 @@ import { API_HOST, apiFetch, checkAuth, logout, type AuthSession } from './lib/a
 import { LoginPage } from './components/LoginPage'
 import { OnboardingPage } from './components/OnboardingPage'
 import { AuthErrorPage } from './components/AuthErrorPage'
+import { OAuthCallbackPage } from './components/OAuthCallbackPage'
+import { OAuthErrorPage } from './components/OAuthErrorPage'
 
 // Auth mode: 'dev' (show LoginPage) or 'workos' (redirect to /auth/login)
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || 'dev'
@@ -23,6 +25,22 @@ import type { Agent, Channel, Message } from './types'
 import type { RosterAgent } from './components/channel/MentionAutocomplete'
 
 export function App() {
+  // Check for OAuth popup pages first (before any state initialization)
+  // These are loaded in popups and should render immediately without the full app
+  const pathname = window.location.pathname
+  const searchParams = new URLSearchParams(window.location.search)
+
+  // OAuth error page: /oauth-error?error=...&description=...
+  if (pathname === '/oauth-error') {
+    return <OAuthErrorPage />
+  }
+
+  // OAuth success callback: any path with ?app=...&connected=true
+  // Backend redirects to /spaces/{spaceId}/channels/{channelId}?app={slug}&connected=true
+  if (searchParams.get('connected') === 'true' && searchParams.get('app')) {
+    return <OAuthCallbackPage />
+  }
+
   // Auth state
   const [authSession, setAuthSession] = useState<AuthSession | null | undefined>(undefined) // undefined = checking
 
