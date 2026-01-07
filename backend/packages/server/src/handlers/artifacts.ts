@@ -392,6 +392,13 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
         return c.json({ error: `Artifact not found: ${slug}. Cannot replace non-existent artifact.` }, 404);
       }
 
+      // Prevent replace on artifacts with secrets (would lose encrypted data)
+      if (replace && existing && existing.secrets && Object.keys(existing.secrets).length > 0) {
+        return c.json({
+          error: `Cannot replace artifact with secrets. Use PATCH to update fields, or disconnect apps first.`,
+        }, 409);
+      }
+
       let artifact;
 
       if (replace && existing) {
