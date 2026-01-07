@@ -21,6 +21,8 @@ import {
 } from '@cast/core';
 import type { Storage } from '@cast/storage';
 import type { ConnectionManager } from '../websocket/index.js';
+import { verifyContainerToken } from '../auth/index.js';
+import { verifyServerAuth, type ServerAuthResult } from './local-agent-auth.js';
 
 // =============================================================================
 // Types
@@ -35,11 +37,13 @@ interface RegisterMessage {
   channelId: string;
   callsign: string;
   workspace?: string;
+  token?: string; // Agent token (required in prod, optional in dev)
 }
 
 interface FrameMessage {
   type: 'frame';
   channelId: string;
+  token?: string; // Agent token for validation
   frame: TymbalFrame;
 }
 
@@ -81,6 +85,8 @@ interface LocalAgentConnection {
   callsign: string | null;
   channelId: string | null;
   workspace: string | null;
+  token: string | null; // Agent token for frame validation
+  serverAuth: ServerAuthResult | null; // Server auth (if connected with server credentials)
   connectedAt: Date;
 }
 
@@ -95,11 +101,13 @@ export interface LocalAgentManagerOptions {
   connectionManager: ConnectionManager;
   /** Callback to build system prompt for an agent */
   buildSystemPrompt?: (spaceId: string, channelId: string, callsign: string) => Promise<string>;
+  /** Whether to require auth (false for localhost dev, true for production) */
+  requireAuth?: boolean;
 }
 
 export interface LocalAgentManager {
   /** Handle a new WebSocket connection */
-  handleConnection(ws: WebSocket): void;
+  handleConnection(ws: WebSocket, authHeader?: string): void;
   /** Send a message to a specific local agent */
   sendToAgent(channelId: string, callsign: string, message: AgentMessage): boolean;
   /** Check if a local agent is connected */
@@ -114,7 +122,7 @@ export interface LocalAgentManager {
  * Create a local agent manager.
  */
 export function createLocalAgentManager(options: LocalAgentManagerOptions): LocalAgentManager {
-  const { storage, connectionManager, buildSystemPrompt } = options;
+  const { storage, connectionManager, buildSystemPrompt, requireAuth = false } = options;
 
   // Track connections by channelId:callsign
   const connections = new Map<string, LocalAgentConnection>();
@@ -165,6 +173,35 @@ export function createLocalAgentManager(options: LocalAgentManagerOptions): Loca
       if (!channel) {
         sendError(connection.ws, 'CHANNEL_NOT_FOUND', `Channel "${channelId}" not found`);
         return;
+      }
+
+      // Validate agent token (required in prod, optional in dev)
+      if (requireAuth) {
+        if (!message.token) {
+          sendError(connection.ws, 'AUTH_REQUIRED', 'Agent token required');
+          return;
+        }
+
+        const tokenPayload = verifyContainerToken(message.token);
+        if (!tokenPayload) {
+          sendError(connection.ws, 'INVALID_TOKEN', 'Invalid agent token');
+          return;
+        }
+
+        // Verify token matches request
+        if (tokenPayload.channelId !== channelId || tokenPayload.callsign !== callsign) {
+          sendError(connection.ws, 'TOKEN_MISMATCH', 'Token does not match channelId/callsign');
+          return;
+        }
+
+        // Verify channel belongs to token's space
+        if (tokenPayload.spaceId !== channel.spaceId) {
+          sendError(connection.ws, 'SPACE_MISMATCH', 'Token space does not match channel space');
+          return;
+        }
+
+        // Store token for frame validation
+        connection.token = message.token;
       }
 
       // Check if callsign already exists in roster (cloud agent)
@@ -241,6 +278,21 @@ export function createLocalAgentManager(options: LocalAgentManagerOptions): Loca
       return;
     }
 
+    // Validate token on each frame (if auth required)
+    if (requireAuth) {
+      const frameToken = message.token ?? connection.token;
+      if (!frameToken) {
+        sendError(connection.ws, 'AUTH_REQUIRED', 'Agent token required');
+        return;
+      }
+
+      const tokenPayload = verifyContainerToken(frameToken);
+      if (!tokenPayload || tokenPayload.channelId !== channelId || tokenPayload.callsign !== connection.callsign) {
+        sendError(connection.ws, 'INVALID_TOKEN', 'Invalid or mismatched agent token');
+        return;
+      }
+    }
+
     try {
       // Serialize and broadcast the frame
       const serialized = JSON.stringify(frame);
@@ -303,18 +355,31 @@ export function createLocalAgentManager(options: LocalAgentManagerOptions): Loca
   }
 
   return {
-    handleConnection(ws: WebSocket): void {
+    handleConnection(ws: WebSocket, authHeader?: string): void {
+      // Parse server auth from Authorization header (if provided)
+      const serverAuth = authHeader ? verifyServerAuth(authHeader) : null;
+
+      // If auth required but no valid server auth, reject immediately
+      if (requireAuth && !serverAuth) {
+        send(ws, { type: 'error', code: 'AUTH_REQUIRED', message: 'Server authentication required' });
+        ws.close(4001, 'Authentication required');
+        console.log('[LocalAgents] Connection rejected: no valid server auth');
+        return;
+      }
+
       const connection: LocalAgentConnection = {
         ws,
         callsign: null,
         channelId: null,
         workspace: null,
+        token: null,
+        serverAuth,
         connectedAt: new Date(),
       };
 
       // Send connected message immediately
       send(ws, { type: 'connected', version: PROTOCOL_VERSION });
-      console.log('[LocalAgents] New connection established');
+      console.log(`[LocalAgents] New connection established${serverAuth ? ` (server: ${serverAuth.serverId})` : ' (dev mode)'}`);
 
       // Handle incoming messages
       ws.on('message', async (data) => {

@@ -22,6 +22,7 @@ import type { ConnectionManager } from './websocket/index.js';
 import { AgentManager, createAgentInvokerAdapter, type LocalAgentRouter } from './agents/index.js';
 import { createDevAuthRoutes, createWorkOSAuthRoutes, requireAuth, getSpaceId } from './auth/index.js';
 import { createAppRoutes } from './handlers/apps.js';
+import { createLocalAgentAuthRoutes } from './handlers/local-agent-auth.js';
 
 // =============================================================================
 // Types
@@ -535,6 +536,16 @@ export function createApp(options: AppOptions): Hono {
     jwtSecret,
   });
   app.route('/auth/apps', appRoutes);
+
+  // ---------------------------------------------------------------------------
+  // Local Agent Server Auth Routes
+  // ---------------------------------------------------------------------------
+  const localAgentAuthRoutes = createLocalAgentAuthRoutes({
+    storage,
+    apiHost: new URL(apiUrl).host,
+    wsHost: new URL(apiUrl).host.replace('api.', 'ws.'),
+  });
+  app.route('/api/local-agents', localAgentAuthRoutes);
 
   // ---------------------------------------------------------------------------
   // Focus Types & Agent Types (stubs for frontend)

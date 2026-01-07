@@ -35,3 +35,11 @@ export {
   type LocalAgentManager,
   type LocalAgentManagerOptions,
 } from './local-agents.js';
+export {
+  createLocalAgentAuthRoutes,
+  verifyServerAuth,
+  getServerCredentialsByUser,
+  revokeServerCredentials,
+  type LocalAgentAuthOptions,
+  type ServerAuthResult,
+} from './local-agent-auth.js';
