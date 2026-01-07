@@ -220,8 +220,12 @@ class LocalAgentServer {
       // Override wsHost from credentials if not explicitly set via CLI
       if (!process.env.CAST_WS_HOST && !process.argv.includes("--ws-host")) {
         this.config.wsHost = this.credentials.wsHost;
-        this.config.secure = true; // Production always uses wss
-        console.log(`[Server] Using credentials wsHost: ${this.credentials.wsHost}`);
+        // Use ws:// for localhost, wss:// for production
+        const isLocalhost =
+          this.credentials.wsHost.startsWith("localhost") ||
+          this.credentials.wsHost.startsWith("127.0.0.1");
+        this.config.secure = !isLocalhost;
+        console.log(`[Server] Using credentials wsHost: ${this.credentials.wsHost} (${this.config.secure ? "wss" : "ws"})`);
       }
     } else {
       console.log(`[Server] No credentials found (dev mode - localhost auth disabled)`);
