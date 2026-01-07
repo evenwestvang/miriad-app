@@ -20,14 +20,14 @@ export function OAuthCallbackPage() {
     const connected = params.get('connected') === 'true'
 
     if (connected && slug) {
-      // Post success message to parent window
+      // Post success message to parent window (same-origin)
       if (window.opener) {
         window.opener.postMessage({
           type: 'oauth-app-callback',
           success: true,
           provider: '', // Backend doesn't include this, but slug is enough
           slug,
-        }, '*')
+        }, window.location.origin)
       }
 
       // Auto-close after brief delay
