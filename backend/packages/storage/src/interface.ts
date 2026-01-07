@@ -37,6 +37,9 @@ import type {
   RecursiveArchiveResult,
   // Secrets types (App Integrations)
   SecretMetadata,
+  // Local Agent Server types (Stage 3)
+  StoredLocalAgentServer,
+  CreateLocalAgentServerInput,
 } from '@cast/core';
 
 // =============================================================================
@@ -433,6 +436,54 @@ export interface Storage {
     slug: string,
     key: string
   ): Promise<SecretMetadata | null>;
+
+  // ---------------------------------------------------------------------------
+  // Local Agent Server Operations (Stage 3)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Save local agent server credentials.
+   * Called when a local agent server exchanges a bootstrap token for credentials.
+   *
+   * @param input - Server credential data
+   * @returns The stored server credential
+   */
+  saveLocalAgentServer(input: CreateLocalAgentServerInput): Promise<StoredLocalAgentServer>;
+
+  /**
+   * Get local agent server by server ID.
+   *
+   * @param serverId - Server ID (srv_ULID format)
+   * @returns Server credential or null if not found
+   */
+  getLocalAgentServer(serverId: string): Promise<StoredLocalAgentServer | null>;
+
+  /**
+   * Get local agent server by secret.
+   * Used for authenticating server requests via Authorization header.
+   *
+   * @param secret - The HMAC-signed secret
+   * @returns Server credential or null if not found/revoked
+   */
+  getLocalAgentServerBySecret(secret: string): Promise<StoredLocalAgentServer | null>;
+
+  /**
+   * Get all active local agent servers for a user.
+   * Used for UI listing of connected servers.
+   *
+   * @param userId - User ID who registered the servers
+   * @returns Array of active (non-revoked) server credentials
+   */
+  getLocalAgentServersByUser(userId: string): Promise<StoredLocalAgentServer[]>;
+
+  /**
+   * Revoke local agent server credentials.
+   * Sets revokedAt timestamp, preventing further authentication.
+   *
+   * @param serverId - Server ID to revoke
+   * @returns true if revoked, false if not found or already revoked
+   */
+  revokeLocalAgentServer(serverId: string): Promise<boolean>;
 
   // ---------------------------------------------------------------------------
   // Lifecycle

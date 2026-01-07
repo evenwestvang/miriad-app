@@ -43,6 +43,9 @@ import type {
   // Secrets types (App Integrations)
   SecretMetadata,
   StoredSecret,
+  // Local Agent Server types (Stage 3)
+  StoredLocalAgentServer,
+  CreateLocalAgentServerInput,
 } from '@cast/core';
 // Import functions separately (not as types)
 import {
@@ -152,6 +155,15 @@ interface ArtifactVersionRow {
   version_created_by: string;
   tldr: string;
   content: string;
+}
+
+interface LocalAgentServerRow {
+  server_id: string;
+  space_id: string;
+  user_id: string;
+  secret: string;
+  created_at: Date;
+  revoked_at: Date | null;
 }
 
 // =============================================================================
@@ -1780,6 +1792,38 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         WHEN duplicate_column THEN NULL;
       END $$;
     `;
+
+    // ---------------------------------------------------------------------------
+    // Local Agent Servers Table (Stage 3)
+    // ---------------------------------------------------------------------------
+    await sql`
+      CREATE TABLE IF NOT EXISTS local_agent_servers (
+        server_id VARCHAR(255) PRIMARY KEY,
+        space_id VARCHAR(26) NOT NULL,
+        user_id VARCHAR(26) NOT NULL,
+        secret VARCHAR(255) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        revoked_at TIMESTAMPTZ
+      )
+    `;
+
+    // Index for looking up servers by secret (auth flow)
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_local_agent_servers_secret
+      ON local_agent_servers(secret) WHERE revoked_at IS NULL
+    `;
+
+    // Index for looking up servers by user (UI listing)
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_local_agent_servers_user
+      ON local_agent_servers(user_id) WHERE revoked_at IS NULL
+    `;
+
+    // Index for space-scoped queries
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_local_agent_servers_space
+      ON local_agent_servers(space_id)
+    `;
   }
 
   async function close(): Promise<void> {
@@ -2059,6 +2103,92 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     };
   }
 
+  function rowToLocalAgentServer(row: LocalAgentServerRow): StoredLocalAgentServer {
+    return {
+      serverId: row.server_id,
+      spaceId: row.space_id,
+      userId: row.user_id,
+      secret: row.secret,
+      createdAt: row.created_at.toISOString(),
+      revokedAt: row.revoked_at?.toISOString() ?? null,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Local Agent Server Operations (Stage 3)
+  // ---------------------------------------------------------------------------
+
+  async function saveLocalAgentServer(
+    input: CreateLocalAgentServerInput
+  ): Promise<StoredLocalAgentServer> {
+    const now = new Date();
+
+    const result = await sql<LocalAgentServerRow[]>`
+      INSERT INTO local_agent_servers (
+        server_id, space_id, user_id, secret, created_at
+      )
+      VALUES (
+        ${input.serverId},
+        ${input.spaceId},
+        ${input.userId},
+        ${input.secret},
+        ${now}
+      )
+      RETURNING *
+    `;
+
+    return rowToLocalAgentServer(result[0]);
+  }
+
+  async function getLocalAgentServer(
+    serverId: string
+  ): Promise<StoredLocalAgentServer | null> {
+    const result = await sql<LocalAgentServerRow[]>`
+      SELECT * FROM local_agent_servers
+      WHERE server_id = ${serverId}
+    `;
+
+    if (result.length === 0) return null;
+    return rowToLocalAgentServer(result[0]);
+  }
+
+  async function getLocalAgentServerBySecret(
+    secret: string
+  ): Promise<StoredLocalAgentServer | null> {
+    const result = await sql<LocalAgentServerRow[]>`
+      SELECT * FROM local_agent_servers
+      WHERE secret = ${secret} AND revoked_at IS NULL
+    `;
+
+    if (result.length === 0) return null;
+    return rowToLocalAgentServer(result[0]);
+  }
+
+  async function getLocalAgentServersByUser(
+    userId: string
+  ): Promise<StoredLocalAgentServer[]> {
+    const result = await sql<LocalAgentServerRow[]>`
+      SELECT * FROM local_agent_servers
+      WHERE user_id = ${userId} AND revoked_at IS NULL
+      ORDER BY created_at DESC
+    `;
+
+    return result.map(rowToLocalAgentServer);
+  }
+
+  async function revokeLocalAgentServer(serverId: string): Promise<boolean> {
+    const now = new Date();
+
+    const result = await sql`
+      UPDATE local_agent_servers
+      SET revoked_at = ${now}
+      WHERE server_id = ${serverId} AND revoked_at IS NULL
+      RETURNING server_id
+    `;
+
+    return result.length > 0;
+  }
+
   return {
     // Message operations
     saveMessage,
@@ -2108,6 +2238,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     deleteSecret,
     getSecretValue,
     getSecretMetadata,
+    // Local Agent Server operations (Stage 3)
+    saveLocalAgentServer,
+    getLocalAgentServer,
+    getLocalAgentServerBySecret,
+    getLocalAgentServersByUser,
+    revokeLocalAgentServer,
     // Lifecycle
     initialize,
     close,

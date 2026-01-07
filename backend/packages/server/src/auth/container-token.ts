@@ -7,7 +7,7 @@
  * The HMAC ensures containers can only access their assigned space/channel.
  */
 
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 // =============================================================================
 // Configuration
@@ -16,11 +16,19 @@ import { createHmac } from 'node:crypto';
 // Stable dev secret - used when no environment variable is set
 const DEV_SECRET = 'cast-dev-container-secret-do-not-use-in-production';
 
-// Use environment variable or fall back to dev secret
-const CONTAINER_SECRET = process.env.CAST_CONTAINER_SECRET ?? DEV_SECRET;
+// Get secret from environment
+const ENV_SECRET = process.env.CAST_CONTAINER_SECRET;
 
-// Log once at startup
-if (!process.env.CAST_CONTAINER_SECRET) {
+// Fail hard in production if secret not configured
+if (process.env.NODE_ENV === 'production' && !ENV_SECRET) {
+  throw new Error('CAST_CONTAINER_SECRET is required in production');
+}
+
+// Use environment variable or fall back to dev secret (non-production only)
+const CONTAINER_SECRET = ENV_SECRET ?? DEV_SECRET;
+
+// Log once at startup (dev mode only)
+if (!ENV_SECRET) {
   console.log('[ContainerToken] Using dev secret (set CAST_CONTAINER_SECRET in production)');
 }
 
@@ -73,9 +81,13 @@ export function verifyContainerToken(token: string): ContainerTokenPayload | nul
     return null;
   }
 
-  // Verify HMAC
+  // Verify HMAC with timing-safe comparison
   const expectedHmac = createHmac('sha256', CONTAINER_SECRET).update(data).digest('base64url');
-  if (providedHmac !== expectedHmac) {
+  const providedBuffer = Buffer.from(providedHmac);
+  const expectedBuffer = Buffer.from(expectedHmac);
+
+  // Reject if lengths differ or content doesn't match (timing-safe)
+  if (providedBuffer.length !== expectedBuffer.length || !timingSafeEqual(providedBuffer, expectedBuffer)) {
     return null;
   }
 

@@ -898,3 +898,63 @@ export function isSupportedAssetType(filenameOrSlug: string): boolean {
     : '';
   return ext in ASSET_MIME_TYPES;
 }
+
+// =============================================================================
+// Local Agent Server Types (Stage 3)
+// =============================================================================
+
+/**
+ * A local agent server credential as stored in the database.
+ * These credentials allow local agent servers to authenticate with CAST
+ * and request agent tokens for specific channels.
+ */
+export interface StoredLocalAgentServer {
+  /** Unique server identifier (srv_ULID format) */
+  serverId: string;
+
+  /** Space this server is authorized for */
+  spaceId: string;
+
+  /** User who registered this server */
+  userId: string;
+
+  /** HMAC-signed secret for authentication */
+  secret: string;
+
+  /** ISO timestamp of creation */
+  createdAt: string;
+
+  /** ISO timestamp of revocation (null if active) */
+  revokedAt: string | null;
+}
+
+/**
+ * Input for creating a new local agent server credential.
+ */
+export interface CreateLocalAgentServerInput {
+  /** Server ID (srv_ULID format) */
+  serverId: string;
+
+  /** Space ID */
+  spaceId: string;
+
+  /** User ID who registered this server */
+  userId: string;
+
+  /** HMAC-signed secret */
+  secret: string;
+}
+
+/**
+ * Type guard for StoredLocalAgentServer.
+ */
+export function isStoredLocalAgentServer(value: unknown): value is StoredLocalAgentServer {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as StoredLocalAgentServer).serverId === 'string' &&
+    typeof (value as StoredLocalAgentServer).spaceId === 'string' &&
+    typeof (value as StoredLocalAgentServer).userId === 'string' &&
+    typeof (value as StoredLocalAgentServer).secret === 'string'
+  );
+}

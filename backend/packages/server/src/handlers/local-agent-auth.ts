@@ -27,10 +27,22 @@ import { generateContainerToken, parseSession } from '../auth/index.js';
 // Configuration
 // =============================================================================
 
-// Secret for signing server credentials (use env var in production)
-const SERVER_SECRET = process.env.CAST_SERVER_SECRET ?? 'cast-dev-server-secret-do-not-use-in-production';
+// Stable dev secret - used when no environment variable is set
+const DEV_SECRET = 'cast-dev-server-secret-do-not-use-in-production';
 
-if (!process.env.CAST_SERVER_SECRET) {
+// Get secret from environment
+const ENV_SECRET = process.env.CAST_SERVER_SECRET;
+
+// Fail hard in production if secret not configured
+if (process.env.NODE_ENV === 'production' && !ENV_SECRET) {
+  throw new Error('CAST_SERVER_SECRET is required in production');
+}
+
+// Use environment variable or fall back to dev secret (non-production only)
+const SERVER_SECRET = ENV_SECRET ?? DEV_SECRET;
+
+// Log once at startup (dev mode only)
+if (!ENV_SECRET) {
   console.log('[LocalAgentAuth] Using dev secret (set CAST_SERVER_SECRET in production)');
 }
 
@@ -58,21 +70,10 @@ interface BootstrapToken {
   consumed: boolean;
 }
 
-interface ServerCredentials {
-  serverId: string;
-  spaceId: string;
-  userId: string;
-  secret: string;
-  createdAt: Date;
-  revokedAt: Date | null;
-}
-
 // In-memory storage for bootstrap tokens (short-lived, no persistence needed)
+// Bootstrap tokens are intentionally ephemeral - they expire in 10 minutes
+// and are consumed immediately upon use.
 const bootstrapTokens = new Map<string, BootstrapToken>();
-
-// In-memory storage for server credentials (should be persisted in production)
-// For Stage 3 MVP, we'll use in-memory; can add DB storage later
-const serverCredentials = new Map<string, ServerCredentials>();
 
 // =============================================================================
 // Zod Schemas
@@ -108,16 +109,6 @@ function generateServerSecret(serverId: string, spaceId: string): string {
   const data = `${serverId}:${spaceId}`;
   const hmac = createHmac('sha256', SERVER_SECRET).update(data).digest('base64url');
   return `sk_cast_${hmac}`;
-}
-
-function verifyServerSecret(secret: string): { serverId: string; spaceId: string } | null {
-  // Find matching server credentials
-  for (const creds of serverCredentials.values()) {
-    if (creds.secret === secret && !creds.revokedAt) {
-      return { serverId: creds.serverId, spaceId: creds.spaceId };
-    }
-  }
-  return null;
 }
 
 function formatZodError(error: z.ZodError): { error: string; details: Array<{ path: string; message: string }> } {
@@ -223,16 +214,13 @@ export function createLocalAgentAuthRoutes(options: LocalAgentAuthOptions): Hono
     const serverId = generateServerId();
     const secret = generateServerSecret(serverId, tokenData.spaceId);
 
-    // Store server credentials
-    const credentials: ServerCredentials = {
+    // Store server credentials in database
+    await storage.saveLocalAgentServer({
       serverId,
       spaceId: tokenData.spaceId,
       userId: tokenData.userId,
       secret,
-      createdAt: new Date(),
-      revokedAt: null,
-    };
-    serverCredentials.set(serverId, credentials);
+    });
 
     console.log(`[LocalAgentAuth] Issued server credentials ${serverId} for space ${tokenData.spaceId}`);
 
@@ -256,9 +244,11 @@ export function createLocalAgentAuthRoutes(options: LocalAgentAuthOptions): Hono
     }
 
     const secret = authHeader.slice(7); // Remove 'Server ' prefix
-    const serverAuth = verifyServerSecret(secret);
 
-    if (!serverAuth) {
+    // Look up server credentials from database
+    const serverCreds = await storage.getLocalAgentServerBySecret(secret);
+
+    if (!serverCreds) {
       return c.json({ error: 'Invalid server credentials' }, 401);
     }
 
@@ -279,13 +269,13 @@ export function createLocalAgentAuthRoutes(options: LocalAgentAuthOptions): Hono
       return c.json({ error: 'Channel not found' }, 404);
     }
 
-    if (channel.spaceId !== serverAuth.spaceId) {
+    if (channel.spaceId !== serverCreds.spaceId) {
       return c.json({ error: 'Channel not accessible from this space' }, 403);
     }
 
     // Generate agent token (same format as containers)
     const token = generateContainerToken({
-      spaceId: serverAuth.spaceId,
+      spaceId: serverCreds.spaceId,
       channelId,
       callsign,
     });
@@ -306,13 +296,13 @@ export function createLocalAgentAuthRoutes(options: LocalAgentAuthOptions): Hono
       return c.json({ error: 'Authentication required' }, 401);
     }
 
-    const servers = getServerCredentialsByUser(session.userId);
+    const servers = await storage.getLocalAgentServersByUser(session.userId);
 
     // Format response for frontend
     const formattedServers = servers.map((s) => ({
       serverId: s.serverId,
       spaceId: s.spaceId,
-      connectedAt: s.createdAt.toISOString(),
+      connectedAt: s.createdAt,
       // Note: agentCount would require tracking active connections per server
       // For now, return 0 — can be enhanced later
       agentCount: 0,
@@ -336,18 +326,20 @@ export function createLocalAgentAuthRoutes(options: LocalAgentAuthOptions): Hono
     const serverId = c.req.param('id');
 
     // Verify server belongs to user before revoking
-    const servers = getServerCredentialsByUser(session.userId);
+    const servers = await storage.getLocalAgentServersByUser(session.userId);
     const server = servers.find((s) => s.serverId === serverId);
 
     if (!server) {
       return c.json({ error: 'Server not found' }, 404);
     }
 
-    const revoked = revokeServerCredentials(serverId);
+    const revoked = await storage.revokeLocalAgentServer(serverId);
 
     if (!revoked) {
       return c.json({ error: 'Failed to revoke server' }, 500);
     }
+
+    console.log(`[LocalAgentAuth] Revoked server credentials ${serverId}`);
 
     return c.json({ success: true });
   });
@@ -366,67 +358,61 @@ export interface ServerAuthResult {
 }
 
 /**
- * Verify server credentials from Authorization header.
+ * Create a function to verify server credentials from Authorization header.
  * For use in WebSocket upgrade handler.
+ *
+ * @param storage - Storage backend for looking up credentials
+ * @returns Function that verifies server auth from Authorization header
  */
-export function verifyServerAuth(authHeader: string | undefined): ServerAuthResult | null {
-  if (!authHeader?.startsWith('Server ')) {
-    return null;
-  }
+export function createServerAuthVerifier(storage: Storage) {
+  return async function verifyServerAuth(authHeader: string | undefined): Promise<ServerAuthResult | null> {
+    if (!authHeader?.startsWith('Server ')) {
+      return null;
+    }
 
-  const secret = authHeader.slice(7);
-  const serverAuth = verifyServerSecret(secret);
+    const secret = authHeader.slice(7);
+    const serverCreds = await storage.getLocalAgentServerBySecret(secret);
 
-  if (!serverAuth) {
-    return null;
-  }
+    if (!serverCreds) {
+      return null;
+    }
 
-  // Get full credentials
-  const creds = serverCredentials.get(serverAuth.serverId);
-  if (!creds) {
-    return null;
-  }
-
-  return {
-    serverId: creds.serverId,
-    spaceId: creds.spaceId,
-    userId: creds.userId,
+    return {
+      serverId: serverCreds.serverId,
+      spaceId: serverCreds.spaceId,
+      userId: serverCreds.userId,
+    };
   };
 }
 
 /**
- * Get all server credentials for a user (for UI listing).
+ * @deprecated Use createServerAuthVerifier(storage) instead.
+ * This synchronous version is kept for backward compatibility but will always return null.
+ */
+export function verifyServerAuth(authHeader: string | undefined): ServerAuthResult | null {
+  console.warn('[LocalAgentAuth] verifyServerAuth is deprecated - use createServerAuthVerifier(storage) for async DB lookup');
+  // Return null - caller should migrate to async version
+  return null;
+}
+
+/**
+ * @deprecated Use storage.getLocalAgentServersByUser() directly.
+ * This function is kept for backward compatibility but will always return empty array.
  */
 export function getServerCredentialsByUser(userId: string): Array<{
   serverId: string;
   spaceId: string;
   createdAt: Date;
 }> {
-  const results: Array<{ serverId: string; spaceId: string; createdAt: Date }> = [];
-
-  for (const creds of serverCredentials.values()) {
-    if (creds.userId === userId && !creds.revokedAt) {
-      results.push({
-        serverId: creds.serverId,
-        spaceId: creds.spaceId,
-        createdAt: creds.createdAt,
-      });
-    }
-  }
-
-  return results;
+  console.warn('[LocalAgentAuth] getServerCredentialsByUser is deprecated - use storage.getLocalAgentServersByUser() directly');
+  return [];
 }
 
 /**
- * Revoke server credentials.
+ * @deprecated Use storage.revokeLocalAgentServer() directly.
+ * This function is kept for backward compatibility but will always return false.
  */
 export function revokeServerCredentials(serverId: string): boolean {
-  const creds = serverCredentials.get(serverId);
-  if (!creds || creds.revokedAt) {
-    return false;
-  }
-
-  creds.revokedAt = new Date();
-  console.log(`[LocalAgentAuth] Revoked server credentials ${serverId}`);
-  return true;
+  console.warn('[LocalAgentAuth] revokeServerCredentials is deprecated - use storage.revokeLocalAgentServer() directly');
+  return false;
 }

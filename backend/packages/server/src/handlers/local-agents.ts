@@ -22,7 +22,7 @@ import {
 import type { Storage } from '@cast/storage';
 import type { ConnectionManager } from '../websocket/index.js';
 import { verifyContainerToken } from '../auth/index.js';
-import { verifyServerAuth, type ServerAuthResult } from './local-agent-auth.js';
+import { createServerAuthVerifier, type ServerAuthResult } from './local-agent-auth.js';
 
 // =============================================================================
 // Types
@@ -107,7 +107,7 @@ export interface LocalAgentManagerOptions {
 
 export interface LocalAgentManager {
   /** Handle a new WebSocket connection */
-  handleConnection(ws: WebSocket, authHeader?: string): void;
+  handleConnection(ws: WebSocket, authHeader?: string): void | Promise<void>;
   /** Send a message to a specific local agent */
   sendToAgent(channelId: string, callsign: string, message: AgentMessage): boolean;
   /** Check if a local agent is connected */
@@ -123,6 +123,9 @@ export interface LocalAgentManager {
  */
 export function createLocalAgentManager(options: LocalAgentManagerOptions): LocalAgentManager {
   const { storage, connectionManager, buildSystemPrompt, requireAuth = false } = options;
+
+  // Create auth verifier with storage backend
+  const verifyServerAuth = createServerAuthVerifier(storage);
 
   // Track connections by channelId:callsign
   const connections = new Map<string, LocalAgentConnection>();
@@ -355,9 +358,9 @@ export function createLocalAgentManager(options: LocalAgentManagerOptions): Loca
   }
 
   return {
-    handleConnection(ws: WebSocket, authHeader?: string): void {
+    async handleConnection(ws: WebSocket, authHeader?: string): Promise<void> {
       // Parse server auth from Authorization header (if provided)
-      const serverAuth = authHeader ? verifyServerAuth(authHeader) : null;
+      const serverAuth = authHeader ? await verifyServerAuth(authHeader) : null;
 
       // If auth required but no valid server auth, reject immediately
       if (requireAuth && !serverAuth) {

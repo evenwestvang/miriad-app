@@ -37,6 +37,8 @@ export {
 } from './local-agents.js';
 export {
   createLocalAgentAuthRoutes,
+  createServerAuthVerifier,
+  // Deprecated - use createServerAuthVerifier(storage) or storage methods directly
   verifyServerAuth,
   getServerCredentialsByUser,
   revokeServerCredentials,
