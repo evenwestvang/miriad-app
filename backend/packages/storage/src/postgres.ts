@@ -5,7 +5,7 @@
  * Standard TCP/TLS connection that works everywhere.
  */
 
-import postgres from 'postgres';
+import postgres, { JSONValue } from 'postgres';
 import crypto from 'crypto';
 import { ulid } from 'ulid';
 import type {
@@ -824,7 +824,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           ${sql.array(input.assignees ?? [])},
           ${sql.array(input.labels ?? [])},
           ${sql.array(refs)},
-          ${input.props ? JSON.stringify(input.props) : null},
+          ${input.props ? sql.json(input.props as JSONValue) : null},
           ${input.contentType ?? null},
           ${input.fileSize ?? null},
           1,
@@ -955,7 +955,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         path = ${path},
         assignees = ${sql.array(assignees)},
         labels = ${sql.array(labels)},
-        props = ${propsValue ? JSON.stringify(propsValue) : null},
+        props = ${propsValue ? sql.json(propsValue as JSONValue) : null},
         order_key = ${orderKey},
         version = version + 1,
         updated_by = ${updatedBy},
