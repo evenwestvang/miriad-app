@@ -74,6 +74,20 @@ export function AppPropsDisplay({
     setUIState('connecting')
     setError(null)
 
+    // Open popup immediately in user event context (before any async calls)
+    // Otherwise browsers block popups opened after awaits
+    const popup = window.open(
+      'about:blank',
+      'oauth-app-popup',
+      'width=600,height=700,menubar=no,toolbar=no,location=yes'
+    )
+
+    if (!popup) {
+      setUIState('idle')
+      setError('Popup blocked. Please allow popups for this site.')
+      return
+    }
+
     try {
       const { authorizationUrl } = await startAppConnect(props.provider, {
         spaceId,
@@ -81,16 +95,8 @@ export function AppPropsDisplay({
         slug,
       })
 
-      // Open OAuth popup
-      const popup = window.open(
-        authorizationUrl,
-        'oauth-app-popup',
-        'width=600,height=700,menubar=no,toolbar=no,location=yes'
-      )
-
-      if (!popup) {
-        throw new Error('Popup blocked. Please allow popups for this site.')
-      }
+      // Navigate the already-open popup to the auth URL
+      popup.location.href = authorizationUrl
 
       // Poll for popup close
       const pollTimer = setInterval(() => {
@@ -101,6 +107,7 @@ export function AppPropsDisplay({
         }
       }, 500)
     } catch (err) {
+      popup.close() // Close the blank popup on error
       setUIState('idle')
       setError(err instanceof Error ? err.message : 'Failed to start connection')
     }
