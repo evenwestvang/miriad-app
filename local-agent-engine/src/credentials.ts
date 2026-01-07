@@ -105,13 +105,26 @@ export async function deleteCredentials(): Promise<void> {
 // ============================================================================
 
 /**
+ * Determine protocol based on host.
+ * Uses http:// for localhost/127.0.0.1, https:// for everything else.
+ */
+function getProtocol(host: string): string {
+  const hostname = host.split(":")[0].toLowerCase();
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return "http";
+  }
+  return "https";
+}
+
+/**
  * Exchange a bootstrap token for server credentials.
  */
 export async function exchangeBootstrapToken(
   host: string,
   bootstrapToken: string
 ): Promise<BootstrapResponse> {
-  const url = `https://${host}/api/local-agents/bootstrap`;
+  const protocol = getProtocol(host);
+  const url = `${protocol}://${host}/api/local-agents/bootstrap`;
 
   const response = await fetch(url, {
     method: "POST",
@@ -145,7 +158,8 @@ export async function requestAgentToken(
   channelId: string,
   callsign: string
 ): Promise<string> {
-  const url = `https://${credentials.host}/api/local-agents/agent-token`;
+  const protocol = getProtocol(credentials.host);
+  const url = `${protocol}://${credentials.host}/api/local-agents/agent-token`;
 
   const response = await fetch(url, {
     method: "POST",
