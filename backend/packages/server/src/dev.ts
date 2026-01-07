@@ -22,6 +22,7 @@ if (result.error) {
 import { createServer, type IncomingMessage } from 'http';
 import { createApp } from './app.js';
 import { createConnectionManager, type ConnectionInfo } from './websocket/index.js';
+import { createLocalAgentManager, type LocalAgentManager } from './handlers/local-agents.js';
 import { createPostgresStorage, type Storage } from '@cast/storage';
 import { DockerOrchestrator } from '@cast/runtime';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -32,7 +33,7 @@ import { parseSessionCookie, verifySessionToken } from './auth/index.js';
 // Configuration
 // =============================================================================
 
-const port = parseInt(process.env.PORT ?? '3232', 10);
+const port = parseInt(process.env.PORT ?? '3234', 10);
 const spaceId = process.env.SPACE_ID ?? 'default-space';
 
 // Database connection
@@ -117,6 +118,16 @@ async function main() {
   console.log('✅ Connection manager initialized');
 
   // ---------------------------------------------------------------------------
+  // Initialize Local Agent Manager (for local-agent-engine connections)
+  // ---------------------------------------------------------------------------
+
+  const localAgentManager = createLocalAgentManager({
+    storage,
+    connectionManager,
+  });
+  console.log('✅ Local agent manager initialized');
+
+  // ---------------------------------------------------------------------------
   // Initialize Container Orchestrator (Docker for local dev)
   // ---------------------------------------------------------------------------
 
@@ -135,6 +146,7 @@ async function main() {
     storage,
     orchestrator,
     connectionManager,
+    localAgentRouter: localAgentManager,
   });
 
   // ---------------------------------------------------------------------------
@@ -186,14 +198,30 @@ async function main() {
     }
   });
 
-  // WebSocket server for /channels/:channelId/stream
+  // WebSocket server for /channels/:channelId/stream and /local-agents/connect
   const wss = new WebSocketServer({ noServer: true });
+  const localAgentWss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', async (request: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(request.url ?? '/', `http://localhost:${port}`);
     const pathname = url.pathname;
 
-    // Match /channels/:channelId/stream
+    // ---------------------------------------------------------------------------
+    // Local Agent WebSocket: /local-agents/connect
+    // Stage 1: No auth - trusts localhost
+    // ---------------------------------------------------------------------------
+    if (pathname === '/local-agents/connect') {
+      localAgentWss.handleUpgrade(request, socket, head, (ws) => {
+        console.log('[LocalAgents] New WebSocket connection');
+        localAgentManager.handleConnection(ws);
+      });
+      return;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Channel Stream WebSocket: /channels/:channelId/stream
+    // Requires session authentication
+    // ---------------------------------------------------------------------------
     const match = pathname.match(/^\/channels\/([^/]+)\/stream$/);
     if (!match) {
       socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
@@ -240,6 +268,7 @@ async function main() {
     console.log(`✅ Server running at http://localhost:${port}`);
     console.log(`   Health check: http://localhost:${port}/health`);
     console.log(`   WebSocket: ws://localhost:${port}/channels/:channelId/stream`);
+    console.log(`   Local Agents: ws://localhost:${port}/local-agents/connect`);
     console.log(`   Space ID: ${spaceId}`);
   });
 
@@ -249,6 +278,7 @@ async function main() {
 
   const shutdown = async () => {
     console.log('\n🛑 Shutting down...');
+    localAgentManager.closeAll();
     connectionManager.closeAll();
     server.close();
     await storage.close();
