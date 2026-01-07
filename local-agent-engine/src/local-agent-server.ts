@@ -18,7 +18,7 @@
 
 import WebSocket from "ws";
 import { createServer, type Server as NetServer, type Socket } from "node:net";
-import { existsSync, mkdirSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { query, type Options, type McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import { TymbalBridge } from "./tymbal-bridge.js";
@@ -27,6 +27,13 @@ import {
   initFromConnectionString,
   requestAgentToken,
 } from "./credentials.js";
+import {
+  resolveConfig,
+  detectEnvironment,
+  getApiProtocol,
+  type Environment,
+  type ResolvedConfig,
+} from "./profiles.js";
 import type {
   ServerMessage,
   RegisterMessage,
@@ -45,14 +52,26 @@ import type {
 
 interface ServerConfig {
   wsHost: string;
-  secure: boolean;
+  apiHost: string;
+  wsProtocol: "ws" | "wss";
+  apiProtocol: "http" | "https";
+  environment: Environment;
+  socketPath: string;
+  profile?: string;
+}
+
+interface ParsedArgs {
+  wsHost?: string;
+  apiHost?: string;
+  profile?: string;
   socketPath: string;
 }
 
-function parseArgs(): ServerConfig {
+function parseArgs(): ParsedArgs {
   const args = process.argv.slice(2);
-  let wsHost = process.env.CAST_WS_HOST ?? "localhost:3234";
-  let secure = process.env.CAST_WS_SECURE === "true";
+  let wsHost: string | undefined = process.env.CAST_WS_HOST;
+  let apiHost: string | undefined = process.env.CAST_API_HOST;
+  let profile: string | undefined = process.env.CAST_PROFILE;
   let socketPath = process.env.LOCAL_AGENT_SOCK ?? "/tmp/local-agent.sock";
 
   for (let i = 0; i < args.length; i++) {
@@ -60,8 +79,11 @@ function parseArgs(): ServerConfig {
       case "--ws-host":
         wsHost = args[++i];
         break;
-      case "--secure":
-        secure = true;
+      case "--api-host":
+        apiHost = args[++i];
+        break;
+      case "--profile":
+        profile = args[++i];
         break;
       case "--socket":
         socketPath = args[++i];
@@ -74,16 +96,28 @@ Usage:
   local-agent-server [options]
 
 Options:
-  --ws-host <host>   WebSocket host (default: localhost:3234)
-  --secure           Use wss:// instead of ws://
+  --ws-host <host>   WebSocket host (overrides auto-detect)
+  --api-host <host>  API host (overrides auto-detect)
+  --profile <name>   Use named profile (local, staging, or custom)
   --socket <path>    IPC socket path (default: /tmp/local-agent.sock)
   --help             Show this help message
 
 Environment Variables:
-  CAST_WS_HOST        WebSocket host (default: localhost:3234)
-  CAST_WS_SECURE      Use wss:// (default: false)
+  CAST_WS_HOST        WebSocket host (overrides auto-detect)
+  CAST_API_HOST       API host (overrides auto-detect)
+  CAST_PROFILE        Profile name (local, staging, or custom)
   ANTHROPIC_API_KEY   Required for Claude Agent SDK
   LOCAL_AGENT_SOCK    IPC socket path (default: /tmp/local-agent.sock)
+
+Environment Detection:
+  The server auto-detects the environment from the connection string host:
+    *.staging.clanker.is  →  staging (wss://, https://)
+    Everything else       →  local (ws://, http://)
+
+  Use --profile or --ws-host to override auto-detection.
+
+Profile Config:
+  Custom profiles can be saved to ~/.config/cast-local-agent/profiles.json
 
 Use connect-local-agent to add/remove agents from this server.
 `);
@@ -97,7 +131,7 @@ Use connect-local-agent to add/remove agents from this server.
     process.exit(1);
   }
 
-  return { wsHost, secure, socketPath };
+  return { wsHost, apiHost, profile, socketPath };
 }
 
 // ============================================================================
@@ -114,7 +148,13 @@ interface AgentInstance {
   isProcessing: boolean;
   messageQueue: IncomingMessage[];
   reconnectTimer: NodeJS.Timeout | null;
+  reconnectAttempts: number; // For exponential backoff (Stage 4)
 }
+
+// Reconnection constants
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 30000;
+const RECONNECT_MAX_ATTEMPTS = 10;
 
 function getAgentKey(channelId: string, callsign: string): string {
   return `${channelId}:${callsign}`;
@@ -147,18 +187,6 @@ interface McpContext {
   credentials: ServerCredentials;
   channelId: string;
   token: string;
-}
-
-/**
- * Determine API protocol based on host.
- * Uses http:// for localhost/127.0.0.1, https:// for everything else.
- */
-function getApiProtocol(host: string): string {
-  const hostname = host.split(":")[0].toLowerCase();
-  if (hostname === "localhost" || hostname === "127.0.0.1") {
-    return "http";
-  }
-  return "https";
 }
 
 /**
@@ -266,22 +294,12 @@ class LocalAgentServer {
 
   /**
    * Load server credentials from disk (Stage 3).
-   * If credentials exist, use them for wsHost override.
+   * Credentials are used for auth, but config is already resolved by resolveConfig().
    */
   async loadCredentials(): Promise<void> {
     this.credentials = await loadCredentials();
     if (this.credentials) {
       console.log(`[Server] Loaded credentials for space: ${this.credentials.spaceId}`);
-      // Override wsHost from credentials if not explicitly set via CLI
-      if (!process.env.CAST_WS_HOST && !process.argv.includes("--ws-host")) {
-        this.config.wsHost = this.credentials.wsHost;
-        // Use ws:// for localhost, wss:// for production
-        const isLocalhost =
-          this.credentials.wsHost.startsWith("localhost") ||
-          this.credentials.wsHost.startsWith("127.0.0.1");
-        this.config.secure = !isLocalhost;
-        console.log(`[Server] Using credentials wsHost: ${this.credentials.wsHost} (${this.config.secure ? "wss" : "ws"})`);
-      }
     } else {
       console.log(`[Server] No credentials found (dev mode - localhost auth disabled)`);
     }
@@ -292,8 +310,7 @@ class LocalAgentServer {
   // --------------------------------------------------------------------------
 
   private getWsUrl(): string {
-    const protocol = this.config.secure ? "wss" : "ws";
-    return `${protocol}://${this.config.wsHost}/local-agents/connect`;
+    return `${this.config.wsProtocol}://${this.config.wsHost}/local-agents/connect`;
   }
 
   private async connectAgent(agent: AgentInstance): Promise<void> {
@@ -348,7 +365,23 @@ class LocalAgentServer {
     if (agent.reconnectTimer) return;
 
     const { callsign } = agent.config;
-    console.log(`[${callsign}] Scheduling reconnect in 5s...`);
+
+    // Check max attempts
+    if (agent.reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
+      console.error(`[${callsign}] Max reconnect attempts (${RECONNECT_MAX_ATTEMPTS}) reached. Giving up.`);
+      return;
+    }
+
+    // Exponential backoff with jitter
+    const backoffMs = Math.min(
+      RECONNECT_MAX_MS,
+      RECONNECT_BASE_MS * Math.pow(2, agent.reconnectAttempts)
+    );
+    const jitter = Math.random() * 0.3 * backoffMs; // 0-30% jitter
+    const delayMs = Math.floor(backoffMs + jitter);
+
+    agent.reconnectAttempts++;
+    console.log(`[${callsign}] Scheduling reconnect in ${Math.round(delayMs / 1000)}s (attempt ${agent.reconnectAttempts}/${RECONNECT_MAX_ATTEMPTS})...`);
 
     agent.reconnectTimer = setTimeout(async () => {
       agent.reconnectTimer = null;
@@ -358,7 +391,7 @@ class LocalAgentServer {
         console.error(`[${callsign}] Reconnect failed:`, error);
         this.scheduleAgentReconnect(agent);
       }
-    }, 5000);
+    }, delayMs);
   }
 
   private cancelAgentReconnect(agent: AgentInstance): void {
@@ -366,6 +399,8 @@ class LocalAgentServer {
       clearTimeout(agent.reconnectTimer);
       agent.reconnectTimer = null;
     }
+    // Reset attempts on successful connection
+    agent.reconnectAttempts = 0;
   }
 
   // --------------------------------------------------------------------------
@@ -528,6 +563,7 @@ class LocalAgentServer {
       isProcessing: false,
       messageQueue: [],
       reconnectTimer: null,
+      reconnectAttempts: 0,
     };
 
     this.agents.set(key, agent);
@@ -638,7 +674,14 @@ class LocalAgentServer {
     });
 
     this.ipcServer.listen(socketPath, () => {
-      console.log(`[IPC] Server listening on ${socketPath}`);
+      // Set socket permissions to owner-only (Stage 4 security)
+      try {
+        chmodSync(socketPath, 0o600);
+        console.log(`[IPC] Server listening on ${socketPath} (mode 0600)`);
+      } catch (error) {
+        console.warn(`[IPC] Could not set socket permissions:`, error);
+        console.log(`[IPC] Server listening on ${socketPath}`);
+      }
     });
 
     this.ipcServer.on("error", (error) => {
@@ -770,15 +813,39 @@ async function main(): Promise<void> {
     return;
   }
 
-  const config = parseArgs();
+  const parsedArgs = parseArgs();
+
+  // Load credentials to get host for auto-detection
+  const credentials = await loadCredentials();
+
+  // Resolve configuration from multiple sources (Stage 4)
+  const resolved = await resolveConfig({
+    wsHost: parsedArgs.wsHost,
+    apiHost: parsedArgs.apiHost,
+    profile: parsedArgs.profile,
+    credentialsHost: credentials?.wsHost,
+  });
+
+  const config: ServerConfig = {
+    wsHost: resolved.wsHost,
+    apiHost: resolved.apiHost,
+    wsProtocol: resolved.wsProtocol,
+    apiProtocol: resolved.apiProtocol,
+    environment: resolved.environment,
+    socketPath: parsedArgs.socketPath,
+    profile: parsedArgs.profile,
+  };
 
   console.log(`[Server] Starting local agent server`);
-  console.log(`[Server]   WebSocket: ${config.secure ? "wss" : "ws"}://${config.wsHost}`);
+  console.log(`[Server]   Environment: ${config.environment}`);
+  console.log(`[Server]   WebSocket: ${config.wsProtocol}://${config.wsHost}`);
+  console.log(`[Server]   API: ${config.apiProtocol}://${config.apiHost}`);
+  console.log(`[Server]   Config source: ${resolved.source}`);
   console.log(`[Server]   IPC Socket: ${config.socketPath}`);
 
   const server = new LocalAgentServer(config);
 
-  // Load credentials (Stage 3)
+  // Load credentials into server (Stage 3)
   await server.loadCredentials();
 
   // Handle shutdown signals
