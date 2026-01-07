@@ -112,7 +112,7 @@ export interface ToolResultValue extends TymbalValueBase {
 
 export interface ErrorValue extends TymbalValueBase {
   type: "error";
-  message: string;
+  content: string;
 }
 
 export interface IdleValue extends TymbalValueBase {

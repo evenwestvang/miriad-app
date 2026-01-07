@@ -337,7 +337,7 @@ export class TymbalBridge {
           type: "error",
           sender: this.callsign,
           senderType: "agent",
-          message: errorMessage,
+          content: errorMessage,
         },
       });
     }
