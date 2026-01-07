@@ -28,18 +28,21 @@ const CREDENTIALS_FILE = join(CREDENTIALS_DIR, "credentials.json");
 
 /**
  * Parse a CAST connection string.
- * Format: cast://bootstrap_<token>@<host>/<spaceId>
- * Example: cast://bootstrap_abc123@api.cast.dev/space_xyz
+ * Format: cast://<token>@<host>/<spaceId>
+ * Examples:
+ *   cast://bst_abc123@api.cast.dev/space_xyz
+ *   cast://bootstrap_abc123@api.cast.dev/space_xyz
  */
 export function parseConnectionString(connectionString: string): ParsedConnectionString {
-  // Expected format: cast://bootstrap_<token>@<host>/<spaceId>
+  // Expected format: cast://<token>@<host>/<spaceId>
+  // Token can be bst_xxx (actual backend format) or bootstrap_xxx (legacy)
   const match = connectionString.match(
-    /^cast:\/\/bootstrap_([^@]+)@([^/]+)\/(.+)$/
+    /^cast:\/\/([^@]+)@([^/]+)\/(.+)$/
   );
 
   if (!match) {
     throw new Error(
-      `Invalid connection string format. Expected: cast://bootstrap_<token>@<host>/<spaceId>`
+      `Invalid connection string format. Expected: cast://<token>@<host>/<spaceId>`
     );
   }
 
