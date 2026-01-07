@@ -19,7 +19,7 @@ import { createMcpRoutes } from './handlers/mcp-http.js';
 import { createArtifactRoutes } from './handlers/artifacts.js';
 import { createFilesystemAssetStorage } from './assets/index.js';
 import type { ConnectionManager } from './websocket/index.js';
-import { AgentManager, createAgentInvokerAdapter } from './agents/index.js';
+import { AgentManager, createAgentInvokerAdapter, type LocalAgentRouter } from './agents/index.js';
 import { createDevAuthRoutes, createWorkOSAuthRoutes, requireAuth, getSpaceId } from './auth/index.js';
 import { createAppRoutes } from './handlers/apps.js';
 
@@ -34,6 +34,8 @@ export interface AppOptions {
   orchestrator: ContainerOrchestrator;
   /** WebSocket connection manager */
   connectionManager: ConnectionManager;
+  /** Optional: Local agent router for local-agent-engine connections */
+  localAgentRouter?: LocalAgentRouter;
 }
 
 // =============================================================================
@@ -421,7 +423,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
  * Create a fully configured Cast backend Hono app.
  */
 export function createApp(options: AppOptions): Hono {
-  const { storage, orchestrator, connectionManager } = options;
+  const { storage, orchestrator, connectionManager, localAgentRouter } = options;
 
   const app = new Hono();
 
@@ -824,6 +826,7 @@ export function createApp(options: AppOptions): Hono {
               storage,
               spaceId,
               orchestrator,
+              localAgentRouter,
             });
             return invoker.invokeAgents(cid, targets, message);
           },
