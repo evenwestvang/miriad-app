@@ -77,6 +77,23 @@ export function isExpiringSoon(secrets?: SecretsMetadata): boolean {
 }
 
 // =============================================================================
+// Validation
+// =============================================================================
+
+/** Allowed characters for provider IDs (defense in depth against path traversal) */
+const PROVIDER_ID_REGEX = /^[a-z0-9-]+$/
+
+/**
+ * Validate provider ID is safe to use in URL paths.
+ * Throws if provider contains unsafe characters.
+ */
+function validateProviderId(provider: string): void {
+  if (!PROVIDER_ID_REGEX.test(provider)) {
+    throw new Error(`Invalid provider ID: ${provider}`)
+  }
+}
+
+// =============================================================================
 // API Functions
 // =============================================================================
 
@@ -102,6 +119,8 @@ export async function startAppConnect(
     slug: string
   }
 ): Promise<OAuthStartResponse> {
+  validateProviderId(provider)
+
   const searchParams = new URLSearchParams({
     spaceId: params.spaceId,
     channelId: params.channelId,
@@ -132,6 +151,8 @@ export async function disconnectApp(
     slug: string
   }
 ): Promise<void> {
+  validateProviderId(provider)
+
   const response = await apiFetch(`${API_HOST}/auth/apps/${provider}/disconnect`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -156,6 +177,8 @@ export async function refreshAppToken(
     slug: string
   }
 ): Promise<void> {
+  validateProviderId(provider)
+
   const response = await apiFetch(`${API_HOST}/auth/apps/${provider}/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
