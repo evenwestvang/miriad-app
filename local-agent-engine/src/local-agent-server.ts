@@ -20,7 +20,7 @@ import WebSocket from "ws";
 import { createServer, type Server as NetServer, type Socket } from "node:net";
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
+import { query, type Options, type McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import { TymbalBridge } from "./tymbal-bridge.js";
 import {
   loadCredentials,
@@ -140,6 +140,52 @@ function hasExistingSession(workspace: string): boolean {
 }
 
 // ============================================================================
+// MCP Configuration (Stage 3)
+// ============================================================================
+
+interface McpContext {
+  credentials: ServerCredentials;
+  channelId: string;
+  token: string;
+}
+
+/**
+ * Determine API protocol based on host.
+ * Uses http:// for localhost/127.0.0.1, https:// for everything else.
+ */
+function getApiProtocol(host: string): string {
+  const hostname = host.split(":")[0].toLowerCase();
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return "http";
+  }
+  return "https";
+}
+
+/**
+ * Build MCP server configuration for the SDK.
+ * Adds cast-artifacts MCP with HTTP transport when credentials are available.
+ */
+function buildMcpServers(ctx: McpContext | null): Record<string, McpServerConfig> {
+  const mcpServers: Record<string, McpServerConfig> = {};
+
+  if (ctx) {
+    const protocol = getApiProtocol(ctx.credentials.host);
+    const apiUrl = `${protocol}://${ctx.credentials.host}`;
+
+    mcpServers["cast-artifacts"] = {
+      type: "http",
+      url: `${apiUrl}/mcp/${ctx.channelId}`,
+      headers: {
+        Authorization: `Agent ${ctx.token}`,
+      },
+    };
+    console.log(`[Server] Added cast-artifacts MCP (HTTP transport to ${ctx.credentials.host})`);
+  }
+
+  return mcpServers;
+}
+
+// ============================================================================
 // Claude SDK Integration
 // ============================================================================
 
@@ -147,7 +193,8 @@ async function runClaudeQuery(
   prompt: string,
   bridge: TymbalBridge,
   workspace: string,
-  systemPrompt?: string
+  systemPrompt?: string,
+  mcpContext?: McpContext | null
 ): Promise<void> {
   const shouldContinue = hasExistingSession(workspace);
   const claudeConfigDir = getClaudeConfigDir(workspace);
@@ -155,6 +202,13 @@ async function runClaudeQuery(
   console.log(`[Server] Starting SDK query for ${bridge.getCallsign()}`);
   console.log(`[Server] Working directory: ${workspace}`);
   console.log(`[Server] Continue session: ${shouldContinue}`);
+
+  // Build MCP servers config (Stage 3)
+  const mcpServers = buildMcpServers(mcpContext ?? null);
+  const hasMcp = Object.keys(mcpServers).length > 0;
+  if (hasMcp) {
+    console.log(`[Server] MCP servers: ${Object.keys(mcpServers).join(", ")}`);
+  }
 
   const options: Options = {
     systemPrompt: systemPrompt
@@ -176,6 +230,7 @@ async function runClaudeQuery(
       ...process.env,
       CLAUDE_CONFIG_DIR: claudeConfigDir,
     },
+    ...(hasMcp && { mcpServers }),
   };
 
   try {
@@ -397,19 +452,30 @@ class LocalAgentServer {
   }
 
   private async processAgentMessage(agent: AgentInstance, message: IncomingMessage): Promise<void> {
-    const { callsign, workspace } = agent.config;
+    const { callsign, channelId, workspace } = agent.config;
 
     agent.isProcessing = true;
     agent.status = "processing";
 
     console.log(`[${callsign}] Processing message from ${message.sender}`);
 
+    // Build MCP context if credentials and token available (Stage 3)
+    const mcpContext: McpContext | null =
+      this.credentials && agent.token
+        ? {
+            credentials: this.credentials,
+            channelId,
+            token: agent.token,
+          }
+        : null;
+
     try {
       await runClaudeQuery(
         message.content,
         agent.bridge!,
         workspace,
-        message.systemPrompt
+        message.systemPrompt,
+        mcpContext
       );
     } catch (error) {
       console.error(`[${callsign}] Error processing message:`, error);
