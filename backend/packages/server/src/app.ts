@@ -522,7 +522,7 @@ export function createApp(options: AppOptions): Hono {
   // ---------------------------------------------------------------------------
   // App OAuth Routes (External Service Integrations)
   // ---------------------------------------------------------------------------
-  const apiUrl = process.env.API_URL || 'http://localhost:8080';
+  const apiUrl = process.env.CAST_API_URL || 'http://localhost:8080';
   const appUrl = process.env.APP_URL || 'http://localhost:3000';
   const jwtSecret = process.env.SECRET_KEY || 'dev-secret-key-min-32-characters!!';
 
