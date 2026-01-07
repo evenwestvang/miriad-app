@@ -79,12 +79,15 @@ export interface TymbalBridgeConfig {
   channelId: string;
   /** Agent callsign for sender attribution */
   callsign: string;
+  /** Agent token for auth (Stage 3) */
+  token?: string;
 }
 
 export class TymbalBridge {
   private readonly ws: WebSocket;
   private readonly channelId: string;
   private readonly callsign: string;
+  private readonly token: string | undefined;
 
   // Session state
   private sessionId: string | null = null;
@@ -98,6 +101,7 @@ export class TymbalBridge {
     this.ws = config.ws;
     this.channelId = config.channelId;
     this.callsign = config.callsign;
+    this.token = config.token;
   }
 
   /**
@@ -395,6 +399,7 @@ export class TymbalBridge {
     const message: FrameMessage = {
       type: "frame",
       channelId: this.channelId,
+      token: this.token, // Include token if available (Stage 3)
       frame,
     };
 

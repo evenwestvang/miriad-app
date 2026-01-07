@@ -49,11 +49,13 @@ export interface RegisterMessage {
   channelId: string;
   callsign: string;
   workspace: string;
+  token?: string; // Agent token (required in prod, optional localhost)
 }
 
 export interface FrameMessage {
   type: "frame";
   channelId: string;
+  token?: string; // Agent token (required in prod, optional localhost)
   frame: TymbalFrame;
 }
 
@@ -226,3 +228,49 @@ export interface AgentInstanceConfig {
 }
 
 export type AgentStatus = "idle" | "processing" | "disconnected";
+
+// ============================================================================
+// Stage 3: Server Credentials & Auth
+// ============================================================================
+
+/** Server credentials stored in ~/.config/cast/credentials.json */
+export interface ServerCredentials {
+  serverId: string;
+  secret: string;
+  spaceId: string;
+  host: string;
+  wsHost: string;
+  createdAt: string;
+}
+
+/** Bootstrap exchange request */
+export interface BootstrapRequest {
+  bootstrapToken: string;
+}
+
+/** Bootstrap exchange response */
+export interface BootstrapResponse {
+  serverId: string;
+  secret: string;
+  spaceId: string;
+  host: string;
+  wsHost: string;
+}
+
+/** Agent token request */
+export interface AgentTokenRequest {
+  channelId: string;
+  callsign: string;
+}
+
+/** Agent token response */
+export interface AgentTokenResponse {
+  token: string;
+}
+
+/** Parsed connection string */
+export interface ParsedConnectionString {
+  host: string;
+  bootstrapToken: string;
+  spaceId: string;
+}

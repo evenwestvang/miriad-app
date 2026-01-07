@@ -22,6 +22,11 @@ import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import { TymbalBridge } from "./tymbal-bridge.js";
+import {
+  loadCredentials,
+  initFromConnectionString,
+  requestAgentToken,
+} from "./credentials.js";
 import type {
   ServerMessage,
   RegisterMessage,
@@ -31,6 +36,7 @@ import type {
   IPCAgentInfo,
   AgentInstanceConfig,
   AgentStatus,
+  ServerCredentials,
 } from "./types.js";
 
 // ============================================================================
@@ -100,6 +106,7 @@ Use connect-local-agent to add/remove agents from this server.
 
 interface AgentInstance {
   config: AgentInstanceConfig;
+  token: string | null; // Agent token for auth (Stage 3)
   ws: WebSocket | null;
   bridge: TymbalBridge | null;
   status: AgentStatus;
@@ -194,11 +201,31 @@ class LocalAgentServer {
   private ipcServer: NetServer | null = null;
   private agents: Map<string, AgentInstance> = new Map();
   private config: ServerConfig;
+  private credentials: ServerCredentials | null = null;
   private startTime: Date;
 
   constructor(config: ServerConfig) {
     this.config = config;
     this.startTime = new Date();
+  }
+
+  /**
+   * Load server credentials from disk (Stage 3).
+   * If credentials exist, use them for wsHost override.
+   */
+  async loadCredentials(): Promise<void> {
+    this.credentials = await loadCredentials();
+    if (this.credentials) {
+      console.log(`[Server] Loaded credentials for space: ${this.credentials.spaceId}`);
+      // Override wsHost from credentials if not explicitly set via CLI
+      if (!process.env.CAST_WS_HOST && !process.argv.includes("--ws-host")) {
+        this.config.wsHost = this.credentials.wsHost;
+        this.config.secure = true; // Production always uses wss
+        console.log(`[Server] Using credentials wsHost: ${this.credentials.wsHost}`);
+      }
+    } else {
+      console.log(`[Server] No credentials found (dev mode - localhost auth disabled)`);
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -216,8 +243,16 @@ class LocalAgentServer {
 
     console.log(`[${callsign}] Connecting to ${url}`);
 
+    // Include server auth header if credentials available (Stage 3)
+    const wsOptions: WebSocket.ClientOptions = {};
+    if (this.credentials) {
+      wsOptions.headers = {
+        Authorization: `Server ${this.credentials.secret}`,
+      };
+    }
+
     return new Promise((resolve, reject) => {
-      agent.ws = new WebSocket(url);
+      agent.ws = new WebSocket(url, wsOptions);
 
       agent.ws.on("open", () => {
         console.log(`[${callsign}] WebSocket connected`);
@@ -298,11 +333,12 @@ class LocalAgentServer {
 
       case "registered":
         agent.status = "idle";
-        // Initialize bridge with this agent's WebSocket
+        // Initialize bridge with this agent's WebSocket and token (Stage 3)
         agent.bridge = new TymbalBridge({
           ws: agent.ws!,
           channelId,
           callsign,
+          token: agent.token ?? undefined,
         });
         console.log(`[${callsign}] Registered in ${channelId}`);
         break;
@@ -331,10 +367,11 @@ class LocalAgentServer {
       channelId,
       callsign,
       workspace,
+      token: agent.token ?? undefined, // Include token if available (Stage 3)
     };
 
     agent.ws.send(JSON.stringify(registerMsg));
-    console.log(`[${callsign}] Sent registration`);
+    console.log(`[${callsign}] Sent registration${agent.token ? " (with token)" : ""}`);
   }
 
   private async handleIncomingMessage(agent: AgentInstance, message: IncomingMessage): Promise<void> {
@@ -399,8 +436,21 @@ class LocalAgentServer {
     // Ensure workspace exists
     ensureWorkspace(config.workspace);
 
+    // Request agent token from CAST if we have credentials (Stage 3)
+    let token: string | null = null;
+    if (this.credentials) {
+      try {
+        console.log(`[${callsign}] Requesting agent token...`);
+        token = await requestAgentToken(this.credentials, channelId, callsign);
+        console.log(`[${callsign}] Token acquired`);
+      } catch (error) {
+        return { success: false, message: `Failed to get agent token: ${error}` };
+      }
+    }
+
     const agent: AgentInstance = {
       config,
+      token,
       ws: null,
       bridge: null,
       status: "disconnected",
@@ -613,10 +663,43 @@ class LocalAgentServer {
 }
 
 // ============================================================================
+// Init Command
+// ============================================================================
+
+async function handleInit(connectionString: string): Promise<void> {
+  console.log(`[Init] Initializing from connection string...`);
+
+  try {
+    const credentials = await initFromConnectionString(connectionString);
+    console.log(`\n✓ Successfully initialized!`);
+    console.log(`  Server ID: ${credentials.serverId}`);
+    console.log(`  Space: ${credentials.spaceId}`);
+    console.log(`  Host: ${credentials.wsHost}`);
+    console.log(`\nYou can now run: local-agent-server`);
+  } catch (error) {
+    console.error(`\n✗ Initialization failed: ${error}`);
+    process.exit(1);
+  }
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
 async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+
+  // Handle init command separately
+  if (args[0] === "init") {
+    if (!args[1]) {
+      console.error("Usage: local-agent-server init <connection-string>");
+      console.error('Example: local-agent-server init "cast://bootstrap_abc@api.cast.dev/space_xyz"');
+      process.exit(1);
+    }
+    await handleInit(args[1]);
+    return;
+  }
+
   const config = parseArgs();
 
   console.log(`[Server] Starting local agent server`);
@@ -624,6 +707,9 @@ async function main(): Promise<void> {
   console.log(`[Server]   IPC Socket: ${config.socketPath}`);
 
   const server = new LocalAgentServer(config);
+
+  // Load credentials (Stage 3)
+  await server.loadCredentials();
 
   // Handle shutdown signals
   const shutdown = async () => {
