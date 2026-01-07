@@ -1888,10 +1888,10 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const secrets = currentSecrets[0]?.secrets ?? {};
     secrets[key] = storedSecret;
 
-    // Update the artifact with new secrets (JSON.stringify for JSONB column)
+    // Update the artifact with new secrets
     await sql`
       UPDATE artifacts
-      SET secrets = ${JSON.stringify(secrets)}::jsonb,
+      SET secrets = ${sql.json(secrets as unknown as JSONValue)},
           version = version + 1,
           updated_at = NOW()
       WHERE channel_id = ${channelId} AND slug = ${slug}
@@ -1920,12 +1920,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
     delete secrets[key];
 
-    // Update with null if no secrets remain, otherwise update with remaining secrets (JSON.stringify for JSONB column)
-    const secretsJson = Object.keys(secrets).length > 0 ? JSON.stringify(secrets) : null;
+    // Update with null if no secrets remain, otherwise update with remaining secrets
+    const secretsValue = Object.keys(secrets).length > 0 ? secrets : null;
 
     await sql`
       UPDATE artifacts
-      SET secrets = ${secretsJson}::jsonb,
+      SET secrets = ${secretsValue ? sql.json(secretsValue as unknown as JSONValue) : null},
           version = version + 1,
           updated_at = NOW()
       WHERE channel_id = ${channelId} AND slug = ${slug}
