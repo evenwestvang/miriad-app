@@ -126,6 +126,7 @@ export async function startAppConnect(
     spaceId: params.spaceId,
     channelId: params.channelId,
     slug: params.slug,
+    returnOrigin: window.location.origin,
   })
 
   const response = await apiFetch(
