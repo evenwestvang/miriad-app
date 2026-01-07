@@ -42,6 +42,7 @@ interface OAuthState {
   channelId: string;
   slug: string;
   provider: string;
+  returnOrigin?: string;
 }
 
 // =============================================================================
@@ -52,6 +53,7 @@ const ConnectQuerySchema = z.object({
   spaceId: z.string().min(1),
   channelId: z.string().min(1),
   slug: z.string().min(1),
+  returnOrigin: z.string().url().optional(),
 });
 
 const DisconnectBodySchema = z.object({
@@ -255,13 +257,14 @@ export function createAppRoutes(options: AppHandlerOptions): Hono {
       spaceId: c.req.query('spaceId'),
       channelId: c.req.query('channelId'),
       slug: c.req.query('slug'),
+      returnOrigin: c.req.query('returnOrigin'),
     });
 
     if (!query.success) {
       return c.json(formatZodError(query.error), 400);
     }
 
-    const { spaceId, channelId, slug } = query.data;
+    const { spaceId, channelId, slug, returnOrigin } = query.data;
 
     // Get app definition
     const appDef = getAppDefinition(provider);
@@ -275,8 +278,8 @@ export function createAppRoutes(options: AppHandlerOptions): Hono {
       return c.json({ error: `OAuth not configured for ${provider}` }, 503);
     }
 
-    // Generate state JWT
-    const state: OAuthState = { spaceId, channelId, slug, provider };
+    // Generate state JWT (include returnOrigin if provided)
+    const state: OAuthState = { spaceId, channelId, slug, provider, returnOrigin };
     const stateToken = jwt.sign(state, jwtSecret, { expiresIn: '10m' });
 
     // Build authorization URL
@@ -306,9 +309,23 @@ export function createAppRoutes(options: AppHandlerOptions): Hono {
     const error = c.req.query('error');
     const errorDescription = c.req.query('error_description');
 
+    // Helper to get redirect base from state token (if valid)
+    const getRedirectBase = (): string => {
+      if (stateToken) {
+        try {
+          const decoded = jwt.verify(stateToken, jwtSecret) as OAuthState;
+          return decoded.returnOrigin || appUrl;
+        } catch {
+          // State invalid, fall back to appUrl
+        }
+      }
+      return appUrl;
+    };
+
     // Handle OAuth errors
     if (error) {
-      const errorUrl = new URL(`${appUrl}/oauth-error`);
+      const redirectBase = getRedirectBase();
+      const errorUrl = new URL(`${redirectBase}/oauth-error`);
       errorUrl.searchParams.set('error', error);
       if (errorDescription) {
         errorUrl.searchParams.set('description', errorDescription);
@@ -328,7 +345,10 @@ export function createAppRoutes(options: AppHandlerOptions): Hono {
       return c.json({ error: 'Invalid or expired state token' }, 400);
     }
 
-    const { spaceId, channelId, slug, provider } = state;
+    const { spaceId, channelId, slug, provider, returnOrigin } = state;
+
+    // Use returnOrigin from state if provided, otherwise fall back to appUrl
+    const redirectBase = returnOrigin || appUrl;
 
     try {
       // Exchange code for tokens
@@ -363,7 +383,7 @@ export function createAppRoutes(options: AppHandlerOptions): Hono {
       }
 
       // Redirect back to app
-      const successUrl = new URL(`${appUrl}/spaces/${spaceId}/channels/${channelId}`);
+      const successUrl = new URL(`${redirectBase}/spaces/${spaceId}/channels/${channelId}`);
       successUrl.searchParams.set('app', slug);
       successUrl.searchParams.set('connected', 'true');
 
@@ -371,7 +391,7 @@ export function createAppRoutes(options: AppHandlerOptions): Hono {
     } catch (err) {
       console.error('[Apps] OAuth callback error:', err);
 
-      const errorUrl = new URL(`${appUrl}/oauth-error`);
+      const errorUrl = new URL(`${redirectBase}/oauth-error`);
       errorUrl.searchParams.set('error', 'token_exchange_failed');
       errorUrl.searchParams.set('description', err instanceof Error ? err.message : 'Unknown error');
 
