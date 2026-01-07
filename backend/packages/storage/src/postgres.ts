@@ -46,6 +46,9 @@ import type {
   // Local Agent Server types (Stage 3)
   StoredLocalAgentServer,
   CreateLocalAgentServerInput,
+  // Bootstrap Token types (Stage 3)
+  StoredBootstrapToken,
+  CreateBootstrapTokenInput,
 } from '@cast/core';
 // Import functions separately (not as types)
 import {
@@ -164,6 +167,15 @@ interface LocalAgentServerRow {
   secret: string;
   created_at: Date;
   revoked_at: Date | null;
+}
+
+interface BootstrapTokenRow {
+  token: string;
+  space_id: string;
+  user_id: string;
+  expires_at: Date;
+  consumed: boolean;
+  created_at: Date;
 }
 
 // =============================================================================
@@ -1824,6 +1836,26 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       CREATE INDEX IF NOT EXISTS idx_local_agent_servers_space
       ON local_agent_servers(space_id)
     `;
+
+    // ---------------------------------------------------------------------------
+    // Bootstrap Tokens Table (Stage 3)
+    // ---------------------------------------------------------------------------
+    await sql`
+      CREATE TABLE IF NOT EXISTS bootstrap_tokens (
+        token VARCHAR(255) PRIMARY KEY,
+        space_id VARCHAR(26) NOT NULL,
+        user_id VARCHAR(26) NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        consumed BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+
+    // Index for cleanup of expired tokens
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_bootstrap_tokens_expires
+      ON bootstrap_tokens(expires_at) WHERE consumed = FALSE
+    `;
   }
 
   async function close(): Promise<void> {
@@ -2189,6 +2221,89 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     return result.length > 0;
   }
 
+  // ---------------------------------------------------------------------------
+  // Bootstrap Token Operations (Stage 3)
+  // ---------------------------------------------------------------------------
+
+  function rowToBootstrapToken(row: BootstrapTokenRow): StoredBootstrapToken {
+    return {
+      token: row.token,
+      spaceId: row.space_id,
+      userId: row.user_id,
+      expiresAt: row.expires_at.toISOString(),
+      consumed: row.consumed,
+      createdAt: row.created_at.toISOString(),
+    };
+  }
+
+  async function saveBootstrapToken(
+    input: CreateBootstrapTokenInput
+  ): Promise<StoredBootstrapToken> {
+    const now = new Date();
+
+    const result = await sql<BootstrapTokenRow[]>`
+      INSERT INTO bootstrap_tokens (
+        token, space_id, user_id, expires_at, consumed, created_at
+      )
+      VALUES (
+        ${input.token},
+        ${input.spaceId},
+        ${input.userId},
+        ${input.expiresAt},
+        FALSE,
+        ${now}
+      )
+      RETURNING *
+    `;
+
+    return rowToBootstrapToken(result[0]);
+  }
+
+  async function getBootstrapToken(
+    token: string
+  ): Promise<StoredBootstrapToken | null> {
+    const now = new Date();
+
+    // Only return if not consumed and not expired
+    const result = await sql<BootstrapTokenRow[]>`
+      SELECT * FROM bootstrap_tokens
+      WHERE token = ${token}
+        AND consumed = FALSE
+        AND expires_at > ${now}
+    `;
+
+    if (result.length === 0) return null;
+    return rowToBootstrapToken(result[0]);
+  }
+
+  async function consumeBootstrapToken(token: string): Promise<boolean> {
+    const now = new Date();
+
+    // Only consume if not already consumed and not expired
+    const result = await sql`
+      UPDATE bootstrap_tokens
+      SET consumed = TRUE
+      WHERE token = ${token}
+        AND consumed = FALSE
+        AND expires_at > ${now}
+      RETURNING token
+    `;
+
+    return result.length > 0;
+  }
+
+  async function cleanupExpiredBootstrapTokens(): Promise<number> {
+    const now = new Date();
+
+    const result = await sql`
+      DELETE FROM bootstrap_tokens
+      WHERE expires_at < ${now} OR consumed = TRUE
+      RETURNING token
+    `;
+
+    return result.length;
+  }
+
   return {
     // Message operations
     saveMessage,
@@ -2244,6 +2359,11 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     getLocalAgentServerBySecret,
     getLocalAgentServersByUser,
     revokeLocalAgentServer,
+    // Bootstrap Token operations (Stage 3)
+    saveBootstrapToken,
+    getBootstrapToken,
+    consumeBootstrapToken,
+    cleanupExpiredBootstrapTokens,
     // Lifecycle
     initialize,
     close,

@@ -958,3 +958,49 @@ export function isStoredLocalAgentServer(value: unknown): value is StoredLocalAg
     typeof (value as StoredLocalAgentServer).secret === 'string'
   );
 }
+
+// =============================================================================
+// Bootstrap Token Types (Stage 3)
+// =============================================================================
+
+/**
+ * A bootstrap token as stored in the database.
+ * Bootstrap tokens are short-lived (10 min) one-time-use tokens for
+ * exchanging into server credentials during local agent setup.
+ */
+export interface StoredBootstrapToken {
+  /** The token value (bst_... format) */
+  token: string;
+
+  /** Space this token is for */
+  spaceId: string;
+
+  /** User who generated this token */
+  userId: string;
+
+  /** ISO timestamp of expiration */
+  expiresAt: string;
+
+  /** Whether the token has been consumed */
+  consumed: boolean;
+
+  /** ISO timestamp of creation */
+  createdAt: string;
+}
+
+/**
+ * Input for creating a new bootstrap token.
+ */
+export interface CreateBootstrapTokenInput {
+  /** The token value (bst_... format) */
+  token: string;
+
+  /** Space ID */
+  spaceId: string;
+
+  /** User ID who generated this token */
+  userId: string;
+
+  /** Expiration timestamp */
+  expiresAt: Date;
+}

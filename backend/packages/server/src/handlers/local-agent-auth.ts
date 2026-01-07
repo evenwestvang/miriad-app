@@ -62,19 +62,6 @@ export interface LocalAgentAuthOptions {
   wsHost: string;
 }
 
-interface BootstrapToken {
-  token: string;
-  spaceId: string;
-  userId: string;
-  expiresAt: Date;
-  consumed: boolean;
-}
-
-// In-memory storage for bootstrap tokens (short-lived, no persistence needed)
-// Bootstrap tokens are intentionally ephemeral - they expire in 10 minutes
-// and are consumed immediately upon use.
-const bootstrapTokens = new Map<string, BootstrapToken>();
-
 // =============================================================================
 // Zod Schemas
 // =============================================================================
@@ -121,16 +108,6 @@ function formatZodError(error: z.ZodError): { error: string; details: Array<{ pa
   };
 }
 
-// Cleanup expired bootstrap tokens periodically
-setInterval(() => {
-  const now = new Date();
-  for (const [token, data] of bootstrapTokens.entries()) {
-    if (data.expiresAt < now || data.consumed) {
-      bootstrapTokens.delete(token);
-    }
-  }
-}, 60 * 1000); // Every minute
-
 // =============================================================================
 // Route Factory
 // =============================================================================
@@ -156,13 +133,12 @@ export function createLocalAgentAuthRoutes(options: LocalAgentAuthOptions): Hono
     const token = generateBootstrapToken();
     const expiresAt = new Date(Date.now() + BOOTSTRAP_TOKEN_TTL_MS);
 
-    // Store token
-    bootstrapTokens.set(token, {
+    // Store token in database
+    await storage.saveBootstrapToken({
       token,
       spaceId,
       userId,
       expiresAt,
-      consumed: false,
     });
 
     // Build connection string and command
@@ -191,24 +167,22 @@ export function createLocalAgentAuthRoutes(options: LocalAgentAuthOptions): Hono
 
     const { bootstrapToken } = parsed.data;
 
-    // Look up bootstrap token
-    const tokenData = bootstrapTokens.get(bootstrapToken);
+    // Look up bootstrap token from database
+    // getBootstrapToken already checks consumed=false and expires_at > now
+    const tokenData = await storage.getBootstrapToken(bootstrapToken);
 
     if (!tokenData) {
       return c.json({ error: 'Invalid or expired bootstrap token' }, 401);
     }
 
-    if (tokenData.consumed) {
+    // Atomically consume the token
+    // This prevents race conditions where two requests try to consume the same token
+    const consumed = await storage.consumeBootstrapToken(bootstrapToken);
+
+    if (!consumed) {
+      // Token was consumed by another request between our lookup and consume
       return c.json({ error: 'Bootstrap token already consumed' }, 409);
     }
-
-    if (tokenData.expiresAt < new Date()) {
-      bootstrapTokens.delete(bootstrapToken);
-      return c.json({ error: 'Bootstrap token expired' }, 401);
-    }
-
-    // Mark token as consumed
-    tokenData.consumed = true;
 
     // Generate server credentials
     const serverId = generateServerId();

@@ -40,6 +40,9 @@ import type {
   // Local Agent Server types (Stage 3)
   StoredLocalAgentServer,
   CreateLocalAgentServerInput,
+  // Bootstrap Token types (Stage 3)
+  StoredBootstrapToken,
+  CreateBootstrapTokenInput,
 } from '@cast/core';
 
 // =============================================================================
@@ -484,6 +487,45 @@ export interface Storage {
    * @returns true if revoked, false if not found or already revoked
    */
   revokeLocalAgentServer(serverId: string): Promise<boolean>;
+
+  // ---------------------------------------------------------------------------
+  // Bootstrap Token Operations (Stage 3)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Save a bootstrap token.
+   * Called when UI requests a new connection string for local agent setup.
+   *
+   * @param input - Bootstrap token data
+   * @returns The stored bootstrap token
+   */
+  saveBootstrapToken(input: CreateBootstrapTokenInput): Promise<StoredBootstrapToken>;
+
+  /**
+   * Get a bootstrap token by token value.
+   * Returns null if not found, expired, or already consumed.
+   *
+   * @param token - The token value (bst_... format)
+   * @returns Bootstrap token or null if not found/invalid
+   */
+  getBootstrapToken(token: string): Promise<StoredBootstrapToken | null>;
+
+  /**
+   * Consume a bootstrap token (mark as used).
+   * Called when CLI exchanges token for server credentials.
+   *
+   * @param token - The token value to consume
+   * @returns true if consumed, false if not found or already consumed
+   */
+  consumeBootstrapToken(token: string): Promise<boolean>;
+
+  /**
+   * Delete expired bootstrap tokens.
+   * Called periodically for cleanup.
+   *
+   * @returns Number of tokens deleted
+   */
+  cleanupExpiredBootstrapTokens(): Promise<number>;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
