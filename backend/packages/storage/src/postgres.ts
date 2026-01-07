@@ -824,7 +824,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           ${sql.array(input.assignees ?? [])},
           ${sql.array(input.labels ?? [])},
           ${sql.array(refs)},
-          ${input.props ? sql`${JSON.stringify(input.props)}::jsonb` : null},
+          ${input.props ? JSON.stringify(input.props) : null},
           ${input.contentType ?? null},
           ${input.fileSize ?? null},
           1,
@@ -941,7 +941,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const path = 'path' in updateObj ? (updateObj.path as string) : artifact.path;
     const assignees = 'assignees' in updateObj ? (updateObj.assignees as string[]) : artifact.assignees;
     const labels = 'labels' in updateObj ? (updateObj.labels as string[]) : artifact.labels;
-    const propsJson = 'props' in updateObj ? (updateObj.props as string | null) : (artifact.props ? JSON.stringify(artifact.props) : null);
+    const propsValue = 'props' in updateObj ? (updateObj.props as Record<string, unknown> | null) : (artifact.props ?? null);
     const orderKey = 'order_key' in updateObj ? (updateObj.order_key as string | null) : (artifact.orderKey ?? null);
 
     // Increment version
@@ -955,7 +955,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         path = ${path},
         assignees = ${sql.array(assignees)},
         labels = ${sql.array(labels)},
-        props = ${propsJson ? sql`${propsJson}::jsonb` : null},
+        props = ${propsValue ? JSON.stringify(propsValue) : null},
         order_key = ${orderKey},
         version = version + 1,
         updated_by = ${updatedBy},
