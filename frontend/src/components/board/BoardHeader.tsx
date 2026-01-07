@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, X, Upload, FileText, CheckSquare, GitBranch, Code, ChevronDown, Server, Bot, Target, BookOpen, Library } from 'lucide-react'
+import { Plus, X, Upload, FileText, CheckSquare, GitBranch, Code, ChevronDown, Server, Bot, Target, BookOpen, Library, Plug2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { ArtifactType } from '../../types/artifact'
 
@@ -14,6 +14,7 @@ const ARTIFACT_TYPES: { value: ArtifactType; label: string; icon: typeof FileTex
   { value: 'system.agent', label: 'Agent', icon: Bot },
   { value: 'system.focus', label: 'Focus', icon: Target },
   { value: 'system.playbook', label: 'Playbook', icon: BookOpen },
+  { value: 'system.app', label: 'App', icon: Plug2 },
 ]
 
 interface BoardHeaderProps {

@@ -15,6 +15,10 @@
  * - GET    /channels/:channelId/artifacts/:slug/versions    - List versions
  * - GET    /channels/:channelId/artifacts/:slug/diff        - Diff versions
  *
+ * Secrets Endpoints (App Integrations):
+ * - PUT    /channels/:channelId/artifacts/:slug/secrets/:key    - Set a secret
+ * - DELETE /channels/:channelId/artifacts/:slug/secrets/:key    - Delete a secret
+ *
  * Asset Endpoints (Phase E):
  * - POST   /channels/:channelId/assets                      - Upload asset (multipart)
  * - GET    /channels/:channelId/assets/:slug                - Serve asset file
@@ -79,6 +83,7 @@ const ArtifactTypeSchema = z.enum([
   'system.agent',
   'system.focus',
   'system.playbook',
+  'system.app',
 ]);
 
 const ArtifactStatusSchema = z.enum([
@@ -136,6 +141,11 @@ const CreateVersionSchema = z.object({
   version: z.string().min(1, 'version name is required'),
   message: z.string().optional(),
   sender: z.string().min(1, 'sender is required'),
+});
+
+const SetSecretSchema = z.object({
+  value: z.string().min(1, 'value is required'),
+  expiresAt: z.string().datetime().optional(),
 });
 
 const ListQuerySchema = z.object({
@@ -380,6 +390,13 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
 
       if (!existing && replace) {
         return c.json({ error: `Artifact not found: ${slug}. Cannot replace non-existent artifact.` }, 404);
+      }
+
+      // Prevent replace on artifacts with secrets (would lose encrypted data)
+      if (replace && existing && existing.secrets && Object.keys(existing.secrets).length > 0) {
+        return c.json({
+          error: `Cannot replace artifact with secrets. Use PATCH to update fields, or disconnect apps first.`,
+        }, 409);
       }
 
       let artifact;
@@ -763,6 +780,108 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
       }
       console.error('[Artifacts] Error generating diff:', error);
       return c.json({ error: 'Failed to generate diff' }, 500);
+    }
+  });
+
+  // ===========================================================================
+  // Secrets Endpoints (App Integrations)
+  // ===========================================================================
+
+  // ---------------------------------------------------------------------------
+  // PUT /channels/:channelId/artifacts/:slug/secrets/:key - Set a secret
+  // ---------------------------------------------------------------------------
+  app.put('/:channelId/artifacts/:slug/secrets/:key', async (c) => {
+    const channelId = c.req.param('channelId');
+    const slug = c.req.param('slug');
+    const key = c.req.param('key');
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const parsed = SetSecretSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(formatZodError(parsed.error), 400);
+    }
+
+    const { value, expiresAt } = parsed.data;
+
+    try {
+      const spaceId = getSpaceId(c);
+      // Resolve channel by name or ID
+      const channel = await storage.getChannelByName(spaceId, channelId)
+        || await storage.getChannel(spaceId, channelId);
+
+      if (!channel) {
+        return c.json({ error: 'Channel not found' }, 404);
+      }
+
+      // Check artifact exists
+      const artifact = await storage.getArtifact(channel.id, slug);
+      if (!artifact) {
+        return c.json({ error: `Artifact not found: ${slug}` }, 404);
+      }
+
+      // Set the secret
+      await storage.setSecret(spaceId, channel.id, slug, key, {
+        value,
+        expiresAt,
+      });
+
+      // Get updated metadata to return
+      const metadata = await storage.getSecretMetadata(channel.id, slug, key);
+
+      return c.json({
+        key,
+        setAt: metadata?.setAt,
+        expiresAt: metadata?.expiresAt,
+      });
+    } catch (error) {
+      console.error('[Artifacts] Error setting secret:', error);
+      return c.json({ error: 'Failed to set secret' }, 500);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // DELETE /channels/:channelId/artifacts/:slug/secrets/:key - Delete a secret
+  // ---------------------------------------------------------------------------
+  app.delete('/:channelId/artifacts/:slug/secrets/:key', async (c) => {
+    const channelId = c.req.param('channelId');
+    const slug = c.req.param('slug');
+    const key = c.req.param('key');
+
+    try {
+      const spaceId = getSpaceId(c);
+      // Resolve channel by name or ID
+      const channel = await storage.getChannelByName(spaceId, channelId)
+        || await storage.getChannel(spaceId, channelId);
+
+      if (!channel) {
+        return c.json({ error: 'Channel not found' }, 404);
+      }
+
+      // Check artifact exists
+      const artifact = await storage.getArtifact(channel.id, slug);
+      if (!artifact) {
+        return c.json({ error: `Artifact not found: ${slug}` }, 404);
+      }
+
+      // Check secret exists
+      const metadata = await storage.getSecretMetadata(channel.id, slug, key);
+      if (!metadata) {
+        return c.json({ error: `Secret not found: ${key}` }, 404);
+      }
+
+      // Delete the secret
+      await storage.deleteSecret(channel.id, slug, key);
+
+      return c.json({ deleted: true, key });
+    } catch (error) {
+      console.error('[Artifacts] Error deleting secret:', error);
+      return c.json({ error: 'Failed to delete secret' }, 500);
     }
   });
 

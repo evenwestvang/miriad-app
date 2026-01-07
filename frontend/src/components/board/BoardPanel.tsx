@@ -18,6 +18,8 @@ interface BoardPanelProps {
   isOpen: boolean
   onClose: () => void
   apiHost: string
+  /** Space ID for OAuth flows (system.app artifacts) */
+  spaceId?: string
   /** Increment to trigger tree refresh (from artifact WebSocket events) */
   refreshTrigger?: number
   /** Externally controlled selected artifact slug (for URL routing) */
@@ -37,6 +39,7 @@ export function BoardPanel({
   isOpen,
   onClose,
   apiHost,
+  spaceId,
   refreshTrigger,
   selectedArtifact: externalSelectedSlug,
   onSelectArtifact,
@@ -556,6 +559,7 @@ export function BoardPanel({
                 artifact={selectedArtifactData}
                 channelId={channelId!}
                 apiHost={apiHost}
+                spaceId={spaceId}
                 tree={tree}
                 onUpdate={handleArtifactUpdate}
                 onLinkClick={handleSelect}

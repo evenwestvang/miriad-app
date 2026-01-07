@@ -21,6 +21,7 @@ import { createFilesystemAssetStorage } from './assets/index.js';
 import type { ConnectionManager } from './websocket/index.js';
 import { AgentManager, createAgentInvokerAdapter } from './agents/index.js';
 import { createDevAuthRoutes, createWorkOSAuthRoutes, requireAuth, getSpaceId } from './auth/index.js';
+import { createAppRoutes } from './handlers/apps.js';
 
 // =============================================================================
 // Types
@@ -519,6 +520,21 @@ export function createApp(options: AppOptions): Hono {
   });
 
   // ---------------------------------------------------------------------------
+  // App OAuth Routes (External Service Integrations)
+  // ---------------------------------------------------------------------------
+  const apiUrl = process.env.CAST_API_URL || 'http://localhost:8080';
+  const appUrl = process.env.APP_URL || 'http://localhost:3000';
+  const jwtSecret = process.env.SECRET_KEY || 'dev-secret-key-min-32-characters!!';
+
+  const appRoutes = createAppRoutes({
+    storage,
+    apiUrl,
+    appUrl,
+    jwtSecret,
+  });
+  app.route('/auth/apps', appRoutes);
+
+  // ---------------------------------------------------------------------------
   // Focus Types & Agent Types (stubs for frontend)
   // ---------------------------------------------------------------------------
 
@@ -599,6 +615,31 @@ export function createApp(options: AppOptions): Hono {
         agentType: e.agentType,
         status: e.status === 'active' ? 'active' : 'inactive',
       }));
+    },
+    // App integrations: get system.app artifacts for MCP derivation
+    getApps: async (sid, cid) => {
+      // Get apps from this channel and from #root (space-wide apps)
+      const channelApps = await storage.listArtifacts(cid, { type: 'system.app' });
+
+      // Get root channel for space-wide apps
+      const rootChannel = await storage.getChannelByName(sid, 'root');
+      const rootApps = rootChannel
+        ? await storage.listArtifacts(rootChannel.id, { type: 'system.app' })
+        : [];
+
+      return [...channelApps, ...rootApps];
+    },
+    // App secrets accessor for token retrieval
+    appSecrets: {
+      getAccessToken: async (sid, cid, slug) => {
+        return storage.getSecretValue(sid, cid, slug, 'accessToken');
+      },
+      getRefreshToken: async (sid, cid, slug) => {
+        return storage.getSecretValue(sid, cid, slug, 'refreshToken');
+      },
+      getMetadata: async (cid, slug, key) => {
+        return storage.getSecretMetadata(cid, slug, key);
+      },
     },
   });
 

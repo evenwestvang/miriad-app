@@ -368,6 +368,41 @@ export function isStoredSpace(value: unknown): value is StoredSpace {
 }
 
 // =============================================================================
+// Artifact Secrets Types (App Integrations)
+// =============================================================================
+
+/**
+ * Secret metadata returned by API (values are never exposed).
+ */
+export interface SecretMetadata {
+  /** ISO timestamp when secret was set */
+  setAt: string;
+
+  /** ISO timestamp when secret expires (optional) */
+  expiresAt?: string;
+}
+
+/**
+ * Internal storage format for encrypted secrets (never exposed via API).
+ */
+export interface StoredSecret {
+  /** ISO timestamp when secret was set */
+  setAt: string;
+
+  /** ISO timestamp when secret expires (optional) */
+  expiresAt?: string;
+
+  /** Base64-encoded encrypted value */
+  encrypted: string;
+
+  /** Base64-encoded initialization vector */
+  iv: string;
+
+  /** Base64-encoded authentication tag */
+  tag: string;
+}
+
+// =============================================================================
 // Artifact Types (Phase A)
 // =============================================================================
 
@@ -389,7 +424,8 @@ export type ArtifactType =
   | 'system.mcp'
   | 'system.agent'
   | 'system.focus'
-  | 'system.playbook';
+  | 'system.playbook'
+  | 'system.app';
 
 /**
  * Artifact status values.
@@ -454,6 +490,9 @@ export interface StoredArtifact {
 
   /** Type-specific properties (e.g., MCP config, agent definition) */
   props?: Record<string, unknown>;
+
+  /** Secret metadata (keys and expiry, values never exposed) */
+  secrets?: Record<string, SecretMetadata>;
 
   /** MIME type for binary assets (e.g., 'image/png') */
   contentType?: string;
@@ -635,6 +674,10 @@ export interface ArtifactSummary {
   orderKey: string;
   assignees: string[];
   parentSlug?: string;
+  /** Channel ID (needed for app integrations to locate secrets) */
+  channelId: string;
+  /** Type-specific props (needed for app integrations to get provider info) */
+  props?: Record<string, unknown>;
 }
 
 /**
@@ -714,6 +757,7 @@ export function isArtifactType(value: unknown): value is ArtifactType {
     typeof value === 'string' &&
     [
       'doc',
+      'folder',
       'task',
       'code',
       'decision',
@@ -723,6 +767,7 @@ export function isArtifactType(value: unknown): value is ArtifactType {
       'system.agent',
       'system.focus',
       'system.playbook',
+      'system.app',
     ].includes(value)
   );
 }

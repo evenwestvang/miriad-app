@@ -8,7 +8,7 @@
  * - Tracks state in-memory (production uses SQLite/DynamoDB)
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createHash, createHmac } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -133,13 +133,21 @@ export class DockerOrchestrator implements ContainerOrchestrator {
       '-e', `CAST_CALLBACK_HOST=host.docker.internal`,
       '-e', `THREAD_ID=${threadId}`,
       '-e', `IDLE_TIMEOUT_MS=${this.config.idleTimeoutMs}`,
-      this.config.imageName,
     ];
+
+    // Add MCP servers if provided
+    if (options.mcpServers && options.mcpServers.length > 0) {
+      const mcpServersJson = JSON.stringify(options.mcpServers);
+      args.push('-e', `MCP_SERVERS=${mcpServersJson}`);
+      console.log(`[DockerOrchestrator] Passing ${options.mcpServers.length} MCP server(s) to container`);
+    }
+
+    args.push(this.config.imageName);
 
     console.log(`[DockerOrchestrator] Starting container on port ${port}`);
 
-    // Run docker
-    const result = execSync(`docker ${args.join(' ')}`, {
+    // Run docker using execFileSync to avoid shell escaping issues with JSON env vars
+    const result = execFileSync('docker', args, {
       encoding: 'utf-8',
       timeout: 30000,
     }).trim();
@@ -288,7 +296,7 @@ export class DockerOrchestrator implements ContainerOrchestrator {
 
   private stopContainer(containerId: string): void {
     try {
-      execSync(`docker stop ${containerId}`, {
+      execFileSync('docker', ['stop', containerId], {
         timeout: 10000,
         stdio: 'ignore',
       });
@@ -300,7 +308,7 @@ export class DockerOrchestrator implements ContainerOrchestrator {
 
   private isContainerActuallyRunning(containerId: string): boolean {
     try {
-      const result = execSync(`docker inspect -f '{{.State.Running}}' ${containerId}`, {
+      const result = execFileSync('docker', ['inspect', '-f', '{{.State.Running}}', containerId], {
         encoding: 'utf-8',
         timeout: 5000,
         stdio: ['pipe', 'pipe', 'ignore'],

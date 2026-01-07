@@ -71,6 +71,17 @@ const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS ?? String(10 * 60 *
 // Model configuration
 const DEFAULT_MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-4-5-20251101";
 
+// MCP servers from orchestrator (passed as JSON env var)
+let MCP_SERVERS_FROM_ENV: ResolvedMcpConfig[] = [];
+if (process.env.MCP_SERVERS) {
+  try {
+    MCP_SERVERS_FROM_ENV = JSON.parse(process.env.MCP_SERVERS);
+    console.log(`[Server] Loaded ${MCP_SERVERS_FROM_ENV.length} MCP server(s) from MCP_SERVERS env`);
+  } catch (err) {
+    console.error("[Server] Failed to parse MCP_SERVERS env var:", err);
+  }
+}
+
 /**
  * Get the container's local IP address for callback URL.
  * Returns the first non-internal IPv4 address found.
@@ -174,9 +185,14 @@ function buildMcpServers(resolvedMcps?: ResolvedMcpConfig[]): Record<string, Mcp
     console.log("[Server] Added cast-artifacts MCP (HTTP transport)");
   }
 
-  // Add resolved MCPs from orchestrator
-  if (resolvedMcps && resolvedMcps.length > 0) {
-    for (const resolved of resolvedMcps) {
+  // Use MCPs from env var if no resolvedMcps provided in request
+  const mcpsToAdd = resolvedMcps && resolvedMcps.length > 0
+    ? resolvedMcps
+    : MCP_SERVERS_FROM_ENV;
+
+  // Add resolved MCPs from orchestrator (either from request or env var)
+  if (mcpsToAdd && mcpsToAdd.length > 0) {
+    for (const resolved of mcpsToAdd) {
       mcpServers[resolved.slug] = convertToSdkMcpConfig(resolved);
       console.log(`[Server] Added resolved MCP: ${resolved.slug} (${resolved.transport})`);
     }
