@@ -23,7 +23,7 @@ export function OAuthErrorPage() {
     setError(errorCode)
     setDescription(errorDesc)
 
-    // Post error message to parent window
+    // Post error message to parent window (same-origin)
     if (window.opener) {
       window.opener.postMessage({
         type: 'oauth-app-callback',
@@ -32,7 +32,7 @@ export function OAuthErrorPage() {
         slug: '',
         error: errorCode,
         errorDescription: errorDesc,
-      }, '*')
+      }, window.location.origin)
     }
   }, [])
 
