@@ -21,6 +21,7 @@ import type { Artifact, ArtifactStatus, ArtifactTreeNode, ArtifactVersion } from
 import { McpPropsEditor, type McpProps } from './McpPropsEditor'
 import { AgentPropsEditor, type AgentProps } from './AgentPropsEditor'
 import { FocusPropsEditor, type FocusProps } from './FocusPropsEditor'
+import { AppPropsDisplay, type AppProps } from './AppPropsDisplay'
 import { SpaRenderer } from './SpaRenderer'
 import { highlightMentions, type ArtifactInfo } from '../../utils'
 
@@ -32,6 +33,8 @@ interface ArtifactDetailProps {
   artifact: Artifact
   channelId: string
   apiHost: string
+  /** Space ID for OAuth flows (system.app artifacts) */
+  spaceId?: string
   tree: ArtifactTreeNode[]
   onUpdate: (artifact: Artifact) => void
   onLinkClick: (slug: string) => void
@@ -157,6 +160,7 @@ export function ArtifactDetail({
   artifact,
   channelId,
   apiHost,
+  spaceId,
   tree,
   onUpdate,
   onLinkClick,
@@ -685,6 +689,28 @@ export function ArtifactDetail({
               handlePropsUpdate({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
             }}
             apiHost={apiHost}
+          />
+        </div>
+      )}
+
+      {artifact.type === 'system.app' && spaceId && (
+        <div className="px-3 py-3 border-b border-border">
+          {saving && (
+            <div className="text-xs text-muted-foreground mb-2">Saving...</div>
+          )}
+          <AppPropsDisplay
+            props={(artifact.props as unknown as AppProps) || { provider: '' }}
+            secrets={artifact.secrets}
+            slug={artifact.slug}
+            spaceId={spaceId}
+            channelId={channelId}
+            onStatusChange={() => {
+              // Refetch artifact to get updated secrets metadata
+              apiFetch(`${apiHost}/channels/${channelId}/artifacts/${artifact.slug}`)
+                .then(res => res.json())
+                .then(data => onUpdate(data))
+                .catch(console.error)
+            }}
           />
         </div>
       )}

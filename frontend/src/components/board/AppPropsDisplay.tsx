@@ -10,46 +10,37 @@ import {
   type SecretsMetadata,
 } from '../../lib/apps'
 
-interface AppCardProps {
-  /** The system.app artifact slug */
-  slug: string
-  /** Provider ID (e.g., 'github', 'sanity') */
+export interface AppProps {
   provider: string
-  /** Display name */
-  title: string
-  /** Description */
-  description?: string
-  /** Secrets metadata from artifact */
+  settings?: Record<string, unknown>
+}
+
+interface AppPropsDisplayProps {
+  props: AppProps
   secrets?: SecretsMetadata
-  /** Space ID for OAuth flow */
+  slug: string
   spaceId: string
-  /** Channel ID containing the artifact */
   channelId: string
-  /** Callback when connection status changes */
+  /** Callback when connection status changes (to trigger artifact refetch) */
   onStatusChange?: () => void
-  /** Additional className */
-  className?: string
 }
 
 type UIState = 'idle' | 'connecting' | 'disconnecting'
 
 /**
- * AppCard
+ * AppPropsDisplay
  *
- * Displays a system.app artifact with connection status and connect/disconnect actions.
- * Status is derived from the artifact's secrets metadata.
+ * Displays system.app artifact props with connection status and connect/disconnect actions.
+ * Used in ArtifactDetail for viewing/managing app connections.
  */
-export function AppCard({
-  slug,
-  provider,
-  title,
-  description,
+export function AppPropsDisplay({
+  props,
   secrets,
+  slug,
   spaceId,
   channelId,
   onStatusChange,
-  className,
-}: AppCardProps) {
+}: AppPropsDisplayProps) {
   const [uiState, setUIState] = useState<UIState>('idle')
   const [error, setError] = useState<string | null>(null)
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false)
@@ -84,7 +75,7 @@ export function AppCard({
     setError(null)
 
     try {
-      const { authorizationUrl } = await startAppConnect(provider, {
+      const { authorizationUrl } = await startAppConnect(props.provider, {
         spaceId,
         channelId,
         slug,
@@ -113,7 +104,7 @@ export function AppCard({
       setUIState('idle')
       setError(err instanceof Error ? err.message : 'Failed to start connection')
     }
-  }, [provider, spaceId, channelId, slug])
+  }, [props.provider, spaceId, channelId, slug])
 
   // Handle disconnect click
   const handleDisconnect = useCallback(async () => {
@@ -122,14 +113,14 @@ export function AppCard({
     setShowDisconnectConfirm(false)
 
     try {
-      await disconnectApp(provider, { spaceId, channelId, slug })
+      await disconnectApp(props.provider, { spaceId, channelId, slug })
       setUIState('idle')
       onStatusChange?.()
     } catch (err) {
       setUIState('idle')
       setError(err instanceof Error ? err.message : 'Failed to disconnect')
     }
-  }, [provider, spaceId, channelId, slug, onStatusChange])
+  }, [props.provider, spaceId, channelId, slug, onStatusChange])
 
   // Format expiry time
   const formatExpiry = (isoString: string): string => {
@@ -152,25 +143,19 @@ export function AppCard({
   const isLoading = uiState === 'connecting' || uiState === 'disconnecting'
 
   return (
-    <div
-      className={cn(
-        'border border-border rounded-lg p-4 bg-card',
-        className
-      )}
-    >
-      {/* Header */}
-      <div className="flex items-start justify-between mb-2">
-        <div>
-          <h3 className="font-medium text-sm text-foreground">{title}</h3>
-          {description && (
-            <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
-          )}
-        </div>
+    <div className="space-y-3">
+      {/* Provider info */}
+      <div>
+        <label className="block text-xs text-muted-foreground mb-1">Provider</label>
+        <span className="text-sm font-medium text-foreground">{props.provider}</span>
+      </div>
 
-        {/* Status badge */}
+      {/* Status badge */}
+      <div>
+        <label className="block text-xs text-muted-foreground mb-1">Status</label>
         <div
           className={cn(
-            'flex items-center gap-1.5 px-2 py-1 text-xs rounded',
+            'inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded',
             isConnected && !expiringSoon && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
             isConnected && expiringSoon && 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
             isExpired && 'bg-red-500/10 text-red-600 dark:text-red-400',
@@ -199,14 +184,14 @@ export function AppCard({
 
       {/* Error message */}
       {error && (
-        <div className="flex items-start gap-2 p-2 mb-3 bg-destructive/10 border border-destructive/20 rounded text-xs text-destructive">
+        <div className="flex items-start gap-2 p-2 bg-destructive/10 border border-destructive/20 rounded text-xs text-destructive">
           <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
           <span>{error}</span>
         </div>
       )}
 
       {/* Actions */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 pt-1">
         {/* Connect / Reconnect button */}
         {(!isConnected || isExpired || expiringSoon) && (
           <button
