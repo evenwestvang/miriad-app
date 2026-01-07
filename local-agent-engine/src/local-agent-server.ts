@@ -75,7 +75,8 @@ function parseArgs(): ParsedArgs {
   let socketPath = process.env.LOCAL_AGENT_SOCK ?? "/tmp/local-agent.sock";
 
   for (let i = 0; i < args.length; i++) {
-    switch (args[i]) {
+    const arg = args[i];
+    switch (arg) {
       case "--ws-host":
         wsHost = args[++i];
         break;
@@ -122,6 +123,18 @@ Profile Config:
 Use connect-local-agent to add/remove agents from this server.
 `);
         process.exit(0);
+      default:
+        // Handle unknown arguments
+        if (arg.startsWith("-")) {
+          console.error(`Error: Unknown option: ${arg}`);
+        } else {
+          console.error(`Error: Unknown command: ${arg}`);
+          console.error(`\nHint: Commands like 'list', 'status', 'connect' are top-level CLI commands.`);
+          console.error(`Run: cast-local-agent ${arg}`);
+          console.error(`Not:  cast-local-agent server ${arg}`);
+        }
+        console.error(`\nRun 'cast-local-agent --help' for usage.`);
+        process.exit(1);
     }
   }
 

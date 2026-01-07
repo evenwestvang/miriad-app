@@ -139,19 +139,19 @@ function handleServer(args: string[]): void {
 }
 
 function handleConnect(args: string[]): void {
-  runScript("connect-local-agent", args);
+  runScript("connect-local-agent", ["add", ...args]);
 }
 
 function handleStatus(args: string[]): void {
-  runScript("connect-local-agent", ["--status", ...args]);
+  runScript("connect-local-agent", ["status", ...args]);
 }
 
 function handleList(args: string[]): void {
-  runScript("connect-local-agent", ["--list", ...args]);
+  runScript("connect-local-agent", ["list", ...args]);
 }
 
 function handleDisconnect(args: string[]): void {
-  runScript("connect-local-agent", ["--remove", ...args]);
+  runScript("connect-local-agent", ["remove", ...args]);
 }
 
 // =============================================================================
