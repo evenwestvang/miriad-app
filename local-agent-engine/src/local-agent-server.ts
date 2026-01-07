@@ -3,7 +3,7 @@
  * Local Agent Server (Stage 2)
  *
  * Long-running daemon that hosts multiple Claude Agent SDK instances.
- * Single WebSocket connection to CAST, routes messages to appropriate agents.
+ * Each agent has its own WebSocket connection to CAST.
  * Accepts IPC commands from connect-local-agent CLI.
  *
  * Usage:
@@ -95,16 +95,18 @@ Use connect-local-agent to add/remove agents from this server.
 }
 
 // ============================================================================
-// Agent Instance
+// Agent Instance (owns its own WebSocket connection)
 // ============================================================================
 
 interface AgentInstance {
   config: AgentInstanceConfig;
+  ws: WebSocket | null;
   bridge: TymbalBridge | null;
   status: AgentStatus;
   registeredAt: Date;
   isProcessing: boolean;
   messageQueue: IncomingMessage[];
+  reconnectTimer: NodeJS.Timeout | null;
 }
 
 function getAgentKey(channelId: string, callsign: string): string {
@@ -189,13 +191,10 @@ async function runClaudeQuery(
 // ============================================================================
 
 class LocalAgentServer {
-  private ws: WebSocket | null = null;
   private ipcServer: NetServer | null = null;
   private agents: Map<string, AgentInstance> = new Map();
   private config: ServerConfig;
   private startTime: Date;
-  private isConnected = false;
-  private reconnectTimer: NodeJS.Timeout | null = null;
 
   constructor(config: ServerConfig) {
     this.config = config;
@@ -203,148 +202,152 @@ class LocalAgentServer {
   }
 
   // --------------------------------------------------------------------------
-  // WebSocket Management
+  // Agent WebSocket Management (per-agent connections)
   // --------------------------------------------------------------------------
 
-  async connectWebSocket(): Promise<void> {
+  private getWsUrl(): string {
     const protocol = this.config.secure ? "wss" : "ws";
-    const url = `${protocol}://${this.config.wsHost}/local-agents/connect`;
+    return `${protocol}://${this.config.wsHost}/local-agents/connect`;
+  }
 
-    console.log(`[Server] Connecting to ${url}`);
+  private async connectAgent(agent: AgentInstance): Promise<void> {
+    const url = this.getWsUrl();
+    const { callsign, channelId } = agent.config;
+
+    console.log(`[${callsign}] Connecting to ${url}`);
 
     return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(url);
+      agent.ws = new WebSocket(url);
 
-      this.ws.on("open", () => {
-        console.log(`[Server] WebSocket connected`);
-        this.isConnected = true;
-        this.cancelReconnect();
-        resolve();
+      agent.ws.on("open", () => {
+        console.log(`[${callsign}] WebSocket connected`);
+        this.cancelAgentReconnect(agent);
+        // Registration happens after receiving 'connected' message
       });
 
-      this.ws.on("message", (data) => {
-        this.handleServerMessage(data.toString());
+      agent.ws.on("message", (data) => {
+        this.handleAgentMessage(agent, data.toString());
       });
 
-      this.ws.on("close", (code, reason) => {
-        console.log(`[Server] WebSocket disconnected: ${code} ${reason}`);
-        this.isConnected = false;
-        this.markAllAgentsDisconnected();
-        this.scheduleReconnect();
+      agent.ws.on("close", (code, reason) => {
+        console.log(`[${callsign}] WebSocket disconnected: ${code} ${reason}`);
+        agent.status = "disconnected";
+        agent.bridge = null;
+        agent.ws = null;
+        this.scheduleAgentReconnect(agent);
       });
 
-      this.ws.on("error", (error) => {
-        console.error(`[Server] WebSocket error:`, error);
-        if (!this.isConnected) {
+      agent.ws.on("error", (error) => {
+        console.error(`[${callsign}] WebSocket error:`, error);
+        if (agent.status === "disconnected") {
           reject(error);
         }
       });
+
+      // Resolve immediately after setting up handlers
+      // Registration completes asynchronously
+      resolve();
     });
   }
 
-  private scheduleReconnect(): void {
-    if (this.reconnectTimer) return;
+  private scheduleAgentReconnect(agent: AgentInstance): void {
+    if (agent.reconnectTimer) return;
 
-    console.log(`[Server] Scheduling reconnect in 5s...`);
-    this.reconnectTimer = setTimeout(async () => {
-      this.reconnectTimer = null;
+    const { callsign } = agent.config;
+    console.log(`[${callsign}] Scheduling reconnect in 5s...`);
+
+    agent.reconnectTimer = setTimeout(async () => {
+      agent.reconnectTimer = null;
       try {
-        await this.connectWebSocket();
-        // Re-register all agents
-        await this.reregisterAllAgents();
+        await this.connectAgent(agent);
       } catch (error) {
-        console.error(`[Server] Reconnect failed:`, error);
-        this.scheduleReconnect();
+        console.error(`[${callsign}] Reconnect failed:`, error);
+        this.scheduleAgentReconnect(agent);
       }
     }, 5000);
   }
 
-  private cancelReconnect(): void {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-  }
-
-  private markAllAgentsDisconnected(): void {
-    for (const agent of this.agents.values()) {
-      agent.status = "disconnected";
-      agent.bridge = null;
-    }
-  }
-
-  private async reregisterAllAgents(): Promise<void> {
-    console.log(`[Server] Re-registering ${this.agents.size} agents...`);
-    for (const agent of this.agents.values()) {
-      await this.registerAgentWithServer(agent);
+  private cancelAgentReconnect(agent: AgentInstance): void {
+    if (agent.reconnectTimer) {
+      clearTimeout(agent.reconnectTimer);
+      agent.reconnectTimer = null;
     }
   }
 
   // --------------------------------------------------------------------------
-  // Server Message Handling
+  // Agent Message Handling
   // --------------------------------------------------------------------------
 
-  private handleServerMessage(data: string): void {
+  private handleAgentMessage(agent: AgentInstance, data: string): void {
+    const { callsign, channelId } = agent.config;
+
     let message: ServerMessage;
     try {
       message = JSON.parse(data);
     } catch {
-      console.error(`[Server] Invalid JSON from server:`, data);
+      console.error(`[${callsign}] Invalid JSON from server:`, data);
       return;
     }
 
     switch (message.type) {
       case "connected":
-        console.log(`[Server] Protocol version: ${message.version}`);
+        console.log(`[${callsign}] Protocol version: ${message.version}`);
+        // Now register the agent
+        this.registerAgentWithServer(agent);
         break;
 
       case "registered":
-        this.handleRegistered(message.channelId, message.callsign);
+        agent.status = "idle";
+        // Initialize bridge with this agent's WebSocket
+        agent.bridge = new TymbalBridge({
+          ws: agent.ws!,
+          channelId,
+          callsign,
+        });
+        console.log(`[${callsign}] Registered in ${channelId}`);
         break;
 
       case "message":
-        this.handleIncomingMessage(message);
+        this.handleIncomingMessage(agent, message);
         break;
 
       case "error":
-        console.error(`[Server] Server error: ${message.code} - ${message.message}`);
+        console.error(`[${callsign}] Server error: ${message.code} - ${message.message}`);
         break;
     }
   }
 
-  private handleRegistered(channelId: string, callsign: string): void {
-    const key = getAgentKey(channelId, callsign);
-    const agent = this.agents.get(key);
+  private registerAgentWithServer(agent: AgentInstance): void {
+    const { callsign, channelId, workspace } = agent.config;
 
-    if (agent) {
-      agent.status = "idle";
-      // Initialize bridge
-      agent.bridge = new TymbalBridge({
-        ws: this.ws!,
-        channelId,
-        callsign,
-      });
-      console.log(`[Server] Agent registered: ${callsign} in ${channelId}`);
-    }
-  }
-
-  private async handleIncomingMessage(message: IncomingMessage): Promise<void> {
-    const key = getAgentKey(message.channelId, message.callsign);
-    const agent = this.agents.get(key);
-
-    if (!agent) {
-      console.error(`[Server] No agent found for ${key}`);
+    if (!agent.ws || agent.ws.readyState !== WebSocket.OPEN) {
+      console.error(`[${callsign}] Cannot register - WebSocket not connected`);
+      agent.status = "disconnected";
       return;
     }
 
+    const registerMsg: RegisterMessage = {
+      type: "register",
+      channelId,
+      callsign,
+      workspace,
+    };
+
+    agent.ws.send(JSON.stringify(registerMsg));
+    console.log(`[${callsign}] Sent registration`);
+  }
+
+  private async handleIncomingMessage(agent: AgentInstance, message: IncomingMessage): Promise<void> {
+    const { callsign } = agent.config;
+
     if (!agent.bridge) {
-      console.error(`[Server] Agent ${key} has no bridge`);
+      console.error(`[${callsign}] No bridge available`);
       return;
     }
 
     // Queue message if already processing
     if (agent.isProcessing) {
-      console.log(`[Server] Agent ${key} busy, queueing message`);
+      console.log(`[${callsign}] Busy, queueing message`);
       agent.messageQueue.push(message);
       return;
     }
@@ -353,20 +356,22 @@ class LocalAgentServer {
   }
 
   private async processAgentMessage(agent: AgentInstance, message: IncomingMessage): Promise<void> {
+    const { callsign, workspace } = agent.config;
+
     agent.isProcessing = true;
     agent.status = "processing";
 
-    console.log(`[Server] Processing message for ${agent.config.callsign}`);
+    console.log(`[${callsign}] Processing message from ${message.sender}`);
 
     try {
       await runClaudeQuery(
         message.content,
         agent.bridge!,
-        agent.config.workspace,
+        workspace,
         message.systemPrompt
       );
     } catch (error) {
-      console.error(`[Server] Error processing message:`, error);
+      console.error(`[${callsign}] Error processing message:`, error);
     } finally {
       agent.isProcessing = false;
       agent.status = "idle";
@@ -383,29 +388,12 @@ class LocalAgentServer {
   // Agent Management
   // --------------------------------------------------------------------------
 
-  private async registerAgentWithServer(agent: AgentInstance): Promise<void> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.error(`[Server] Cannot register agent - WebSocket not connected`);
-      agent.status = "disconnected";
-      return;
-    }
-
-    const registerMsg: RegisterMessage = {
-      type: "register",
-      channelId: agent.config.channelId,
-      callsign: agent.config.callsign,
-      workspace: agent.config.workspace,
-    };
-
-    this.ws.send(JSON.stringify(registerMsg));
-    console.log(`[Server] Sent registration for ${agent.config.callsign}`);
-  }
-
   async addAgent(config: AgentInstanceConfig): Promise<{ success: boolean; message: string }> {
     const key = getAgentKey(config.channelId, config.callsign);
+    const { callsign, channelId } = config;
 
     if (this.agents.has(key)) {
-      return { success: false, message: `Agent ${config.callsign} already exists in ${config.channelId}` };
+      return { success: false, message: `Agent ${callsign} already exists in ${channelId}` };
     }
 
     // Ensure workspace exists
@@ -413,19 +401,26 @@ class LocalAgentServer {
 
     const agent: AgentInstance = {
       config,
+      ws: null,
       bridge: null,
       status: "disconnected",
       registeredAt: new Date(),
       isProcessing: false,
       messageQueue: [],
+      reconnectTimer: null,
     };
 
     this.agents.set(key, agent);
 
-    // Register with CAST server
-    await this.registerAgentWithServer(agent);
-
-    return { success: true, message: `Agent ${config.callsign} added to ${config.channelId}` };
+    // Connect this agent's WebSocket
+    try {
+      await this.connectAgent(agent);
+      return { success: true, message: `Agent ${callsign} added to ${channelId}` };
+    } catch (error) {
+      // Remove from registry if connection fails immediately
+      this.agents.delete(key);
+      return { success: false, message: `Failed to connect agent ${callsign}: ${error}` };
+    }
   }
 
   removeAgent(channelId: string, callsign: string): { success: boolean; message: string } {
@@ -436,7 +431,14 @@ class LocalAgentServer {
       return { success: false, message: `Agent ${callsign} not found in ${channelId}` };
     }
 
-    // Note: Server will detect disconnect and update roster
+    // Cancel any pending reconnect
+    this.cancelAgentReconnect(agent);
+
+    // Close the WebSocket - server will detect disconnect and update roster
+    if (agent.ws && agent.ws.readyState === WebSocket.OPEN) {
+      agent.ws.close();
+    }
+
     this.agents.delete(key);
 
     return { success: true, message: `Agent ${callsign} removed from ${channelId}` };
@@ -459,8 +461,12 @@ class LocalAgentServer {
   }
 
   getStatus(): { connected: boolean; wsHost: string; agentCount: number; uptime: number } {
+    // "connected" is true if at least one agent is connected, or if no agents yet
+    const anyConnected = this.agents.size === 0 ||
+      Array.from(this.agents.values()).some(a => a.status !== "disconnected");
+
     return {
-      connected: this.isConnected,
+      connected: anyConnected,
       wsHost: this.config.wsHost,
       agentCount: this.agents.size,
       uptime: Date.now() - this.startTime.getTime(),
@@ -583,14 +589,16 @@ class LocalAgentServer {
   async shutdown(): Promise<void> {
     console.log(`[Server] Shutting down...`);
 
-    this.cancelReconnect();
+    // Close all agent WebSocket connections
+    for (const agent of this.agents.values()) {
+      this.cancelAgentReconnect(agent);
+      if (agent.ws && agent.ws.readyState === WebSocket.OPEN) {
+        agent.ws.close();
+      }
+    }
 
     if (this.ipcServer) {
       this.ipcServer.close();
-    }
-
-    if (this.ws) {
-      this.ws.close();
     }
 
     // Clean up socket file
@@ -628,11 +636,8 @@ async function main(): Promise<void> {
   process.on("SIGTERM", shutdown);
 
   try {
-    // Start IPC server first
+    // Start IPC server (no initial WS connection - each agent opens its own)
     server.startIPCServer();
-
-    // Connect to CAST
-    await server.connectWebSocket();
 
     console.log(`[Server] Ready. Use connect-local-agent to add agents.`);
   } catch (error) {
