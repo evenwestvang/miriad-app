@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { PanelLeft, PanelLeftClose, LogOut, Sun, Moon } from 'lucide-react'
+import { PanelLeft, PanelLeftClose, LogOut, Sun, Moon, Settings } from 'lucide-react'
 import { ThreadList, type ThreadWithState } from './components/sidebar/ThreadList'
 import { BoardPanel } from './components/board'
 import { ChannelList } from './components/channel/ChannelList'
@@ -18,6 +18,7 @@ import { OnboardingPage } from './components/OnboardingPage'
 import { AuthErrorPage } from './components/AuthErrorPage'
 import { OAuthCallbackPage } from './components/OAuthCallbackPage'
 import { OAuthErrorPage } from './components/OAuthErrorPage'
+import { SettingsModal } from './components/settings'
 
 // Auth mode: 'dev' (show LoginPage) or 'workos' (redirect to /auth/login)
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || 'dev'
@@ -85,6 +86,7 @@ export function App() {
     const stored = localStorage.getItem('sidebar-open')
     return stored !== null ? JSON.parse(stored) : true
   })
+  const [settingsOpen, setSettingsOpen] = useState(false)
   // Artifact event counter - increment to trigger board refresh
   const [artifactEventTrigger, setArtifactEventTrigger] = useState(0)
 
@@ -557,6 +559,15 @@ export function App() {
           </span>
         )}
 
+        {/* Settings */}
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="p-1.5 hover:bg-[var(--cast-bg-hover)] transition-colors"
+          title="Settings"
+        >
+          <Settings className="w-4 h-4 text-[var(--cast-text-muted)]" />
+        </button>
+
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
@@ -693,6 +704,14 @@ export function App() {
           onClearSelection={clearArtifactFocus}
         />
       </div>
+
+      {/* Settings modal */}
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        apiHost={API_HOST}
+        spaceId={authSession?.spaceId}
+      />
     </div>
   )
 }
