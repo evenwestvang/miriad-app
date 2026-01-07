@@ -113,6 +113,55 @@ CAST uses the Tymbal protocol for real-time message streaming. See `design-notes
 | `error` | Error message |
 | `idle` | Agent turn complete |
 
+## App Integrations
+
+CAST supports OAuth-based app integrations that give agents access to external tools. When an agent is spawned, connected apps are automatically converted to MCP server configurations and passed to the container.
+
+### Supported Providers
+
+- **GitHub** - Provides repository access, issues, PRs via the GitHub MCP server
+
+### Setup
+
+1. **Create a GitHub OAuth App** at https://github.com/settings/developers
+   - Set the callback URL to `${CAST_API_URL}/api/apps/callback/github`
+   - For local dev: `http://localhost:3234/api/apps/callback/github`
+
+2. **Configure environment variables** in `backend/.env`:
+   ```bash
+   # Required for OAuth
+   CAST_API_URL=http://localhost:3234
+   SECRET_KEY=<generate with: openssl rand -base64 32>
+
+   # GitHub credentials
+   GITHUB_CLIENT_ID=your-client-id
+   GITHUB_CLIENT_SECRET=your-client-secret
+   ```
+
+3. **Create a `system.app` artifact** in your channel:
+   ```json
+   {
+     "type": "system.app",
+     "slug": "github-app",
+     "props": { "provider": "github" }
+   }
+   ```
+
+4. **Connect the app** via the frontend UI - this initiates OAuth flow and stores tokens
+
+5. **Spawn an agent** - connected apps are automatically passed as MCP servers
+
+### How It Works
+
+1. User creates a `system.app` artifact with `provider: "github"`
+2. User clicks "Connect" which opens GitHub OAuth popup
+3. After authorization, tokens are encrypted and stored in the artifact's `secrets` field
+4. When spawning an agent, the orchestrator:
+   - Finds all connected `system.app` artifacts in the channel
+   - Derives MCP server configurations from them
+   - Passes configs via `MCP_SERVERS` env var to the container
+5. The agent container loads the MCP servers and has authenticated tool access
+
 ## Deployment
 
 ```bash
