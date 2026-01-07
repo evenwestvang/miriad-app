@@ -8,7 +8,7 @@
  * - Tracks state in-memory (production uses SQLite/DynamoDB)
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createHash, createHmac } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -146,8 +146,8 @@ export class DockerOrchestrator implements ContainerOrchestrator {
 
     console.log(`[DockerOrchestrator] Starting container on port ${port}`);
 
-    // Run docker
-    const result = execSync(`docker ${args.join(' ')}`, {
+    // Run docker using execFileSync to avoid shell escaping issues with JSON env vars
+    const result = execFileSync('docker', args, {
       encoding: 'utf-8',
       timeout: 30000,
     }).trim();
@@ -296,7 +296,7 @@ export class DockerOrchestrator implements ContainerOrchestrator {
 
   private stopContainer(containerId: string): void {
     try {
-      execSync(`docker stop ${containerId}`, {
+      execFileSync('docker', ['stop', containerId], {
         timeout: 10000,
         stdio: 'ignore',
       });
@@ -308,7 +308,7 @@ export class DockerOrchestrator implements ContainerOrchestrator {
 
   private isContainerActuallyRunning(containerId: string): boolean {
     try {
-      const result = execSync(`docker inspect -f '{{.State.Running}}' ${containerId}`, {
+      const result = execFileSync('docker', ['inspect', '-f', '{{.State.Running}}', containerId], {
         encoding: 'utf-8',
         timeout: 5000,
         stdio: ['pipe', 'pipe', 'ignore'],
