@@ -21,6 +21,7 @@ import { createFilesystemAssetStorage } from './assets/index.js';
 import type { ConnectionManager } from './websocket/index.js';
 import { AgentManager, createAgentInvokerAdapter } from './agents/index.js';
 import { createDevAuthRoutes, createWorkOSAuthRoutes, requireAuth, getSpaceId } from './auth/index.js';
+import { createAppRoutes } from './handlers/apps.js';
 
 // =============================================================================
 // Types
@@ -517,6 +518,21 @@ export function createApp(options: AppOptions): Hono {
       headers,
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // App OAuth Routes (External Service Integrations)
+  // ---------------------------------------------------------------------------
+  const apiUrl = process.env.API_URL || 'http://localhost:8080';
+  const appUrl = process.env.APP_URL || 'http://localhost:3000';
+  const jwtSecret = process.env.SECRET_KEY || 'dev-secret-key-min-32-characters!!';
+
+  const appRoutes = createAppRoutes({
+    storage,
+    apiUrl,
+    appUrl,
+    jwtSecret,
+  });
+  app.route('/auth/apps', appRoutes);
 
   // ---------------------------------------------------------------------------
   // Focus Types & Agent Types (stubs for frontend)

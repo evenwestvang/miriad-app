@@ -25,3 +25,8 @@ export {
   createArtifactRoutes,
   type ArtifactHandlerOptions,
 } from './artifacts.js';
+export {
+  createAppRoutes,
+  getValidAccessToken,
+  type AppHandlerOptions,
+} from './apps.js';
