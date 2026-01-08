@@ -1,4 +1,8 @@
 # SAM CLI Configuration for Cast Tunnel Server
+#
+# NOTE: The preferred deployment method is using backend/scripts/deploy-tunnel.sh
+# which auto-discovers infrastructure IDs. This samconfig is kept as reference.
+#
 # Deploy: sam deploy --config-env tunnel-stag --template-file template.yaml
 
 version = 0.1
@@ -16,6 +20,8 @@ lint = true
 # =============================================================================
 # tunnel-stag: Staging environment
 # Usage: sam deploy --config-env tunnel-stag --template-file template.yaml
+#
+# PREFERRED: Use backend/scripts/deploy-tunnel.sh stag instead
 # =============================================================================
 
 [tunnel-stag.global.parameters]
@@ -29,21 +35,22 @@ resolve_s3 = true
 s3_prefix = "cast-tunnel"
 region = "us-east-1"
 disable_rollback = false
-# NOTE: Update these values with actual resource IDs before deployment
+# Staging infrastructure IDs - last verified 2026-01-08
 parameter_overrides = [
     "Stage=stag",
-    # VPC and networking - use same VPC as main CAST infra
-    "VpcId=vpc-XXXXXXXX",
-    "SubnetIds=subnet-0f7c23168eb2b784f,subnet-0873ce7dc641901f6,subnet-0ecf88ad31694eb5e",
-    # TLS certificate - must be created in ACM first
-    # Request wildcard cert for *.containers.clanker.is
-    "CertificateArn=arn:aws:acm:us-east-1:455626925815:certificate/XXXXXXXX",
-    # Route53 hosted zone for clanker.is
-    "HostedZoneId=ZXXXXXXXXXX",
-    # Container secret - same as main CAST deployment
-    "ContainerSecret=XXXXXXXX",
+    # VPC and networking (account 455626925815)
+    "VpcId=vpc-0cddcd4252755eb3d",
+    "SubnetIds=subnet-0873ce7dc641901f6,subnet-0ecf88ad31694eb5e",
+    # TLS certificate - wildcard for *.staging.cast-stack.site
+    "CertificateArn=arn:aws:acm:us-east-1:455626925815:certificate/8f78b02a-b50d-462a-8cb1-4094ee3cefd1",
+    # Route53 hosted zone for cast-stack.site
+    "HostedZoneId=Z09693013171B0WCJNAMI",
+    # Container secret - matches docker-orchestrator.ts dev fallback
+    "ContainerSecret=cast-dev-container-secret-do-not-use-in-production",
+    # Tunnel domain
+    "TunnelDomain=staging.cast-stack.site",
     # Rathole image - will be built and pushed to ECR
-    "RatholeImage=455626925815.dkr.ecr.us-east-1.amazonaws.com/cast-tunnel:latest"
+    "RatholeImage=455626925815.dkr.ecr.us-east-1.amazonaws.com/cast-tunnel-server:stag-latest"
 ]
 
 # =============================================================================

@@ -44,14 +44,19 @@ if [[ "$STAGE" != "stag" && "$STAGE" != "prod" ]]; then
   exit 1
 fi
 
-# Set domain based on stage
+# Set domain and AWS profile based on stage
 if [[ "$STAGE" == "stag" ]]; then
   TUNNEL_DOMAIN="staging.cast-stack.site"
   CERT_ARN="arn:aws:acm:us-east-1:455626925815:certificate/8f78b02a-b50d-462a-8cb1-4094ee3cefd1"
+  AWS_PROFILE="${AWS_PROFILE:-cikada-stag}"
 else
   TUNNEL_DOMAIN="cast-stack.site"
   CERT_ARN="${PROD_CERT_ARN:-}"  # Set this for production
+  AWS_PROFILE="${AWS_PROFILE:-cikada-prod}"
 fi
+
+export AWS_PROFILE
+echo "AWS Profile: $AWS_PROFILE"
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
 AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-}"
