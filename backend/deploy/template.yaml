@@ -72,6 +72,10 @@ Parameters:
     Description: GitHub OAuth app client secret
     NoEcho: true
     Default: ''
+  TunnelServerUrl:
+    Type: String
+    Description: Tunnel server URL for container HTTP access (e.g., https://tunnel.staging.cast-stack.site)
+    Default: ''
 
 Globals:
   Function:
@@ -116,6 +120,7 @@ Resources:
           SECRET_KEY: !Ref SecretKey
           GITHUB_CLIENT_ID: !Ref GitHubClientId
           GITHUB_CLIENT_SECRET: !Ref GitHubClientSecret
+          TUNNEL_SERVER_URL: !Ref TunnelServerUrl
       Events:
         RootPath:
           Type: HttpApi
