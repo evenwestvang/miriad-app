@@ -5,47 +5,72 @@ Deploys the rathole reverse proxy server for exposing agent container HTTP servi
 ## Architecture
 
 ```
-Internet → Route53 (*.containers.clanker.is)
+Internet → Route53 (*.staging.cast-stack.site)
         → ALB (TLS termination, wildcard cert)
-        → ECS Fargate (rathole server)
+        → ECS Fargate (rathole server + Hono proxy)
         ← Agent containers connect outbound
 ```
 
 ## Prerequisites
 
-1. **ACM Certificate**: Request a wildcard certificate for `*.containers.clanker.is` in us-east-1
-2. **Route53 Hosted Zone**: Must have hosted zone for `clanker.is`
-3. **VPC**: Use same VPC as main CAST infrastructure
-4. **Rathole Image**: Build and push to ECR (see below)
+1. **AWS CLI**: Configured with `cikada-stag` profile for account `455626925815`
+2. **Docker**: Installed and running
+3. **ECR Repository**: `cast-tunnel-server` (created automatically by deploy script)
 
 ## Deployment
 
 ```bash
-# Build rathole image (see agents/sandbox for Dockerfile additions)
-docker build -t cast-tunnel .
-docker push 455626925815.dkr.ecr.us-east-1.amazonaws.com/cast-tunnel:latest
-
-# Deploy to staging
-cd backend/deploy/tunnel
-sam deploy --config-env tunnel-stag --template-file template.yaml
+# From the repo root:
+./scripts/deploy-tunnel.sh stag    # Deploy to staging
+./scripts/deploy-tunnel.sh prod    # Deploy to production
 ```
 
-## Configuration
+The script will:
+1. Build the Docker image for linux/arm64
+2. Push to ECR with timestamped tag
+3. Deploy/update CloudFormation stack
+4. Output health check URL
 
-Update `samconfig.toml` with:
-- `VpcId`: VPC ID from main CAST stack
-- `SubnetIds`: Public subnets with internet access
-- `CertificateArn`: ACM wildcard cert ARN
-- `HostedZoneId`: Route53 zone ID for clanker.is
-- `ContainerSecret`: Same secret used by main CAST deployment
+## AWS Configuration
+
+**Staging (account 455626925815):**
+- Profile: `cikada-stag`
+- Domain: `*.staging.cast-stack.site`
+- VPC: Auto-discovered (or set `VPC_ID` env var)
+- Subnets: Auto-discovered (or set `SUBNET_IDS` env var)
+- Hosted Zone: Auto-discovered for `cast-stack.site`
+
+**Production:**
+- Profile: `cikada-prod`
+- Domain: `*.cast-stack.site`
+- Requires `PROD_CERT_ARN` and `CONTAINER_SECRET` env vars
+
+## Manual Override
+
+If auto-discovery fails, set environment variables:
+```bash
+export VPC_ID=vpc-0cddcd4252755eb3d
+export SUBNET_IDS=subnet-0873ce7dc641901f6,subnet-0ecf88ad31694eb5e
+export HOSTED_ZONE_ID=Z09693013171B0WCJNAMI
+./scripts/deploy-tunnel.sh stag  # Run from repo root
+```
+
+## Verification
+
+```bash
+# Health check
+curl https://tunnel.staging.cast-stack.site/health
+
+# Should return: {"status":"healthy","service":"cast-tunnel-server","clients":N}
+```
 
 ## How It Works
 
 1. Agent container starts with `TUNNEL_HASH` env var
-2. Container connects outbound to tunnel server
-3. Server validates container token, maps hash to connection
-4. Traffic to `{hash}.containers.clanker.is` routes to container
-5. Container can bind any port on 0.0.0.0 to expose it
+2. Container runs rathole client, connects outbound to tunnel server
+3. Server validates container token via existing CAST_AUTH_TOKEN protocol
+4. Traffic to `{hash}.staging.cast-stack.site` routes through rathole to container
+5. Container services bind to localhost, rathole forwards traffic
 
 ## Security
 

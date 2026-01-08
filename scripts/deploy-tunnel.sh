@@ -258,7 +258,7 @@ echo "=== Step 1: Building Docker Image ==="
 ECR_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO"
 IMAGE_TAG="$STAGE-$(date +%Y%m%d-%H%M%S)"
 
-cd "$PROJECT_ROOT/packages/tunnel-server"
+cd "$PROJECT_ROOT/backend/packages/tunnel-server"
 
 docker build \
   --platform linux/arm64 \
@@ -304,7 +304,7 @@ STACK_NAME="cast-tunnel-$STAGE"
 cd "$PROJECT_ROOT"
 
 aws cloudformation deploy \
-  --template-file deploy/tunnel/template.yaml \
+  --template-file backend/deploy/tunnel/template.yaml \
   --stack-name "$STACK_NAME" \
   --parameter-overrides \
     Stage="$STAGE" \
