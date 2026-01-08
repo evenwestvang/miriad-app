@@ -59,9 +59,9 @@ deploy_container() {
     aws ecr get-login-password --region "${AWS_REGION}" --profile cikada-stag | \
         docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-    # Build the image
-    echo "Building Docker image..."
-    docker build -t "${ECR_REPO_NAME}:${IMAGE_TAG}" .
+    # Build the image (ARM64 for Fargate Graviton)
+    echo "Building Docker image (ARM64)..."
+    docker build --platform linux/arm64 -t "${ECR_REPO_NAME}:${IMAGE_TAG}" .
 
     # Tag for ECR
     echo "Tagging image for ECR..."
