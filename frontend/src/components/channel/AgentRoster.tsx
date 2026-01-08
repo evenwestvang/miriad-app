@@ -3,6 +3,7 @@ import { Plus, X } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { AgentPicker, type AgentType } from './AgentPicker'
 import { DismissConfirmDialog } from './DismissConfirmDialog'
+import { AgentDetailPopup } from './AgentDetailPopup'
 import type { RosterAgent } from './MentionAutocomplete'
 
 interface AgentRosterProps {
@@ -14,8 +15,6 @@ interface AgentRosterProps {
   channelId?: string
   /** API host */
   apiHost?: string
-  /** Called when agent is clicked (for @mention insertion) */
-  onAgentClick?: (callsign: string) => void
   /** Called when agent is added */
   onAgentAdded?: (agent: RosterAgent) => void
   /** Called when agent is dismissed */
@@ -37,7 +36,7 @@ interface AgentBadgeProps {
   agent: RosterAgent
   isLeader: boolean
   onDismiss?: () => void
-  onClick?: () => void
+  onClick?: (e: React.MouseEvent) => void
 }
 
 /**
@@ -105,7 +104,6 @@ export function AgentRoster({
   agentTypes = [],
   channelId,
   apiHost = '',
-  onAgentClick,
   onAgentAdded,
   onAgentDismiss,
   canManageAgents = false,
@@ -113,7 +111,16 @@ export function AgentRoster({
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dismissTarget, setDismissTarget] = useState<RosterAgent | null>(null)
   const [dismissPosition, setDismissPosition] = useState<{ top: number; left: number } | undefined>()
+  const [detailAgent, setDetailAgent] = useState<RosterAgent | null>(null)
+  const [detailPosition, setDetailPosition] = useState<{ top: number; left: number } | undefined>()
   const addButtonRef = useRef<HTMLButtonElement>(null)
+
+  // Handle agent click - open detail popup
+  const handleAgentClick = (agent: RosterAgent, event: React.MouseEvent) => {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    setDetailPosition({ top: rect.bottom + 8, left: rect.left })
+    setDetailAgent(agent)
+  }
 
   // Handle dismiss click - show confirmation for active agents, dismiss immediately otherwise
   const handleDismissClick = (agent: RosterAgent, event: React.MouseEvent) => {
@@ -151,7 +158,7 @@ export function AgentRoster({
             key={agent.callsign}
             agent={agent}
             isLeader={agent.callsign === leader}
-            onClick={() => onAgentClick?.(agent.callsign)}
+            onClick={(e) => handleAgentClick(agent, e)}
             onDismiss={
               canManageAgents && onAgentDismiss
                 ? () => {
@@ -209,6 +216,16 @@ export function AgentRoster({
         isOpen={!!dismissTarget}
         position={dismissPosition}
       />
+
+      {/* Agent detail popup */}
+      {detailAgent && (
+        <AgentDetailPopup
+          agent={detailAgent}
+          onClose={() => setDetailAgent(null)}
+          isOpen={!!detailAgent}
+          position={detailPosition}
+        />
+      )}
     </div>
   )
 }

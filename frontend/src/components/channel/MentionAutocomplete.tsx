@@ -5,6 +5,8 @@ import { getSenderColor } from '../../utils'
 export interface RosterAgent {
   callsign: string
   status: 'idle' | 'thinking' | 'offline'
+  /** Tunnel hash for HTTP exposure (32-char hex, generated on spawn) */
+  tunnelHash?: string
 }
 
 interface MentionAutocompleteProps {

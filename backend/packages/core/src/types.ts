@@ -198,6 +198,13 @@ export interface RosterEntry {
 
   /** Last delivered message ID (for tracking what's been pushed to agent) */
   readmark?: string;
+
+  /**
+   * Tunnel hash for HTTP tunnel access.
+   * 32+ char hex string, used as subdomain: {tunnelHash}.containers.domain.com
+   * Generated on agent spawn, persists across container restarts.
+   */
+  tunnelHash?: string;
 }
 
 /**
@@ -220,6 +227,8 @@ export interface UpdateRosterInput {
   callbackUrl?: string;
   /** Last delivered message ID */
   readmark?: string;
+  /** Tunnel hash (for rotation) */
+  tunnelHash?: string;
 }
 
 // =============================================================================

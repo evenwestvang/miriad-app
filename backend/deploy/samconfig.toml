@@ -53,5 +53,7 @@ parameter_overrides = [
     "SecretKey=rNhBROMTh75mKACT3ol6nb+rSK3NyIohiWfX3nhi+gU=",
     # GitHub OAuth app credentials
     "GitHubClientId=Ov23liznVxcSUMFSCFYT",
-    "GitHubClientSecret=badba6e4871a1995cec457d4d273db7432327cbd"
+    "GitHubClientSecret=badba6e4871a1995cec457d4d273db7432327cbd",
+    # Tunnel server for container HTTP access
+    "TunnelServerUrl=https://tunnel.staging.cast-stack.site"
 ]

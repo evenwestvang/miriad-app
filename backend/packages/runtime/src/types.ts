@@ -46,6 +46,16 @@ export interface ContainerSpawnOptions {
   systemPrompt?: string;
   /** MCP server configurations to pass to container */
   mcpServers?: McpServerConfig[];
+  /**
+   * Tunnel hash for HTTP tunnel access.
+   * Used as subdomain: {tunnelHash}.containers.domain.com
+   */
+  tunnelHash?: string;
+  /**
+   * Tunnel server URL for HTTP tunnel registration and access.
+   * e.g., "https://tunnel.clanker.is"
+   */
+  tunnelServerUrl?: string;
 }
 
 // =============================================================================

@@ -179,6 +179,88 @@ CAST supports OAuth-based app integrations that give agents access to external t
    - Passes configs via `MCP_SERVERS` env var to the container
 5. The agent container loads the MCP servers and has authenticated tool access
 
+## Container Tunnels
+
+CAST agents can expose HTTP services to end users via a tunnel system. Each agent gets a unique URL based on a cryptographic hash.
+
+### Architecture
+
+```
+User Browser → https://{hash}.cast-stack.site
+                        ↓
+              Tunnel Server (rathole on AWS)
+                        ↓
+              Agent Container (outbound connection)
+                        ↓
+              Service bound to 0.0.0.0:PORT
+```
+
+### How It Works
+
+1. **Spawn**: Backend generates a 32-char hex hash, stores in roster table
+2. **Container start**: Hash passed as `TUNNEL_HASH` env var
+3. **Tunnel connect**: Container runs `cast-tunnel up` to connect to tunnel server
+4. **Service exposure**: Any port bound to `0.0.0.0` becomes reachable at the tunnel URL
+5. **Access**: Users visit `https://{hash}.cast-stack.site`
+
+### UI
+
+Click any agent in the roster to see their tunnel URL:
+- Copy button for quick sharing
+- Connection status indicator
+- Helper text about port binding
+
+### Local Development Setup
+
+To test tunnels locally, you need:
+
+1. **Backend with tunnel support**
+   ```bash
+   cd backend && pnpm install && pnpm build
+   # Ensure .env has TUNNEL_SERVER_URL set (even if pointing to localhost)
+   pnpm dev
+   ```
+
+2. **Frontend**
+   ```bash
+   cd frontend && pnpm install && pnpm dev
+   ```
+
+3. **Local tunnel server** (optional for full e2e)
+   ```bash
+   # Download rathole: https://github.com/rapiz1/rathole/releases
+   # Run server with config from backend/deploy/tunnel/
+   ./rathole server.toml
+   ```
+
+4. **Agent container with tunnel client**
+   ```bash
+   docker run \
+     -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
+     -e CALLSIGN=fox \
+     -e CHANNEL_ID=test-channel \
+     -e CAST_SERVER_URL=http://host.docker.internal:3234 \
+     -e TUNNEL_HASH=abc123... \
+     -e TUNNEL_SERVER_URL=ws://host.docker.internal:2333 \
+     claude-code:local
+   ```
+
+### Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `TUNNEL_HASH` | 32-char hex hash for subdomain routing | Yes (for tunnel) |
+| `TUNNEL_SERVER_URL` | Tunnel server WebSocket URL | Yes (for tunnel) |
+
+### Testing Without Full Tunnel
+
+The UI can be tested without a running tunnel server:
+- Tunnel URL displays based on `tunnelHash` from roster API
+- Copy button works
+- Status shows "Disconnected" if container is offline
+
+For full e2e testing, deploy to staging where the tunnel server is running.
+
 ## Deployment
 
 ```bash

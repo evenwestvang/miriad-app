@@ -169,6 +169,13 @@ export class FargateOrchestrator implements ContainerOrchestrator {
                 ...(options.mcpServers && options.mcpServers.length > 0
                   ? [{ name: 'MCP_SERVERS', value: JSON.stringify(options.mcpServers) }]
                   : []),
+                // Pass tunnel configuration if provided
+                ...(options.tunnelHash
+                  ? [{ name: 'TUNNEL_HASH', value: options.tunnelHash }]
+                  : []),
+                ...(options.tunnelServerUrl
+                  ? [{ name: 'TUNNEL_SERVER_URL', value: options.tunnelServerUrl }]
+                  : []),
               ],
             },
           ],
