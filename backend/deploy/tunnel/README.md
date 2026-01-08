@@ -20,14 +20,9 @@ Internet → Route53 (*.staging.cast-stack.site)
 ## Deployment
 
 ```bash
-# From the backend directory:
-cd backend
-
-# Deploy to staging (auto-discovers VPC, subnets, hosted zone)
-./scripts/deploy-tunnel.sh stag
-
-# Deploy to production
-./scripts/deploy-tunnel.sh prod
+# From the repo root:
+./scripts/deploy-tunnel.sh stag    # Deploy to staging
+./scripts/deploy-tunnel.sh prod    # Deploy to production
 ```
 
 The script will:
@@ -57,7 +52,7 @@ If auto-discovery fails, set environment variables:
 export VPC_ID=vpc-0cddcd4252755eb3d
 export SUBNET_IDS=subnet-0873ce7dc641901f6,subnet-0ecf88ad31694eb5e
 export HOSTED_ZONE_ID=Z09693013171B0WCJNAMI
-./scripts/deploy-tunnel.sh stag
+./scripts/deploy-tunnel.sh stag  # Run from repo root
 ```
 
 ## Verification
