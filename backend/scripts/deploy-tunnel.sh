@@ -221,11 +221,26 @@ echo "Subnets: $SUBNET_IDS"
 echo "Hosted Zone: $HOSTED_ZONE_ID"
 echo ""
 
-# Prompt for container secret if not set
+# Container secret handling
+# For staging: use the dev fallback secret (matches main backend behavior)
+# For production: require explicit secret (TODO: add SSM/Secrets Manager lookup)
 
 if [[ -z "${CONTAINER_SECRET:-}" ]]; then
-  read -s -p "Container Secret (CAST_CONTAINER_SECRET): " CONTAINER_SECRET
-  echo ""
+  if [[ "$STAGE" == "stag" ]]; then
+    # Use dev fallback - matches docker-orchestrator.ts fallback
+    CONTAINER_SECRET="cast-dev-container-secret-do-not-use-in-production"
+    echo "Using dev fallback secret for staging"
+  else
+    # Production requires explicit secret
+    echo "Error: CONTAINER_SECRET is required for production deployment"
+    echo ""
+    echo "Set CONTAINER_SECRET environment variable:"
+    echo "  export CONTAINER_SECRET=your-production-secret"
+    echo "  $0 $STAGE"
+    echo ""
+    echo "TODO: Add SSM/Secrets Manager auto-discovery for production"
+    exit 1
+  fi
 fi
 
 # =============================================================================
