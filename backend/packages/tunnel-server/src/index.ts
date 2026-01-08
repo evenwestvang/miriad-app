@@ -103,6 +103,7 @@ app.post('/clients/register', async (c) => {
     serviceToken,
     serviceName: tunnelHash,
     controlPort: parseInt(process.env.RATHOLE_CONTROL_PORT || '2333', 10),
+    controlHost: process.env.RATHOLE_CONTROL_HOST || undefined,
     assignedPort: service.port,
   });
 });

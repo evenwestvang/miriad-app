@@ -167,8 +167,79 @@ Resources:
           Value: !Ref Stage
 
   # =============================================================================
+  # Network Load Balancer (for rathole TCP control port)
+  # =============================================================================
+
+  # NLB for TCP traffic - rathole control connections from containers
+  TunnelNLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub cast-tunnel-nlb-${Stage}
+      Type: network
+      Scheme: internet-facing
+      Subnets: !Ref SubnetIds
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+
+  # TCP Listener on port 2333 for rathole control connections
+  NlbTcpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref TunnelNLB
+      Port: 2333
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref NlbTargetGroup
+
+  # Target group for rathole control port
+  NlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub cast-tunnel-tcp-${Stage}
+      VpcId: !Ref VpcId
+      Port: 2333
+      Protocol: TCP
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckProtocol: TCP
+      HealthCheckPort: '2333'
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+
+  # =============================================================================
   # Route53 DNS
   # =============================================================================
+
+  # DNS record for tunnel server (ALB - HTTP/HTTPS traffic)
+  TunnelDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'tunnel.${TunnelDomain}'
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt TunnelALB.DNSName
+        HostedZoneId: !GetAtt TunnelALB.CanonicalHostedZoneID
+        EvaluateTargetHealth: true
+
+  # DNS record for NLB (TCP traffic - rathole control port 2333)
+  # Containers connect to this domain on port 2333 for tunnel establishment
+  TunnelTcpDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'tunnel-tcp.${TunnelDomain}'
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt TunnelNLB.DNSName
+        HostedZoneId: !GetAtt TunnelNLB.CanonicalHostedZoneID
+        EvaluateTargetHealth: true
 
   # Wildcard DNS record pointing to ALB
   WildcardDnsRecord:
@@ -277,6 +348,8 @@ Resources:
               Value: '8080'
             - Name: RATHOLE_CONTROL_PORT
               Value: '2333'
+            - Name: RATHOLE_CONTROL_HOST
+              Value: !Sub 'tunnel-tcp.${TunnelDomain}'
             - Name: RATHOLE_CONFIG_DIR
               Value: /etc/rathole
             - Name: BASE_SERVICE_PORT
@@ -298,6 +371,7 @@ Resources:
     Type: AWS::ECS::Service
     DependsOn:
       - HttpsListener
+      - NlbTcpListener
     Properties:
       ServiceName: !Sub cast-tunnel-${Stage}
       Cluster: !Ref TunnelCluster
@@ -311,9 +385,14 @@ Resources:
           SecurityGroups:
             - !Ref EcsSecurityGroup
       LoadBalancers:
+        # ALB target group for HTTP/HTTPS traffic (Hono proxy)
         - ContainerName: tunnel-server
           ContainerPort: 8080
           TargetGroupArn: !Ref TunnelTargetGroup
+        # NLB target group for TCP traffic (rathole control)
+        - ContainerName: tunnel-server
+          ContainerPort: 2333
+          TargetGroupArn: !Ref NlbTargetGroup
       # Enable circuit breaker for deployment safety
       DeploymentConfiguration:
         DeploymentCircuitBreaker:
@@ -327,12 +406,20 @@ Resources:
 
 Outputs:
   TunnelAlbDnsName:
-    Description: ALB DNS name for tunnel server
+    Description: ALB DNS name for tunnel server (HTTPS traffic)
     Value: !GetAtt TunnelALB.DNSName
+
+  TunnelNlbDnsName:
+    Description: NLB DNS name for rathole control port (TCP 2333)
+    Value: !GetAtt TunnelNLB.DNSName
 
   TunnelAlbArn:
     Description: ALB ARN
     Value: !Ref TunnelALB
+
+  TunnelNlbArn:
+    Description: NLB ARN
+    Value: !Ref TunnelNLB
 
   TunnelClusterArn:
     Description: ECS Cluster ARN for tunnel server
@@ -345,3 +432,11 @@ Outputs:
   WildcardDomain:
     Description: Wildcard domain for container tunnels
     Value: !Sub '*.${TunnelDomain}'
+
+  TunnelServerUrl:
+    Description: Tunnel server URL for container registration (HTTPS)
+    Value: !Sub 'https://tunnel.${TunnelDomain}'
+
+  TunnelControlEndpoint:
+    Description: Rathole control endpoint for containers (TCP)
+    Value: !Sub 'tunnel-tcp.${TunnelDomain}:2333'

@@ -105,9 +105,10 @@ register_with_server() {
     echo "$body" > "$TUNNEL_REG_FILE"
 
     # Extract fields from JSON response
-    local service_token control_port service_name
+    local service_token control_port control_host service_name
     service_token=$(echo "$body" | jq -r '.serviceToken // empty')
     control_port=$(echo "$body" | jq -r '.controlPort // 2333')
+    control_host=$(echo "$body" | jq -r '.controlHost // empty')
     service_name=$(echo "$body" | jq -r '.serviceName // empty')
 
     if [ -z "$service_token" ]; then
@@ -120,6 +121,7 @@ register_with_server() {
     # Export for config generation
     export REGISTERED_TOKEN="$service_token"
     export REGISTERED_CONTROL_PORT="$control_port"
+    export REGISTERED_CONTROL_HOST="$control_host"
     export REGISTERED_SERVICE_NAME="${service_name:-$TUNNEL_HASH}"
 }
 
@@ -130,9 +132,13 @@ generate_config() {
         return 1
     fi
 
-    # Extract host from TUNNEL_SERVER_URL
+    # Use controlHost from server if provided, otherwise extract from TUNNEL_SERVER_URL
     local server_host
-    server_host=$(echo "$TUNNEL_SERVER_URL" | sed -E 's|^https?://||' | sed -E 's|:[0-9]+$||' | sed -E 's|/.*$||')
+    if [ -n "$REGISTERED_CONTROL_HOST" ]; then
+        server_host="$REGISTERED_CONTROL_HOST"
+    else
+        server_host=$(echo "$TUNNEL_SERVER_URL" | sed -E 's|^https?://||' | sed -E 's|:[0-9]+$||' | sed -E 's|/.*$||')
+    fi
 
     mkdir -p "$TUNNEL_CONFIG_DIR"
 
@@ -151,6 +157,7 @@ local_addr = "127.0.0.1:${TUNNEL_LOCAL_PORT}"
 EOF
 
     log_info "Config generated at $TUNNEL_CONFIG_FILE"
+    log_info "Control endpoint: ${server_host}:${REGISTERED_CONTROL_PORT}"
 }
 
 # Start tunnel connection
