@@ -142,6 +142,14 @@ export class DockerOrchestrator implements ContainerOrchestrator {
       console.log(`[DockerOrchestrator] Passing ${options.mcpServers.length} MCP server(s) to container`);
     }
 
+    // Add tunnel configuration if provided
+    if (options.tunnelHash) {
+      args.push('-e', `TUNNEL_HASH=${options.tunnelHash}`);
+    }
+    if (options.tunnelServerUrl) {
+      args.push('-e', `TUNNEL_SERVER_URL=${options.tunnelServerUrl}`);
+    }
+
     args.push(this.config.imageName);
 
     console.log(`[DockerOrchestrator] Starting container on port ${port}`);

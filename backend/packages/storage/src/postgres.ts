@@ -103,6 +103,7 @@ interface RosterRow {
   created_at: Date;
   callback_url: string | null;
   readmark: string | null;
+  tunnel_hash: string | null;
 }
 
 interface UserRow {
@@ -460,10 +461,13 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const id = input.id ?? ulid();
     const now = new Date();
     const status = input.status ?? 'active';
+    // Generate tunnel hash: 32 char hex string (16 bytes)
+    // Used as subdomain for HTTP tunnel access: {tunnelHash}.containers.domain.com
+    const tunnelHash = crypto.randomBytes(16).toString('hex');
 
     const result = await sql<RosterRow[]>`
       INSERT INTO roster (
-        id, channel_id, callsign, agent_type, status, created_at
+        id, channel_id, callsign, agent_type, status, created_at, tunnel_hash
       )
       VALUES (
         ${id},
@@ -471,7 +475,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ${input.callsign},
         ${input.agentType},
         ${status},
-        ${now}
+        ${now},
+        ${tunnelHash}
       )
       RETURNING *
     `;
@@ -531,6 +536,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     }
     if (update.readmark !== undefined) {
       updateObj.readmark = update.readmark;
+    }
+    if (update.tunnelHash !== undefined) {
+      updateObj.tunnel_hash = update.tunnelHash;
     }
 
     if (Object.keys(updateObj).length === 0) return;
@@ -1673,12 +1681,13 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       ON roster(channel_id, callsign)
     `;
 
-    // Add callback_url and readmark columns to roster if they don't exist
+    // Add callback_url, readmark, and tunnel_hash columns to roster if they don't exist
     // (These may be added in migrations for existing databases)
     await sql`
       DO $$ BEGIN
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS callback_url TEXT;
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS readmark VARCHAR(26);
+        ALTER TABLE roster ADD COLUMN IF NOT EXISTS tunnel_hash VARCHAR(64);
       EXCEPTION
         WHEN duplicate_column THEN NULL;
       END $$;
@@ -2132,6 +2141,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       createdAt: row.created_at.toISOString(),
       callbackUrl: row.callback_url ?? undefined,
       readmark: row.readmark ?? undefined,
+      tunnelHash: row.tunnel_hash ?? undefined,
     };
   }
 

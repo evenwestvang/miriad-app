@@ -624,11 +624,25 @@ export function createApp(options: AppOptions): Hono {
     getRoster: async (sid, cid) => {
       const entries = await storage.listRoster(cid);
       return entries.map((e: RosterEntry) => ({
+        id: e.id,
         callsign: e.callsign,
         agentType: e.agentType,
         status: e.status === 'active' ? 'active' : 'inactive',
+        tunnelHash: e.tunnelHash,
       }));
     },
+    getRosterByCallsign: async (cid, callsign) => {
+      const entry = await storage.getRosterByCallsign(cid, callsign);
+      if (!entry) return null;
+      return {
+        id: entry.id,
+        callsign: entry.callsign,
+        agentType: entry.agentType,
+        status: entry.status === 'active' ? 'active' : 'inactive',
+        tunnelHash: entry.tunnelHash,
+      };
+    },
+    tunnelServerUrl: process.env.TUNNEL_SERVER_URL,
     // App integrations: get system.app artifacts for MCP derivation
     getApps: async (sid, cid) => {
       // Get apps from this channel and from #root (space-wide apps)

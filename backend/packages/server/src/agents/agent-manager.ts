@@ -42,9 +42,11 @@ export interface ChannelContext {
 }
 
 export interface RosterEntry {
+  id: string;
   callsign: string;
   agentType: string;
   status: 'active' | 'inactive';
+  tunnelHash?: string;
 }
 
 export interface AppSecrets {
@@ -65,10 +67,14 @@ export interface AgentManagerConfig {
   getChannel: (spaceId: string, channelId: string) => Promise<ChannelContext | null>;
   /** Get roster for channel */
   getRoster: (spaceId: string, channelId: string) => Promise<RosterEntry[]>;
+  /** Get a specific roster entry by callsign */
+  getRosterByCallsign?: (channelId: string, callsign: string) => Promise<RosterEntry | null>;
   /** Get system.app artifacts for a channel (includes root) */
   getApps?: (spaceId: string, channelId: string) => Promise<ArtifactSummary[]>;
   /** App secrets accessor */
   appSecrets?: AppSecrets;
+  /** Tunnel server URL for HTTP tunnel access (e.g., "https://tunnel.clanker.is") */
+  tunnelServerUrl?: string;
 }
 
 // =============================================================================
@@ -289,6 +295,16 @@ export class AgentManager {
       console.log(`[AgentManager] Derived ${appMcpConfigs.length} MCP configs from connected apps`);
     }
 
+    // Get tunnel hash from roster entry (if available)
+    let tunnelHash: string | undefined;
+    if (this.config.getRosterByCallsign) {
+      const rosterEntry = await this.config.getRosterByCallsign(channelId, callsign);
+      tunnelHash = rosterEntry?.tunnelHash;
+      if (tunnelHash) {
+        console.log(`[AgentManager] Tunnel hash found for ${callsign}: ${tunnelHash.substring(0, 8)}...`);
+      }
+    }
+
     // Spawn container
     const spawnOptions: ContainerSpawnOptions = {
       spaceId,
@@ -297,6 +313,8 @@ export class AgentManager {
       authToken,
       systemPrompt,
       mcpServers: appMcpConfigs.length > 0 ? appMcpConfigs : undefined,
+      tunnelHash,
+      tunnelServerUrl: this.config.tunnelServerUrl,
     };
 
     const containerState = await this.config.orchestrator.spawn(spawnOptions);
