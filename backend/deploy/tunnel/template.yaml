@@ -1,0 +1,329 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Cast Tunnel Server - Rathole reverse proxy for container HTTP access
+
+Parameters:
+  Stage:
+    Type: String
+    Default: stag
+    AllowedValues:
+      - stag
+      - prod
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for the tunnel server
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Public subnet IDs for ALB and ECS tasks (need internet access)
+
+  CertificateArn:
+    Type: String
+    Description: ACM certificate ARN for *.containers.clanker.is
+
+  HostedZoneId:
+    Type: String
+    Description: Route53 hosted zone ID for clanker.is
+
+  ContainerSecret:
+    Type: String
+    Description: CAST_CONTAINER_SECRET for validating container tokens
+    NoEcho: true
+
+  RatholeImage:
+    Type: String
+    Description: ECR URI for the rathole server image
+    Default: ''
+
+Resources:
+  # =============================================================================
+  # Security Groups
+  # =============================================================================
+
+  # ALB Security Group - accepts traffic from internet
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub cast-tunnel-alb-${Stage}
+      GroupDescription: Security group for tunnel ALB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # HTTPS from anywhere
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        # HTTP for redirect (optional)
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub cast-tunnel-alb-${Stage}
+        - Key: Environment
+          Value: !Ref Stage
+
+  # ECS Security Group - accepts traffic from ALB only
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub cast-tunnel-ecs-${Stage}
+      GroupDescription: Security group for tunnel ECS tasks
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # Allow traffic from ALB on rathole control port
+        - IpProtocol: tcp
+          FromPort: 2333
+          ToPort: 2333
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+        # Allow traffic from ALB on data port range (for tunneled connections)
+        - IpProtocol: tcp
+          FromPort: 20000
+          ToPort: 30000
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      SecurityGroupEgress:
+        # Allow all outbound (for health checks, etc.)
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub cast-tunnel-ecs-${Stage}
+        - Key: Environment
+          Value: !Ref Stage
+
+  # =============================================================================
+  # Application Load Balancer
+  # =============================================================================
+
+  TunnelALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub cast-tunnel-${Stage}
+      Type: application
+      Scheme: internet-facing
+      Subnets: !Ref SubnetIds
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+
+  # HTTPS Listener with wildcard cert
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref TunnelALB
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TunnelTargetGroup
+
+  # HTTP to HTTPS redirect
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref TunnelALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: '443'
+            StatusCode: HTTP_301
+
+  # Target group for rathole server
+  TunnelTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub cast-tunnel-${Stage}
+      VpcId: !Ref VpcId
+      Port: 2333
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+
+  # =============================================================================
+  # Route53 DNS
+  # =============================================================================
+
+  # Wildcard DNS record pointing to ALB
+  WildcardDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: '*.containers.clanker.is'
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt TunnelALB.DNSName
+        HostedZoneId: !GetAtt TunnelALB.CanonicalHostedZoneID
+        EvaluateTargetHealth: true
+
+  # =============================================================================
+  # ECS Cluster & Service
+  # =============================================================================
+
+  # Dedicated cluster for tunnel server (separate from agent cluster)
+  TunnelCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub cast-tunnel-${Stage}
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+
+  # CloudWatch Log Group
+  TunnelLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/cast-tunnel-${Stage}
+      RetentionInDays: 14
+
+  # ECS Task Execution Role
+  TunnelTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub cast-tunnel-execution-${Stage}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # ECS Task Role (runtime permissions)
+  TunnelTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub cast-tunnel-task-${Stage}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: TunnelPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Allow writing logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt TunnelLogGroup.Arn
+
+  # ECS Task Definition for rathole server
+  TunnelTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub cast-tunnel-${Stage}
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn: !GetAtt TunnelTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TunnelTaskRole.Arn
+      ContainerDefinitions:
+        - Name: rathole
+          Image: !Ref RatholeImage
+          Essential: true
+          PortMappings:
+            # Control port (health checks, config API)
+            - ContainerPort: 2333
+              Protocol: tcp
+            # Data port range for tunneled connections
+            # Note: ALB can only forward to one port, so we'll use a reverse proxy pattern
+            # The rathole server handles routing based on subdomain/Host header
+          Environment:
+            - Name: RUST_LOG
+              Value: info
+            - Name: CAST_CONTAINER_SECRET
+              Value: !Ref ContainerSecret
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref TunnelLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: rathole
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+
+  # ECS Service - always running
+  TunnelService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - HttpsListener
+    Properties:
+      ServiceName: !Sub cast-tunnel-${Stage}
+      Cluster: !Ref TunnelCluster
+      TaskDefinition: !Ref TunnelTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: !Ref SubnetIds
+          SecurityGroups:
+            - !Ref EcsSecurityGroup
+      LoadBalancers:
+        - ContainerName: rathole
+          ContainerPort: 2333
+          TargetGroupArn: !Ref TunnelTargetGroup
+      # Enable circuit breaker for deployment safety
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+
+Outputs:
+  TunnelAlbDnsName:
+    Description: ALB DNS name for tunnel server
+    Value: !GetAtt TunnelALB.DNSName
+
+  TunnelAlbArn:
+    Description: ALB ARN
+    Value: !Ref TunnelALB
+
+  TunnelClusterArn:
+    Description: ECS Cluster ARN for tunnel server
+    Value: !GetAtt TunnelCluster.Arn
+
+  TunnelServiceArn:
+    Description: ECS Service ARN
+    Value: !Ref TunnelService
+
+  WildcardDomain:
+    Description: Wildcard domain for container tunnels
+    Value: '*.containers.clanker.is'

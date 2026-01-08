@@ -1,0 +1,73 @@
+# SAM CLI Configuration for Cast Tunnel Server
+# Deploy: sam deploy --config-env tunnel-stag --template-file template.yaml
+
+version = 0.1
+
+[default.global.parameters]
+stack_name = "cast-tunnel"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.validate.parameters]
+lint = true
+
+# =============================================================================
+# tunnel-stag: Staging environment
+# Usage: sam deploy --config-env tunnel-stag --template-file template.yaml
+# =============================================================================
+
+[tunnel-stag.global.parameters]
+stack_name = "cast-tunnel-stag"
+
+[tunnel-stag.deploy.parameters]
+profile = "cikada-stag"
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
+confirm_changeset = false
+resolve_s3 = true
+s3_prefix = "cast-tunnel"
+region = "us-east-1"
+disable_rollback = false
+# NOTE: Update these values with actual resource IDs before deployment
+parameter_overrides = [
+    "Stage=stag",
+    # VPC and networking - use same VPC as main CAST infra
+    "VpcId=vpc-XXXXXXXX",
+    "SubnetIds=subnet-0f7c23168eb2b784f,subnet-0873ce7dc641901f6,subnet-0ecf88ad31694eb5e",
+    # TLS certificate - must be created in ACM first
+    # Request wildcard cert for *.containers.clanker.is
+    "CertificateArn=arn:aws:acm:us-east-1:455626925815:certificate/XXXXXXXX",
+    # Route53 hosted zone for clanker.is
+    "HostedZoneId=ZXXXXXXXXXX",
+    # Container secret - same as main CAST deployment
+    "ContainerSecret=XXXXXXXX",
+    # Rathole image - will be built and pushed to ECR
+    "RatholeImage=455626925815.dkr.ecr.us-east-1.amazonaws.com/cast-tunnel:latest"
+]
+
+# =============================================================================
+# tunnel-prod: Production environment
+# Usage: sam deploy --config-env tunnel-prod --template-file template.yaml
+# =============================================================================
+
+[tunnel-prod.global.parameters]
+stack_name = "cast-tunnel-prod"
+
+[tunnel-prod.deploy.parameters]
+profile = "cikada-prod"
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
+confirm_changeset = true
+resolve_s3 = true
+s3_prefix = "cast-tunnel"
+region = "us-east-1"
+disable_rollback = false
+parameter_overrides = [
+    "Stage=prod",
+    "VpcId=vpc-XXXXXXXX",
+    "SubnetIds=subnet-XXXXXXXX",
+    "CertificateArn=arn:aws:acm:us-east-1:XXXXXXXXXXXX:certificate/XXXXXXXX",
+    "HostedZoneId=ZXXXXXXXXXX",
+    "ContainerSecret=XXXXXXXX",
+    "RatholeImage=XXXXXXXXXXXX.dkr.ecr.us-east-1.amazonaws.com/cast-tunnel:latest"
+]
