@@ -24,6 +24,7 @@ import {
   getService,
   getServiceOwner,
   listServices,
+  buildServiceId,
 } from './config.js';
 import { randomBytes } from 'node:crypto';
 
@@ -54,12 +55,12 @@ app.get('/health', (c) => {
  * Container calls this to register for tunnel access.
  * Requires CAST_AUTH_TOKEN in Authorization header.
  *
- * Request: { tunnelHash: "..." }
+ * Request: { tunnelHash: "...", serviceName?: "..." }
  * Response: {
  *   success: true,
  *   serviceToken: "...",  // Token for rathole connection
  *   controlPort: 2333,    // Rathole control port to connect to
- *   serviceName: "..."    // Service name to use in client config
+ *   serviceName: "..."    // Service ID to use in client config ({serviceName}-{hash} or {hash})
  * }
  */
 app.post('/clients/register', async (c) => {
@@ -76,11 +77,13 @@ app.post('/clients/register', async (c) => {
     return c.json({ success: false, error: 'Invalid auth token' }, 401);
   }
 
-  // Get tunnel hash from request body
+  // Get tunnel hash and optional service name from request body
   let tunnelHash: string;
+  let serviceName: string | undefined;
   try {
     const body = await c.req.json();
     tunnelHash = body.tunnelHash;
+    serviceName = body.serviceName;
   } catch {
     return c.json({ success: false, error: 'Invalid request body' }, 400);
   }
@@ -89,24 +92,40 @@ app.post('/clients/register', async (c) => {
     return c.json({ success: false, error: 'Invalid tunnelHash' }, 400);
   }
 
+  // Validate serviceName if provided
+  if (serviceName !== undefined && typeof serviceName !== 'string') {
+    return c.json({ success: false, error: 'Invalid serviceName' }, 400);
+  }
+
   // Generate a unique token for this service (rathole uses this to authenticate)
   const serviceToken = randomBytes(32).toString('hex');
 
   // Register service in rathole config with owner info for auth verification
-  const service = registerService(tunnelHash, serviceToken, {
-    spaceId: payload.spaceId,
-    channelId: payload.channelId,
-    callsign: payload.callsign,
-  });
+  const result = registerService(
+    tunnelHash,
+    serviceToken,
+    {
+      spaceId: payload.spaceId,
+      channelId: payload.channelId,
+      callsign: payload.callsign,
+    },
+    serviceName
+  );
 
+  // Check for registration error
+  if ('error' in result) {
+    return c.json({ success: false, error: result.error }, 400);
+  }
+
+  const service = result;
   console.log(
-    `[Register] Container ${payload.callsign} registered hash ${tunnelHash} on port ${service.port}`
+    `[Register] Container ${payload.callsign} registered ${service.serviceId} on port ${service.port}`
   );
 
   return c.json({
     success: true,
     serviceToken,
-    serviceName: tunnelHash,
+    serviceName: service.serviceId,  // Return full serviceId for rathole config
     controlPort: parseInt(process.env.RATHOLE_CONTROL_PORT || '2333', 10),
     controlHost: process.env.RATHOLE_CONTROL_HOST || undefined,
     assignedPort: service.port,
@@ -114,13 +133,17 @@ app.post('/clients/register', async (c) => {
 });
 
 /**
- * DELETE /clients/:hash
+ * DELETE /clients/:serviceId
  *
  * Unregister a tunnel client.
- * Requires CAST_AUTH_TOKEN from the container that originally registered this hash.
+ * Requires CAST_AUTH_TOKEN from the container that originally registered this service.
+ *
+ * serviceId can be:
+ * - {serviceName}-{hash} for named services
+ * - {hash} for the default service
  */
-app.delete('/clients/:hash', async (c) => {
-  const hash = c.req.param('hash');
+app.delete('/clients/:serviceId', async (c) => {
+  const serviceId = c.req.param('serviceId');
 
   // Validate container token
   const authHeader = c.req.header('Authorization');
@@ -136,15 +159,15 @@ app.delete('/clients/:hash', async (c) => {
   }
 
   // Verify the requester owns this service
-  const owner = getServiceOwner(hash);
+  const owner = getServiceOwner(serviceId);
   if (!owner) {
     // Service exists in TOML but owner unknown (server restarted)
     // Allow deletion if service exists - the container re-registering will reclaim ownership
-    const service = getService(hash);
+    const service = getService(serviceId);
     if (!service) {
       return c.json({ success: false, error: 'Service not found' }, 404);
     }
-    console.log(`[Unregister] Owner unknown for ${hash}, allowing deletion by ${payload.callsign}`);
+    console.log(`[Unregister] Owner unknown for ${serviceId}, allowing deletion by ${payload.callsign}`);
   } else {
     // Verify ownership: must match spaceId, channelId, and callsign
     if (
@@ -153,18 +176,18 @@ app.delete('/clients/:hash', async (c) => {
       owner.callsign !== payload.callsign
     ) {
       console.log(
-        `[Unregister] Denied: ${payload.callsign} tried to unregister ${hash} owned by ${owner.callsign}`
+        `[Unregister] Denied: ${payload.callsign} tried to unregister ${serviceId} owned by ${owner.callsign}`
       );
       return c.json({ success: false, error: 'Not authorized to unregister this service' }, 403);
     }
   }
 
-  const removed = unregisterService(hash);
+  const removed = unregisterService(serviceId);
   if (!removed) {
     return c.json({ success: false, error: 'Service not found' }, 404);
   }
 
-  console.log(`[Unregister] Container ${payload.callsign} unregistered hash ${hash}`);
+  console.log(`[Unregister] Container ${payload.callsign} unregistered ${serviceId}`);
   return c.json({ success: true });
 });
 
@@ -185,8 +208,11 @@ app.delete('/clients/:hash', async (c) => {
 /**
  * Catch-all handler for user traffic.
  *
- * Extracts hash from Host header ({hash}.domain), looks up the rathole port,
- * and proxies the request.
+ * Extracts serviceId from Host header and proxies to rathole port.
+ *
+ * URL formats:
+ * - {hash}.domain           -> serviceId = {hash} (default service)
+ * - {serviceName}-{hash}.domain -> serviceId = {serviceName}-{hash} (named service)
  *
  * Note: This is a simple implementation. For production, consider using
  * a dedicated reverse proxy like nginx for better performance.
@@ -197,15 +223,30 @@ app.all('*', async (c) => {
     return c.json({ error: 'No Host header' }, 400);
   }
 
-  // Extract hash from subdomain: {hash}.containers.domain.com
-  const hashMatch = host.match(/^([a-z0-9]+)\./);
-  if (!hashMatch) {
+  // Extract serviceId from subdomain
+  // Format: {serviceName}-{hash}.domain or {hash}.domain
+  // Hash is 32+ hex characters
+  const subdomainMatch = host.match(/^([a-z0-9-]+)\./);
+  if (!subdomainMatch) {
     // Not a tunnel request, could be direct access to tunnel server
     return c.json({ error: 'Invalid host format' }, 400);
   }
 
-  const hash = hashMatch[1];
-  const service = getService(hash);
+  const subdomain = subdomainMatch[1];
+
+  // Parse subdomain to extract serviceId
+  // Try to match {serviceName}-{hash} first, then just {hash}
+  // Hash is 32+ hex chars at the end
+  const serviceMatch = subdomain.match(/^(?:([a-z0-9]+)-)?([a-f0-9]{32,})$/);
+  if (!serviceMatch) {
+    return c.json({ error: 'Invalid tunnel URL format' }, 400);
+  }
+
+  const serviceName = serviceMatch[1];  // undefined for default service
+  const hash = serviceMatch[2];
+  const serviceId = serviceName ? `${serviceName}-${hash}` : hash;
+
+  const service = getService(serviceId);
 
   if (!service) {
     return c.json({ error: 'Tunnel not found' }, 404);
@@ -233,7 +274,7 @@ app.all('*', async (c) => {
       headers: response.headers,
     });
   } catch (error) {
-    console.error(`[Proxy] Error proxying to ${hash}:`, error);
+    console.error(`[Proxy] Error proxying to ${serviceId}:`, error);
     return c.json({ error: 'Proxy error', details: String(error) }, 502);
   }
 });

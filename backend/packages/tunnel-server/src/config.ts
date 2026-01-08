@@ -45,15 +45,55 @@ const BASE_SERVICE_PORT = parseInt(process.env.BASE_SERVICE_PORT || '10000', 10)
 // Lost on restart, but containers will re-register and reclaim ownership
 const serviceOwners = new Map<string, ServiceOwner>();
 
+// Multi-service limits
+const MAX_SERVICE_NAME_LENGTH = 20;
+const MAX_SERVICES_PER_HASH = 10;
+
+// Track service count per hash for limit enforcement
+const servicesPerHash = new Map<string, Set<string>>();
+
+/**
+ * Build service ID from hash and optional service name.
+ * Format: {serviceName}-{hash} or just {hash} for default service.
+ */
+export function buildServiceId(hash: string, serviceName?: string): string {
+  if (serviceName) {
+    return `${serviceName}-${hash}`;
+  }
+  return hash;
+}
+
+/**
+ * Validate service name.
+ * Must be alphanumeric lowercase, max 20 chars.
+ */
+export function validateServiceName(serviceName?: string): { valid: boolean; error?: string } {
+  if (!serviceName) {
+    return { valid: true };  // Empty is OK (default service)
+  }
+
+  if (serviceName.length > MAX_SERVICE_NAME_LENGTH) {
+    return { valid: false, error: `Service name too long (max ${MAX_SERVICE_NAME_LENGTH} chars)` };
+  }
+
+  if (!/^[a-z0-9]+$/.test(serviceName)) {
+    return { valid: false, error: 'Service name must be alphanumeric lowercase' };
+  }
+
+  return { valid: true };
+}
+
 // =============================================================================
 // Types (continued)
 // =============================================================================
 
 export interface ServiceEntry {
-  hash: string;
+  serviceId: string;      // Composite ID: {serviceName}-{hash} or just {hash}
+  hash: string;           // Container's tunnel hash
+  serviceName?: string;   // Optional service name for multi-map
   token: string;
   port: number;
-  owner?: ServiceOwner;  // Who registered this service (for auth on DELETE)
+  owner?: ServiceOwner;   // Who registered this service (for auth on DELETE)
 }
 
 export interface RatholeConfig {
@@ -93,19 +133,34 @@ export function loadConfig(): RatholeConfig {
     for (const line of lines) {
       const trimmed = line.trim();
 
-      // Parse [server.services.{hash}]
+      // Parse [server.services.{serviceId}]
+      // serviceId is either {serviceName}-{hash} or just {hash}
       const serviceMatch = trimmed.match(/^\[server\.services\.([^\]]+)\]$/);
       if (serviceMatch) {
         // Save previous service if any
         if (currentService && currentEntry.token && currentEntry.port) {
           config.services.set(currentService, {
-            hash: currentService,
+            serviceId: currentService,
+            hash: currentEntry.hash || currentService,
+            serviceName: currentEntry.serviceName,
             token: currentEntry.token,
             port: currentEntry.port,
           });
         }
         currentService = serviceMatch[1];
-        currentEntry = { hash: currentService };
+        // Parse serviceId to extract hash and optional serviceName
+        // Format: {serviceName}-{hash} where hash is 32+ hex chars
+        const idMatch = currentService.match(/^(?:([a-z0-9]+)-)?([a-f0-9]{32,})$/);
+        if (idMatch) {
+          currentEntry = {
+            serviceId: currentService,
+            serviceName: idMatch[1] || undefined,
+            hash: idMatch[2],
+          };
+        } else {
+          // Fallback for placeholder or legacy entries
+          currentEntry = { serviceId: currentService, hash: currentService };
+        }
         continue;
       }
 
@@ -127,7 +182,9 @@ export function loadConfig(): RatholeConfig {
     // Save last service
     if (currentService && currentEntry.token && currentEntry.port) {
       config.services.set(currentService, {
-        hash: currentService,
+        serviceId: currentService,
+        hash: currentEntry.hash || currentService,
+        serviceName: currentEntry.serviceName,
         token: currentEntry.token,
         port: currentEntry.port,
       });
@@ -156,8 +213,8 @@ export function saveConfig(config: RatholeConfig): void {
   ];
 
   // Add service entries
-  for (const [hash, service] of config.services) {
-    lines.push(`[server.services.${hash}]`);
+  for (const [serviceId, service] of config.services) {
+    lines.push(`[server.services.${serviceId}]`);
     lines.push(`token = "${service.token}"`);
     lines.push(`bind_addr = "0.0.0.0:${service.port}"`);
     lines.push('');
@@ -174,18 +231,37 @@ export function saveConfig(config: RatholeConfig): void {
  * @param hash - Container's tunnel hash
  * @param token - Auth token for this service
  * @param owner - Identity of the container registering (for auth on DELETE)
- * @returns The assigned service entry
+ * @param serviceName - Optional service name for multi-map (e.g., "web", "api")
+ * @returns The assigned service entry or error
  */
-export function registerService(hash: string, token: string, owner: ServiceOwner): ServiceEntry {
+export function registerService(
+  hash: string,
+  token: string,
+  owner: ServiceOwner,
+  serviceName?: string
+): ServiceEntry | { error: string } {
+  // Validate service name
+  const validation = validateServiceName(serviceName);
+  if (!validation.valid) {
+    return { error: validation.error! };
+  }
+
   const config = loadConfig();
+  const serviceId = buildServiceId(hash, serviceName);
 
   // Check if already registered
-  const existing = config.services.get(hash);
+  const existing = config.services.get(serviceId);
   if (existing) {
-    console.log(`[Config] Service ${hash} already registered on port ${existing.port}`);
+    console.log(`[Config] Service ${serviceId} already registered on port ${existing.port}`);
     // Update owner in case container restarted with same hash
-    serviceOwners.set(hash, owner);
+    serviceOwners.set(serviceId, owner);
     return existing;
+  }
+
+  // Check service limit per hash
+  const hashServices = servicesPerHash.get(hash) || new Set<string>();
+  if (hashServices.size >= MAX_SERVICES_PER_HASH) {
+    return { error: `Maximum services per container reached (${MAX_SERVICES_PER_HASH})` };
   }
 
   // Find next available port
@@ -195,58 +271,74 @@ export function registerService(hash: string, token: string, owner: ServiceOwner
     port++;
   }
 
-  const entry: ServiceEntry = { hash, token, port, owner };
-  config.services.set(hash, entry);
+  const entry: ServiceEntry = { serviceId, hash, serviceName, token, port, owner };
+  config.services.set(serviceId, entry);
   saveConfig(config);
 
   // Store owner in memory for auth verification
-  serviceOwners.set(hash, owner);
+  serviceOwners.set(serviceId, owner);
 
-  console.log(`[Config] Registered service ${hash} on port ${port} for ${owner.callsign}`);
+  // Track services per hash
+  hashServices.add(serviceId);
+  servicesPerHash.set(hash, hashServices);
+
+  console.log(`[Config] Registered service ${serviceId} on port ${port} for ${owner.callsign}`);
   return entry;
 }
 
 /**
  * Get the owner of a registered service.
  *
- * @param hash - Container's tunnel hash
+ * @param serviceId - Service ID ({serviceName}-{hash} or just {hash})
  * @returns Owner info if found, null otherwise
  */
-export function getServiceOwner(hash: string): ServiceOwner | null {
-  return serviceOwners.get(hash) || null;
+export function getServiceOwner(serviceId: string): ServiceOwner | null {
+  return serviceOwners.get(serviceId) || null;
 }
 
 /**
  * Unregister a tunnel client.
  * Removes from config file.
  *
- * @param hash - Container's tunnel hash
+ * @param serviceId - Service ID ({serviceName}-{hash} or just {hash})
  * @returns true if removed, false if not found
  */
-export function unregisterService(hash: string): boolean {
+export function unregisterService(serviceId: string): boolean {
   const config = loadConfig();
 
-  if (!config.services.has(hash)) {
-    console.log(`[Config] Service ${hash} not found`);
+  const service = config.services.get(serviceId);
+  if (!service) {
+    console.log(`[Config] Service ${serviceId} not found`);
     return false;
   }
 
-  config.services.delete(hash);
+  config.services.delete(serviceId);
   saveConfig(config);
 
   // Clear owner from memory
-  serviceOwners.delete(hash);
+  serviceOwners.delete(serviceId);
 
-  console.log(`[Config] Unregistered service ${hash}`);
+  // Update services per hash tracking
+  const hashServices = servicesPerHash.get(service.hash);
+  if (hashServices) {
+    hashServices.delete(serviceId);
+    if (hashServices.size === 0) {
+      servicesPerHash.delete(service.hash);
+    }
+  }
+
+  console.log(`[Config] Unregistered service ${serviceId}`);
   return true;
 }
 
 /**
- * Get service entry by hash.
+ * Get service entry by service ID.
+ *
+ * @param serviceId - Service ID ({serviceName}-{hash} or just {hash})
  */
-export function getService(hash: string): ServiceEntry | null {
+export function getService(serviceId: string): ServiceEntry | null {
   const config = loadConfig();
-  return config.services.get(hash) || null;
+  return config.services.get(serviceId) || null;
 }
 
 /**
@@ -279,6 +371,7 @@ export function initializeConfig(): void {
   // Add placeholder service - rathole requires at least one service to start
   // This binds to localhost only and uses an unusable token, so it's harmless
   config.services.set('_placeholder', {
+    serviceId: '_placeholder',
     hash: '_placeholder',
     token: 'placeholder-not-used-token',
     port: 19999,
