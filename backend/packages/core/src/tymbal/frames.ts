@@ -58,9 +58,12 @@ export interface ResetFrame {
 
 /**
  * Sync request - client requests message history.
+ * Can also be used to switch channels on a persistent connection.
  */
 export interface SyncRequest {
   request: 'sync';
+  /** Channel to sync/switch to (enables persistent connections) */
+  channelId?: string;
   /** Optional timestamp cursor - server sends messages >= this time */
   since?: string;
 }

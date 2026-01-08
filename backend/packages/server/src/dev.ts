@@ -78,40 +78,85 @@ async function main() {
   // Initialize WebSocket Connection Manager with sync handler
   // ---------------------------------------------------------------------------
 
+  // Track authorized channels per connection to avoid repeated auth checks
+  type ExtendedConnection = ConnectionInfo & {
+    session?: { userId: string; spaceId: string };
+    authorizedChannels?: Set<string>;
+  };
+
   const connectionManager = createConnectionManager({
-    onSyncRequest: async (connection: ConnectionInfo, since?: string) => {
-      // Fetch message history and send to client
+    onSyncRequest: async (connection: ConnectionInfo, channelId: string, since?: string) => {
+      console.log(`[Sync] Received sync request for channel: ${channelId}, since: ${since}`);
+      const t0 = performance.now();
       try {
-        // Look up channel to get its spaceId (channels are globally unique by ID)
-        const channel = await storage.getChannelById(connection.channelId);
-        if (!channel) {
-          console.error('[Sync] Channel not found:', connection.channelId);
-          return;
-        }
+        const extConn = connection as ExtendedConnection;
+        const session = extConn.session;
+        console.log(`[Sync] Session: ${session ? `userId=${session.userId}, spaceId=${session.spaceId}` : 'none'}`);
+        console.log(`[Sync] Connection channelId: ${connection.channelId}`);
 
-        const messages = await storage.getMessages(channel.spaceId, connection.channelId, {
-          since,
-          limit: 100,
-        });
+        // Check if channel is already authorized (cache hit)
+        const isAuthorized = extConn.authorizedChannels?.has(channelId);
 
-        // Send each message as a SetFrame
-        for (const msg of messages) {
-          const frame = JSON.stringify({
-            i: msg.id,
-            t: msg.timestamp,
-            v: {
-              type: msg.type,
-              content: msg.content,
-              sender: msg.sender,
-              senderType: msg.senderType,
-            },
-          });
-          if (connection.ws.readyState === WebSocket.OPEN) {
-            connection.ws.send(frame);
+        if (!isAuthorized) {
+          // Authorize channel access (only on first access to this channel)
+          const channel = await storage.getChannelById(channelId);
+          if (!channel) {
+            console.log(`[Sync] Channel not found: ${channelId}`);
+            connection.ws.send(JSON.stringify({ error: 'channel_not_found', message: 'Channel not found' }));
+            return;
           }
+
+          if (session && channel.spaceId !== session.spaceId) {
+            console.log(`[Sync] User ${session.userId} not authorized for channel ${channelId}`);
+            connection.ws.send(JSON.stringify({ error: 'forbidden', message: 'Not authorized for this channel' }));
+            return;
+          }
+
+          // Cache authorization
+          if (!extConn.authorizedChannels) {
+            extConn.authorizedChannels = new Set();
+          }
+          extConn.authorizedChannels.add(channelId);
         }
+
+        // Switch channel if different from current
+        if (channelId !== connection.channelId) {
+          connectionManager.switchChannel(connection.id, channelId);
+        }
+
+        // Fetch message history and send to client
+        const messages = await storage.getMessagesByChannelId(channelId, {
+          since,
+          limit: 25, // Keep small for fast initial sync - content column is large
+          newestFirst: !since, // Get newest messages for initial sync, oldest-first for incremental
+        });
+        const t1 = performance.now();
+
+        // Build NDJSON payload with all messages + sync response
+        const frames = messages.map(msg => JSON.stringify({
+          i: msg.id,
+          t: msg.timestamp,
+          v: {
+            type: msg.type,
+            content: msg.content,
+            sender: msg.sender,
+            senderType: msg.senderType,
+          },
+        }));
+
+        // Add sync response at the end
+        frames.push(JSON.stringify({ sync: new Date().toISOString() }));
+        const t2 = performance.now();
+
+        // Send all frames as single NDJSON payload
+        if (connection.ws.readyState === WebSocket.OPEN) {
+          connection.ws.send(frames.join('\n'));
+        }
+        const t3 = performance.now();
+
+        console.log(`[Sync] Timing: auth+getMessages=${(t1-t0).toFixed(1)}ms, serialize=${(t2-t1).toFixed(1)}ms, send=${(t3-t2).toFixed(1)}ms, total=${(t3-t0).toFixed(1)}ms (${messages.length} msgs)`);
       } catch (error) {
-        console.error('[Sync] Error fetching messages:', error);
+        console.error('[Sync] Error:', error);
       }
     },
   });
@@ -219,55 +264,40 @@ async function main() {
     }
 
     // ---------------------------------------------------------------------------
-    // Channel Stream WebSocket: /channels/:channelId/stream
+    // Channel Stream WebSocket: /stream (persistent connection, channel via sync)
     // Requires session authentication
     // ---------------------------------------------------------------------------
-    const match = pathname.match(/^\/channels\/([^/]+)\/stream$/);
-    if (!match) {
+    if (pathname !== '/stream') {
       socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
       socket.destroy();
       return;
     }
-
-    const channelId = match[1];
 
     // Authenticate via session cookie
     const sessionToken = parseSessionCookie(request.headers.cookie);
     const session = sessionToken ? await verifySessionToken(sessionToken) : null;
 
     if (!session) {
-      console.log(`[WebSocket] Unauthorized connection attempt to channel: ${channelId}`);
+      console.log(`[WebSocket] Unauthorized connection attempt`);
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
     }
 
-    // Verify user has access to the channel's space
-    const channel = await storage.getChannelById(channelId);
-    if (!channel) {
-      console.log(`[WebSocket] Channel not found: ${channelId}`);
-      socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-      socket.destroy();
-      return;
-    }
-
-    if (channel.spaceId !== session.spaceId) {
-      console.log(`[WebSocket] User ${session.userId} not authorized for channel ${channelId} (space mismatch)`);
-      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-      socket.destroy();
-      return;
-    }
-
+    // Store session on the WebSocket for later channel authorization
     wss.handleUpgrade(request, socket, head, (ws) => {
-      console.log(`[WebSocket] User ${session.userId} connected to channel: ${channelId}`);
-      connectionManager.addConnection(ws, channelId);
+      console.log(`[WebSocket] User ${session.userId} connected (persistent)`);
+      // Use placeholder channel - will be set by first sync request
+      const connInfo = connectionManager.addConnection(ws, '__pending__');
+      // Attach session to connection for channel auth during sync
+      (connInfo as ConnectionInfo & { session: typeof session }).session = session;
     });
   });
 
   server.listen(port, () => {
     console.log(`✅ Server running at http://localhost:${port}`);
     console.log(`   Health check: http://localhost:${port}/health`);
-    console.log(`   WebSocket: ws://localhost:${port}/channels/:channelId/stream`);
+    console.log(`   WebSocket: ws://localhost:${port}/stream`);
     console.log(`   Local Agents: ws://localhost:${port}/local-agents/connect`);
     console.log(`   Space ID: ${spaceId}`);
   });

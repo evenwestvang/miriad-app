@@ -106,10 +106,11 @@ function createRosterProviderAdapter(storage: Storage): {
   return {
     forSpace: (spaceId: string): RosterProvider => ({
       async getRoster(channelId: string): Promise<ChannelRoster | null> {
-        const channel = await storage.getChannel(spaceId, channelId);
-        if (!channel) return null;
+        // Single query: channel + roster via JOIN
+        const result = await storage.getChannelWithRoster(spaceId, channelId);
+        if (!result) return null;
 
-        const rosterEntries = await storage.listRoster(channelId);
+        const rosterEntries = result.roster;
 
         // Find leader (first agent with 'lead' in type)
         const leaderEntry = rosterEntries.find((e: RosterEntry) => e.agentType.toLowerCase().includes('lead'));
@@ -186,15 +187,13 @@ function createChannelRoutes(storage: Storage): Hono {
     const channelId = c.req.param('channelId');
 
     try {
-      const channel = await storage.getChannel(spaceId, channelId);
-      if (!channel) {
+      // Single query: channel + roster via JOIN
+      const result = await storage.getChannelWithRoster(spaceId, channelId);
+      if (!result) {
         return c.json({ error: 'Channel not found' }, 404);
       }
 
-      // Include roster per spec
-      const roster = await storage.listRoster(channelId);
-
-      return c.json({ channel, roster });
+      return c.json({ channel: result.channel, roster: result.roster });
     } catch (error) {
       console.error('[Channels] Error getting channel:', error);
       return c.json({ error: 'Failed to get channel' }, 500);
@@ -907,9 +906,8 @@ export function createApp(options: AppOptions): Hono {
     const slug = c.req.param('slug');
 
     try {
-      // Resolve channel by name or ID (support both formats)
-      const channel = await storage.getChannelByName(spaceId, channelParam)
-        ?? await storage.getChannel(spaceId, channelParam);
+      // Resolve channel by name or ID (single query)
+      const channel = await storage.resolveChannel(spaceId, channelParam);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);

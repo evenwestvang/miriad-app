@@ -924,13 +924,9 @@ const toolHandlers: Record<string, ToolHandler> = {
  * Resolve channel by name first, then by ID.
  * This allows agents to use friendly channel names in URLs.
  */
-async function resolveChannel(storage: Storage, spaceId: string, channelIdOrName: string) {
-  // Try by name first (more user-friendly)
-  const byName = await storage.getChannelByName(spaceId, channelIdOrName);
-  if (byName) return byName;
-
-  // Fall back to ID lookup
-  return storage.getChannel(spaceId, channelIdOrName);
+async function resolveChannelHelper(storage: Storage, spaceId: string, channelIdOrName: string) {
+  // Single query that handles both ID and name lookup
+  return storage.resolveChannel(spaceId, channelIdOrName);
 }
 
 /**
@@ -969,7 +965,7 @@ export function createMcpRoutes(opts: McpHttpHandlerOptions): Hono<{ Variables: 
     const spaceId = container.spaceId;
 
     // Resolve channel by name or ID
-    const channel = await resolveChannel(storage, spaceId, channelIdOrName);
+    const channel = await resolveChannelHelper(storage, spaceId, channelIdOrName);
     if (!channel) {
       return c.json({ error: 'Channel not found' }, 404);
     }

@@ -82,6 +82,10 @@ export function App() {
   const [leader, setLeader] = useState<string | undefined>(undefined)
   const [agentTypes, setAgentTypes] = useState<AgentType[]>([])
   const [isStartingWorkspace, setIsStartingWorkspace] = useState(false)
+  // Track channel switching to show loading instead of empty state
+  const [isSwitchingChannel, setIsSwitchingChannel] = useState(false)
+  // Delayed spinner - only show after 500ms to avoid flash on fast loads
+  const [showLoadingSpinner, setShowLoadingSpinner] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     const stored = localStorage.getItem('sidebar-open')
     return stored !== null ? JSON.parse(stored) : true
@@ -169,6 +173,13 @@ export function App() {
     }
 
     // Regular message - add to list
+    // Clear switching state as soon as first message arrives
+    setIsSwitchingChannel((wasSwitching) => {
+      if (wasSwitching) {
+        console.log(`[ChannelSwitch] First message arrived at ${performance.now().toFixed(2)}ms (id: ${msg.id})`)
+      }
+      return false
+    })
     setMessages((prev) => {
       // Avoid duplicates (sync might send messages we already have)
       if (prev.some((m) => m.id === msg.id)) {
@@ -217,14 +228,34 @@ export function App() {
     }
   }, [])
 
+  // Sync complete handler - clears switching state when no messages
+  const handleSyncComplete = useCallback(() => {
+    setIsSwitchingChannel(false)
+  }, [])
+
+  // Delayed loading spinner - only show after 500ms to avoid flash on fast loads
+  useEffect(() => {
+    if (isSwitchingChannel) {
+      const timer = setTimeout(() => {
+        setShowLoadingSpinner(true)
+      }, 500)
+      return () => clearTimeout(timer)
+    } else {
+      setShowLoadingSpinner(false)
+    }
+  }, [isSwitchingChannel])
+
   // Channel WebSocket connection for real-time streaming
+  // Pass wsToken from auth session to avoid re-fetching on every channel switch
   const { connected, isWaitingForResponse, sendMessage } = useTymbalConnection({
     channelId: selectedThread,
     onMessage: handleMessage,
     onMessageUpdate: handleMessageUpdate,
     onArtifactEvent: handleArtifactEvent,
     onRosterEvent: handleRosterEvent,
+    onSyncComplete: handleSyncComplete,
     currentUser,
+    wsToken: authSession?.wsToken,
   })
 
   // Set default agents (local Cikada runtime doesn't have /agents endpoint)
@@ -288,55 +319,59 @@ export function App() {
     setIsStartingWorkspace(false)
 
     // Clear messages when channel changes - WebSocket sync will repopulate
+    // Set switching state to show loading instead of empty welcome message
     setMessages([])
     setRoster([])
     setLeader(undefined)
-
-    if (!selectedThread) {
-      return
+    if (selectedThread) {
+      setIsSwitchingChannel(true)
+      console.log(`[ChannelSwitch] Started switching to channel ${selectedThread} at ${performance.now().toFixed(2)}ms`)
     }
 
-    // Fetch channel roster from separate endpoint
-    async function fetchRoster() {
-      try {
-        const response = await apiFetch(`${API_HOST}/channels/${selectedThread}/roster`)
-        if (!response.ok) {
-          throw new Error(`Failed to fetch roster: ${response.status}`)
+    // Note: Roster fetch moved to happen AFTER WebSocket connects (see below)
+    // This prevents HTTP request from blocking WebSocket connection
+  }, [selectedThread])
+
+  // Fetch roster AFTER initial paint - delayed to not compete with message sync
+  useEffect(() => {
+    if (!selectedThread || !connected) return
+
+    const timeoutId = setTimeout(() => {
+      async function fetchRoster() {
+        console.log(`[ChannelSwitch] Starting roster fetch at ${performance.now().toFixed(2)}ms`)
+        try {
+          const response = await apiFetch(`${API_HOST}/channels/${selectedThread}/roster`)
+          if (!response.ok) {
+            throw new Error(`Failed to fetch roster: ${response.status}`)
+          }
+          const data = await response.json()
+          console.log(`[ChannelSwitch] Roster fetch complete at ${performance.now().toFixed(2)}ms`)
+          // Map backend RosterEntry to frontend RosterAgent format
+          if (data.roster && Array.isArray(data.roster)) {
+            const rosterAgents: RosterAgent[] = data.roster.map((r: {
+              callsign: string
+              agentType: string
+              status: string
+              callbackUrl?: string
+              tunnelHash?: string
+            }) => ({
+              callsign: r.callsign,
+              // Map status based on callbackUrl presence (has container = idle, no container = offline)
+              status: r.callbackUrl ? 'idle' : 'offline' as const,
+              // Tunnel hash for HTTP exposure
+              tunnelHash: r.tunnelHash,
+            }))
+            setRoster(rosterAgents)
+          }
+        } catch (error) {
+          console.error('Failed to fetch roster:', error)
         }
-        const data = await response.json()
-        // Map backend RosterEntry to frontend RosterAgent format
-        if (data.roster && Array.isArray(data.roster)) {
-          const rosterAgents: RosterAgent[] = data.roster.map((r: {
-            callsign: string
-            agentType: string
-            status: string
-            callbackUrl?: string
-            tunnelHash?: string
-          }) => ({
-            callsign: r.callsign,
-            // Map status based on callbackUrl presence (has container = idle, no container = offline)
-            status: r.callbackUrl ? 'idle' : 'offline' as const,
-            // Tunnel hash for HTTP exposure
-            tunnelHash: r.tunnelHash,
-          }))
-          setRoster(rosterAgents)
-        } else {
-          setRoster([])
-        }
-        // Channel doesn't have a leader concept in local runtime
-        setLeader(undefined)
-      } catch (error) {
-        console.error('Failed to fetch roster:', error)
-        setRoster([])
-        setLeader(undefined)
       }
-    }
+      fetchRoster()
+    }, 250) // Delay to not compete with initial message sync
 
-    // Fetch roster - message history comes via WebSocket sync
-    fetchRoster()
-    // Note: fetchMessageHistory() removed - WebSocket sync handles message replay
-    // This eliminates the race condition between HTTP fetch and WebSocket sync
-  }, [selectedThread, currentUser])
+    return () => clearTimeout(timeoutId)
+  }, [selectedThread, connected])
 
   // Update thread state based on isWaitingForResponse
   useEffect(() => {
@@ -644,6 +679,8 @@ export function App() {
                 apiHost={API_HOST}
                 channelId={selectedThread || ''}
                 roster={roster}
+                isSwitching={isSwitchingChannel}
+                isLoading={showLoadingSpinner}
               />
               {/* Cold start indicator - shows when workspace container is starting */}
               {isStartingWorkspace && (

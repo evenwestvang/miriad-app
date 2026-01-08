@@ -296,25 +296,25 @@ export async function defaultHandler(
         limit: 100,
       });
 
-      // Send messages as SetFrames
-      const apiGateway = getApiGatewayClient(WEBSOCKET_ENDPOINT);
-      for (const msg of messages) {
-        const setFrame = {
-          i: msg.id,
-          t: msg.timestamp,
-          v: {
-            type: msg.type,
-            sender: msg.sender,
-            senderType: msg.senderType,
-            content: msg.content,
-          },
-        };
-        await sendToConnection(apiGateway, connectionId, JSON.stringify(setFrame));
-      }
+      // Build NDJSON payload with all messages + sync response in one send
+      // This avoids N sequential API Gateway calls (major latency improvement)
+      const frames = messages.map(msg => JSON.stringify({
+        i: msg.id,
+        t: msg.timestamp,
+        v: {
+          type: msg.type,
+          sender: msg.sender,
+          senderType: msg.senderType,
+          content: msg.content,
+        },
+      }));
 
-      // Send sync response
-      const syncResponse = { sync: new Date().toISOString() };
-      await sendToConnection(apiGateway, connectionId, JSON.stringify(syncResponse));
+      // Add sync response at the end
+      frames.push(JSON.stringify({ sync: new Date().toISOString() }));
+
+      // Send all frames as single NDJSON payload
+      const apiGateway = getApiGatewayClient(WEBSOCKET_ENDPOINT);
+      await sendToConnection(apiGateway, connectionId, frames.join('\n'));
 
       console.log(`[WebSocket] Sent ${messages.length} messages + sync response to ${connectionId}`);
       return { statusCode: 200, body: 'Synced' };

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useCallback, useMemo, useState } from 'react'
 import Markdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Message, StructuredAskMessage } from '../../types'
@@ -22,50 +22,62 @@ interface MessageListProps {
   channelId?: string
   /** Current roster for agent index lookup */
   roster?: RosterAgent[]
+  /** True immediately when channel switch starts (hides empty state) */
+  isSwitching?: boolean
+  /** Show loading spinner (delayed - only after 500ms) */
+  isLoading?: boolean
   onStructuredAskSubmit?: (messageId: string, response: Record<string, unknown>) => void
 }
 
-export function MessageList({ messages, threadName = 'Agent', threadAgentType, myName = '', apiHost = '', channelId = '', roster = [], onStructuredAskSubmit }: MessageListProps) {
+export function MessageList({ messages, threadName = 'Agent', threadAgentType, myName = '', apiHost = '', channelId = '', roster = [], isSwitching = false, isLoading = false, onStructuredAskSubmit }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const wasAtBottomRef = useRef(true)
-  const isInitialLoadRef = useRef(true)
+  // Track sync state: 'waiting' = no messages yet, 'syncing' = first batch arriving, 'ready' = sync complete
+  const syncStateRef = useRef<'waiting' | 'syncing' | 'ready'>('waiting')
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const prevMessageCountRef = useRef(0)
 
   // Artifact map for [[slug]] title lookup
   const [artifactMap, setArtifactMap] = useState<Map<string, ArtifactInfo>>(new Map())
 
-  // Fetch artifacts for title lookup when channel changes
+  // Fetch artifacts for title lookup - delayed to not compete with initial paint
   useEffect(() => {
-    if (!channelId || !apiHost) {
-      setArtifactMap(new Map())
+    if (!channelId || !apiHost || isLoading) {
+      if (!channelId) setArtifactMap(new Map())
       return
     }
 
-    async function fetchArtifacts() {
-      try {
-        const response = await apiFetch(`${apiHost}/channels/${channelId}/artifacts?limit=500`)
-        if (!response.ok) return
-        const data = await response.json()
-        const artifacts = data.artifacts || []
+    const timeoutId = setTimeout(() => {
+      async function fetchArtifacts() {
+        console.log(`[ChannelSwitch] Starting artifacts fetch at ${performance.now().toFixed(2)}ms`)
+        try {
+          const response = await apiFetch(`${apiHost}/channels/${channelId}/artifacts?limit=500`)
+          if (!response.ok) return
+          const data = await response.json()
+          console.log(`[ChannelSwitch] Artifacts fetch complete at ${performance.now().toFixed(2)}ms`)
+          const artifacts = data.artifacts || []
 
-        const map = new Map<string, ArtifactInfo>()
-        for (const artifact of artifacts) {
-          map.set(artifact.slug.toLowerCase(), {
-            slug: artifact.slug,
-            title: artifact.title,
-            type: artifact.type,
-            encoding: artifact.encoding,
-            contentType: artifact.contentType,
-          })
+          const map = new Map<string, ArtifactInfo>()
+          for (const artifact of artifacts) {
+            map.set(artifact.slug.toLowerCase(), {
+              slug: artifact.slug,
+              title: artifact.title,
+              type: artifact.type,
+              encoding: artifact.encoding,
+              contentType: artifact.contentType,
+            })
+          }
+          setArtifactMap(map)
+        } catch (error) {
+          console.warn('Failed to fetch artifacts for title lookup:', error)
         }
-        setArtifactMap(map)
-      } catch (error) {
-        console.warn('Failed to fetch artifacts for title lookup:', error)
       }
-    }
+      fetchArtifacts()
+    }, 250) // Delay to not compete with initial message sync
 
-    fetchArtifacts()
-  }, [channelId, apiHost])
+    return () => clearTimeout(timeoutId)
+  }, [channelId, apiHost, isLoading])
 
   // Build callsign to roster index map for avatar assignment
   const callsignIndexMap = useMemo(() => {
@@ -97,43 +109,87 @@ export function MessageList({ messages, threadName = 'Agent', threadAgentType, m
     return () => container.removeEventListener('scroll', handleScroll)
   }, [checkIfAtBottom])
 
-  // Auto-scroll only if user was at bottom
-  // Use instant scroll on initial load, smooth scroll for subsequent updates
+  // Reset sync state when channel changes (messages cleared)
   useEffect(() => {
     if (messages.length === 0) {
-      // Reset initial load flag when messages are cleared (channel change)
-      isInitialLoadRef.current = true
+      syncStateRef.current = 'waiting'
+      prevMessageCountRef.current = 0
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current)
+        syncTimeoutRef.current = null
+      }
+    }
+  }, [messages.length === 0])
+
+  // Handle scrolling based on sync state
+  useLayoutEffect(() => {
+    const prevCount = prevMessageCountRef.current
+    const currentCount = messages.length
+    prevMessageCountRef.current = currentCount
+
+    if (currentCount === 0) {
       return
     }
 
-    if (wasAtBottomRef.current) {
-      if (isInitialLoadRef.current) {
-        // Initial load: scroll instantly so it appears already at bottom
-        bottomRef.current?.scrollIntoView({ behavior: 'instant' })
-        isInitialLoadRef.current = false
-      } else {
-        // Subsequent updates: smooth scroll for new messages
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // Detect sync start: going from 0 to having messages
+    if (prevCount === 0 && currentCount > 0) {
+      syncStateRef.current = 'syncing'
+    }
+
+    // During sync: keep scrolling to bottom instantly (no animation)
+    if (syncStateRef.current === 'syncing' && containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight
+      wasAtBottomRef.current = true
+
+      // Reset the sync completion timer on each new message
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current)
       }
+      // After 150ms of no new messages, consider sync complete
+      syncTimeoutRef.current = setTimeout(() => {
+        syncStateRef.current = 'ready'
+        syncTimeoutRef.current = null
+      }, 150)
+      return
+    }
+
+    // After sync complete: smooth scroll for new messages if at bottom
+    if (syncStateRef.current === 'ready' && wasAtBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [messages])
 
   return (
     <div className="flex-1 overflow-y-auto p-6" ref={containerRef}>
       {messages.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-full text-center px-4">
-          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-            <span className="text-2xl">💬</span>
-          </div>
-          <p className="text-muted-foreground text-sm mb-1">
-            Start a conversation with {threadName}
-          </p>
-          {threadAgentType && (
-            <p className="text-xs text-muted-foreground">
-              This is a {threadAgentType} agent
+        isSwitching ? (
+          // Channel switch in progress
+          isLoading ? (
+            // Show spinner after 500ms delay
+            <div className="flex flex-col items-center justify-center h-full text-center px-4">
+              <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin mb-4" />
+              <p className="text-muted-foreground text-sm">Loading messages...</p>
+            </div>
+          ) : (
+            // Before 500ms - show nothing (blank screen feels faster)
+            null
+          )
+        ) : (
+          // Empty state - only show when NOT switching channels
+          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+              <span className="text-2xl">💬</span>
+            </div>
+            <p className="text-muted-foreground text-sm mb-1">
+              Start a conversation with {threadName}
             </p>
-          )}
-        </div>
+            {threadAgentType && (
+              <p className="text-xs text-muted-foreground">
+                This is a {threadAgentType} agent
+              </p>
+            )}
+          </div>
+        )
       ) : (
         messages.map((message) => (
           <div key={message.id} data-message-id={message.id} className="mb-8 last:mb-0">

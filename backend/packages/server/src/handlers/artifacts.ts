@@ -217,8 +217,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     try {
       const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);
@@ -275,8 +274,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     try {
       const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);
@@ -311,8 +309,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     try {
       const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);
@@ -374,8 +371,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     try {
       const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);
@@ -484,8 +480,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     try {
       const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);
@@ -553,8 +548,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     try {
       const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);
@@ -608,8 +602,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     try {
       const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);
@@ -681,8 +674,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     try {
       const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);
@@ -721,8 +713,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     try {
       const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);
@@ -759,8 +750,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     try {
       const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);
@@ -812,8 +802,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     try {
       const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);
@@ -856,8 +845,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     try {
       const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);
@@ -902,8 +890,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     try {
       const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);
@@ -1027,8 +1014,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
     try {
       const spaceId = getSpaceId(c);
       // Resolve channel by name or ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: 'Channel not found' }, 404);

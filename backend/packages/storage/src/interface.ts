@@ -89,6 +89,15 @@ export interface Storage {
   ): Promise<StoredMessage[]>;
 
   /**
+   * Get messages by channel ID only (no spaceId needed since channelId is globally unique).
+   * More efficient for sync operations where spaceId isn't readily available.
+   */
+  getMessagesByChannelId(
+    channelId: string,
+    params?: GetMessagesParams
+  ): Promise<StoredMessage[]>;
+
+  /**
    * Update a message (e.g., mark complete after streaming).
    */
   updateMessage(
@@ -171,6 +180,31 @@ export interface Storage {
    * Get a channel by name.
    */
   getChannelByName(spaceId: string, name: string): Promise<StoredChannel | null>;
+
+  /**
+   * Resolve a channel by ID or name in a single query.
+   * Tries exact ID match first, then name match.
+   * More efficient than getChannelByName() || getChannel().
+   */
+  resolveChannel(spaceId: string, idOrName: string): Promise<StoredChannel | null>;
+
+  /**
+   * Get a channel with its roster in a single query (JOIN).
+   * More efficient than getChannel() + listRoster().
+   */
+  getChannelWithRoster(
+    spaceId: string,
+    channelId: string
+  ): Promise<{ channel: StoredChannel; roster: RosterEntry[] } | null>;
+
+  /**
+   * Resolve a channel by ID or name and include roster in a single operation.
+   * Combines resolveChannel() + listRoster() efficiently.
+   */
+  resolveChannelWithRoster(
+    spaceId: string,
+    idOrName: string
+  ): Promise<{ channel: StoredChannel; roster: RosterEntry[] } | null>;
 
   /**
    * List channels in a space.

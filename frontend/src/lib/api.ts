@@ -36,6 +36,8 @@ export interface AuthSession {
   spaceId: string
   user: StoredUser
   space: StoredSpace
+  /** WebSocket auth token for AWS API Gateway connections */
+  wsToken?: string
 }
 
 export interface SpaceWithOwner {

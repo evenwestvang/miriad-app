@@ -99,6 +99,8 @@ export interface GetMessagesParams {
   before?: string;
   /** Maximum number of messages to return */
   limit?: number;
+  /** If true, fetch newest messages first (for initial sync) - results still returned in chronological order */
+  newestFirst?: boolean;
 }
 
 // =============================================================================

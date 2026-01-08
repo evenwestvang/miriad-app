@@ -247,6 +247,29 @@ export function createDynamoDBConnectionManager(
     },
 
     /**
+     * Switch a connection to a different channel.
+     * Updates the record in DynamoDB with the new channelId.
+     */
+    switchChannel(connectionId, newChannelId) {
+      // For DynamoDB, we need to update the record async
+      // This is a fire-and-forget update since interface is sync
+      (async () => {
+        try {
+          const record = await getConnectionRecord(connectionId);
+          if (record) {
+            record.channelId = newChannelId;
+            await saveConnection(record);
+            console.log(`[DynamoDB ConnectionManager] Switched ${connectionId} to ${newChannelId}`);
+          }
+        } catch (err) {
+          console.error('[DynamoDB ConnectionManager] Failed to switch channel:', err);
+        }
+      })();
+      // Return undefined since we can't get sync result from DynamoDB
+      return undefined;
+    },
+
+    /**
      * Get all connections for a channel.
      * Returns empty array - use async version getChannelConnectionsAsync instead.
      */

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 import type { Message, MessageType, AgentState, AgentOutput } from '../types'
 import { apiFetch, API_HOST } from '../lib/api'
 
@@ -100,7 +100,11 @@ interface UseTymbalConnectionOptions {
   onAgentStateChange?: (agent: string, state: AgentStateInfo) => void
   onArtifactEvent?: (event: ArtifactEvent) => void
   onRosterEvent?: (event: RosterEvent) => void
+  /** Called when sync completes (useful for clearing loading states) */
+  onSyncComplete?: () => void
   currentUser?: string
+  /** Pre-fetched WebSocket auth token (avoids re-fetch on every channel switch) */
+  wsToken?: string
 }
 
 interface PendingMessage {
@@ -120,7 +124,9 @@ export function useTymbalConnection({
   onAgentStateChange,
   onArtifactEvent,
   onRosterEvent,
+  onSyncComplete,
   currentUser = 'user',
+  wsToken: providedWsToken,
 }: UseTymbalConnectionOptions) {
   const [connected, setConnected] = useState(false)
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false)
@@ -143,6 +149,13 @@ export function useTymbalConnection({
   // Process incoming Tymbal frames
   const processFrame = useCallback(
     (frame: TymbalFrame) => {
+      // Sync response frame - signals end of message history sync
+      if ('sync' in frame) {
+        console.log(`[ChannelSwitch] Sync complete at ${performance.now().toFixed(2)}ms`)
+        onSyncComplete?.()
+        return
+      }
+
       // Start frame - initialize pending message for streaming
       // Don't emit message yet - wait for first content to avoid empty bubbles
       if (isStartFrame(frame)) {
@@ -410,94 +423,95 @@ export function useTymbalConnection({
         return
       }
     },
-    [channelId, onMessage, onMessageUpdate, onArtifactEvent, onRosterEvent]
+    [channelId, onMessage, onMessageUpdate, onArtifactEvent, onRosterEvent, onSyncComplete]
   )
 
-  // Connect to WebSocket
-  useEffect(() => {
-    if (!channelId) {
-      wsRef.current?.close()
-      wsRef.current = null
-      setConnected(false)
+  // Track current channel for the WebSocket
+  const currentChannelRef = useRef<string | null>(null)
+  // Track the desired channel (for onopen to read latest value)
+  const desiredChannelRef = useRef<string | null>(channelId)
+
+  // Send sync request to switch/sync channel
+  const sendSyncRequest = useCallback((targetChannelId: string) => {
+    console.log(`[ChannelSwitch] sendSyncRequest called for ${targetChannelId}`)
+    const ws = wsRef.current
+    if (!ws) {
+      console.log(`[ChannelSwitch] sendSyncRequest: ws is null`)
+      return
+    }
+    if (ws.readyState !== WebSocket.OPEN) {
+      console.log(`[ChannelSwitch] sendSyncRequest: ws not open, state=${ws.readyState}`)
       return
     }
 
-    // For AWS WebSocket connections, we need to pass a token for auth
-    // because browsers don't send cookies cross-origin on WS connections.
-    // Fetch the token first, then connect.
-    const wsUrlEnv = import.meta.env.VITE_WS_URL
-    // Detect AWS WebSocket - either default execute-api domain or custom domain (not localhost)
-    const isAwsWs = wsUrlEnv && (
-      wsUrlEnv.includes('execute-api') ||
-      (wsUrlEnv.startsWith('wss://') && !wsUrlEnv.includes('localhost'))
-    )
+    const syncRequest: Record<string, unknown> = {
+      request: 'sync',
+      channelId: targetChannelId,
+    }
+    // Don't use lastTimestamp when switching channels - get fresh messages
+    if (currentChannelRef.current === targetChannelId && lastTimestampRef.current) {
+      syncRequest.since = lastTimestampRef.current
+    }
+    if (providedWsToken) {
+      syncRequest.token = providedWsToken
+    }
+    console.log(`[ChannelSwitch] Sync request sent at ${performance.now().toFixed(2)}ms`, syncRequest)
+    ws.send(JSON.stringify(syncRequest))
+    currentChannelRef.current = targetChannelId
+  }, [providedWsToken])
 
-    // Async connection setup
-    const connectWs = async () => {
-      // Get wsToken for AWS connections
-      let wsToken: string | undefined
-      if (isAwsWs) {
-        try {
-          const response = await apiFetch('/auth/me')
-          if (response.ok) {
-            const data = await response.json()
-            wsToken = data.wsToken
-          }
-        } catch (e) {
-          console.error('Failed to get wsToken:', e)
-          // Continue without token — sync will fail with auth error
-        }
-      }
+  // Manage WebSocket connection and channel switching
+  useLayoutEffect(() => {
+    console.log(`[ChannelSwitch] Main effect: channelId=${channelId}, wsRef=${wsRef.current ? 'exists' : 'null'}`)
 
-      // Build WebSocket URL
+    // Update desired channel ref
+    desiredChannelRef.current = channelId
+
+    // Create WebSocket if we don't have one
+    if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
+      const wsUrlEnv = import.meta.env.VITE_WS_URL
+      const isAwsWs = wsUrlEnv && (
+        wsUrlEnv.includes('execute-api') ||
+        (wsUrlEnv.startsWith('wss://') && !wsUrlEnv.includes('localhost'))
+      )
+
       let wsUrl: string
       if (wsUrlEnv) {
-        // Direct WebSocket URL provided (e.g., "wss://xxx.execute-api.us-east-1.amazonaws.com/stag")
-        // AWS WebSocket API Gateway uses query params, not path segments
         if (isAwsWs) {
-          wsUrl = `${wsUrlEnv}?channelId=${channelId}`
+          wsUrl = wsUrlEnv
         } else {
-          wsUrl = `${wsUrlEnv}/channels/${channelId}/stream`
+          wsUrl = `${wsUrlEnv}/stream`
         }
       } else {
-        // Derive from API_HOST (single source of truth for backend URL)
-        // Convert http(s):// to ws(s)://
         const wsBase = API_HOST.replace(/^http/, 'ws')
-        wsUrl = `${wsBase}/channels/${channelId}/stream`
+        wsUrl = `${wsBase}/stream`
       }
 
+      console.log(`[ChannelSwitch] Creating WebSocket to ${wsUrl} at ${performance.now().toFixed(2)}ms`)
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
       ws.onopen = () => {
         setConnected(true)
-        // Request sync to get message history
-        // Include channelId and token for AWS auth (sync handler does auth, not connect)
-        const syncRequest: Record<string, unknown> = {
-          request: 'sync',
-          channelId, // Required for channel sync
+        console.log(`[ChannelSwitch] WebSocket opened at ${performance.now().toFixed(2)}ms`)
+        // Send sync for current desired channel
+        const target = desiredChannelRef.current
+        if (target) {
+          console.log(`[ChannelSwitch] Sending initial sync for ${target}`)
+          sendSyncRequest(target)
         }
-        if (lastTimestampRef.current) {
-          syncRequest.since = lastTimestampRef.current
-        }
-        if (wsToken) {
-          syncRequest.token = wsToken // For AWS cross-origin auth
-        }
-        ws.send(JSON.stringify(syncRequest))
       }
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        console.log(`[ChannelSwitch] WebSocket closed: code=${event.code}`)
         setConnected(false)
-        // TODO: Implement reconnection with exponential backoff
       }
 
       ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
-        setConnected(false)
+        console.error('[ChannelSwitch] WebSocket error:', error)
       }
 
       ws.onmessage = (event) => {
-        // NDJSON - each line is a frame
         const lines = (event.data as string).split('\n').filter(Boolean)
         for (const line of lines) {
           const frame = parseFrame(line)
@@ -508,15 +522,33 @@ export function useTymbalConnection({
       }
     }
 
-    connectWs()
+    // If WebSocket exists and is open, send sync for channel change
+    if (channelId && channelId !== currentChannelRef.current) {
+      console.log(`[ChannelSwitch] Channel changed to ${channelId}`)
+      lastTimestampRef.current = null // Reset for new channel
 
+      const ws = wsRef.current
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        console.log(`[ChannelSwitch] Sending sync for channel switch`)
+        sendSyncRequest(channelId)
+      } else {
+        console.log(`[ChannelSwitch] WebSocket not ready (state=${ws?.readyState}), will sync on open`)
+      }
+    }
+
+    if (!channelId) {
+      currentChannelRef.current = null
+    }
+  }, [channelId, sendSyncRequest, processFrame, parseFrame])
+
+  // Cleanup WebSocket on unmount only
+  useEffect(() => {
     return () => {
+      console.log('[ChannelSwitch] Cleanup: closing WebSocket')
       wsRef.current?.close()
       wsRef.current = null
-      // Reset timestamp tracking so next channel gets full backlog
-      lastTimestampRef.current = null
     }
-  }, [channelId, processFrame])
+  }, [])
 
   // Send a user message via HTTP POST (server assigns ID)
   const sendMessage = useCallback(

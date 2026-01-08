@@ -29,9 +29,10 @@ export interface ConnectionInfo {
 }
 
 export interface ConnectionManagerOptions {
-  /** Handler for sync requests */
+  /** Handler for sync requests (channelId is the requested channel, may differ from current) */
   onSyncRequest?: (
     connection: ConnectionInfo,
+    channelId: string,
     since?: string
   ) => Promise<void>;
   /** Handler for incoming frames from containers */
@@ -58,6 +59,9 @@ export interface ConnectionManager {
 
   /** Remove a connection */
   removeConnection(connectionId: string): void;
+
+  /** Switch a connection to a different channel */
+  switchChannel(connectionId: string, newChannelId: string): ConnectionInfo | undefined;
 
   /** Get all connections for a channel */
   getChannelConnections(channelId: string): ConnectionInfo[];
@@ -145,10 +149,13 @@ export function createConnectionManager(
             return;
           }
 
-          // Handle sync requests
+          // Handle sync requests (may include channel switch)
           if (isSyncRequest(frame)) {
+            // Pass requested channelId to handler for authorization
+            // The handler is responsible for calling switchChannel after auth
+            const requestedChannelId = frame.channelId || info.channelId;
             if (onSyncRequest) {
-              await onSyncRequest(info, frame.since);
+              await onSyncRequest(info, requestedChannelId, frame.since);
             }
             return;
           }
@@ -193,6 +200,22 @@ export function createConnectionManager(
           info.ws.close();
         }
       }
+    },
+
+    switchChannel(connectionId, newChannelId) {
+      const info = connections.get(connectionId);
+      if (!info) return undefined;
+
+      const oldChannelId = info.channelId;
+      if (oldChannelId === newChannelId) return info; // No change needed
+
+      // Move connection from old channel to new channel
+      removeFromChannel(oldChannelId, connectionId);
+      info.channelId = newChannelId;
+      addToChannel(newChannelId, connectionId);
+
+      console.log(`[ConnectionManager] Switched connection ${connectionId} from ${oldChannelId} to ${newChannelId}`);
+      return info;
     },
 
     getChannelConnections(channelId) {

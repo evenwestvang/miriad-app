@@ -187,6 +187,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   const sql = postgres(options.connectionString, {
     ssl: 'require',
     max: 10, // connection pool size
+    prepare: false, // Use simple query protocol - single round trip instead of prepare+execute
   });
 
   // ---------------------------------------------------------------------------
@@ -284,6 +285,70 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     }
 
     return result.map(rowToMessage);
+  }
+
+  /**
+   * Get messages by channel ID only - more efficient when spaceId isn't available.
+   * Uses idx_messages_channel_only index for fast lookups.
+   */
+  async function getMessagesByChannelId(
+    channelId: string,
+    params?: GetMessagesParams
+  ): Promise<StoredMessage[]> {
+    const limit = params?.limit ?? 50;
+    const t0 = performance.now();
+
+    let result: MessageRow[];
+
+    if (params?.since && params?.before) {
+      result = await sql<MessageRow[]>`
+        SELECT * FROM messages
+        WHERE channel_id = ${channelId}
+          AND id > ${params.since}
+          AND id < ${params.before}
+        ORDER BY id ASC
+        LIMIT ${limit}
+      `;
+    } else if (params?.since) {
+      result = await sql<MessageRow[]>`
+        SELECT * FROM messages
+        WHERE channel_id = ${channelId}
+          AND id > ${params.since}
+        ORDER BY id ASC
+        LIMIT ${limit}
+      `;
+    } else if (params?.before) {
+      result = await sql<MessageRow[]>`
+        SELECT * FROM messages
+        WHERE channel_id = ${channelId}
+          AND id < ${params.before}
+        ORDER BY id ASC
+        LIMIT ${limit}
+      `;
+    } else if (params?.newestFirst) {
+      // Get newest messages first (for initial sync), then reverse for chronological order
+      result = await sql<MessageRow[]>`
+        SELECT * FROM messages
+        WHERE channel_id = ${channelId}
+        ORDER BY id DESC
+        LIMIT ${limit}
+      `;
+      result = result.reverse(); // Return in chronological order
+    } else {
+      result = await sql<MessageRow[]>`
+        SELECT * FROM messages
+        WHERE channel_id = ${channelId}
+        ORDER BY id ASC
+        LIMIT ${limit}
+      `;
+    }
+    const t1 = performance.now();
+    const mapped = result.map(rowToMessage);
+    const t2 = performance.now();
+
+    console.log(`[Storage] getMessagesByChannelId: sql=${(t1-t0).toFixed(1)}ms, map=${(t2-t1).toFixed(1)}ms, rows=${result.length}`);
+
+    return mapped;
   }
 
   async function updateMessage(
@@ -386,6 +451,125 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
     if (result.length === 0) return null;
     return rowToChannel(result[0]);
+  }
+
+  async function resolveChannel(
+    spaceId: string,
+    idOrName: string
+  ): Promise<StoredChannel | null> {
+    // Single query that matches either ID or name
+    // ID match takes priority (checked first via CASE in ORDER BY)
+    const result = await sql<ChannelRow[]>`
+      SELECT * FROM channels
+      WHERE space_id = ${spaceId}
+        AND (id = ${idOrName} OR name = ${idOrName})
+      ORDER BY CASE WHEN id = ${idOrName} THEN 0 ELSE 1 END
+      LIMIT 1
+    `;
+
+    if (result.length === 0) return null;
+    return rowToChannel(result[0]);
+  }
+
+  async function getChannelWithRoster(
+    spaceId: string,
+    channelId: string
+  ): Promise<{ channel: StoredChannel; roster: RosterEntry[] } | null> {
+    // Use a single query with LEFT JOIN to get channel and roster together
+    const result = await sql<(ChannelRow & {
+      roster_id: string | null;
+      roster_callsign: string | null;
+      roster_agent_type: string | null;
+      roster_status: string | null;
+      roster_created_at: Date | null;
+      roster_callback_url: string | null;
+      roster_readmark: string | null;
+      roster_tunnel_hash: string | null;
+    })[]>`
+      SELECT
+        c.id, c.space_id, c.name, c.tagline, c.mission, c.archived, c.created_at, c.updated_at,
+        r.id as roster_id, r.callsign as roster_callsign, r.agent_type as roster_agent_type,
+        r.status as roster_status, r.created_at as roster_created_at,
+        r.callback_url as roster_callback_url, r.readmark as roster_readmark,
+        r.tunnel_hash as roster_tunnel_hash
+      FROM channels c
+      LEFT JOIN roster r ON r.channel_id = c.id
+      WHERE c.space_id = ${spaceId} AND c.id = ${channelId}
+      ORDER BY r.created_at ASC
+    `;
+
+    if (result.length === 0) return null;
+
+    // First row has the channel data
+    const channel = rowToChannel(result[0]);
+
+    // Extract roster entries (filter out null rows from LEFT JOIN)
+    const roster: RosterEntry[] = result
+      .filter(row => row.roster_id !== null)
+      .map(row => ({
+        id: row.roster_id!,
+        channelId: channelId,
+        callsign: row.roster_callsign!,
+        agentType: row.roster_agent_type!,
+        status: row.roster_status as RosterStatus,
+        createdAt: row.roster_created_at!.toISOString(),
+        callbackUrl: row.roster_callback_url ?? undefined,
+        readmark: row.roster_readmark ?? undefined,
+        tunnelHash: row.roster_tunnel_hash ?? undefined,
+      }));
+
+    return { channel, roster };
+  }
+
+  async function resolveChannelWithRoster(
+    spaceId: string,
+    idOrName: string
+  ): Promise<{ channel: StoredChannel; roster: RosterEntry[] } | null> {
+    // Combined resolution + roster fetch in one query
+    const result = await sql<(ChannelRow & {
+      roster_id: string | null;
+      roster_callsign: string | null;
+      roster_agent_type: string | null;
+      roster_status: string | null;
+      roster_created_at: Date | null;
+      roster_callback_url: string | null;
+      roster_readmark: string | null;
+      roster_tunnel_hash: string | null;
+    })[]>`
+      SELECT
+        c.id, c.space_id, c.name, c.tagline, c.mission, c.archived, c.created_at, c.updated_at,
+        r.id as roster_id, r.callsign as roster_callsign, r.agent_type as roster_agent_type,
+        r.status as roster_status, r.created_at as roster_created_at,
+        r.callback_url as roster_callback_url, r.readmark as roster_readmark,
+        r.tunnel_hash as roster_tunnel_hash
+      FROM channels c
+      LEFT JOIN roster r ON r.channel_id = c.id
+      WHERE c.space_id = ${spaceId}
+        AND (c.id = ${idOrName} OR c.name = ${idOrName})
+      ORDER BY CASE WHEN c.id = ${idOrName} THEN 0 ELSE 1 END, r.created_at ASC
+    `;
+
+    if (result.length === 0) return null;
+
+    // First row has the channel data
+    const channel = rowToChannel(result[0]);
+
+    // Extract roster entries (filter out null rows from LEFT JOIN)
+    const roster: RosterEntry[] = result
+      .filter(row => row.roster_id !== null)
+      .map(row => ({
+        id: row.roster_id!,
+        channelId: channel.id,
+        callsign: row.roster_callsign!,
+        agentType: row.roster_agent_type!,
+        status: row.roster_status as RosterStatus,
+        createdAt: row.roster_created_at!.toISOString(),
+        callbackUrl: row.roster_callback_url ?? undefined,
+        readmark: row.roster_readmark ?? undefined,
+        tunnelHash: row.roster_tunnel_hash ?? undefined,
+      }));
+
+    return { channel, roster };
   }
 
   async function listChannels(
@@ -1590,6 +1774,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       ON messages(space_id, channel_id, turn_id)
     `;
 
+    // Index for channel-only queries (sync operations don't need spaceId)
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_messages_channel_only
+      ON messages(channel_id, id)
+    `;
+
     // ---------------------------------------------------------------------------
     // Users Table (Spaces & Auth)
     // ---------------------------------------------------------------------------
@@ -1633,6 +1823,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       ON spaces(owner_id)
     `;
 
+    // Composite index for getSpacesByOwner ORDER BY created_at
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_spaces_owner_created
+      ON spaces(owner_id, created_at DESC)
+    `;
+
     // Create channels table (Phase 2)
     await sql`
       CREATE TABLE IF NOT EXISTS channels (
@@ -1658,6 +1854,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       ON channels(space_id, name)
     `;
 
+    // Composite index for listChannels ORDER BY created_at
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_channels_space_created
+      ON channels(space_id, archived, created_at DESC)
+    `;
+
     // Create roster table (Phase 2)
     await sql`
       CREATE TABLE IF NOT EXISTS roster (
@@ -1679,6 +1881,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     await sql`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_roster_channel_callsign
       ON roster(channel_id, callsign)
+    `;
+
+    // Composite index for listRoster ORDER BY created_at
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_roster_channel_created
+      ON roster(channel_id, created_at ASC)
     `;
 
     // Add callback_url, readmark, and tunnel_hash columns to roster if they don't exist
@@ -1772,6 +1980,18 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     await sql`
       CREATE INDEX IF NOT EXISTS idx_artifacts_search
       ON artifacts USING GIN(search_vector)
+    `;
+
+    // Partial index for non-archived artifacts (most common query pattern)
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_artifacts_active
+      ON artifacts(channel_id, path) WHERE status != 'archived'
+    `;
+
+    // Index for parent_slug lookups (used in generateOrderKey and tree queries)
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_artifacts_parent
+      ON artifacts(channel_id, parent_slug, order_key)
     `;
 
     // Create artifact_versions table for checkpoints
@@ -2319,6 +2539,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     saveMessage,
     getMessage,
     getMessages,
+    getMessagesByChannelId,
     updateMessage,
     deleteMessage,
     // User operations (Spaces & Auth)
@@ -2335,6 +2556,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     getChannel,
     getChannelById,
     getChannelByName,
+    resolveChannel,
+    getChannelWithRoster,
+    resolveChannelWithRoster,
     listChannels,
     updateChannel,
     archiveChannel,

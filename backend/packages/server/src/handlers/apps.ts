@@ -361,8 +361,7 @@ export function createAppRoutes(options: AppHandlerOptions): Hono {
         : undefined;
 
       // Resolve channel to get internal ID
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         throw new Error(`Channel not found: ${channelId}`);
@@ -427,8 +426,7 @@ export function createAppRoutes(options: AppHandlerOptions): Hono {
 
     try {
       // Resolve channel
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: `Channel not found: ${channelId}` }, 404);
@@ -473,8 +471,7 @@ export function createAppRoutes(options: AppHandlerOptions): Hono {
 
     try {
       // Resolve channel
-      const channel = await storage.getChannelByName(spaceId, channelId)
-        || await storage.getChannel(spaceId, channelId);
+      const channel = await storage.resolveChannel(spaceId, channelId);
 
       if (!channel) {
         return c.json({ error: `Channel not found: ${channelId}` }, 404);
