@@ -124,7 +124,7 @@ app.post('/clients/register', async (c) => {
 
   return c.json({
     success: true,
-    serviceToken,
+    serviceToken: service.token,  // Use token from service entry (handles re-registration)
     serviceName: service.serviceId,  // Return full serviceId for rathole config
     controlPort: parseInt(process.env.RATHOLE_CONTROL_PORT || '2333', 10),
     controlHost: process.env.RATHOLE_CONTROL_HOST || undefined,
