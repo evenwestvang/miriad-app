@@ -27,6 +27,7 @@ import {
   buildServiceId,
 } from './config.js';
 import { randomBytes } from 'node:crypto';
+import { createConnection } from 'node:net';
 
 const app = new Hono();
 
@@ -257,7 +258,36 @@ app.all('*', async (c) => {
   targetUrl.host = `localhost:${service.port}`;
   targetUrl.protocol = 'http:';
 
+  console.log(`[Proxy] Starting proxy request to ${serviceId} on port ${service.port}`);
+  console.log(`[Proxy] Target URL: ${targetUrl.toString()}`);
+  console.log(`[Proxy] Method: ${c.req.method}, Path: ${new URL(c.req.url).pathname}`);
+
+  // First, test raw TCP connectivity to the rathole port
+  const tcpTestStart = Date.now();
   try {
+    await new Promise<void>((resolve, reject) => {
+      const socket = createConnection({ host: '127.0.0.1', port: service.port }, () => {
+        console.log(`[Proxy] TCP connect to port ${service.port} succeeded in ${Date.now() - tcpTestStart}ms`);
+        socket.end();
+        resolve();
+      });
+      socket.on('error', (err) => {
+        console.error(`[Proxy] TCP connect to port ${service.port} failed:`, err.message);
+        reject(err);
+      });
+      socket.setTimeout(5000, () => {
+        console.error(`[Proxy] TCP connect to port ${service.port} timed out`);
+        socket.destroy();
+        reject(new Error('TCP connect timeout'));
+      });
+    });
+  } catch (tcpErr) {
+    console.error(`[Proxy] TCP test failed for ${serviceId}:`, tcpErr);
+    return c.json({ error: 'Tunnel port not responding', details: String(tcpErr) }, 502);
+  }
+
+  try {
+    console.log(`[Proxy] Creating fetch request to ${targetUrl.toString()}`);
     const proxyReq = new Request(targetUrl.toString(), {
       method: c.req.method,
       headers: c.req.raw.headers,
@@ -265,7 +295,10 @@ app.all('*', async (c) => {
       duplex: 'half',
     });
 
+    console.log(`[Proxy] Executing fetch...`);
+    const fetchStart = Date.now();
     const response = await fetch(proxyReq);
+    console.log(`[Proxy] Fetch completed in ${Date.now() - fetchStart}ms, status: ${response.status}`);
 
     // Return proxied response
     return new Response(response.body, {
