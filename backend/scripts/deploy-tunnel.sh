@@ -17,13 +17,13 @@
 #   - Docker installed and running
 #   - ECR repository created (cast-tunnel-server)
 #
-# Environment variables (or will prompt):
-#   AWS_ACCOUNT_ID      - AWS account ID
+# Environment variables (optional - auto-discovered if not set):
+#   AWS_ACCOUNT_ID      - AWS account ID (auto-detected from credentials)
 #   AWS_REGION          - AWS region (default: us-east-1)
-#   VPC_ID              - VPC ID for deployment
-#   SUBNET_IDS          - Comma-separated subnet IDs
-#   HOSTED_ZONE_ID      - Route53 hosted zone ID
-#   CONTAINER_SECRET    - CAST_CONTAINER_SECRET value
+#   VPC_ID              - VPC ID (auto-discovered by tag: cast-{stage}-vpc or Environment tag)
+#   SUBNET_IDS          - Comma-separated subnet IDs (auto-discovered from VPC)
+#   HOSTED_ZONE_ID      - Route53 hosted zone ID (auto-discovered for cast-stack.site)
+#   CONTAINER_SECRET    - CAST_CONTAINER_SECRET value (will prompt if not set)
 #
 
 set -euo pipefail
@@ -83,18 +83,128 @@ echo "AWS Account: $AWS_ACCOUNT_ID"
 echo "AWS Region: $AWS_REGION"
 echo ""
 
-# Prompt for missing config
+# =============================================================================
+# VPC Auto-Discovery
+# =============================================================================
+
+# Try to discover VPC if not explicitly set
 if [[ -z "${VPC_ID:-}" ]]; then
-  read -p "VPC ID: " VPC_ID
+  echo "Discovering VPC..."
+
+  # Try finding VPC by Name tag pattern: cast-{stage}-vpc or cast-{stage}
+  VPC_ID=$(aws ec2 describe-vpcs \
+    --filters "Name=tag:Name,Values=cast-${STAGE}-vpc,cast-${STAGE}" \
+    --query 'Vpcs[0].VpcId' \
+    --output text \
+    --region "$AWS_REGION" 2>/dev/null || echo "None")
+
+  # If not found, try Environment tag
+  if [[ "$VPC_ID" == "None" || -z "$VPC_ID" ]]; then
+    VPC_ID=$(aws ec2 describe-vpcs \
+      --filters "Name=tag:Environment,Values=${STAGE},staging,production" \
+      --query 'Vpcs[0].VpcId' \
+      --output text \
+      --region "$AWS_REGION" 2>/dev/null || echo "None")
+  fi
+
+  # If still not found, list available VPCs and fail
+  if [[ "$VPC_ID" == "None" || -z "$VPC_ID" ]]; then
+    echo ""
+    echo "Error: Could not auto-discover VPC for stage '$STAGE'"
+    echo ""
+    echo "Available VPCs:"
+    aws ec2 describe-vpcs \
+      --query 'Vpcs[*].[VpcId,Tags[?Key==`Name`].Value|[0]]' \
+      --output table \
+      --region "$AWS_REGION"
+    echo ""
+    echo "Set VPC_ID environment variable and re-run:"
+    echo "  export VPC_ID=vpc-xxxxx"
+    echo "  $0 $STAGE"
+    exit 1
+  fi
+
+  echo "Found VPC: $VPC_ID"
 fi
 
+# Try to discover subnets if not explicitly set
 if [[ -z "${SUBNET_IDS:-}" ]]; then
-  read -p "Subnet IDs (comma-separated): " SUBNET_IDS
+  echo "Discovering subnets..."
+
+  # Get public subnets (those with MapPublicIpOnLaunch or route to IGW)
+  # For simplicity, get first 2 subnets in different AZs
+  SUBNETS=$(aws ec2 describe-subnets \
+    --filters "Name=vpc-id,Values=${VPC_ID}" \
+    --query 'Subnets[?MapPublicIpOnLaunch==`true`].[SubnetId]' \
+    --output text \
+    --region "$AWS_REGION" 2>/dev/null | head -2 | tr '\n' ',' | sed 's/,$//')
+
+  # If no public subnets found, try all subnets
+  if [[ -z "$SUBNETS" ]]; then
+    SUBNETS=$(aws ec2 describe-subnets \
+      --filters "Name=vpc-id,Values=${VPC_ID}" \
+      --query 'Subnets[*].SubnetId' \
+      --output text \
+      --region "$AWS_REGION" 2>/dev/null | head -2 | tr '\n' ',' | sed 's/,$//')
+  fi
+
+  if [[ -z "$SUBNETS" ]]; then
+    echo ""
+    echo "Error: Could not find subnets for VPC $VPC_ID"
+    echo ""
+    echo "Available subnets:"
+    aws ec2 describe-subnets \
+      --filters "Name=vpc-id,Values=${VPC_ID}" \
+      --query 'Subnets[*].[SubnetId,AvailabilityZone,MapPublicIpOnLaunch]' \
+      --output table \
+      --region "$AWS_REGION"
+    echo ""
+    echo "Set SUBNET_IDS environment variable and re-run:"
+    echo "  export SUBNET_IDS=subnet-aaa,subnet-bbb"
+    echo "  $0 $STAGE"
+    exit 1
+  fi
+
+  SUBNET_IDS="$SUBNETS"
+  echo "Found subnets: $SUBNET_IDS"
 fi
 
+# Try to discover hosted zone if not explicitly set
 if [[ -z "${HOSTED_ZONE_ID:-}" ]]; then
-  read -p "Route53 Hosted Zone ID: " HOSTED_ZONE_ID
+  echo "Discovering hosted zone..."
+
+  # Look for hosted zone matching the domain
+  ZONE_DOMAIN="cast-stack.site."
+  HOSTED_ZONE_ID=$(aws route53 list-hosted-zones \
+    --query "HostedZones[?Name=='${ZONE_DOMAIN}'].Id" \
+    --output text \
+    --region "$AWS_REGION" 2>/dev/null | sed 's|/hostedzone/||')
+
+  if [[ -z "$HOSTED_ZONE_ID" ]]; then
+    echo ""
+    echo "Error: Could not find hosted zone for $ZONE_DOMAIN"
+    echo ""
+    echo "Available hosted zones:"
+    aws route53 list-hosted-zones \
+      --query 'HostedZones[*].[Id,Name]' \
+      --output table
+    echo ""
+    echo "Set HOSTED_ZONE_ID environment variable and re-run:"
+    echo "  export HOSTED_ZONE_ID=Z1234567890"
+    echo "  $0 $STAGE"
+    exit 1
+  fi
+
+  echo "Found hosted zone: $HOSTED_ZONE_ID"
 fi
+
+echo ""
+echo "VPC: $VPC_ID"
+echo "Subnets: $SUBNET_IDS"
+echo "Hosted Zone: $HOSTED_ZONE_ID"
+echo ""
+
+# Prompt for container secret if not set
 
 if [[ -z "${CONTAINER_SECRET:-}" ]]; then
   read -s -p "Container Secret (CAST_CONTAINER_SECRET): " CONTAINER_SECRET
