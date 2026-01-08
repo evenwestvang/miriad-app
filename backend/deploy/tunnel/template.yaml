@@ -19,11 +19,16 @@ Parameters:
 
   CertificateArn:
     Type: String
-    Description: ACM certificate ARN for *.containers.clanker.is
+    Description: ACM certificate ARN for wildcard domain
 
   HostedZoneId:
     Type: String
-    Description: Route53 hosted zone ID for clanker.is
+    Description: Route53 hosted zone ID for the domain
+
+  TunnelDomain:
+    Type: String
+    Description: Wildcard domain for tunnel access (e.g., staging.cast-stack.site)
+    Default: staging.cast-stack.site
 
   ContainerSecret:
     Type: String
@@ -170,7 +175,7 @@ Resources:
     Type: AWS::Route53::RecordSet
     Properties:
       HostedZoneId: !Ref HostedZoneId
-      Name: '*.containers.clanker.is'
+      Name: !Sub '*.${TunnelDomain}'
       Type: A
       AliasTarget:
         DNSName: !GetAtt TunnelALB.DNSName
@@ -339,4 +344,4 @@ Outputs:
 
   WildcardDomain:
     Description: Wildcard domain for container tunnels
-    Value: '*.containers.clanker.is'
+    Value: !Sub '*.${TunnelDomain}'
