@@ -176,7 +176,14 @@ register_service() {
 
 unregister_service() {
     local service_name="$1"
-    local service_id="${service_name:-$TUNNEL_HASH}"
+    local service_id
+
+    # Build full service ID: {serviceName}-{hash} for named, {hash} for default
+    if [ -n "$service_name" ]; then
+        service_id="${service_name}-${TUNNEL_HASH}"
+    else
+        service_id="${TUNNEL_HASH}"
+    fi
 
     if [ -z "$TUNNEL_SERVER_URL" ] || [ -z "$CAST_AUTH_TOKEN" ]; then
         return 0  # Skip if not configured
