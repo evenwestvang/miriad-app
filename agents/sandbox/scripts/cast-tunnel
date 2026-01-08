@@ -10,6 +10,26 @@ TUNNEL_HASH="${TUNNEL_HASH:-}"
 TUNNEL_LOCAL_PORT="${TUNNEL_LOCAL_PORT:-8080}"
 CAST_AUTH_TOKEN="${CAST_AUTH_TOKEN:-}"
 
+# Derive public domain from TUNNEL_SERVER_URL
+# e.g., https://tunnel.staging.cast-stack.site -> staging.cast-stack.site
+get_public_domain() {
+    local url="$TUNNEL_SERVER_URL"
+    # Strip protocol
+    local host="${url#https://}"
+    host="${host#http://}"
+    # Strip path/port
+    host="${host%%/*}"
+    host="${host%%:*}"
+    # Strip 'tunnel.' prefix if present
+    if [[ "$host" == tunnel.* ]]; then
+        echo "${host#tunnel.}"
+    else
+        echo "$host"
+    fi
+}
+
+TUNNEL_PUBLIC_DOMAIN="${TUNNEL_PUBLIC_DOMAIN:-$(get_public_domain)}"
+
 # Runtime state (populated after registration)
 TUNNEL_CONFIG_DIR="${TUNNEL_CONFIG_DIR:-/tmp/tunnel}"
 TUNNEL_PID_FILE="${TUNNEL_CONFIG_DIR}/rathole.pid"
@@ -157,7 +177,7 @@ cmd_up() {
     sleep 2
     if kill -0 "$pid" 2>/dev/null; then
         log_info "Tunnel started (PID: $pid)"
-        log_info "Forwarding ${TUNNEL_HASH}.containers.clanker.is -> localhost:${TUNNEL_LOCAL_PORT}"
+        log_info "Forwarding https://${TUNNEL_HASH}.${TUNNEL_PUBLIC_DOMAIN} -> localhost:${TUNNEL_LOCAL_PORT}"
         return 0
     else
         log_error "Tunnel failed to start. Check logs at ${TUNNEL_CONFIG_DIR}/rathole.log"
@@ -191,7 +211,7 @@ cmd_status() {
         echo "Hash:     (not configured)"
     else
         echo "Hash:     $TUNNEL_HASH"
-        echo "URL:      https://${TUNNEL_HASH}.containers.clanker.is"
+        echo "URL:      https://${TUNNEL_HASH}.${TUNNEL_PUBLIC_DOMAIN}"
     fi
 
     echo "Server:   ${TUNNEL_SERVER_URL:-"(not configured)"}"
@@ -244,10 +264,11 @@ Commands:
   logs    Tail tunnel logs
 
 Environment Variables:
-  TUNNEL_SERVER_URL   Tunnel server URL (e.g., https://tunnel.clanker.is)
-  TUNNEL_HASH         Unique hash for this container's hostname
-  CAST_AUTH_TOKEN     Container authentication token
-  TUNNEL_LOCAL_PORT   Local port to expose (default: 8080)
+  TUNNEL_SERVER_URL     Tunnel server URL (e.g., https://tunnel.example.com)
+  TUNNEL_HASH           Unique hash for this container's hostname
+  CAST_AUTH_TOKEN       Container authentication token
+  TUNNEL_LOCAL_PORT     Local port to expose (default: 8080)
+  TUNNEL_PUBLIC_DOMAIN  Public domain (auto-derived from TUNNEL_SERVER_URL)
 
 Flow:
   1. Calls POST /clients/register with TUNNEL_HASH and CAST_AUTH_TOKEN
@@ -255,13 +276,13 @@ Flow:
   3. Connects rathole client to server:controlPort
 
 Example:
-  export TUNNEL_SERVER_URL="https://tunnel.clanker.is"
+  export TUNNEL_SERVER_URL="https://tunnel.staging.cast-stack.site"
   export TUNNEL_HASH="abc123def456..."
   export CAST_AUTH_TOKEN="container-auth-token..."
   cast-tunnel up
 
   # Your service is now available at:
-  # https://abc123def456....containers.clanker.is
+  # https://abc123def456....staging.cast-stack.site
 
 EOF
 }
