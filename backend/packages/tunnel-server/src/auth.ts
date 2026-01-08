@@ -82,7 +82,7 @@ export function verifyContainerToken(token: string): ContainerTokenPayload | nul
  * Extract bearer token from Authorization header.
  * Expects: "Container <token>" format
  */
-export function extractContainerToken(authHeader: string | null): string | null {
+export function extractContainerToken(authHeader: string | undefined | null): string | null {
   if (!authHeader) return null;
 
   const match = authHeader.match(/^Container\s+(.+)$/i);

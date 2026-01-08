@@ -217,7 +217,6 @@ app.all('*', async (c) => {
       method: c.req.method,
       headers: c.req.raw.headers,
       body: c.req.method !== 'GET' && c.req.method !== 'HEAD' ? c.req.raw.body : undefined,
-      // @ts-expect-error - duplex is needed for streaming bodies
       duplex: 'half',
     });
 
