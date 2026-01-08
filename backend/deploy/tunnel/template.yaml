@@ -64,7 +64,7 @@ Resources:
         - Key: Environment
           Value: !Ref Stage
 
-  # ECS Security Group - accepts traffic from ALB only
+  # ECS Security Group - accepts traffic from ALB and container tunnels
   EcsSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -72,16 +72,21 @@ Resources:
       GroupDescription: Security group for tunnel ECS tasks
       VpcId: !Ref VpcId
       SecurityGroupIngress:
-        # Allow traffic from ALB on rathole control port
+        # Hono proxy port (ALB target for user traffic)
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+        # Rathole control port (containers connect here from anywhere)
         - IpProtocol: tcp
           FromPort: 2333
           ToPort: 2333
-          SourceSecurityGroupId: !Ref AlbSecurityGroup
-        # Allow traffic from ALB on data port range (for tunneled connections)
+          CidrIp: 0.0.0.0/0
+        # Dynamic service ports for tunneled traffic (internal only)
         - IpProtocol: tcp
-          FromPort: 20000
-          ToPort: 30000
-          SourceSecurityGroupId: !Ref AlbSecurityGroup
+          FromPort: 10000
+          ToPort: 20000
+          CidrIp: 127.0.0.1/32
       SecurityGroupEgress:
         # Allow all outbound (for health checks, etc.)
         - IpProtocol: -1
@@ -136,13 +141,13 @@ Resources:
             Port: '443'
             StatusCode: HTTP_301
 
-  # Target group for rathole server
+  # Target group for Hono proxy (handles health checks and routing)
   TunnelTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: !Sub cast-tunnel-${Stage}
       VpcId: !Ref VpcId
-      Port: 2333
+      Port: 8080
       Protocol: HTTP
       TargetType: ip
       HealthCheckEnabled: true
@@ -234,7 +239,7 @@ Resources:
                   - logs:PutLogEvents
                 Resource: !GetAtt TunnelLogGroup.Arn
 
-  # ECS Task Definition for rathole server
+  # ECS Task Definition for tunnel server (Hono proxy + rathole)
   TunnelTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
@@ -250,19 +255,27 @@ Resources:
       ExecutionRoleArn: !GetAtt TunnelTaskExecutionRole.Arn
       TaskRoleArn: !GetAtt TunnelTaskRole.Arn
       ContainerDefinitions:
-        - Name: rathole
+        - Name: tunnel-server
           Image: !Ref RatholeImage
           Essential: true
           PortMappings:
-            # Control port (health checks, config API)
+            # Hono proxy port (ALB target)
+            - ContainerPort: 8080
+              Protocol: tcp
+            # Rathole control port (containers connect here)
             - ContainerPort: 2333
               Protocol: tcp
-            # Data port range for tunneled connections
-            # Note: ALB can only forward to one port, so we'll use a reverse proxy pattern
-            # The rathole server handles routing based on subdomain/Host header
           Environment:
-            - Name: RUST_LOG
-              Value: info
+            - Name: NODE_ENV
+              Value: production
+            - Name: PORT
+              Value: '8080'
+            - Name: RATHOLE_CONTROL_PORT
+              Value: '2333'
+            - Name: RATHOLE_CONFIG_DIR
+              Value: /etc/rathole
+            - Name: BASE_SERVICE_PORT
+              Value: '10000'
             - Name: CAST_CONTAINER_SECRET
               Value: !Ref ContainerSecret
           LogConfiguration:
@@ -270,7 +283,7 @@ Resources:
             Options:
               awslogs-group: !Ref TunnelLogGroup
               awslogs-region: !Ref AWS::Region
-              awslogs-stream-prefix: rathole
+              awslogs-stream-prefix: tunnel
       Tags:
         - Key: Environment
           Value: !Ref Stage
@@ -293,8 +306,8 @@ Resources:
           SecurityGroups:
             - !Ref EcsSecurityGroup
       LoadBalancers:
-        - ContainerName: rathole
-          ContainerPort: 2333
+        - ContainerName: tunnel-server
+          ContainerPort: 8080
           TargetGroupArn: !Ref TunnelTargetGroup
       # Enable circuit breaker for deployment safety
       DeploymentConfiguration:

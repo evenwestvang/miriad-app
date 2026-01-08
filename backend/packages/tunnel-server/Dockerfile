@@ -1,5 +1,5 @@
 # Cast Tunnel Server
-# Auth wrapper + health endpoint for rathole tunnel server
+# Auth wrapper + routing proxy + rathole tunnel server
 
 FROM node:20-alpine AS builder
 
@@ -22,13 +22,27 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install rathole binary
-# TODO: Download from releases or build from source
-# For now, this is a placeholder - will be updated once @fox confirms the setup
+# Install rathole binary from GitHub releases
 ARG RATHOLE_VERSION=0.5.0
-RUN apk add --no-cache curl && \
-    echo "TODO: Install rathole ${RATHOLE_VERSION} binary" && \
-    apk del curl
+ARG TARGETARCH
+
+RUN apk add --no-cache curl ca-certificates && \
+    # Map Docker arch to rathole arch
+    case "${TARGETARCH:-amd64}" in \
+      amd64) RATHOLE_ARCH="x86_64-unknown-linux-musl" ;; \
+      arm64) RATHOLE_ARCH="aarch64-unknown-linux-musl" ;; \
+      *) echo "Unsupported arch: ${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    # Download and extract rathole
+    curl -fsSL "https://github.com/rapiz1/rathole/releases/download/v${RATHOLE_VERSION}/rathole-${RATHOLE_ARCH}.zip" -o /tmp/rathole.zip && \
+    unzip /tmp/rathole.zip -d /tmp && \
+    mv /tmp/rathole /usr/local/bin/rathole && \
+    chmod +x /usr/local/bin/rathole && \
+    # Cleanup
+    rm -rf /tmp/rathole.zip && \
+    apk del curl && \
+    # Verify installation
+    rathole --version
 
 # Copy built app
 COPY --from=builder /app/dist ./dist
@@ -38,18 +52,26 @@ COPY --from=builder /app/package.json ./
 # Rathole config directory
 RUN mkdir -p /etc/rathole
 
+# Copy startup script
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
 # Environment
 ENV NODE_ENV=production
-ENV PORT=2333
+ENV PORT=8080
+ENV RATHOLE_CONTROL_PORT=2333
+ENV RATHOLE_CONFIG_DIR=/etc/rathole
+ENV BASE_SERVICE_PORT=10000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:2333/health || exit 1
+# Health check targets Hono (the proxy layer)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
 # Expose ports
-# 2333 - Auth wrapper / health check
-# Rathole will use additional ports for tunnel connections
-EXPOSE 2333
+# 8080 - Hono proxy (ALB target)
+# 2333 - Rathole control port (containers connect here)
+# 10000+ - Dynamic service ports (tunneled traffic)
+EXPOSE 8080 2333
 
-# Start auth wrapper (rathole startup to be added)
-CMD ["node", "dist/index.js"]
+# Start both services
+CMD ["/app/start.sh"]
