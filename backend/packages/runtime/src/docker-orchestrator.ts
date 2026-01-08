@@ -140,6 +140,16 @@ export class DockerOrchestrator implements ContainerOrchestrator {
       const mcpServersJson = JSON.stringify(options.mcpServers);
       args.push('-e', `MCP_SERVERS=${mcpServersJson}`);
       console.log(`[DockerOrchestrator] Passing ${options.mcpServers.length} MCP server(s) to container`);
+
+      // Extract GITHUB_TOKEN from MCP server env vars for git shim
+      // The git credential helper needs it as a direct env var
+      for (const server of options.mcpServers) {
+        if (server.env?.GITHUB_TOKEN) {
+          args.push('-e', `GITHUB_TOKEN=${server.env.GITHUB_TOKEN}`);
+          console.log(`[DockerOrchestrator] Passing GITHUB_TOKEN to container for git auth`);
+          break; // Only need one token
+        }
+      }
     }
 
     // Add tunnel configuration if provided

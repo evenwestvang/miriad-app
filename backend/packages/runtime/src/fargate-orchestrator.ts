@@ -169,6 +169,10 @@ export class FargateOrchestrator implements ContainerOrchestrator {
                 ...(options.mcpServers && options.mcpServers.length > 0
                   ? [{ name: 'MCP_SERVERS', value: JSON.stringify(options.mcpServers) }]
                   : []),
+                // Extract GITHUB_TOKEN from MCP server env vars for git shim
+                ...(options.mcpServers?.find(s => s.env?.GITHUB_TOKEN)
+                  ? [{ name: 'GITHUB_TOKEN', value: options.mcpServers.find(s => s.env?.GITHUB_TOKEN)!.env!.GITHUB_TOKEN }]
+                  : []),
                 // Pass tunnel configuration if provided
                 ...(options.tunnelHash
                   ? [{ name: 'TUNNEL_HASH', value: options.tunnelHash }]

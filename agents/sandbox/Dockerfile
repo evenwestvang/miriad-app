@@ -33,6 +33,17 @@ RUN ARCH=$(case ${TARGETARCH:-amd64} in \
     chmod +x /usr/local/bin/rathole && \
     rm -rf /tmp/rathole*
 
+# Install git shim for credential management
+# Move real git to git.real, install shim as git
+COPY scripts/cmd-shim /usr/bin/cmd-shim
+COPY scripts/git-credential-token /usr/bin/git-credential-token
+RUN chmod +x /usr/bin/cmd-shim /usr/bin/git-credential-token && \
+    mv /usr/bin/git /usr/bin/git.real && \
+    ln -s /usr/bin/cmd-shim /usr/bin/git
+
+# Configure git to use token-based auth for GitHub HTTPS
+RUN git.real config --system credential.helper '!f() { echo "username=x-access-token"; echo "password=$GITHUB_TOKEN"; }; f'
+
 # Install Claude Code CLI globally (SDK requires CLI to be available)
 RUN npm install -g @anthropic-ai/claude-code
 
