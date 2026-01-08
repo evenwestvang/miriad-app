@@ -48,5 +48,10 @@ parameter_overrides = [
     "WorkOsClientId=client_01KE9FMAF763G9BXEJVMABHFHW",
     "WorkOsRedirectUri=https://api.staging.clanker.is/auth/callback",
     # Frontend URL for OAuth redirects
-    "FrontendUrl=https://staging.clanker.is"
+    "FrontendUrl=https://staging.clanker.is",
+    # Encryption key for user secrets
+    "SecretKey=rNhBROMTh75mKACT3ol6nb+rSK3NyIohiWfX3nhi+gU=",
+    # GitHub OAuth app credentials
+    "GitHubClientId=Ov23liznVxcSUMFSCFYT",
+    "GitHubClientSecret=badba6e4871a1995cec457d4d273db7432327cbd"
 ]

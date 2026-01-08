@@ -36,8 +36,10 @@ import { parseFrame, isSyncRequest } from '@cast/core';
 const CONNECTIONS_TABLE = process.env.CONNECTIONS_TABLE!;
 const WEBSOCKET_ENDPOINT = process.env.WEBSOCKET_ENDPOINT!;
 const PLANETSCALE_URL = process.env.PLANETSCALE_URL!;
-const SPACE_ID = process.env.SPACE_ID ?? 'default-space';
 const REGION = process.env.AWS_REGION ?? 'us-east-1';
+
+// Cache for channel -> spaceId lookups (survives across Lambda invocations in warm container)
+const channelSpaceCache = new Map<string, string>();
 const TTL_SECONDS = 24 * 60 * 60; // 24 hours
 
 // =============================================================================
@@ -275,7 +277,21 @@ export async function defaultHandler(
       console.log(`[WebSocket] Sync request from ${connectionId}, since: ${frame.since}`);
 
       const storage = await getStorage();
-      const messages = await storage.getMessages(SPACE_ID, connection.channelId, {
+
+      // Look up spaceId from channel (with caching)
+      let spaceId = channelSpaceCache.get(connection.channelId);
+      if (!spaceId) {
+        const channel = await storage.getChannelById(connection.channelId);
+        if (!channel) {
+          console.error(`[WebSocket] Channel ${connection.channelId} not found`);
+          return { statusCode: 404, body: 'Channel not found' };
+        }
+        spaceId = channel.spaceId;
+        channelSpaceCache.set(connection.channelId, spaceId);
+        console.log(`[WebSocket] Cached spaceId ${spaceId} for channel ${connection.channelId}`);
+      }
+
+      const messages = await storage.getMessages(spaceId, connection.channelId, {
         since: frame.since,
         limit: 100,
       });

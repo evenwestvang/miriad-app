@@ -59,6 +59,19 @@ Parameters:
     Type: String
     Description: Frontend URL for OAuth redirects (e.g., https://staging.clanker.is)
     Default: 'http://localhost:5173'
+  SecretKey:
+    Type: String
+    Description: Secret key for encrypting user secrets in the database
+    NoEcho: true
+  GitHubClientId:
+    Type: String
+    Description: GitHub OAuth app client ID
+    Default: ''
+  GitHubClientSecret:
+    Type: String
+    Description: GitHub OAuth app client secret
+    NoEcho: true
+    Default: ''
 
 Globals:
   Function:
@@ -100,6 +113,9 @@ Resources:
           WORKOS_CLIENT_ID: !Ref WorkOsClientId
           WORKOS_REDIRECT_URI: !Ref WorkOsRedirectUri
           FRONTEND_URL: !Ref FrontendUrl
+          SECRET_KEY: !Ref SecretKey
+          GITHUB_CLIENT_ID: !Ref GitHubClientId
+          GITHUB_CLIENT_SECRET: !Ref GitHubClientSecret
       Events:
         RootPath:
           Type: HttpApi
