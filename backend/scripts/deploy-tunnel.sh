@@ -91,40 +91,57 @@ echo ""
 if [[ -z "${VPC_ID:-}" ]]; then
   echo "Discovering VPC..."
 
-  # Try finding VPC by Name tag pattern: cast-{stage}-vpc or cast-{stage}
-  VPC_ID=$(aws ec2 describe-vpcs \
-    --filters "Name=tag:Name,Values=cast-${STAGE}-vpc,cast-${STAGE}" \
-    --query 'Vpcs[0].VpcId' \
+  # First, check if there's only one VPC in the account (common case)
+  VPC_COUNT=$(aws ec2 describe-vpcs \
+    --query 'length(Vpcs)' \
     --output text \
-    --region "$AWS_REGION" 2>/dev/null || echo "None")
+    --region "$AWS_REGION" 2>/dev/null || echo "0")
 
-  # If not found, try Environment tag
-  if [[ "$VPC_ID" == "None" || -z "$VPC_ID" ]]; then
+  if [[ "$VPC_COUNT" == "1" ]]; then
+    # Only one VPC exists - use it automatically
     VPC_ID=$(aws ec2 describe-vpcs \
-      --filters "Name=tag:Environment,Values=${STAGE},staging,production" \
+      --query 'Vpcs[0].VpcId' \
+      --output text \
+      --region "$AWS_REGION")
+    echo "Found single VPC: $VPC_ID (auto-selected)"
+  else
+    # Multiple VPCs - try tag-based discovery
+    # Try finding VPC by Name tag pattern: cast-{stage}-vpc or cast-{stage}
+    VPC_ID=$(aws ec2 describe-vpcs \
+      --filters "Name=tag:Name,Values=cast-${STAGE}-vpc,cast-${STAGE}" \
       --query 'Vpcs[0].VpcId' \
       --output text \
       --region "$AWS_REGION" 2>/dev/null || echo "None")
-  fi
 
-  # If still not found, list available VPCs and fail
-  if [[ "$VPC_ID" == "None" || -z "$VPC_ID" ]]; then
-    echo ""
-    echo "Error: Could not auto-discover VPC for stage '$STAGE'"
-    echo ""
-    echo "Available VPCs:"
-    aws ec2 describe-vpcs \
-      --query 'Vpcs[*].[VpcId,Tags[?Key==`Name`].Value|[0]]' \
-      --output table \
-      --region "$AWS_REGION"
-    echo ""
-    echo "Set VPC_ID environment variable and re-run:"
-    echo "  export VPC_ID=vpc-xxxxx"
-    echo "  $0 $STAGE"
-    exit 1
-  fi
+    # If not found, try Environment tag
+    if [[ "$VPC_ID" == "None" || -z "$VPC_ID" ]]; then
+      VPC_ID=$(aws ec2 describe-vpcs \
+        --filters "Name=tag:Environment,Values=${STAGE},staging,production" \
+        --query 'Vpcs[0].VpcId' \
+        --output text \
+        --region "$AWS_REGION" 2>/dev/null || echo "None")
+    fi
 
-  echo "Found VPC: $VPC_ID"
+    # If still not found, list available VPCs and fail
+    if [[ "$VPC_ID" == "None" || -z "$VPC_ID" ]]; then
+      echo ""
+      echo "Error: Could not auto-discover VPC for stage '$STAGE'"
+      echo "Found $VPC_COUNT VPCs but none matched expected tags."
+      echo ""
+      echo "Available VPCs:"
+      aws ec2 describe-vpcs \
+        --query 'Vpcs[*].[VpcId,Tags[?Key==`Name`].Value|[0]]' \
+        --output table \
+        --region "$AWS_REGION"
+      echo ""
+      echo "Set VPC_ID environment variable and re-run:"
+      echo "  export VPC_ID=vpc-xxxxx"
+      echo "  $0 $STAGE"
+      exit 1
+    fi
+
+    echo "Found VPC: $VPC_ID (matched by tag)"
+  fi
 fi
 
 # Try to discover subnets if not explicitly set
