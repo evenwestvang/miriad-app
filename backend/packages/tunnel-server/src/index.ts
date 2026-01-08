@@ -15,6 +15,7 @@
  */
 
 import { Hono } from 'hono';
+import { serve } from '@hono/node-server';
 import { verifyContainerToken, extractContainerToken } from './auth.js';
 import {
   initializeConfig,
@@ -243,7 +244,10 @@ const port = parseInt(process.env.PORT || '8080', 10);
 console.log(`[TunnelServer] Starting on port ${port}`);
 console.log(`[TunnelServer] Rathole control port: ${process.env.RATHOLE_CONTROL_PORT || '2333'}`);
 
-export default {
-  port,
+// Start the server using @hono/node-server (not Bun default exports)
+serve({
   fetch: app.fetch,
-};
+  port,
+}, (info) => {
+  console.log(`[TunnelServer] Listening on http://localhost:${info.port}`);
+});

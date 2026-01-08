@@ -226,6 +226,9 @@ export function listServices(): ServiceEntry[] {
 /**
  * Initialize config file with base server settings.
  * Called on startup to ensure config exists.
+ *
+ * Note: rathole requires at least one service in the config to start.
+ * We add a placeholder service that binds to localhost only (unreachable).
  */
 export function initializeConfig(): void {
   if (existsSync(CONFIG_FILE)) {
@@ -238,6 +241,14 @@ export function initializeConfig(): void {
     heartbeatInterval: 30,
     services: new Map(),
   };
+
+  // Add placeholder service - rathole requires at least one service to start
+  // This binds to localhost only and uses an unusable token, so it's harmless
+  config.services.set('_placeholder', {
+    hash: '_placeholder',
+    token: 'placeholder-not-used-token',
+    port: 19999,
+  });
 
   saveConfig(config);
   console.log(`[Config] Initialized new config at ${CONFIG_FILE}`);
