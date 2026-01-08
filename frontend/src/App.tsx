@@ -311,10 +311,13 @@ export function App() {
             agentType: string
             status: string
             callbackUrl?: string
+            tunnelHash?: string
           }) => ({
             callsign: r.callsign,
             // Map status based on callbackUrl presence (has container = idle, no container = offline)
             status: r.callbackUrl ? 'idle' : 'offline' as const,
+            // Tunnel hash for HTTP exposure
+            tunnelHash: r.tunnelHash,
           }))
           setRoster(rosterAgents)
         } else {
