@@ -21,14 +21,8 @@ fi
 # Log the command (for debugging/audit in Phase 1)
 echo "[cmd-shim] ${COMMAND} $*" >&2
 
-# Phase 1: Use token directly from environment
-# Phase 2+ will call POST /cmd/authorize instead
-if [ -n "$GITHUB_TOKEN" ]; then
-    # For git, set up credential helper environment
-    # The credential helper is configured globally in Dockerfile
-    # We just need to ensure the token is available
-    export GIT_ASKPASS="/usr/bin/git-credential-token"
-fi
+# Phase 1: Token is read from environment by the credential helper
+# configured in gitconfig. Phase 2+ will call POST /cmd/authorize instead.
 
 # Execute the real command with all original arguments
 exec "$REAL_CMD" "$@"
