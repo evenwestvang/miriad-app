@@ -22,6 +22,7 @@ import {
   registerService,
   unregisterService,
   getService,
+  getServiceOwner,
   listServices,
 } from './config.js';
 import { randomBytes } from 'node:crypto';
@@ -91,8 +92,12 @@ app.post('/clients/register', async (c) => {
   // Generate a unique token for this service (rathole uses this to authenticate)
   const serviceToken = randomBytes(32).toString('hex');
 
-  // Register service in rathole config
-  const service = registerService(tunnelHash, serviceToken);
+  // Register service in rathole config with owner info for auth verification
+  const service = registerService(tunnelHash, serviceToken, {
+    spaceId: payload.spaceId,
+    channelId: payload.channelId,
+    callsign: payload.callsign,
+  });
 
   console.log(
     `[Register] Container ${payload.callsign} registered hash ${tunnelHash} on port ${service.port}`
@@ -112,7 +117,7 @@ app.post('/clients/register', async (c) => {
  * DELETE /clients/:hash
  *
  * Unregister a tunnel client.
- * Requires CAST_AUTH_TOKEN (must match the container that registered).
+ * Requires CAST_AUTH_TOKEN from the container that originally registered this hash.
  */
 app.delete('/clients/:hash', async (c) => {
   const hash = c.req.param('hash');
@@ -130,8 +135,29 @@ app.delete('/clients/:hash', async (c) => {
     return c.json({ success: false, error: 'Invalid auth token' }, 401);
   }
 
-  // TODO: Verify the token matches the container that registered this hash
-  // For now, any valid token can unregister (will be tightened in Task 4)
+  // Verify the requester owns this service
+  const owner = getServiceOwner(hash);
+  if (!owner) {
+    // Service exists in TOML but owner unknown (server restarted)
+    // Allow deletion if service exists - the container re-registering will reclaim ownership
+    const service = getService(hash);
+    if (!service) {
+      return c.json({ success: false, error: 'Service not found' }, 404);
+    }
+    console.log(`[Unregister] Owner unknown for ${hash}, allowing deletion by ${payload.callsign}`);
+  } else {
+    // Verify ownership: must match spaceId, channelId, and callsign
+    if (
+      owner.spaceId !== payload.spaceId ||
+      owner.channelId !== payload.channelId ||
+      owner.callsign !== payload.callsign
+    ) {
+      console.log(
+        `[Unregister] Denied: ${payload.callsign} tried to unregister ${hash} owned by ${owner.callsign}`
+      );
+      return c.json({ success: false, error: 'Not authorized to unregister this service' }, 403);
+    }
+  }
 
   const removed = unregisterService(hash);
   if (!removed) {
@@ -142,39 +168,15 @@ app.delete('/clients/:hash', async (c) => {
   return c.json({ success: true });
 });
 
-/**
- * GET /clients/:hash
- *
- * Get service info (for debugging).
- */
-app.get('/clients/:hash', (c) => {
-  const hash = c.req.param('hash');
-  const service = getService(hash);
-
-  if (!service) {
-    return c.json({ found: false }, 404);
-  }
-
-  return c.json({
-    found: true,
-    hash: service.hash,
-    port: service.port,
-    // Don't expose token
-  });
-});
-
-/**
- * GET /clients
- *
- * List all registered clients (for debugging/admin).
- */
-app.get('/clients', (c) => {
-  const services = listServices();
-  return c.json({
-    count: services.length,
-    clients: services.map((s) => ({ hash: s.hash, port: s.port })),
-  });
-});
+// =============================================================================
+// Debug endpoints removed for security
+// =============================================================================
+// GET /clients/:hash and GET /clients were removed because they exposed
+// tunnel hashes, which are credentials in the URL-as-auth model.
+// See: tunnel-audit-v1 for details.
+//
+// If admin debugging is needed, add proper authentication or use
+// CloudWatch logs / direct ECS exec instead.
 
 // =============================================================================
 // Host-Based Routing Proxy

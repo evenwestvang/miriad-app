@@ -20,6 +20,16 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 // =============================================================================
+// Types (defined early for use in module-level variables)
+// =============================================================================
+
+export interface ServiceOwner {
+  spaceId: string;
+  channelId: string;
+  callsign: string;
+}
+
+// =============================================================================
 // Configuration
 // =============================================================================
 
@@ -31,14 +41,19 @@ const CONTROL_PORT = process.env.RATHOLE_CONTROL_PORT || '2333';
 // Each new service gets the next available port starting from this
 const BASE_SERVICE_PORT = parseInt(process.env.BASE_SERVICE_PORT || '10000', 10);
 
+// In-memory owner registry (not persisted to TOML - rathole doesn't need it)
+// Lost on restart, but containers will re-register and reclaim ownership
+const serviceOwners = new Map<string, ServiceOwner>();
+
 // =============================================================================
-// Types
+// Types (continued)
 // =============================================================================
 
 export interface ServiceEntry {
   hash: string;
   token: string;
   port: number;
+  owner?: ServiceOwner;  // Who registered this service (for auth on DELETE)
 }
 
 export interface RatholeConfig {
@@ -158,15 +173,18 @@ export function saveConfig(config: RatholeConfig): void {
  *
  * @param hash - Container's tunnel hash
  * @param token - Auth token for this service
+ * @param owner - Identity of the container registering (for auth on DELETE)
  * @returns The assigned service entry
  */
-export function registerService(hash: string, token: string): ServiceEntry {
+export function registerService(hash: string, token: string, owner: ServiceOwner): ServiceEntry {
   const config = loadConfig();
 
   // Check if already registered
   const existing = config.services.get(hash);
   if (existing) {
     console.log(`[Config] Service ${hash} already registered on port ${existing.port}`);
+    // Update owner in case container restarted with same hash
+    serviceOwners.set(hash, owner);
     return existing;
   }
 
@@ -177,12 +195,25 @@ export function registerService(hash: string, token: string): ServiceEntry {
     port++;
   }
 
-  const entry: ServiceEntry = { hash, token, port };
+  const entry: ServiceEntry = { hash, token, port, owner };
   config.services.set(hash, entry);
   saveConfig(config);
 
-  console.log(`[Config] Registered service ${hash} on port ${port}`);
+  // Store owner in memory for auth verification
+  serviceOwners.set(hash, owner);
+
+  console.log(`[Config] Registered service ${hash} on port ${port} for ${owner.callsign}`);
   return entry;
+}
+
+/**
+ * Get the owner of a registered service.
+ *
+ * @param hash - Container's tunnel hash
+ * @returns Owner info if found, null otherwise
+ */
+export function getServiceOwner(hash: string): ServiceOwner | null {
+  return serviceOwners.get(hash) || null;
 }
 
 /**
@@ -202,6 +233,9 @@ export function unregisterService(hash: string): boolean {
 
   config.services.delete(hash);
   saveConfig(config);
+
+  // Clear owner from memory
+  serviceOwners.delete(hash);
 
   console.log(`[Config] Unregistered service ${hash}`);
   return true;
