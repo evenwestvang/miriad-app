@@ -14,7 +14,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     build-essential \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install rathole client for HTTP tunneling
+# Using pre-built binary from GitHub releases
+ARG RATHOLE_VERSION=0.5.0
+ARG TARGETARCH
+RUN ARCH=$(case ${TARGETARCH:-amd64} in \
+        amd64) echo "x86_64-unknown-linux-gnu" ;; \
+        arm64) echo "aarch64-unknown-linux-gnu" ;; \
+        *) echo "x86_64-unknown-linux-gnu" ;; \
+    esac) && \
+    curl -fsSL "https://github.com/rapiz1/rathole/releases/download/v${RATHOLE_VERSION}/rathole-${ARCH}.zip" -o /tmp/rathole.zip && \
+    cd /tmp && unzip rathole.zip && \
+    mv rathole /usr/local/bin/rathole && \
+    chmod +x /usr/local/bin/rathole && \
+    rm -rf /tmp/rathole*
 
 # Install Claude Code CLI globally (SDK requires CLI to be available)
 RUN npm install -g @anthropic-ai/claude-code
@@ -39,6 +55,10 @@ RUN npm install --no-save \
     @aws-sdk/lib-dynamodb@^3.450.0 \
     @modelcontextprotocol/sdk@^1.0.0
 
+# Copy tunnel CLI script
+COPY scripts/cast-tunnel /usr/local/bin/cast-tunnel
+RUN chmod +x /usr/local/bin/cast-tunnel
+
 # Create non-root user for Claude Code
 # (--dangerously-skip-permissions cannot be used with root)
 RUN useradd -m -s /bin/bash claude && \
@@ -53,6 +73,12 @@ USER claude
 # CIKADA_API_URL - Cikada HTTP API for Tymbal streaming
 # WORKSPACE_DIR - Working directory (default: /workspace)
 # IDLE_TIMEOUT_MS - Idle timeout in milliseconds (default: 600000 = 10 min)
+#
+# Tunnel configuration (for HTTP exposure via cast-tunnel):
+# TUNNEL_SERVER_URL - Tunnel server address (host:port)
+# TUNNEL_HASH - Unique hash for container's public hostname
+# TUNNEL_TOKEN - Authentication token for tunnel server
+# TUNNEL_LOCAL_PORT - Local port to expose (default: 8080)
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
