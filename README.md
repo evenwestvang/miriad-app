@@ -186,7 +186,7 @@ CAST agents can expose HTTP services to end users via a tunnel system. Each agen
 ### Architecture
 
 ```
-User Browser → https://{hash}.containers.clanker.is:PORT
+User Browser → https://{hash}.cast-stack.site
                         ↓
               Tunnel Server (rathole on AWS)
                         ↓
@@ -201,7 +201,7 @@ User Browser → https://{hash}.containers.clanker.is:PORT
 2. **Container start**: Hash passed as `TUNNEL_HASH` env var
 3. **Tunnel connect**: Container runs `cast-tunnel up` to connect to tunnel server
 4. **Service exposure**: Any port bound to `0.0.0.0` becomes reachable at the tunnel URL
-5. **Access**: Users visit `https://{hash}.containers.clanker.is:{port}`
+5. **Access**: Users visit `https://{hash}.cast-stack.site`
 
 ### UI
 

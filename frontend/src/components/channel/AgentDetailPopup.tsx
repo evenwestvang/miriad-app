@@ -4,8 +4,8 @@ import { cn } from '../../lib/utils'
 import { getSenderColor } from '../../utils'
 import type { RosterAgent } from './MentionAutocomplete'
 
-// TODO: Domain should come from config/API, hardcoded for MVP
-const TUNNEL_DOMAIN = 'containers.clanker.is'
+// Tunnel domain from environment, defaults to production
+const TUNNEL_DOMAIN = import.meta.env.VITE_TUNNEL_DOMAIN || 'cast-stack.site'
 
 interface AgentDetailPopupProps {
   /** Agent to display details for */
