@@ -173,7 +173,7 @@ function MessageHeader({
   return (
     <>
       {/* Cartouche in left gutter, centered horizontally and aligned with text */}
-      <div className="absolute -left-5 top-[6px] flex justify-center w-4">
+      <div className="absolute -left-[22px] top-[6px] flex justify-center w-4">
         <Cartouche
           name={name}
           channelId={channelId}
