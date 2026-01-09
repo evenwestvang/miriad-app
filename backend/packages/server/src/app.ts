@@ -412,6 +412,85 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
     }
   });
 
+  /**
+   * GET /channels/:id/agents/available - List available agent definitions
+   *
+   * Fetches system.agent artifacts from both the channel's board and root channel,
+   * merges by slug (local shadows root), and returns unified list.
+   */
+  app.get('/:channelId/agents/available', async (c) => {
+    const spaceId = getSpaceId(c);
+    const channelId = c.req.param('channelId');
+
+    try {
+      // Verify channel exists
+      const channel = await storage.getChannel(spaceId, channelId);
+      if (!channel) {
+        return c.json({ error: 'Channel not found' }, 404);
+      }
+
+      // Fetch system.agent artifacts from root channel
+      const rootChannel = await storage.getChannelByName(spaceId, 'root');
+      const rootAgents = rootChannel
+        ? await storage.listArtifacts(rootChannel.id, { type: 'system.agent' })
+        : [];
+
+      // Fetch system.agent artifacts from current channel (only if not root)
+      const isRootChannel = rootChannel && channelId === rootChannel.id;
+      const localAgents = isRootChannel
+        ? [] // Don't double-load root agents
+        : await storage.listArtifacts(channelId, { type: 'system.agent' });
+
+      // Merge by slug: local shadows root
+      const agentMap = new Map<string, {
+        slug: string;
+        title?: string;
+        tldr?: string;
+        nameTheme?: string;
+        suggestedName?: string;
+        source: 'local' | 'root';
+      }>();
+
+      // Add root agents first
+      for (const agent of rootAgents) {
+        const props = agent.props as Record<string, unknown> | undefined;
+        agentMap.set(agent.slug, {
+          slug: agent.slug,
+          title: agent.title,
+          tldr: agent.tldr,
+          nameTheme: props?.nameTheme as string | undefined,
+          suggestedName: props?.suggestedName as string | undefined,
+          source: 'root',
+        });
+      }
+
+      // Add local agents (shadows root by slug)
+      for (const agent of localAgents) {
+        const props = agent.props as Record<string, unknown> | undefined;
+        agentMap.set(agent.slug, {
+          slug: agent.slug,
+          title: agent.title,
+          tldr: agent.tldr,
+          nameTheme: props?.nameTheme as string | undefined,
+          suggestedName: props?.suggestedName as string | undefined,
+          source: 'local',
+        });
+      }
+
+      // Convert to array and sort alphabetically by title (fallback to slug)
+      const agents = Array.from(agentMap.values()).sort((a, b) => {
+        const aName = a.title || a.slug;
+        const bName = b.title || b.slug;
+        return aName.localeCompare(bName);
+      });
+
+      return c.json({ agents });
+    } catch (error) {
+      console.error('[Agents] Error listing available agents:', error);
+      return c.json({ error: 'Failed to list available agents' }, 500);
+    }
+  });
+
   return app;
 }
 

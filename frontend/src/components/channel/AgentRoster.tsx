@@ -1,21 +1,28 @@
 import { useState, useRef } from 'react'
 import { Plus, X } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { AgentPicker, type AgentType } from './AgentPicker'
+import { AgentSummonPicker } from './AgentSummonPicker'
 import { DismissConfirmDialog } from './DismissConfirmDialog'
 import { AgentDetailPopup } from './AgentDetailPopup'
 import type { RosterAgent } from './MentionAutocomplete'
 
+// Re-export AgentType for backwards compatibility (used in App.tsx)
+export interface AgentType {
+  id: string
+  name: string
+  description?: string
+}
+
 interface AgentRosterProps {
   roster: RosterAgent[]
   leader?: string
-  /** Available agent types for picker */
+  /** @deprecated No longer used - AgentSummonPicker fetches agents from API */
   agentTypes?: AgentType[]
   /** Channel ID for API calls */
   channelId?: string
   /** API host */
   apiHost?: string
-  /** Called when agent is added */
+  /** @deprecated No longer used - roster updates via WebSocket */
   onAgentAdded?: (agent: RosterAgent) => void
   /** Called when agent is dismissed */
   onAgentDismiss?: (callsign: string) => void
@@ -101,13 +108,16 @@ function AgentBadge({ agent, isLeader, onDismiss, onClick }: AgentBadgeProps) {
 export function AgentRoster({
   roster,
   leader,
-  agentTypes = [],
+  agentTypes: _agentTypes = [],
   channelId,
   apiHost = '',
-  onAgentAdded,
+  onAgentAdded: _onAgentAdded,
   onAgentDismiss,
   canManageAgents = false,
 }: AgentRosterProps) {
+  // Note: agentTypes and onAgentAdded are deprecated but kept for backwards compatibility
+  void _agentTypes
+  void _onAgentAdded
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dismissTarget, setDismissTarget] = useState<RosterAgent | null>(null)
   const [dismissPosition, setDismissPosition] = useState<{ top: number; left: number } | undefined>()
@@ -176,7 +186,7 @@ export function AgentRoster({
         )}
       </div>
 
-      {/* Add agent button - inline on the right */}
+      {/* Summon agent button - inline on the right */}
       {canManageAgents && channelId && (
         <div className="relative z-10">
           <button
@@ -189,18 +199,13 @@ export function AgentRoster({
             )}
           >
             <Plus className="w-3 h-3" />
-            <span>Add agent</span>
+            <span>Summon</span>
           </button>
 
-          <AgentPicker
-            agentTypes={agentTypes}
+          <AgentSummonPicker
             roster={roster}
             channelId={channelId}
             apiHost={apiHost}
-            onAgentAdded={(agent) => {
-              onAgentAdded?.(agent)
-              setPickerOpen(false)
-            }}
             onClose={() => setPickerOpen(false)}
             isOpen={pickerOpen}
           />
@@ -231,4 +236,4 @@ export function AgentRoster({
 }
 
 // Re-export types for convenience
-export type { RosterAgent, AgentType }
+export type { RosterAgent }
