@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { format, isToday, isYesterday, isThisWeek, isThisYear } from 'date-fns'
+import { Copy, Check, MoreHorizontal } from 'lucide-react'
 import type { Message, StructuredAskMessage } from '../../types'
 import { highlightMentions, type ArtifactInfo } from '../../utils'
 import { ToolMessage } from './ToolMessage'
@@ -16,6 +17,103 @@ import { Cartouche } from './Cartouche'
 import type { RosterAgent } from './MentionAutocomplete'
 import { apiFetch } from '../../lib/api'
 import { useIsDarkMode } from '../../hooks/useIsDarkMode'
+
+/**
+ * Copy button with checkmark feedback
+ */
+function CopyButton({ text, className = '' }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      className={`p-1.5 rounded hover:bg-secondary/80 transition-colors ${className}`}
+      title={copied ? 'Copied!' : 'Copy'}
+    >
+      {copied ? (
+        <Check size={14} className="text-green-500" />
+      ) : (
+        <Copy size={14} className="text-muted-foreground" />
+      )}
+    </button>
+  )
+}
+
+/**
+ * Message menu with copy and future options
+ */
+function MessageMenu({ content, className = '' }: { content: string; className?: string }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Close on click outside
+  useEffect(() => {
+    if (!isOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isOpen])
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      setTimeout(() => {
+        setCopied(false)
+        setIsOpen(false)
+      }, 1000)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
+  }
+
+  return (
+    <div className={`relative ${className}`} ref={menuRef}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="p-1 rounded hover:bg-secondary/80 transition-colors opacity-0 group-hover:opacity-100"
+        title="More options"
+      >
+        <MoreHorizontal size={14} className="text-muted-foreground" />
+      </button>
+      {isOpen && (
+        <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-md shadow-lg z-50 whitespace-nowrap">
+          <button
+            onClick={handleCopy}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-secondary/50 transition-colors"
+          >
+            {copied ? (
+              <>
+                <Check size={14} className="text-green-500" />
+                <span>Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy size={14} />
+                <span>Copy message</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface MessageListProps {
   messages: Message[]
@@ -449,10 +547,15 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
     )
   }
 
+  // Get raw content for copy
+  const rawContent = typeof message.content === 'string'
+    ? message.content
+    : (message.content as { text?: string })?.text || ''
+
   // Regular user/assistant messages
   return (
-    <div className="flex flex-col min-w-0">
-      {/* Header line with glyph, callsign, timestamp - pulled left (only for first in group) */}
+    <div className="flex flex-col min-w-0 group">
+      {/* Header line with glyph, callsign, timestamp, menu - pulled left (only for first in group) */}
       {showHeader && (
         <div className="flex items-center gap-2 mb-1.5 -ml-4">
           <Cartouche name={message.sender || displayName} agentType={agentType} className="text-[14px]" />
@@ -462,6 +565,7 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
           <span className="text-[14px] text-[var(--cast-text-muted)] tracking-[0.02em]">
             {formatTime(message.timestamp)}
           </span>
+          <MessageMenu content={rawContent} />
         </div>
       )}
       {/* Content - normal position */}
@@ -527,10 +631,15 @@ function createMarkdownComponents(myName: string, artifacts?: Map<string, Artifa
         )
       }
 
-      // Code block - use syntax highlighter
+      // Code block - use syntax highlighter with copy button
       const language = match ? match[1] : 'text'
+      const codeContent = codeString.replace(/\n$/, '')
       return (
-        <div className="not-prose">
+        <div className="not-prose relative group/code">
+          <CopyButton
+            text={codeContent}
+            className="absolute top-2 right-2 opacity-0 group-hover/code:opacity-100 bg-secondary/90"
+          />
           <SyntaxHighlighter
             style={codeTheme}
             language={language}
@@ -543,7 +652,7 @@ function createMarkdownComponents(myName: string, artifacts?: Map<string, Artifa
               borderRadius: '0.25rem',
             }}
           >
-            {codeString.replace(/\n$/, '')}
+            {codeContent}
           </SyntaxHighlighter>
         </div>
       )
