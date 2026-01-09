@@ -665,37 +665,70 @@ type MessageOrGroup =
   | { type: "tool_group"; messages: Message[]; startIndex: number };
 
 /**
- * Group consecutive tool_call and tool_result messages from the same sender.
- * Other messages pass through individually.
+ * Group consecutive tool_call messages (by ULID order) with their results.
+ *
+ * Logic:
+ * - Only tool_call messages define groups (consecutive calls = one group)
+ * - tool_result messages are collected separately and passed to ToolGroup for pairing
+ * - Any non-tool message breaks the group
+ * - This preserves interleaving: text → [tool group] → text → [tool group]
  */
 function groupMessages(messages: Message[]): MessageOrGroup[] {
   const result: MessageOrGroup[] = [];
-  let i = 0;
 
+  // First pass: collect all tool_results by their call ID for lookup
+  const resultsByCallId = new Map<string, Message>();
+  for (const msg of messages) {
+    if (msg.type === "tool_result" && msg.toolResultCallId) {
+      resultsByCallId.set(msg.toolResultCallId, msg);
+    }
+  }
+
+  let i = 0;
   while (i < messages.length) {
     const msg = messages[i];
 
-    // Check if this is a tool message
-    if (msg.type === "tool_call" || msg.type === "tool_result") {
-      // Collect consecutive tool messages from the same sender
-      const toolGroup: Message[] = [msg];
-      const sender = msg.sender;
+    // Skip tool_result messages - they get paired with their calls
+    if (msg.type === "tool_result") {
+      i++;
+      continue;
+    }
+
+    // Check if this is a tool_call message
+    if (msg.type === "tool_call") {
+      // Collect consecutive tool_call messages
+      const toolCalls: Message[] = [msg];
       let j = i + 1;
 
       while (j < messages.length) {
         const nextMsg = messages[j];
-        if (
-          (nextMsg.type === "tool_call" || nextMsg.type === "tool_result") &&
-          nextMsg.sender === sender
-        ) {
-          toolGroup.push(nextMsg);
+        // Skip tool_results when looking for consecutive calls
+        if (nextMsg.type === "tool_result") {
+          j++;
+          continue;
+        }
+        // Group consecutive tool_calls
+        if (nextMsg.type === "tool_call") {
+          toolCalls.push(nextMsg);
           j++;
         } else {
+          // Any other message type breaks the group
           break;
         }
       }
 
-      result.push({ type: "tool_group", messages: toolGroup, startIndex: i });
+      // Build the group with calls and their matched results
+      const groupMessages: Message[] = [];
+      for (const call of toolCalls) {
+        groupMessages.push(call);
+        const callId = call.toolCallId || call.id;
+        const result = resultsByCallId.get(callId);
+        if (result) {
+          groupMessages.push(result);
+        }
+      }
+
+      result.push({ type: "tool_group", messages: groupMessages, startIndex: i });
       i = j;
     } else {
       result.push({ type: "message", message: msg, index: i });
