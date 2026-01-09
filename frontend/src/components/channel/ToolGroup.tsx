@@ -76,7 +76,7 @@ export function ToolGroup({ messages }: ToolGroupProps) {
   }
 
   return (
-    <div className="my-1">
+    <div className="my-4">
       {/* Collapsed header */}
       <button
         onClick={() => setExpanded(!expanded)}
@@ -204,7 +204,7 @@ function SingleToolItem({ pair }: { pair: ToolPair }) {
   const error = pair.result?.toolResultError
 
   return (
-    <div className="my-1">
+    <div className="my-4">
       <button
         onClick={() => setExpanded(!expanded)}
         className="flex items-center gap-2 text-sm hover:text-foreground transition-colors text-left"
