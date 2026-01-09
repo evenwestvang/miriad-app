@@ -150,6 +150,12 @@ export function useTymbalConnection({
   const lastTimestampRef = useRef<string | null>(null)
   const oldestMessageIdRef = useRef<string | null>(null)
 
+  // Reconnection state
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnectAttemptRef = useRef(0)
+  const maxReconnectAttempts = 10
+  const baseReconnectDelay = 1000 // 1 second
+
   // Parse a single frame from JSON string
   const parseFrame = useCallback((line: string): TymbalFrame | null => {
     try {
@@ -542,6 +548,91 @@ export function useTymbalConnection({
     ws.send(JSON.stringify(syncRequest))
   }, [channelId, hasMoreMessages, isLoadingOlder, providedWsToken])
 
+  // Create WebSocket connection (used for initial connect and reconnect)
+  const createWebSocket = useCallback(() => {
+    // Clear any existing reconnect timeout
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+      reconnectTimeoutRef.current = null
+    }
+
+    const wsUrlEnv = import.meta.env.VITE_WS_URL
+    const isAwsWs = wsUrlEnv && (
+      wsUrlEnv.includes('execute-api') ||
+      (wsUrlEnv.startsWith('wss://') && !wsUrlEnv.includes('localhost'))
+    )
+
+    let wsUrl: string
+    if (wsUrlEnv) {
+      if (isAwsWs) {
+        wsUrl = wsUrlEnv
+      } else {
+        wsUrl = `${wsUrlEnv}/stream`
+      }
+    } else {
+      const wsBase = API_HOST.replace(/^http/, 'ws')
+      wsUrl = `${wsBase}/stream`
+    }
+
+    console.log(`[WebSocket] Creating connection to ${wsUrl} (attempt ${reconnectAttemptRef.current + 1})`)
+    const ws = new WebSocket(wsUrl)
+    wsRef.current = ws
+
+    ws.onopen = () => {
+      setConnected(true)
+      reconnectAttemptRef.current = 0 // Reset on successful connect
+      console.log(`[WebSocket] Connected at ${performance.now().toFixed(2)}ms`)
+      // Send sync for current desired channel
+      const target = desiredChannelRef.current
+      if (target) {
+        console.log(`[WebSocket] Sending initial sync for ${target}`)
+        sendSyncRequest(target)
+      }
+    }
+
+    ws.onclose = (event) => {
+      console.log(`[WebSocket] Closed: code=${event.code}, reason=${event.reason}`)
+      setConnected(false)
+      wsRef.current = null
+
+      // Don't reconnect on intentional close (code 1000) or if we've exceeded max attempts
+      if (event.code === 1000) {
+        console.log('[WebSocket] Clean close, not reconnecting')
+        return
+      }
+
+      if (reconnectAttemptRef.current >= maxReconnectAttempts) {
+        console.error(`[WebSocket] Max reconnect attempts (${maxReconnectAttempts}) reached, giving up`)
+        return
+      }
+
+      // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s (capped at 32s)
+      const delay = Math.min(baseReconnectDelay * Math.pow(2, reconnectAttemptRef.current), 32000)
+      reconnectAttemptRef.current++
+      console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${reconnectAttemptRef.current}/${maxReconnectAttempts})`)
+
+      reconnectTimeoutRef.current = setTimeout(() => {
+        createWebSocket()
+      }, delay)
+    }
+
+    ws.onerror = (error) => {
+      console.error('[WebSocket] Error:', error)
+    }
+
+    ws.onmessage = (event) => {
+      const lines = (event.data as string).split('\n').filter(Boolean)
+      for (const line of lines) {
+        const frame = parseFrame(line)
+        if (frame) {
+          processFrame(frame)
+        }
+      }
+    }
+
+    return ws
+  }, [sendSyncRequest, parseFrame, processFrame])
+
   // Manage WebSocket connection and channel switching
   useLayoutEffect(() => {
     console.log(`[ChannelSwitch] Main effect: channelId=${channelId}, wsRef=${wsRef.current ? 'exists' : 'null'}`)
@@ -551,57 +642,7 @@ export function useTymbalConnection({
 
     // Create WebSocket if we don't have one
     if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
-      const wsUrlEnv = import.meta.env.VITE_WS_URL
-      const isAwsWs = wsUrlEnv && (
-        wsUrlEnv.includes('execute-api') ||
-        (wsUrlEnv.startsWith('wss://') && !wsUrlEnv.includes('localhost'))
-      )
-
-      let wsUrl: string
-      if (wsUrlEnv) {
-        if (isAwsWs) {
-          wsUrl = wsUrlEnv
-        } else {
-          wsUrl = `${wsUrlEnv}/stream`
-        }
-      } else {
-        const wsBase = API_HOST.replace(/^http/, 'ws')
-        wsUrl = `${wsBase}/stream`
-      }
-
-      console.log(`[ChannelSwitch] Creating WebSocket to ${wsUrl} at ${performance.now().toFixed(2)}ms`)
-      const ws = new WebSocket(wsUrl)
-      wsRef.current = ws
-
-      ws.onopen = () => {
-        setConnected(true)
-        console.log(`[ChannelSwitch] WebSocket opened at ${performance.now().toFixed(2)}ms`)
-        // Send sync for current desired channel
-        const target = desiredChannelRef.current
-        if (target) {
-          console.log(`[ChannelSwitch] Sending initial sync for ${target}`)
-          sendSyncRequest(target)
-        }
-      }
-
-      ws.onclose = (event) => {
-        console.log(`[ChannelSwitch] WebSocket closed: code=${event.code}`)
-        setConnected(false)
-      }
-
-      ws.onerror = (error) => {
-        console.error('[ChannelSwitch] WebSocket error:', error)
-      }
-
-      ws.onmessage = (event) => {
-        const lines = (event.data as string).split('\n').filter(Boolean)
-        for (const line of lines) {
-          const frame = parseFrame(line)
-          if (frame) {
-            processFrame(frame)
-          }
-        }
-      }
+      createWebSocket()
     }
 
     // If WebSocket exists and is open, send sync for channel change
@@ -623,13 +664,17 @@ export function useTymbalConnection({
     if (!channelId) {
       currentChannelRef.current = null
     }
-  }, [channelId, sendSyncRequest, processFrame, parseFrame])
+  }, [channelId, sendSyncRequest, createWebSocket])
 
-  // Cleanup WebSocket on unmount only
+  // Cleanup WebSocket and reconnect timeout on unmount
   useEffect(() => {
     return () => {
-      console.log('[ChannelSwitch] Cleanup: closing WebSocket')
-      wsRef.current?.close()
+      console.log('[WebSocket] Cleanup: closing WebSocket and clearing reconnect timeout')
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+      wsRef.current?.close(1000, 'Component unmounting') // Use 1000 to prevent reconnect
       wsRef.current = null
     }
   }, [])
