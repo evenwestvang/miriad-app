@@ -14,6 +14,44 @@ interface ToolPair {
 }
 
 /**
+ * Parse a value that might be a JSON string or already an object.
+ * Handles backwards compatibility where some fields are JSON-encoded strings.
+ */
+function parseJsonOrValue(value: unknown): unknown {
+  if (typeof value === 'string') {
+    // Try to parse as JSON if it looks like JSON
+    const trimmed = value.trim()
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+        (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        return JSON.parse(value)
+      } catch {
+        // Not valid JSON, return as-is
+        return value
+      }
+    }
+  }
+  return value
+}
+
+/**
+ * Format output for display, handling various formats.
+ */
+function formatOutput(output: unknown): string {
+  if (output === null || output === undefined) {
+    return '(empty)'
+  }
+
+  const parsed = parseJsonOrValue(output)
+
+  if (typeof parsed === 'string') {
+    return parsed || '(empty)'
+  }
+
+  return JSON.stringify(parsed, null, 2)
+}
+
+/**
  * Groups consecutive tool messages into a collapsible tree view.
  *
  * Collapsed: "▸ 5 tool calls  Read · Grep · Bash"
@@ -93,7 +131,8 @@ function ToolItem({ pair }: ToolItemProps) {
 
   const hasResult = !!pair.result
   const isSuccess = pair.result?.toolResultStatus !== 'error'
-  const output = pair.result?.toolResultOutput
+  // Try toolResultOutput first, fall back to content field
+  const output = pair.result?.toolResultOutput ?? pair.result?.content
   const error = pair.result?.toolResultError
 
   return (
@@ -137,7 +176,7 @@ function ToolItem({ pair }: ToolItemProps) {
               !isSuccess && "text-red-400"
             )}>
               <pre className="whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto">
-                {error || (typeof output === 'string' ? output : JSON.stringify(output, null, 2)) || '(empty)'}
+                {error || formatOutput(output)}
               </pre>
             </div>
           )}
@@ -160,7 +199,8 @@ function SingleToolItem({ pair }: { pair: ToolPair }) {
 
   const hasResult = !!pair.result
   const isSuccess = pair.result?.toolResultStatus !== 'error'
-  const output = pair.result?.toolResultOutput
+  // Try toolResultOutput first, fall back to content field
+  const output = pair.result?.toolResultOutput ?? pair.result?.content
   const error = pair.result?.toolResultError
 
   return (
@@ -205,7 +245,7 @@ function SingleToolItem({ pair }: { pair: ToolPair }) {
               !isSuccess && "text-red-400"
             )}>
               <pre className="whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto">
-                {error || (typeof output === 'string' ? output : JSON.stringify(output, null, 2)) || '(empty)'}
+                {error || formatOutput(output)}
               </pre>
             </div>
           )}
