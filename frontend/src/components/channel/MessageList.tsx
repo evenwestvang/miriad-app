@@ -1,44 +1,66 @@
-import { useEffect, useLayoutEffect, useRef, useCallback, useState, useMemo } from 'react'
-import Markdown, { Components } from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { format, isToday, isYesterday, isThisWeek, isThisYear } from 'date-fns'
-import { Copy, Check, MoreHorizontal, CirclePlus, AlertCircle } from 'lucide-react'
-import type { Message, StructuredAskMessage } from '../../types'
-import { highlightMentions, type ArtifactInfo } from '../../utils'
-import { ToolMessage } from './ToolMessage'
-import { StructuredAskForm } from '../structured-ask'
-import { AttachmentList, AttachmentRenderer } from './AttachmentRenderer'
-import type { AttachmentMessageContent, Attachment } from '../../types'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useCallback,
+  useState,
+  useMemo,
+} from "react";
+import Markdown, { Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import {
+  oneDark,
+  oneLight,
+} from "react-syntax-highlighter/dist/esm/styles/prism";
+import { format, isToday, isYesterday, isThisWeek, isThisYear } from "date-fns";
+import {
+  Copy,
+  Check,
+  CirclePlus,
+  AlertCircle,
+  MoreVertical,
+} from "lucide-react";
+import type { Message, StructuredAskMessage } from "../../types";
+import { highlightMentions, type ArtifactInfo } from "../../utils";
+import { ToolMessage } from "./ToolMessage";
+import { StructuredAskForm } from "../structured-ask";
+import { AttachmentList, AttachmentRenderer } from "./AttachmentRenderer";
+import type { AttachmentMessageContent, Attachment } from "../../types";
 // Avatar components kept for potential future use
 // import { AgentAvatar, UserAvatar } from './AgentAvatar'
-import { Cartouche } from './Cartouche'
-import type { RosterAgent } from './MentionAutocomplete'
-import { apiFetch } from '../../lib/api'
-import { useIsDarkMode } from '../../hooks/useIsDarkMode'
+import { Cartouche } from "./Cartouche";
+import type { RosterAgent } from "./MentionAutocomplete";
+import { apiFetch } from "../../lib/api";
+import { useIsDarkMode } from "../../hooks/useIsDarkMode";
 
 /**
  * Copy button with checkmark feedback
  */
-function CopyButton({ text, className = '' }: { text: string; className?: string }) {
-  const [copied, setCopied] = useState(false)
+function CopyButton({
+  text,
+  className = "",
+}: {
+  text: string;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy:', err)
+      console.error("Failed to copy:", err);
     }
-  }
+  };
 
   return (
     <button
       onClick={handleCopy}
       className={`p-1.5 rounded hover:bg-secondary/80 transition-colors ${className}`}
-      title={copied ? 'Copied!' : 'Copy'}
+      title={copied ? "Copied!" : "Copy"}
     >
       {copied ? (
         <Check size={14} className="text-green-500" />
@@ -46,50 +68,56 @@ function CopyButton({ text, className = '' }: { text: string; className?: string
         <Copy size={14} className="text-muted-foreground" />
       )}
     </button>
-  )
+  );
 }
 
 /**
  * Message menu with copy and future options
  */
-function MessageMenu({ content, className = '' }: { content: string; className?: string }) {
-  const [isOpen, setIsOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
+function MessageMenu({
+  content,
+  className = "",
+}: {
+  content: string;
+  className?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // Close on click outside
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setIsOpen(false)
+        setIsOpen(false);
       }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isOpen])
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isOpen]);
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(content)
-      setCopied(true)
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
       setTimeout(() => {
-        setCopied(false)
-        setIsOpen(false)
-      }, 1000)
+        setCopied(false);
+        setIsOpen(false);
+      }, 1000);
     } catch (err) {
-      console.error('Failed to copy:', err)
+      console.error("Failed to copy:", err);
     }
-  }
+  };
 
   return (
     <div className={`relative ${className}`} ref={menuRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="p-1 rounded hover:bg-secondary/80 transition-colors opacity-0 group-hover:opacity-100"
+        className="p-0.5 rounded hover:bg-secondary/80 transition-colors opacity-0 group-hover:opacity-100 relative top-[1px]"
         title="More options"
       >
-        <MoreHorizontal size={14} className="text-muted-foreground" />
+        <MoreVertical size={14} className="text-[var(--cast-text-muted)]" />
       </button>
       {isOpen && (
         <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-md shadow-lg z-50 whitespace-nowrap">
@@ -112,7 +140,7 @@ function MessageMenu({ content, className = '' }: { content: string; className?:
         </div>
       )}
     </div>
-  )
+  );
 }
 
 /**
@@ -120,26 +148,41 @@ function MessageMenu({ content, className = '' }: { content: string; className?:
  * Used by all message types for consistent styling.
  */
 interface MessageHeaderProps {
-  name: string
-  displayName: string
-  agentType?: string
-  timestamp: string
-  channelId: string
-  rosterIndex: number
+  name: string;
+  displayName: string;
+  agentType?: string;
+  timestamp: string;
+  channelId: string;
+  rosterIndex: number;
   /** Whether sender is a human (renders square instead of circle) */
-  isHuman?: boolean
+  isHuman?: boolean;
   /** Optional content for copy menu (omit to hide menu) */
-  menuContent?: string
+  menuContent?: string;
 }
 
-function MessageHeader({ name, displayName, agentType, timestamp, channelId, rosterIndex, isHuman, menuContent }: MessageHeaderProps) {
+function MessageHeader({
+  name,
+  displayName,
+  agentType,
+  timestamp,
+  channelId,
+  rosterIndex,
+  isHuman,
+  menuContent,
+}: MessageHeaderProps) {
   return (
     <>
       {/* Cartouche in left gutter, centered horizontally and aligned with text */}
       <div className="absolute -left-5 top-[6px] flex justify-center w-4">
-        <Cartouche name={name} channelId={channelId} rosterIndex={rosterIndex} isHuman={isHuman} className="text-[14px]" />
+        <Cartouche
+          name={name}
+          channelId={channelId}
+          rosterIndex={rosterIndex}
+          isHuman={isHuman}
+          className="text-[14px]"
+        />
       </div>
-      {/* Header line with callsign, agent type, timestamp, optional menu */}
+      {/* Header line with callsign, agent type, timestamp, menu */}
       <div className="flex items-center gap-2 mb-1.5">
         <span className="text-[14px] font-semibold text-[var(--cast-text-primary)] tracking-[-0.01em]">
           {displayName}
@@ -149,83 +192,107 @@ function MessageHeader({ name, displayName, agentType, timestamp, channelId, ros
             {agentType}
           </span>
         )}
-        <span className="ml-auto text-[14px] text-[var(--cast-text-muted)]">
-          {formatTime(timestamp)}
+        <span className="ml-auto flex items-center gap-1">
+          {menuContent !== undefined && <MessageMenu content={menuContent} />}
+          <span className="text-[14px] text-[var(--cast-text-muted)]">
+            {formatTime(timestamp)}
+          </span>
         </span>
-        {menuContent !== undefined && <MessageMenu content={menuContent} />}
       </div>
     </>
-  )
+  );
 }
 
 interface MessageListProps {
-  messages: Message[]
-  threadName?: string
-  threadAgentType?: string
-  myName?: string
+  messages: Message[];
+  threadName?: string;
+  threadAgentType?: string;
+  myName?: string;
   /** API host for attachment URLs */
-  apiHost?: string
+  apiHost?: string;
   /** Channel ID for artifact lookup */
-  channelId?: string
+  channelId?: string;
   /** Roster for agent type lookup */
-  roster?: RosterAgent[]
+  roster?: RosterAgent[];
   /** True immediately when channel switch starts (hides empty state) */
-  isSwitching?: boolean
+  isSwitching?: boolean;
   /** Show loading spinner (delayed - only after 500ms) */
-  isLoading?: boolean
-  onStructuredAskSubmit?: (messageId: string, response: Record<string, unknown>) => void
+  isLoading?: boolean;
+  onStructuredAskSubmit?: (
+    messageId: string,
+    response: Record<string, unknown>,
+  ) => void;
 }
 
-export function MessageList({ messages, threadName = 'Agent', threadAgentType, myName = '', apiHost = '', channelId = '', roster = [], isSwitching = false, isLoading = false, onStructuredAskSubmit }: MessageListProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const bottomRef = useRef<HTMLDivElement>(null)
+export function MessageList({
+  messages,
+  threadName = "Agent",
+  threadAgentType,
+  myName = "",
+  apiHost = "",
+  channelId = "",
+  roster = [],
+  isSwitching = false,
+  isLoading = false,
+  onStructuredAskSubmit,
+}: MessageListProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   // Create callsign → agentType lookup map from roster
   const agentTypeMap = useMemo(() => {
-    const map = new Map<string, string>()
+    const map = new Map<string, string>();
     for (const agent of roster) {
       if (agent.agentType) {
-        map.set(agent.callsign, agent.agentType)
+        map.set(agent.callsign, agent.agentType);
       }
     }
-    return map
-  }, [roster])
+    return map;
+  }, [roster]);
 
   // Create callsign → roster index map for Cartouche colors
   const rosterIndexMap = useMemo(() => {
-    const map = new Map<string, number>()
+    const map = new Map<string, number>();
     roster.forEach((agent, index) => {
-      map.set(agent.callsign, index)
-    })
-    return map
-  }, [roster])
-  const wasAtBottomRef = useRef(true)
+      map.set(agent.callsign, index);
+    });
+    return map;
+  }, [roster]);
+  const wasAtBottomRef = useRef(true);
   // Track sync state: 'waiting' = no messages yet, 'syncing' = first batch arriving, 'ready' = sync complete
-  const syncStateRef = useRef<'waiting' | 'syncing' | 'ready'>('waiting')
-  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const prevMessageCountRef = useRef(0)
+  const syncStateRef = useRef<"waiting" | "syncing" | "ready">("waiting");
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevMessageCountRef = useRef(0);
 
   // Artifact map for [[slug]] title lookup
-  const [artifactMap, setArtifactMap] = useState<Map<string, ArtifactInfo>>(new Map())
+  const [artifactMap, setArtifactMap] = useState<Map<string, ArtifactInfo>>(
+    new Map(),
+  );
 
   // Fetch artifacts for title lookup - delayed to not compete with initial paint
   useEffect(() => {
     if (!channelId || !apiHost || isLoading) {
-      if (!channelId) setArtifactMap(new Map())
-      return
+      if (!channelId) setArtifactMap(new Map());
+      return;
     }
 
     const timeoutId = setTimeout(() => {
       async function fetchArtifacts() {
-        console.log(`[ChannelSwitch] Starting artifacts fetch at ${performance.now().toFixed(2)}ms`)
+        console.log(
+          `[ChannelSwitch] Starting artifacts fetch at ${performance.now().toFixed(2)}ms`,
+        );
         try {
-          const response = await apiFetch(`${apiHost}/channels/${channelId}/artifacts?limit=500`)
-          if (!response.ok) return
-          const data = await response.json()
-          console.log(`[ChannelSwitch] Artifacts fetch complete at ${performance.now().toFixed(2)}ms`)
-          const artifacts = data.artifacts || []
+          const response = await apiFetch(
+            `${apiHost}/channels/${channelId}/artifacts?limit=500`,
+          );
+          if (!response.ok) return;
+          const data = await response.json();
+          console.log(
+            `[ChannelSwitch] Artifacts fetch complete at ${performance.now().toFixed(2)}ms`,
+          );
+          const artifacts = data.artifacts || [];
 
-          const map = new Map<string, ArtifactInfo>()
+          const map = new Map<string, ArtifactInfo>();
           for (const artifact of artifacts) {
             map.set(artifact.slug.toLowerCase(), {
               slug: artifact.slug,
@@ -233,89 +300,92 @@ export function MessageList({ messages, threadName = 'Agent', threadAgentType, m
               type: artifact.type,
               encoding: artifact.encoding,
               contentType: artifact.contentType,
-            })
+            });
           }
-          setArtifactMap(map)
+          setArtifactMap(map);
         } catch (error) {
-          console.warn('Failed to fetch artifacts for title lookup:', error)
+          console.warn("Failed to fetch artifacts for title lookup:", error);
         }
       }
-      fetchArtifacts()
-    }, 250) // Delay to not compete with initial message sync
+      fetchArtifacts();
+    }, 250); // Delay to not compete with initial message sync
 
-    return () => clearTimeout(timeoutId)
-  }, [channelId, apiHost, isLoading])
+    return () => clearTimeout(timeoutId);
+  }, [channelId, apiHost, isLoading]);
 
   // Check if user is at bottom before messages update
   const checkIfAtBottom = useCallback(() => {
-    const container = containerRef.current
-    if (!container) return true
-    const threshold = 50 // pixels from bottom to consider "at bottom"
-    return container.scrollHeight - container.scrollTop <= container.clientHeight + threshold
-  }, [])
+    const container = containerRef.current;
+    if (!container) return true;
+    const threshold = 50; // pixels from bottom to consider "at bottom"
+    return (
+      container.scrollHeight - container.scrollTop <=
+      container.clientHeight + threshold
+    );
+  }, []);
 
   // Track scroll position
   useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
+    const container = containerRef.current;
+    if (!container) return;
 
     const handleScroll = () => {
-      wasAtBottomRef.current = checkIfAtBottom()
-    }
+      wasAtBottomRef.current = checkIfAtBottom();
+    };
 
-    container.addEventListener('scroll', handleScroll, { passive: true })
-    return () => container.removeEventListener('scroll', handleScroll)
-  }, [checkIfAtBottom])
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, [checkIfAtBottom]);
 
   // Reset sync state when channel changes (messages cleared)
   useEffect(() => {
     if (messages.length === 0) {
-      syncStateRef.current = 'waiting'
-      prevMessageCountRef.current = 0
+      syncStateRef.current = "waiting";
+      prevMessageCountRef.current = 0;
       if (syncTimeoutRef.current) {
-        clearTimeout(syncTimeoutRef.current)
-        syncTimeoutRef.current = null
+        clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = null;
       }
     }
-  }, [messages.length === 0])
+  }, [messages.length === 0]);
 
   // Handle scrolling based on sync state
   useLayoutEffect(() => {
-    const prevCount = prevMessageCountRef.current
-    const currentCount = messages.length
-    prevMessageCountRef.current = currentCount
+    const prevCount = prevMessageCountRef.current;
+    const currentCount = messages.length;
+    prevMessageCountRef.current = currentCount;
 
     if (currentCount === 0) {
-      return
+      return;
     }
 
     // Detect sync start: going from 0 to having messages
     if (prevCount === 0 && currentCount > 0) {
-      syncStateRef.current = 'syncing'
+      syncStateRef.current = "syncing";
     }
 
     // During sync: keep scrolling to bottom instantly (no animation)
-    if (syncStateRef.current === 'syncing' && containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight
-      wasAtBottomRef.current = true
+    if (syncStateRef.current === "syncing" && containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      wasAtBottomRef.current = true;
 
       // Reset the sync completion timer on each new message
       if (syncTimeoutRef.current) {
-        clearTimeout(syncTimeoutRef.current)
+        clearTimeout(syncTimeoutRef.current);
       }
       // After 150ms of no new messages, consider sync complete
       syncTimeoutRef.current = setTimeout(() => {
-        syncStateRef.current = 'ready'
-        syncTimeoutRef.current = null
-      }, 150)
-      return
+        syncStateRef.current = "ready";
+        syncTimeoutRef.current = null;
+      }, 150);
+      return;
     }
 
     // After sync complete: smooth scroll for new messages if at bottom
-    if (syncStateRef.current === 'ready' && wasAtBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (syncStateRef.current === "ready" && wasAtBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages])
+  }, [messages]);
 
   return (
     <div className="flex-1 overflow-y-auto p-6" ref={containerRef}>
@@ -326,12 +396,12 @@ export function MessageList({ messages, threadName = 'Agent', threadAgentType, m
             // Show spinner after 500ms delay
             <div className="flex flex-col items-center justify-center h-full text-center px-4">
               <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin mb-4" />
-              <p className="text-muted-foreground text-sm">Loading messages...</p>
+              <p className="text-muted-foreground text-sm">
+                Loading messages...
+              </p>
             </div>
-          ) : (
-            // Before 500ms - show nothing (blank screen feels faster)
-            null
-          )
+          ) : // Before 500ms - show nothing (blank screen feels faster)
+          null
         ) : (
           // Empty state - only show when NOT switching channels
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
@@ -352,62 +422,84 @@ export function MessageList({ messages, threadName = 'Agent', threadAgentType, m
         messages.map((message, index) => {
           // Check if this message should show the header
           // Show header if: first message, different sender, or >20 min gap
-          const prevMessage = index > 0 ? messages[index - 1] : null
-          const showHeader = !prevMessage ||
+          const prevMessage = index > 0 ? messages[index - 1] : null;
+          const showHeader =
+            !prevMessage ||
             prevMessage.sender !== message.sender ||
             prevMessage.senderType !== message.senderType ||
-            (new Date(message.timestamp).getTime() - new Date(prevMessage.timestamp).getTime()) > 20 * 60 * 1000
+            new Date(message.timestamp).getTime() -
+              new Date(prevMessage.timestamp).getTime() >
+              20 * 60 * 1000;
 
           // Check if next message starts a new group (determines bottom margin)
-          const nextMessage = index < messages.length - 1 ? messages[index + 1] : null
-          const isLastInGroup = !nextMessage ||
+          const nextMessage =
+            index < messages.length - 1 ? messages[index + 1] : null;
+          const isLastInGroup =
+            !nextMessage ||
             nextMessage.sender !== message.sender ||
             nextMessage.senderType !== message.senderType ||
-            (new Date(nextMessage.timestamp).getTime() - new Date(message.timestamp).getTime()) > 20 * 60 * 1000
+            new Date(nextMessage.timestamp).getTime() -
+              new Date(message.timestamp).getTime() >
+              20 * 60 * 1000;
 
           // Within a group: small margin. End of group: large margin.
-          const marginClass = isLastInGroup ? "mb-8 last:mb-0" : "mb-1"
+          const marginClass = isLastInGroup ? "mb-8 last:mb-0" : "mb-1";
 
           return (
-            <div key={message.id} data-message-id={message.id} className={marginClass}>
+            <div
+              key={message.id}
+              data-message-id={message.id}
+              className={marginClass}
+            >
               <MessageItem
                 message={message}
                 threadName={threadName}
                 myName={myName}
                 apiHost={apiHost}
                 artifacts={artifactMap}
-                agentType={message.sender ? agentTypeMap.get(message.sender) : threadAgentType}
+                agentType={
+                  message.sender
+                    ? agentTypeMap.get(message.sender)
+                    : threadAgentType
+                }
                 channelId={channelId}
-                rosterIndex={message.sender ? rosterIndexMap.get(message.sender) : undefined}
+                rosterIndex={
+                  message.sender
+                    ? rosterIndexMap.get(message.sender)
+                    : undefined
+                }
                 onStructuredAskSubmit={onStructuredAskSubmit}
                 showHeader={showHeader}
               />
             </div>
-          )
+          );
         })
       )}
       <div ref={bottomRef} />
     </div>
-  )
+  );
 }
 
 interface MessageItemProps {
-  message: Message
-  threadName?: string
-  myName?: string
+  message: Message;
+  threadName?: string;
+  myName?: string;
   /** API host for attachment URLs */
-  apiHost?: string
+  apiHost?: string;
   /** Artifact map for [[slug]] title lookup */
-  artifacts?: Map<string, ArtifactInfo>
+  artifacts?: Map<string, ArtifactInfo>;
   /** Agent type for cartouche color scheme */
-  agentType?: string
+  agentType?: string;
   /** Channel ID for Cartouche color shuffling */
-  channelId?: string
+  channelId?: string;
   /** Roster index for Cartouche color assignment */
-  rosterIndex?: number
-  onStructuredAskSubmit?: (messageId: string, response: Record<string, unknown>) => void
+  rosterIndex?: number;
+  onStructuredAskSubmit?: (
+    messageId: string,
+    response: Record<string, unknown>,
+  ) => void;
   /** Whether to show the header (glyph, name, timestamp). False for consecutive messages from same sender. */
-  showHeader?: boolean
+  showHeader?: boolean;
 }
 
 /**
@@ -419,56 +511,74 @@ interface MessageItemProps {
  * - Older: full date (e.g., "Jan 5, 2024 at 2:30 PM")
  */
 function formatTime(timestamp: string): string {
-  const date = new Date(timestamp)
+  const date = new Date(timestamp);
 
   if (isToday(date)) {
-    return format(date, 'h:mm a')
+    return format(date, "h:mm a");
   }
   if (isYesterday(date)) {
-    return `Yesterday at ${format(date, 'h:mm a')}`
+    return `Yesterday at ${format(date, "h:mm a")}`;
   }
   if (isThisWeek(date)) {
-    return format(date, "EEEE 'at' h:mm a")
+    return format(date, "EEEE 'at' h:mm a");
   }
   if (isThisYear(date)) {
-    return format(date, "MMM d 'at' h:mm a")
+    return format(date, "MMM d 'at' h:mm a");
   }
-  return format(date, "MMM d, yyyy 'at' h:mm a")
+  return format(date, "MMM d, yyyy 'at' h:mm a");
 }
 
-
-function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '', artifacts, agentType, channelId = '', rosterIndex = 0, onStructuredAskSubmit, showHeader = true }: MessageItemProps) {
-  const isDarkMode = useIsDarkMode()
-  const isUser = message.senderType === 'user'
-  const hasAttachments = message.attachments && message.attachments.length > 0
+function MessageItem({
+  message,
+  threadName = "Agent",
+  myName = "",
+  apiHost = "",
+  artifacts,
+  agentType,
+  channelId = "",
+  rosterIndex = 0,
+  onStructuredAskSubmit,
+  showHeader = true,
+}: MessageItemProps) {
+  const isDarkMode = useIsDarkMode();
+  const isUser = message.senderType === "user";
+  const hasAttachments = message.attachments && message.attachments.length > 0;
 
   // Get display name: use sender if available, fallback to myName/threadName
-  const displayName = message.sender && message.sender !== 'agent'
-    ? message.sender
-    : (isUser ? (myName || 'You') : threadName)
+  const displayName =
+    message.sender && message.sender !== "agent"
+      ? message.sender
+      : isUser
+        ? myName || "You"
+        : threadName;
 
   // Special handling for structured_ask messages
   // API returns formData nested inside message.content as JSON
-  const contentObj = message.type === 'structured_ask' && message.content && typeof message.content === 'object'
-    ? message.content as Record<string, unknown>
-    : null
-  const hasFormData = contentObj && 'formData' in contentObj
+  const contentObj =
+    message.type === "structured_ask" &&
+    message.content &&
+    typeof message.content === "object"
+      ? (message.content as Record<string, unknown>)
+      : null;
+  const hasFormData = contentObj && "formData" in contentObj;
 
-  if (message.type === 'structured_ask' && hasFormData) {
+  if (message.type === "structured_ask" && hasFormData) {
     // Transform to StructuredAskMessage shape expected by the form component
     const structuredAskMessage: StructuredAskMessage = {
       id: message.id,
       channelId: message.channelId,
-      type: 'structured_ask',
+      type: "structured_ask",
       sender: message.sender,
       timestamp: message.timestamp,
-      content: typeof contentObj.prompt === 'string' ? contentObj.prompt : '',
-      formData: contentObj.formData as StructuredAskMessage['formData'],
-      formState: (contentObj.formState as StructuredAskMessage['formState']) || 'pending',
+      content: typeof contentObj.prompt === "string" ? contentObj.prompt : "",
+      formData: contentObj.formData as StructuredAskMessage["formData"],
+      formState:
+        (contentObj.formState as StructuredAskMessage["formState"]) ||
+        "pending",
       response: contentObj.response as Record<string, unknown> | undefined,
       respondedBy: contentObj.respondedBy as string | undefined,
       respondedAt: contentObj.respondedAt as string | undefined,
-    }
+    };
 
     return (
       <div className="flex flex-col min-w-0 max-w-[90%] relative">
@@ -489,52 +599,70 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
           onSubmit={onStructuredAskSubmit || (() => {})}
         />
       </div>
-    )
+    );
   }
 
   // Special handling for tool calls and results - use dedicated component
-  if (message.type === 'tool_call' || message.type === 'tool_result') {
-    return <ToolMessage message={message} />
+  if (message.type === "tool_call" || message.type === "tool_result") {
+    return <ToolMessage message={message} />;
   }
 
   // Helper to extract text content (may be string or { text: "..." } object)
   const getTextContent = (content: unknown): string => {
-    if (typeof content === 'string') return content
-    if (content && typeof content === 'object' && 'text' in content) {
-      return (content as { text: string }).text
+    if (typeof content === "string") return content;
+    if (content && typeof content === "object" && "text" in content) {
+      return (content as { text: string }).text;
     }
-    return ''
-  }
+    return "";
+  };
 
   // Error messages
-  if (message.type === 'error') {
+  if (message.type === "error") {
     return (
       <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md">
         <AlertCircle size={14} className="flex-shrink-0" />
-        <span>{highlightMentions(getTextContent(message.content), { myName, artifacts })}</span>
+        <span>
+          {highlightMentions(getTextContent(message.content), {
+            myName,
+            artifacts,
+          })}
+        </span>
       </div>
-    )
+    );
   }
 
   // Status messages
-  if (message.type === 'status') {
+  if (message.type === "status") {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-2">
         <CirclePlus size={14} className="flex-shrink-0" />
-        <span>{highlightMentions(getTextContent(message.content), { myName, artifacts })}</span>
+        <span>
+          {highlightMentions(getTextContent(message.content), {
+            myName,
+            artifacts,
+          })}
+        </span>
       </div>
-    )
+    );
   }
 
   // Attachment messages - display file with optional title/description
-  if (message.type === 'attachment' && apiHost) {
+  if (message.type === "attachment" && apiHost) {
     // Parse content as attachment data (may be string or object)
-    let attachmentData: AttachmentMessageContent | null = null
+    let attachmentData: AttachmentMessageContent | null = null;
     try {
-      if (typeof message.content === 'string' && message.content.startsWith('{')) {
-        attachmentData = JSON.parse(message.content) as AttachmentMessageContent
-      } else if (typeof message.content === 'object' && message.content !== null) {
-        attachmentData = message.content as unknown as AttachmentMessageContent
+      if (
+        typeof message.content === "string" &&
+        message.content.startsWith("{")
+      ) {
+        attachmentData = JSON.parse(
+          message.content,
+        ) as AttachmentMessageContent;
+      } else if (
+        typeof message.content === "object" &&
+        message.content !== null
+      ) {
+        attachmentData = message.content as unknown as AttachmentMessageContent;
       }
     } catch {
       // Fall through to show error
@@ -546,7 +674,7 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
           <AlertCircle size={14} className="flex-shrink-0" />
           <span>Invalid attachment data</span>
         </div>
-      )
+      );
     }
 
     // Convert to Attachment type for the renderer
@@ -560,7 +688,7 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
       url: attachmentData.url,
       uploadedBy: message.sender,
       uploadedAt: message.timestamp,
-    }
+    };
 
     return (
       <div className="flex flex-col min-w-0 max-w-[80%] relative">
@@ -593,18 +721,21 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
           {/* Description - show below if provided */}
           {attachmentData.description && (
             <div className="px-3 py-2 border-t border-border bg-secondary/20">
-              <p className="text-sm text-muted-foreground">{attachmentData.description}</p>
+              <p className="text-sm text-muted-foreground">
+                {attachmentData.description}
+              </p>
             </div>
           )}
         </div>
       </div>
-    )
+    );
   }
 
   // Get raw content for copy
-  const rawContent = typeof message.content === 'string'
-    ? message.content
-    : (message.content as { text?: string })?.text || ''
+  const rawContent =
+    typeof message.content === "string"
+      ? message.content
+      : (message.content as { text?: string })?.text || "";
 
   // Regular user/assistant messages
   return (
@@ -634,31 +765,39 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
         />
       )}
     </div>
-  )
+  );
 }
 
 /**
  * Create markdown components that highlight @mentions and [[slug]] links.
  */
-function createMarkdownComponents(myName: string, artifacts?: Map<string, ArtifactInfo>, isDarkMode?: boolean): Components {
+function createMarkdownComponents(
+  myName: string,
+  artifacts?: Map<string, ArtifactInfo>,
+  isDarkMode?: boolean,
+): Components {
   // Process children to highlight @mentions and [[slug]] links in text nodes
   const processChildren = (children: React.ReactNode): React.ReactNode => {
-    if (typeof children === 'string') {
-      return highlightMentions(children, { myName, artifacts })
+    if (typeof children === "string") {
+      return highlightMentions(children, { myName, artifacts });
     }
     if (Array.isArray(children)) {
       return children.map((child, i) => {
-        if (typeof child === 'string') {
-          return <span key={i}>{highlightMentions(child, { myName, artifacts })}</span>
+        if (typeof child === "string") {
+          return (
+            <span key={i}>
+              {highlightMentions(child, { myName, artifacts })}
+            </span>
+          );
         }
-        return child
-      })
+        return child;
+      });
     }
-    return children
-  }
+    return children;
+  };
 
   // Select syntax highlighting theme based on mode
-  const codeTheme = isDarkMode ? oneDark : oneLight
+  const codeTheme = isDarkMode ? oneDark : oneLight;
 
   return {
     // Override text rendering to highlight @mentions and [[slug]] links
@@ -668,24 +807,27 @@ function createMarkdownComponents(myName: string, artifacts?: Map<string, Artifa
     th: ({ children }) => <th>{processChildren(children)}</th>,
     // Syntax highlighting for code blocks
     code: ({ className, children, node, ...props }) => {
-      const match = /language-(\w+)/.exec(className || '')
+      const match = /language-(\w+)/.exec(className || "");
       // Check if this is a code block: has language class, or parent is pre (node check), or has newlines
-      const codeString = String(children)
-      const hasNewlines = codeString.includes('\n')
-      const isCodeBlock = match || hasNewlines
+      const codeString = String(children);
+      const hasNewlines = codeString.includes("\n");
+      const isCodeBlock = match || hasNewlines;
 
       if (!isCodeBlock) {
         // Inline code - render as styled span
         return (
-          <code className="bg-secondary px-1.5 py-0.5 text-sm font-mono rounded" {...props}>
+          <code
+            className="bg-secondary px-1.5 py-0.5 text-sm font-mono rounded"
+            {...props}
+          >
             {children}
           </code>
-        )
+        );
       }
 
       // Code block - use syntax highlighter with copy button
-      const language = match ? match[1] : 'text'
-      const codeContent = codeString.replace(/\n$/, '')
+      const language = match ? match[1] : "text";
+      const codeContent = codeString.replace(/\n$/, "");
       return (
         <div className="not-prose relative group/code">
           <CopyButton
@@ -698,30 +840,40 @@ function createMarkdownComponents(myName: string, artifacts?: Map<string, Artifa
             PreTag="div"
             customStyle={{
               margin: 0,
-              padding: '1rem',
-              fontSize: '13px',
-              lineHeight: '1.2',
-              borderRadius: '0.25rem',
+              padding: "1rem",
+              fontSize: "13px",
+              lineHeight: "1.2",
+              borderRadius: "0.25rem",
             }}
           >
             {codeContent}
           </SyntaxHighlighter>
         </div>
-      )
+      );
     },
     // Override pre to avoid double wrapping
     pre: ({ children }) => <>{children}</>,
-  }
+  };
 }
 
-function renderMessageContent(message: Message, myName: string = '', artifacts?: Map<string, ArtifactInfo>, isDarkMode: boolean = false): React.ReactNode {
+function renderMessageContent(
+  message: Message,
+  myName: string = "",
+  artifacts?: Map<string, ArtifactInfo>,
+  isDarkMode: boolean = false,
+): React.ReactNode {
   // Handle content that may be a string or { text: "..." } object
-  const content = typeof message.content === 'string'
-    ? message.content
-    : (message.content as { text?: string })?.text || ''
+  const content =
+    typeof message.content === "string"
+      ? message.content
+      : (message.content as { text?: string })?.text || "";
 
   // Create markdown components with myName for @mention highlighting and artifacts for [[slug]] lookup
-  const markdownComponents = createMarkdownComponents(myName, artifacts, isDarkMode)
+  const markdownComponents = createMarkdownComponents(
+    myName,
+    artifacts,
+    isDarkMode,
+  );
 
   // For user/assistant/thinking messages, render markdown
   return (
@@ -732,5 +884,5 @@ function renderMessageContent(message: Message, myName: string = '', artifacts?:
     >
       {content}
     </Markdown>
-  )
+  );
 }

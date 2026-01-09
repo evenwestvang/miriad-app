@@ -360,6 +360,8 @@ export function App() {
               status: r.callbackUrl ? 'idle' : 'offline' as const,
               // Tunnel hash for HTTP exposure
               tunnelHash: r.tunnelHash,
+              // Agent type for visual identification
+              agentType: r.agentType,
             }))
             setRoster(rosterAgents)
           }

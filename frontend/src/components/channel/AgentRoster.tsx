@@ -195,7 +195,7 @@ export function AgentRoster({
             className={cn(
               "flex items-center gap-1 text-xs",
               "text-[#a0a0a0] hover:text-[var(--cast-text-primary)] transition-colors",
-              pickerOpen && "text-[var(--cast-text-primary)]"
+              pickerOpen && "text-[var(--cast-text-primary)] pointer-events-none"
             )}
           >
             <Plus className="w-3 h-3" />

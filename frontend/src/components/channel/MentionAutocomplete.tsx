@@ -7,6 +7,8 @@ export interface RosterAgent {
   status: 'idle' | 'thinking' | 'offline'
   /** Tunnel hash for HTTP exposure (32-char hex, generated on spawn) */
   tunnelHash?: string
+  /** Agent type/definition slug (e.g., "engineer", "lead") for visual identification */
+  agentType?: string
 }
 
 interface MentionAutocompleteProps {
