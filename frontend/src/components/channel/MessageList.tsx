@@ -388,7 +388,7 @@ export function MessageList({
   }, [messages]);
 
   return (
-    <div className="flex-1 overflow-y-auto p-6" ref={containerRef}>
+    <div className="flex-1 overflow-y-auto p-6 pl-8" ref={containerRef}>
       {messages.length === 0 ? (
         isSwitching ? (
           // Channel switch in progress
