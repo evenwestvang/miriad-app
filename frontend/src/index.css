@@ -11,7 +11,7 @@
         --card-foreground: 0 0% 10%;
         --popover: 0 0% 100%;
         --popover-foreground: 0 0% 10%;
-        --primary: 24 65% 64%;
+        --primary: 24 100% 50%;
         --primary-foreground: 0 0% 100%;
         --secondary: 0 0% 96%;
         --secondary-foreground: 0 0% 10%;
@@ -35,7 +35,7 @@
         --cast-border-subtle: #f0f0f0;
         --cast-bg-hover: #f5f5f5;
         --cast-bg-active: #f0f0f0;
-        --cast-accent: #de946a;
+        --cast-accent: #FF6600;
 
         /* Status colors */
         --status-idle: 142 76% 36%;
@@ -63,7 +63,7 @@
         --border: 0 0% 20%;
         --input: 0 0% 20%;
         --ring: 0 0% 95%;
-        --primary: 24 65% 64%;
+        --primary: 24 100% 50%;
         --radius: 0px;
 
         /* Inverted Cast tokens */
@@ -75,7 +75,7 @@
         --cast-border-subtle: #2a2a2a;
         --cast-bg-hover: #1a1a1a;
         --cast-bg-active: #252525;
-        --cast-accent: #de946a;
+        --cast-accent: #FF6600;
     }
 
     * {

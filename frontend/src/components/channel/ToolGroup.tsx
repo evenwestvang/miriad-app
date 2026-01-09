@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ChevronRight, ChevronDown, Wrench, CheckCircle, XCircle } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { Message } from '../../types'
+import { getToolRenderer } from './tool-renderers'
 
 interface ToolGroupProps {
   /** Array of consecutive tool_call and tool_result messages */
@@ -135,6 +136,9 @@ function ToolItem({ pair }: ToolItemProps) {
   const output = pair.result?.toolResultOutput ?? pair.result?.content
   const error = pair.result?.toolResultError
 
+  // Check for custom renderer
+  const CustomRenderer = getToolRenderer(toolName)
+
   return (
     <div className="py-0.5">
       <button
@@ -161,23 +165,34 @@ function ToolItem({ pair }: ToolItemProps) {
 
       {/* Expanded details */}
       {expanded && (
-        <div className="ml-5 mt-1 text-xs font-mono text-muted-foreground space-y-2">
-          {/* Args */}
-          <div>
-            <pre className="whitespace-pre-wrap overflow-x-auto">
-              {JSON.stringify(args, null, 2)}
-            </pre>
-          </div>
+        <div className="ml-5 mt-2">
+          {CustomRenderer ? (
+            <CustomRenderer
+              args={args}
+              output={output}
+              error={error}
+              isSuccess={isSuccess}
+            />
+          ) : (
+            <div className="text-xs font-mono text-muted-foreground space-y-2">
+              {/* Args */}
+              <div>
+                <pre className="whitespace-pre-wrap overflow-x-auto">
+                  {JSON.stringify(args, null, 2)}
+                </pre>
+              </div>
 
-          {/* Result */}
-          {hasResult && (
-            <div className={cn(
-              "pt-2 border-t border-border/50",
-              !isSuccess && "text-red-400"
-            )}>
-              <pre className="whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto">
-                {error || formatOutput(output)}
-              </pre>
+              {/* Result */}
+              {hasResult && (
+                <div className={cn(
+                  "pt-2 border-t border-border/50",
+                  !isSuccess && "text-red-400"
+                )}>
+                  <pre className="whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto">
+                    {error || formatOutput(output)}
+                  </pre>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -202,6 +217,9 @@ function SingleToolItem({ pair }: { pair: ToolPair }) {
   // Try toolResultOutput first, fall back to content field
   const output = pair.result?.toolResultOutput ?? pair.result?.content
   const error = pair.result?.toolResultError
+
+  // Check for custom renderer
+  const CustomRenderer = getToolRenderer(toolName)
 
   return (
     <div className="my-4">
@@ -230,23 +248,34 @@ function SingleToolItem({ pair }: { pair: ToolPair }) {
 
       {/* Expanded details */}
       {expanded && (
-        <div className="ml-5 mt-1 text-xs font-mono text-muted-foreground space-y-2">
-          {/* Args */}
-          <div>
-            <pre className="whitespace-pre-wrap overflow-x-auto">
-              {JSON.stringify(args, null, 2)}
-            </pre>
-          </div>
+        <div className="ml-5 mt-2">
+          {CustomRenderer ? (
+            <CustomRenderer
+              args={args}
+              output={output}
+              error={error}
+              isSuccess={isSuccess}
+            />
+          ) : (
+            <div className="text-xs font-mono text-muted-foreground space-y-2">
+              {/* Args */}
+              <div>
+                <pre className="whitespace-pre-wrap overflow-x-auto">
+                  {JSON.stringify(args, null, 2)}
+                </pre>
+              </div>
 
-          {/* Result */}
-          {hasResult && (
-            <div className={cn(
-              "pt-2 border-t border-border/50",
-              !isSuccess && "text-red-400"
-            )}>
-              <pre className="whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto">
-                {error || formatOutput(output)}
-              </pre>
+              {/* Result */}
+              {hasResult && (
+                <div className={cn(
+                  "pt-2 border-t border-border/50",
+                  !isSuccess && "text-red-400"
+                )}>
+                  <pre className="whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto">
+                    {error || formatOutput(output)}
+                  </pre>
+                </div>
+              )}
             </div>
           )}
         </div>
