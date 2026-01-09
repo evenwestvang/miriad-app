@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useCallback, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useCallback, useState, useMemo } from 'react'
 import Markdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -9,8 +9,10 @@ import { ToolMessage } from './ToolMessage'
 import { StructuredAskForm } from '../structured-ask'
 import { AttachmentList, AttachmentRenderer } from './AttachmentRenderer'
 import type { AttachmentMessageContent, Attachment } from '../../types'
-import { AgentAvatar, UserAvatar } from './AgentAvatar'
-import type { RosterAgent } from './AgentRoster'
+// Avatar components kept for potential future use
+// import { AgentAvatar, UserAvatar } from './AgentAvatar'
+import { Cartouche } from './Cartouche'
+import type { RosterAgent } from './MentionAutocomplete'
 import { apiFetch } from '../../lib/api'
 import { useIsDarkMode } from '../../hooks/useIsDarkMode'
 
@@ -21,9 +23,9 @@ interface MessageListProps {
   myName?: string
   /** API host for attachment URLs */
   apiHost?: string
-  /** Channel ID for avatar assignment */
+  /** Channel ID for artifact lookup */
   channelId?: string
-  /** Current roster for agent index lookup */
+  /** Roster for agent type lookup */
   roster?: RosterAgent[]
   /** True immediately when channel switch starts (hides empty state) */
   isSwitching?: boolean
@@ -35,6 +37,17 @@ interface MessageListProps {
 export function MessageList({ messages, threadName = 'Agent', threadAgentType, myName = '', apiHost = '', channelId = '', roster = [], isSwitching = false, isLoading = false, onStructuredAskSubmit }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  // Create callsign → agentType lookup map from roster
+  const agentTypeMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const agent of roster) {
+      if (agent.agentType) {
+        map.set(agent.callsign, agent.agentType)
+      }
+    }
+    return map
+  }, [roster])
   const wasAtBottomRef = useRef(true)
   // Track sync state: 'waiting' = no messages yet, 'syncing' = first batch arriving, 'ready' = sync complete
   const syncStateRef = useRef<'waiting' | 'syncing' | 'ready'>('waiting')
@@ -81,15 +94,6 @@ export function MessageList({ messages, threadName = 'Agent', threadAgentType, m
 
     return () => clearTimeout(timeoutId)
   }, [channelId, apiHost, isLoading])
-
-  // Build callsign to roster index map for avatar assignment
-  const callsignIndexMap = useMemo(() => {
-    const map = new Map<string, number>()
-    roster.forEach((agent, index) => {
-      map.set(agent.callsign, index)
-    })
-    return map
-  }, [roster])
 
   // Check if user is at bottom before messages update
   const checkIfAtBottom = useCallback(() => {
@@ -194,20 +198,40 @@ export function MessageList({ messages, threadName = 'Agent', threadAgentType, m
           </div>
         )
       ) : (
-        messages.map((message) => (
-          <div key={message.id} data-message-id={message.id} className="mb-8 last:mb-0">
-            <MessageItem
-              message={message}
-              threadName={threadName}
-              myName={myName}
-              apiHost={apiHost}
-              channelId={channelId}
-              agentIndex={callsignIndexMap.get(message.sender || '') ?? -1}
-              artifacts={artifactMap}
-              onStructuredAskSubmit={onStructuredAskSubmit}
-            />
-          </div>
-        ))
+        messages.map((message, index) => {
+          // Check if this message should show the header
+          // Show header if: first message, different sender, or >20 min gap
+          const prevMessage = index > 0 ? messages[index - 1] : null
+          const showHeader = !prevMessage ||
+            prevMessage.sender !== message.sender ||
+            prevMessage.senderType !== message.senderType ||
+            (new Date(message.timestamp).getTime() - new Date(prevMessage.timestamp).getTime()) > 20 * 60 * 1000
+
+          // Check if next message starts a new group (determines bottom margin)
+          const nextMessage = index < messages.length - 1 ? messages[index + 1] : null
+          const isLastInGroup = !nextMessage ||
+            nextMessage.sender !== message.sender ||
+            nextMessage.senderType !== message.senderType ||
+            (new Date(nextMessage.timestamp).getTime() - new Date(message.timestamp).getTime()) > 20 * 60 * 1000
+
+          // Within a group: small margin. End of group: large margin.
+          const marginClass = isLastInGroup ? "mb-8 last:mb-0" : "mb-1"
+
+          return (
+            <div key={message.id} data-message-id={message.id} className={marginClass}>
+              <MessageItem
+                message={message}
+                threadName={threadName}
+                myName={myName}
+                apiHost={apiHost}
+                artifacts={artifactMap}
+                agentType={message.sender ? agentTypeMap.get(message.sender) : threadAgentType}
+                onStructuredAskSubmit={onStructuredAskSubmit}
+                showHeader={showHeader}
+              />
+            </div>
+          )
+        })
       )}
       <div ref={bottomRef} />
     </div>
@@ -220,13 +244,13 @@ interface MessageItemProps {
   myName?: string
   /** API host for attachment URLs */
   apiHost?: string
-  /** Channel ID for avatar assignment */
-  channelId?: string
-  /** Agent's index in roster for avatar (-1 if not found) */
-  agentIndex?: number
   /** Artifact map for [[slug]] title lookup */
   artifacts?: Map<string, ArtifactInfo>
+  /** Agent type for cartouche color scheme */
+  agentType?: string
   onStructuredAskSubmit?: (messageId: string, response: Record<string, unknown>) => void
+  /** Whether to show the header (glyph, name, timestamp). False for consecutive messages from same sender. */
+  showHeader?: boolean
 }
 
 function formatTime(timestamp: string): string {
@@ -234,38 +258,15 @@ function formatTime(timestamp: string): string {
 }
 
 
-function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '', channelId = '', agentIndex = -1, artifacts, onStructuredAskSubmit }: MessageItemProps) {
+function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '', artifacts, agentType, onStructuredAskSubmit, showHeader = true }: MessageItemProps) {
   const isDarkMode = useIsDarkMode()
   const isUser = message.senderType === 'user'
-  const isAgent = message.senderType === 'agent'
   const hasAttachments = message.attachments && message.attachments.length > 0
 
   // Get display name: use sender if available, fallback to threadName or defaults
   const displayName = isUser
     ? 'You'
     : (message.sender && message.sender !== 'agent' ? message.sender : threadName)
-
-  // Avatar selection: agents get AgentAvatar, users get UserAvatar
-  // For agents not in roster (agentIndex === -1), use a hash-based fallback index
-  const getFallbackAgentIndex = (sender: string): number => {
-    // Simple hash to get a consistent index for agents not in roster
-    let hash = 0
-    for (let i = 0; i < sender.length; i++) {
-      hash = ((hash << 5) - hash) + sender.charCodeAt(i)
-      hash = hash & hash
-    }
-    return Math.abs(hash) % 31 // 31 agent avatars available
-  }
-
-  const effectiveAgentIndex = agentIndex >= 0 ? agentIndex : getFallbackAgentIndex(message.sender || 'agent')
-
-  // Render avatar based on senderType
-  const renderAvatar = (className: string = '') => {
-    if (isAgent && channelId) {
-      return <AgentAvatar channelId={channelId} agentIndex={effectiveAgentIndex} displayName={displayName} className={className} />
-    }
-    return <UserAvatar userId={message.sender || 'user'} displayName={displayName} className={className} />
-  }
 
   // Special handling for structured_ask messages
   // API returns formData nested inside message.content as JSON
@@ -291,12 +292,11 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
     }
 
     return (
-      <div className="flex gap-4">
-        {/* Avatar - centered with header row */}
-        {renderAvatar('mt-[-10px]')}
-        {/* Content */}
-        <div className="flex flex-col min-w-0 max-w-[90%]">
-          <div className="flex items-baseline gap-3 mb-1.5">
+      <div className="flex flex-col min-w-0 max-w-[90%]">
+        {/* Header line with glyph, callsign, timestamp - pulled left (only for first in group) */}
+        {showHeader && (
+          <div className="flex items-center gap-2 mb-1.5 -ml-4">
+            <Cartouche name={message.sender || displayName} agentType={agentType} className="text-[14px]" />
             <span className="text-[14px] font-semibold text-[var(--cast-text-primary)] tracking-[-0.01em]">
               {displayName}
             </span>
@@ -304,12 +304,13 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
               {formatTime(message.timestamp)}
             </span>
           </div>
-          <StructuredAskForm
-            message={structuredAskMessage}
-            myName={myName}
-            onSubmit={onStructuredAskSubmit || (() => {})}
-          />
-        </div>
+        )}
+        {/* Content - normal position */}
+        <StructuredAskForm
+          message={structuredAskMessage}
+          myName={myName}
+          onSubmit={onStructuredAskSubmit || (() => {})}
+        />
       </div>
     )
   }
@@ -385,12 +386,11 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
     }
 
     return (
-      <div className="flex gap-4">
-        {/* Avatar */}
-        {renderAvatar('mt-[-10px]')}
-        {/* Content */}
-        <div className="flex flex-col min-w-0 max-w-[80%]">
-          <div className="flex items-baseline gap-3 mb-1.5">
+      <div className="flex flex-col min-w-0 max-w-[80%]">
+        {/* Header line with glyph, callsign, timestamp - pulled left (only for first in group) */}
+        {showHeader && (
+          <div className="flex items-center gap-2 mb-1.5 -ml-4">
+            <Cartouche name={message.sender || displayName} agentType={agentType} className="text-[14px]" />
             <span className="text-[14px] font-semibold text-[var(--cast-text-primary)] tracking-[-0.01em]">
               {displayName}
             </span>
@@ -398,28 +398,29 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
               {formatTime(message.timestamp)}
             </span>
           </div>
-          <div className="bg-card border border-border overflow-hidden">
-            {/* Title - show prominently if provided */}
-            {attachmentData.title && (
-              <div className="px-3 py-2 border-b border-border bg-secondary/30">
-                <div className="font-medium text-sm">{attachmentData.title}</div>
-              </div>
-            )}
-            {/* Attachment preview */}
-            <div className="p-3">
-              <AttachmentRenderer
-                attachment={attachment}
-                apiHost={apiHost}
-                compact={false}
-              />
+        )}
+        {/* Content - normal position */}
+        <div className="bg-card border border-border overflow-hidden">
+          {/* Title - show prominently if provided */}
+          {attachmentData.title && (
+            <div className="px-3 py-2 border-b border-border bg-secondary/30">
+              <div className="font-medium text-sm">{attachmentData.title}</div>
             </div>
-            {/* Description - show below if provided */}
-            {attachmentData.description && (
-              <div className="px-3 py-2 border-t border-border bg-secondary/20">
-                <p className="text-sm text-muted-foreground">{attachmentData.description}</p>
-              </div>
-            )}
+          )}
+          {/* Attachment preview */}
+          <div className="p-3">
+            <AttachmentRenderer
+              attachment={attachment}
+              apiHost={apiHost}
+              compact={false}
+            />
           </div>
+          {/* Description - show below if provided */}
+          {attachmentData.description && (
+            <div className="px-3 py-2 border-t border-border bg-secondary/20">
+              <p className="text-sm text-muted-foreground">{attachmentData.description}</p>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -427,12 +428,11 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
 
   // Regular user/assistant messages
   return (
-    <div className="flex gap-4">
-      {/* Avatar */}
-      {renderAvatar('mt-[-10px]')}
-      {/* Content */}
-      <div className="flex flex-col min-w-0">
-        <div className="flex items-baseline gap-3 mb-1.5">
+    <div className="flex flex-col min-w-0">
+      {/* Header line with glyph, callsign, timestamp - pulled left (only for first in group) */}
+      {showHeader && (
+        <div className="flex items-center gap-2 mb-1.5 -ml-4">
+          <Cartouche name={message.sender || displayName} agentType={agentType} className="text-[14px]" />
           <span className="text-[14px] font-semibold text-[var(--cast-text-primary)] tracking-[-0.01em]">
             {displayName}
           </span>
@@ -440,19 +440,20 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
             {formatTime(message.timestamp)}
           </span>
         </div>
-        <div className="message-content">
-          {renderMessageContent(message, myName, artifacts, isDarkMode)}
-        </div>
-        {/* Render attachments below the message */}
-        {hasAttachments && apiHost && (
-          <AttachmentList
-            attachments={message.attachments!}
-            apiHost={apiHost}
-            compact
-            className="mt-2"
-          />
-        )}
+      )}
+      {/* Content - normal position */}
+      <div className="message-content">
+        {renderMessageContent(message, myName, artifacts, isDarkMode)}
       </div>
+      {/* Render attachments below the message */}
+      {hasAttachments && apiHost && (
+        <AttachmentList
+          attachments={message.attachments!}
+          apiHost={apiHost}
+          compact
+          className="mt-2"
+        />
+      )}
     </div>
   )
 }
