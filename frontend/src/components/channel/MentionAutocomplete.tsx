@@ -16,6 +16,8 @@ export interface RosterAgent {
   agentType?: string
   /** ISO timestamp of last heartbeat (for client-side offline timeout tracking) */
   lastHeartbeat?: string
+  /** Session cost in USD (accumulated from cost frames) */
+  sessionCost?: number
 }
 
 interface MentionAutocompleteProps {

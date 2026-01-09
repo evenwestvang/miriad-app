@@ -1,56 +1,82 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { PanelLeft, PanelLeftClose, LogOut, Sun, Moon, Settings } from 'lucide-react'
-import { ThreadList, type ThreadWithState } from './components/sidebar/ThreadList'
-import { BoardPanel } from './components/board'
-import { ChannelList } from './components/channel/ChannelList'
-import { MessageList } from './components/channel/MessageList'
-import { MessageInput } from './components/channel/MessageInput'
-import { AgentRoster, type AgentType } from './components/channel/AgentRoster'
-import { ChatHeader } from './components/channel/ChatHeader'
-import { useTymbalConnection, type ArtifactEvent, type RosterEvent, type RosterStateEvent } from './hooks/useTymbalConnection'
-import { useUrlState } from './hooks/useUrlState'
-import { useTheme } from './hooks/useTheme'
-import { EmptyStateChannelCreation } from './components/focus'
-import { cn } from './lib/utils'
-import { API_HOST, apiFetch, checkAuth, logout, type AuthSession } from './lib/api'
-import { LoginPage } from './components/LoginPage'
-import { OnboardingPage } from './components/OnboardingPage'
-import { AuthErrorPage } from './components/AuthErrorPage'
-import { OAuthCallbackPage } from './components/OAuthCallbackPage'
-import { OAuthErrorPage } from './components/OAuthErrorPage'
-import { SettingsModal } from './components/settings'
+import { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  PanelLeft,
+  PanelLeftClose,
+  LogOut,
+  Sun,
+  Moon,
+  Settings,
+} from "lucide-react";
+import {
+  ThreadList,
+  type ThreadWithState,
+} from "./components/sidebar/ThreadList";
+import { BoardPanel } from "./components/board";
+import { ChannelList } from "./components/channel/ChannelList";
+import { MessageList } from "./components/channel/MessageList";
+import { MessageInput } from "./components/channel/MessageInput";
+import { AgentRoster, type AgentType } from "./components/channel/AgentRoster";
+import { ChatHeader } from "./components/channel/ChatHeader";
+import {
+  useTymbalConnection,
+  type ArtifactEvent,
+  type RosterEvent,
+  type RosterStateEvent,
+  type CostInfo,
+} from "./hooks/useTymbalConnection";
+import { useUrlState } from "./hooks/useUrlState";
+import { useTheme } from "./hooks/useTheme";
+import { EmptyStateChannelCreation } from "./components/focus";
+import { cn } from "./lib/utils";
+import {
+  API_HOST,
+  apiFetch,
+  checkAuth,
+  logout,
+  type AuthSession,
+} from "./lib/api";
+import { LoginPage } from "./components/LoginPage";
+import { OnboardingPage } from "./components/OnboardingPage";
+import { AuthErrorPage } from "./components/AuthErrorPage";
+import { OAuthCallbackPage } from "./components/OAuthCallbackPage";
+import { OAuthErrorPage } from "./components/OAuthErrorPage";
+import { SettingsModal } from "./components/settings";
 
 // Auth mode: 'dev' (show LoginPage) or 'workos' (redirect to /auth/login)
-const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || 'dev'
-import type { Agent, Channel, Message } from './types'
-import type { RosterAgent } from './components/channel/MentionAutocomplete'
+const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || "dev";
+import type { Agent, Channel, Message } from "./types";
+import type { RosterAgent } from "./components/channel/MentionAutocomplete";
 
 export function App() {
   // Check for OAuth popup pages first (before any state initialization)
   // These are loaded in popups and should render immediately without the full app
-  const pathname = window.location.pathname
-  const searchParams = new URLSearchParams(window.location.search)
+  const pathname = window.location.pathname;
+  const searchParams = new URLSearchParams(window.location.search);
 
   // OAuth error page: /oauth-error?error=...&description=...
-  if (pathname === '/oauth-error') {
-    return <OAuthErrorPage />
+  if (pathname === "/oauth-error") {
+    return <OAuthErrorPage />;
   }
 
   // OAuth success callback: any path with ?app=...&connected=true
   // Backend redirects to /spaces/{spaceId}/channels/{channelId}?app={slug}&connected=true
-  if (searchParams.get('connected') === 'true' && searchParams.get('app')) {
-    return <OAuthCallbackPage />
+  if (searchParams.get("connected") === "true" && searchParams.get("app")) {
+    return <OAuthCallbackPage />;
   }
 
   // Auth state
-  const [authSession, setAuthSession] = useState<AuthSession | null | undefined>(undefined) // undefined = checking
+  const [authSession, setAuthSession] = useState<
+    AuthSession | null | undefined
+  >(undefined); // undefined = checking
 
   // Onboarding state (for new WorkOS users)
-  const [onboardingToken, setOnboardingToken] = useState<string | null>(null)
-  const [suggestedName, setSuggestedName] = useState<string | undefined>(undefined)
+  const [onboardingToken, setOnboardingToken] = useState<string | null>(null);
+  const [suggestedName, setSuggestedName] = useState<string | undefined>(
+    undefined,
+  );
 
   // Auth error state (for OAuth errors)
-  const [authError, setAuthError] = useState<string | null>(null)
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // URL-based routing state
   const {
@@ -60,121 +86,123 @@ export function App() {
     closeBoard,
     focusArtifact,
     clearArtifactFocus,
-  } = useUrlState()
+  } = useUrlState();
 
   // Derive state from URL
-  const selectedThread = urlState.channelId
-  const boardOpen = urlState.sidebarMode === 'board'
+  const selectedThread = urlState.channelId;
+  const boardOpen = urlState.sidebarMode === "board";
 
   // Theme state
-  const { theme, toggleTheme } = useTheme()
+  const { theme, toggleTheme } = useTheme();
 
-  const [agents, setAgents] = useState<Agent[]>([])
-  const [agentsLoading, setAgentsLoading] = useState(true)
-  const [threads, setThreads] = useState<ThreadWithState[]>([])
-  const [threadsLoading, setThreadsLoading] = useState(true)
-  const [channels] = useState<Channel[]>([]) // Placeholder for phase 2
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agentsLoading, setAgentsLoading] = useState(true);
+  const [threads, setThreads] = useState<ThreadWithState[]>([]);
+  const [threadsLoading, setThreadsLoading] = useState(true);
+  const [channels] = useState<Channel[]>([]); // Placeholder for phase 2
   // Message cache: Map<channelId, Message[]> - persists across channel switches
   // Uses Map insertion order for LRU eviction (max 10 channels)
-  const [messageCache, setMessageCache] = useState<Map<string, Message[]>>(new Map())
-  const MESSAGE_CACHE_LIMIT = 10
+  const [messageCache, setMessageCache] = useState<Map<string, Message[]>>(
+    new Map(),
+  );
+  const MESSAGE_CACHE_LIMIT = 10;
   // Derive current messages from cache
-  const messages = selectedThread ? (messageCache.get(selectedThread) || []) : []
+  const messages = selectedThread ? messageCache.get(selectedThread) || [] : [];
   // Get current user from auth session
-  const currentUser = authSession?.user.callsign || 'user'
-  const [isCreatingThread, setIsCreatingThread] = useState(false)
-  const [roster, setRoster] = useState<RosterAgent[]>([])
+  const currentUser = authSession?.user.callsign || "user";
+  const [isCreatingThread, setIsCreatingThread] = useState(false);
+  const [roster, setRoster] = useState<RosterAgent[]>([]);
   // Track which agents are "working" (sent messages but no idle frame yet)
-  const [workingAgents, setWorkingAgents] = useState<Set<string>>(new Set())
-  const [leader, setLeader] = useState<string | undefined>(undefined)
-  const [agentTypes, setAgentTypes] = useState<AgentType[]>([])
-  const [isStartingWorkspace, setIsStartingWorkspace] = useState(false)
+  const [workingAgents, setWorkingAgents] = useState<Set<string>>(new Set());
+  const [leader, setLeader] = useState<string | undefined>(undefined);
+  const [agentTypes, setAgentTypes] = useState<AgentType[]>([]);
+  const [isStartingWorkspace, setIsStartingWorkspace] = useState(false);
   // Track channel switching to show loading instead of empty state
-  const [isSwitchingChannel, setIsSwitchingChannel] = useState(false)
+  const [isSwitchingChannel, setIsSwitchingChannel] = useState(false);
   // Delayed spinner - only show after 500ms to avoid flash on fast loads
-  const [showLoadingSpinner, setShowLoadingSpinner] = useState(false)
+  const [showLoadingSpinner, setShowLoadingSpinner] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
-    const stored = localStorage.getItem('sidebar-open')
-    return stored !== null ? JSON.parse(stored) : true
-  })
-  const [settingsOpen, setSettingsOpen] = useState(false)
+    const stored = localStorage.getItem("sidebar-open");
+    return stored !== null ? JSON.parse(stored) : true;
+  });
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // Artifact event counter - increment to trigger board refresh
-  const [artifactEventTrigger, setArtifactEventTrigger] = useState(0)
+  const [artifactEventTrigger, setArtifactEventTrigger] = useState(0);
 
   // Check authentication on mount
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
+    const params = new URLSearchParams(window.location.search);
 
     // Check for auth error in URL (OAuth errors redirect here)
-    const error = params.get('error')
-    if (error || window.location.pathname === '/auth-error') {
-      setAuthError(error || 'unknown')
+    const error = params.get("error");
+    if (error || window.location.pathname === "/auth-error") {
+      setAuthError(error || "unknown");
       // Clear URL params but keep path for bookmarking
-      window.history.replaceState({}, '', '/')
-      return
+      window.history.replaceState({}, "", "/");
+      return;
     }
 
     // Check for onboarding token in URL (new WorkOS users)
-    const token = params.get('token')
-    const name = params.get('name')
+    const token = params.get("token");
+    const name = params.get("name");
 
     if (token) {
       // New user needs onboarding
-      setOnboardingToken(token)
-      setSuggestedName(name || undefined)
+      setOnboardingToken(token);
+      setSuggestedName(name || undefined);
       // Clear URL params
-      window.history.replaceState({}, '', window.location.pathname)
-      return
+      window.history.replaceState({}, "", window.location.pathname);
+      return;
     }
 
     checkAuth().then((session) => {
       if (session) {
-        setAuthSession(session)
-      } else if (AUTH_MODE === 'workos') {
+        setAuthSession(session);
+      } else if (AUTH_MODE === "workos") {
         // In prod mode, redirect to backend login endpoint
-        window.location.href = `${API_HOST}/auth/login`
+        window.location.href = `${API_HOST}/auth/login`;
       } else {
         // In dev mode, show login page
-        setAuthSession(null)
+        setAuthSession(null);
       }
-    })
-  }, [])
+    });
+  }, []);
 
   // Handle successful login
   const handleLogin = () => {
     // Re-check auth to get full session
     checkAuth().then((session) => {
-      setAuthSession(session)
-    })
-  }
+      setAuthSession(session);
+    });
+  };
 
   // Handle onboarding completion
   const handleOnboardingComplete = () => {
-    setOnboardingToken(null)
-    setSuggestedName(undefined)
+    setOnboardingToken(null);
+    setSuggestedName(undefined);
     // Re-check auth to get full session
     checkAuth().then((session) => {
-      setAuthSession(session)
-    })
-  }
+      setAuthSession(session);
+    });
+  };
 
   // Get the current thread's agent name for display
-  const currentThread = threads.find(t => t.id === selectedThread)
+  const currentThread = threads.find((t) => t.id === selectedThread);
 
   // Message handlers - memoized to prevent reconnections
   const handleMessage = useCallback((msg: Message) => {
     // Handle container lifecycle status messages
-    if (msg.type === 'status') {
-      if (msg.content === 'container_starting') {
-        setIsStartingWorkspace(true)
-        return // Don't add to message list
+    if (msg.type === "status") {
+      if (msg.content === "container_starting") {
+        setIsStartingWorkspace(true);
+        return; // Don't add to message list
       }
-      if (msg.content === 'container_ready') {
-        setIsStartingWorkspace(false)
-        return // Don't add to message list
+      if (msg.content === "container_ready") {
+        setIsStartingWorkspace(false);
+        return; // Don't add to message list
       }
-      if (msg.content === 'container_error') {
-        setIsStartingWorkspace(false)
+      if (msg.content === "container_error") {
+        setIsStartingWorkspace(false);
         // Let the error message through to display in the message list
       }
     }
@@ -183,209 +211,243 @@ export function App() {
     // Clear switching state as soon as first message arrives
     setIsSwitchingChannel((wasSwitching) => {
       if (wasSwitching) {
-        console.log(`[ChannelSwitch] First message arrived at ${performance.now().toFixed(2)}ms (id: ${msg.id})`)
+        console.log(
+          `[ChannelSwitch] First message arrived at ${performance.now().toFixed(2)}ms (id: ${msg.id})`,
+        );
       }
-      return false
-    })
+      return false;
+    });
     setMessageCache((cache) => {
-      const channelId = msg.channelId
-      const existing = cache.get(channelId) || []
+      const channelId = msg.channelId;
+      const existing = cache.get(channelId) || [];
       // Merge by ULID: update existing or add new, then sort by ULID
-      const messageMap = new Map(existing.map((m) => [m.id, m]))
-      messageMap.set(msg.id, msg)
+      const messageMap = new Map(existing.map((m) => [m.id, m]));
+      messageMap.set(msg.id, msg);
       // ULIDs are lexicographically sortable (chronological order)
-      const updated = Array.from(messageMap.values()).sort((a, b) => a.id.localeCompare(b.id))
+      const updated = Array.from(messageMap.values()).sort((a, b) =>
+        a.id.localeCompare(b.id),
+      );
 
       // Build new cache, maintaining insertion order for FIFO eviction
-      const newCache = new Map(cache)
+      const newCache = new Map(cache);
       // Delete and re-add to move to end (most recent)
-      newCache.delete(channelId)
-      newCache.set(channelId, updated)
+      newCache.delete(channelId);
+      newCache.set(channelId, updated);
 
       // Evict least recently used channels if over limit (LRU)
       // Map maintains insertion order, so first key is least recently accessed
       while (newCache.size > MESSAGE_CACHE_LIMIT) {
-        const lruKey = newCache.keys().next().value
+        const lruKey = newCache.keys().next().value;
         if (lruKey) {
-          console.log(`[MessageCache] Evicting LRU channel: ${lruKey}`)
-          newCache.delete(lruKey)
+          console.log(`[MessageCache] Evicting LRU channel: ${lruKey}`);
+          newCache.delete(lruKey);
         }
       }
 
-      return newCache
-    })
+      return newCache;
+    });
 
     // Any agent/tool response means container is ready
-    if (msg.type === 'agent' || msg.type === 'tool_call') {
-      setIsStartingWorkspace(false)
+    if (msg.type === "agent" || msg.type === "tool_call") {
+      setIsStartingWorkspace(false);
     }
 
     // Mark agent as "working" when they send a message (will clear on idle frame)
-    if (msg.senderType === 'agent' && msg.sender) {
+    if (msg.senderType === "agent" && msg.sender) {
       setWorkingAgents((prev) => {
-        if (prev.has(msg.sender)) return prev
-        const next = new Set(prev)
-        next.add(msg.sender)
-        return next
-      })
+        if (prev.has(msg.sender)) return prev;
+        const next = new Set(prev);
+        next.add(msg.sender);
+        return next;
+      });
     }
-  }, [])
+  }, []);
 
   const handleMessageUpdate = useCallback((id: string, content: string) => {
     setMessageCache((cache) => {
       // Find which channel has this message
       for (const [channelId, msgs] of cache.entries()) {
-        const idx = msgs.findIndex((m) => m.id === id)
+        const idx = msgs.findIndex((m) => m.id === id);
         if (idx !== -1) {
-          const updated = [...msgs]
-          updated[idx] = { ...updated[idx], content }
-          const newCache = new Map(cache)
-          newCache.set(channelId, updated)
-          return newCache
+          const updated = [...msgs];
+          updated[idx] = { ...updated[idx], content };
+          const newCache = new Map(cache);
+          newCache.set(channelId, updated);
+          return newCache;
         }
       }
-      return cache
-    })
-  }, [])
+      return cache;
+    });
+  }, []);
 
   // Artifact event handler - triggers board refresh
   const handleArtifactEvent = useCallback((event: ArtifactEvent) => {
-    console.log('Artifact event received:', event.action, event.artifact.slug)
+    console.log("Artifact event received:", event.action, event.artifact.slug);
     // Increment trigger to cause BoardPanel to refetch
-    setArtifactEventTrigger(prev => prev + 1)
-  }, [])
+    setArtifactEventTrigger((prev) => prev + 1);
+  }, []);
 
   // Roster event handler - real-time roster updates
   const handleRosterEvent = useCallback((event: RosterEvent) => {
-    console.log('Roster event received:', event.action, event.agent.callsign)
-    if (event.action === 'agent_joined') {
+    console.log("Roster event received:", event.action, event.agent.callsign);
+    if (event.action === "agent_joined") {
       // Add agent to roster
-      setRoster(prev => {
+      setRoster((prev) => {
         // Avoid duplicates
-        if (prev.some(a => a.callsign === event.agent.callsign)) {
-          return prev
+        if (prev.some((a) => a.callsign === event.agent.callsign)) {
+          return prev;
         }
-        return [...prev, {
-          callsign: event.agent.callsign,
-          isOnline: event.agent.status === 'idle', // idle means container is ready
-        }]
-      })
-    } else if (event.action === 'agent_dismissed') {
+        return [
+          ...prev,
+          {
+            callsign: event.agent.callsign,
+            isOnline: event.agent.status === "idle", // idle means container is ready
+          },
+        ];
+      });
+    } else if (event.action === "agent_dismissed") {
       // Remove agent from roster
-      setRoster(prev => prev.filter(a => a.callsign !== event.agent.callsign))
+      setRoster((prev) =>
+        prev.filter((a) => a.callsign !== event.agent.callsign),
+      );
       // Also clear working state for dismissed agent
-      setWorkingAgents(prev => {
-        if (!prev.has(event.agent.callsign)) return prev
-        const next = new Set(prev)
-        next.delete(event.agent.callsign)
-        return next
-      })
+      setWorkingAgents((prev) => {
+        if (!prev.has(event.agent.callsign)) return prev;
+        const next = new Set(prev);
+        next.delete(event.agent.callsign);
+        return next;
+      });
     }
-  }, [])
+  }, []);
 
   // Agent idle handler - clears working state when agent finishes turn
   const handleAgentIdle = useCallback((sender: string) => {
     setWorkingAgents((prev) => {
-      if (!prev.has(sender)) return prev
-      const next = new Set(prev)
-      next.delete(sender)
-      return next
-    })
-  }, [])
+      if (!prev.has(sender)) return prev;
+      const next = new Set(prev);
+      next.delete(sender);
+      return next;
+    });
+  }, []);
+
+  // Cost frame handler - accumulates session cost per agent
+  const handleCostFrame = useCallback((callsign: string, cost: CostInfo) => {
+    setRoster((prev) => {
+      const idx = prev.findIndex((a) => a.callsign === callsign);
+      if (idx === -1) return prev; // Agent not in roster
+      const updated = [...prev];
+      const agent = updated[idx];
+      updated[idx] = {
+        ...agent,
+        sessionCost: (agent.sessionCost || 0) + cost.totalCostUsd,
+      };
+      return updated;
+    });
+  }, []);
 
   // Roster state event handler - updates agent online/offline/connecting state in real-time
   // Tracks lastHeartbeat for client-side offline timeout (60s threshold)
   const handleRosterStateEvent = useCallback((event: RosterStateEvent) => {
-    console.log('Roster state event:', event.callsign, event.state, event.lastHeartbeat)
-    setRoster(prev => {
-      const idx = prev.findIndex(a => a.callsign === event.callsign)
+    console.log(
+      "Roster state event:",
+      event.callsign,
+      event.state,
+      event.lastHeartbeat,
+    );
+    setRoster((prev) => {
+      const idx = prev.findIndex((a) => a.callsign === event.callsign);
       if (idx === -1) {
         // Agent not in roster yet - might be joining, add them
-        if (event.state === 'connecting' || event.state === 'online') {
-          return [...prev, {
-            callsign: event.callsign,
-            isOnline: event.state === 'online',
-            isConnecting: event.state === 'connecting',
-            lastHeartbeat: event.lastHeartbeat,
-          }]
+        if (event.state === "connecting" || event.state === "online") {
+          return [
+            ...prev,
+            {
+              callsign: event.callsign,
+              isOnline: event.state === "online",
+              isConnecting: event.state === "connecting",
+              lastHeartbeat: event.lastHeartbeat,
+            },
+          ];
         }
-        return prev // offline for unknown agent, ignore
+        return prev; // offline for unknown agent, ignore
       }
       // Update existing agent
-      const updated = [...prev]
+      const updated = [...prev];
       updated[idx] = {
         ...updated[idx],
-        isOnline: event.state === 'online',
-        isConnecting: event.state === 'connecting',
+        isOnline: event.state === "online",
+        isConnecting: event.state === "connecting",
         lastHeartbeat: event.lastHeartbeat ?? updated[idx].lastHeartbeat,
-      }
-      return updated
-    })
-  }, [])
+      };
+      return updated;
+    });
+  }, []);
 
   // Sync complete handler - clears switching state when no messages
   const handleSyncComplete = useCallback(() => {
-    setIsSwitchingChannel(false)
-  }, [])
+    setIsSwitchingChannel(false);
+  }, []);
 
   // Client-side offline timeout - check every 15s for stale heartbeats (60s threshold)
   // Server broadcasts heartbeat timestamps, client handles offline detection locally
   // (Required because Lambda can't run persistent timers)
   useEffect(() => {
-    const HEARTBEAT_STALE_MS = 60_000 // 60 seconds
-    const CHECK_INTERVAL_MS = 15_000 // Check every 15 seconds
+    const HEARTBEAT_STALE_MS = 60_000; // 60 seconds
+    const CHECK_INTERVAL_MS = 15_000; // Check every 15 seconds
 
     const checkHeartbeats = () => {
-      const now = Date.now()
-      setRoster(prev => {
-        let changed = false
-        const updated = prev.map(agent => {
+      const now = Date.now();
+      setRoster((prev) => {
+        let changed = false;
+        const updated = prev.map((agent) => {
           // Skip agents that are already offline or connecting
-          if (!agent.isOnline || agent.isConnecting) return agent
+          if (!agent.isOnline || agent.isConnecting) return agent;
           // Skip agents without a heartbeat timestamp
-          if (!agent.lastHeartbeat) return agent
+          if (!agent.lastHeartbeat) return agent;
 
-          const lastTime = new Date(agent.lastHeartbeat).getTime()
-          const isStale = now - lastTime > HEARTBEAT_STALE_MS
+          const lastTime = new Date(agent.lastHeartbeat).getTime();
+          const isStale = now - lastTime > HEARTBEAT_STALE_MS;
 
           if (isStale) {
-            console.log(`[HeartbeatTimeout] Agent ${agent.callsign} is stale (last heartbeat: ${agent.lastHeartbeat})`)
-            changed = true
-            return { ...agent, isOnline: false, isConnecting: false }
+            console.log(
+              `[HeartbeatTimeout] Agent ${agent.callsign} is stale (last heartbeat: ${agent.lastHeartbeat})`,
+            );
+            changed = true;
+            return { ...agent, isOnline: false, isConnecting: false };
           }
-          return agent
-        })
-        return changed ? updated : prev
-      })
-    }
+          return agent;
+        });
+        return changed ? updated : prev;
+      });
+    };
 
-    const interval = setInterval(checkHeartbeats, CHECK_INTERVAL_MS)
-    return () => clearInterval(interval)
-  }, [])
+    const interval = setInterval(checkHeartbeats, CHECK_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, []);
 
   // Delayed loading spinner - only show after 500ms to avoid flash on fast loads
   useEffect(() => {
     if (isSwitchingChannel) {
       const timer = setTimeout(() => {
-        setShowLoadingSpinner(true)
-      }, 500)
-      return () => clearTimeout(timer)
+        setShowLoadingSpinner(true);
+      }, 500);
+      return () => clearTimeout(timer);
     } else {
-      setShowLoadingSpinner(false)
+      setShowLoadingSpinner(false);
     }
-  }, [isSwitchingChannel])
+  }, [isSwitchingChannel]);
 
   // Get newest cached message timestamp for incremental sync
   const newestCachedTimestamp = selectedThread
     ? (() => {
-        const cachedMsgs = messageCache.get(selectedThread)
+        const cachedMsgs = messageCache.get(selectedThread);
         if (cachedMsgs && cachedMsgs.length > 0) {
           // Messages are sorted by ULID, last one is newest
-          return cachedMsgs[cachedMsgs.length - 1].timestamp
+          return cachedMsgs[cachedMsgs.length - 1].timestamp;
         }
-        return undefined
+        return undefined;
       })()
-    : undefined
+    : undefined;
 
   // Channel WebSocket connection for real-time streaming
   // Pass wsToken from auth session to avoid re-fetching on every channel switch
@@ -404,314 +466,355 @@ export function App() {
     onRosterEvent: handleRosterEvent,
     onRosterStateEvent: handleRosterStateEvent,
     onAgentIdle: handleAgentIdle,
+    onCostFrame: handleCostFrame,
     onSyncComplete: handleSyncComplete,
     currentUser,
     wsToken: authSession?.wsToken,
     newestCachedTimestamp,
-  })
+  });
 
   // Set default agents (local Cikada runtime doesn't have /agents endpoint)
   useEffect(() => {
     // Default agent for local development
-    const defaultAgents = [{
-      id: 'claude-code',
-      name: 'Claude Code',
-      description: 'Agentic coding assistant with file and terminal access',
-    }]
-    setAgents(defaultAgents)
+    const defaultAgents = [
+      {
+        id: "claude-code",
+        name: "Claude Code",
+        description: "Agentic coding assistant with file and terminal access",
+      },
+    ];
+    setAgents(defaultAgents);
     // Map to AgentType format for picker
-    setAgentTypes(defaultAgents.map(a => ({
-      id: a.id,
-      name: a.name,
-      description: a.description,
-    })))
-    setAgentsLoading(false)
-  }, [])
+    setAgentTypes(
+      defaultAgents.map((a) => ({
+        id: a.id,
+        name: a.name,
+        description: a.description,
+      })),
+    );
+    setAgentsLoading(false);
+  }, []);
 
   // Fetch channels from API on mount
   useEffect(() => {
     async function fetchChannels() {
       try {
-        const response = await apiFetch(`${API_HOST}/channels`)
+        const response = await apiFetch(`${API_HOST}/channels`);
         if (!response.ok) {
-          throw new Error(`Failed to fetch channels: ${response.status}`)
+          throw new Error(`Failed to fetch channels: ${response.status}`);
         }
-        const data = await response.json()
+        const data = await response.json();
         // Map API response to ThreadWithState interface
         // Channels API returns: { channels: [{ id, name, description, tagline, status, createdAt }] }
-        const threadList: ThreadWithState[] = (data.channels || []).map((c: {
-          id: string
-          name: string
-          description?: string
-          tagline?: string
-          status?: string
-          createdAt: string
-        }) => ({
-          id: c.id,
-          agentId: c.id,
-          agentName: c.name,
-          agentType: 'channel',
-          agentState: c.status === 'running' ? 'thinking' : 'idle',
-          createdAt: c.createdAt,
-        }))
-        setThreads(threadList)
+        const threadList: ThreadWithState[] = (data.channels || []).map(
+          (c: {
+            id: string;
+            name: string;
+            description?: string;
+            tagline?: string;
+            status?: string;
+            createdAt: string;
+          }) => ({
+            id: c.id,
+            agentId: c.id,
+            agentName: c.name,
+            agentType: "channel",
+            agentState: c.status === "running" ? "thinking" : "idle",
+            createdAt: c.createdAt,
+          }),
+        );
+        setThreads(threadList);
       } catch (error) {
-        console.error('Failed to fetch channels:', error)
+        console.error("Failed to fetch channels:", error);
         // Keep empty list on error
       } finally {
-        setThreadsLoading(false)
+        setThreadsLoading(false);
       }
     }
-    fetchChannels()
-  }, [])
+    fetchChannels();
+  }, []);
 
   // Handle thread/channel changes
   useEffect(() => {
     // Reset cold start state when changing threads
-    setIsStartingWorkspace(false)
+    setIsStartingWorkspace(false);
 
     // Don't clear messages - they're cached per channel
     // Only show switching state if we don't have cached messages for this channel
-    setRoster([])
-    setLeader(undefined)
+    setRoster([]);
+    setLeader(undefined);
     if (selectedThread) {
       // Check cache at the time of switch (not reactive to cache changes)
       setMessageCache((cache) => {
-        const hasCachedMessages = cache.has(selectedThread) && cache.get(selectedThread)!.length > 0
+        const hasCachedMessages =
+          cache.has(selectedThread) && cache.get(selectedThread)!.length > 0;
         if (!hasCachedMessages) {
-          setIsSwitchingChannel(true)
-          console.log(`[ChannelSwitch] Started switching to channel ${selectedThread} at ${performance.now().toFixed(2)}ms (no cache)`)
-          return cache // Don't modify cache - no messages yet
+          setIsSwitchingChannel(true);
+          console.log(
+            `[ChannelSwitch] Started switching to channel ${selectedThread} at ${performance.now().toFixed(2)}ms (no cache)`,
+          );
+          return cache; // Don't modify cache - no messages yet
         } else {
-          console.log(`[ChannelSwitch] Switched to channel ${selectedThread} (cached ${cache.get(selectedThread)!.length} messages)`)
+          console.log(
+            `[ChannelSwitch] Switched to channel ${selectedThread} (cached ${cache.get(selectedThread)!.length} messages)`,
+          );
           // Move to end of Map to mark as recently accessed (LRU)
-          const messages = cache.get(selectedThread)!
-          const newCache = new Map(cache)
-          newCache.delete(selectedThread)
-          newCache.set(selectedThread, messages)
-          return newCache
+          const messages = cache.get(selectedThread)!;
+          const newCache = new Map(cache);
+          newCache.delete(selectedThread);
+          newCache.set(selectedThread, messages);
+          return newCache;
         }
-      })
+      });
     }
 
     // Note: Roster fetch moved to happen AFTER WebSocket connects (see below)
     // This prevents HTTP request from blocking WebSocket connection
-  }, [selectedThread])
+  }, [selectedThread]);
 
   // Fetch roster AFTER initial paint - delayed to not compete with message sync
   useEffect(() => {
-    if (!selectedThread || !connected) return
+    if (!selectedThread || !connected) return;
 
     const timeoutId = setTimeout(() => {
       async function fetchRoster() {
-        console.log(`[ChannelSwitch] Starting roster fetch at ${performance.now().toFixed(2)}ms`)
+        console.log(
+          `[ChannelSwitch] Starting roster fetch at ${performance.now().toFixed(2)}ms`,
+        );
         try {
-          const response = await apiFetch(`${API_HOST}/channels/${selectedThread}/roster`)
+          const response = await apiFetch(
+            `${API_HOST}/channels/${selectedThread}/roster`,
+          );
           if (!response.ok) {
-            throw new Error(`Failed to fetch roster: ${response.status}`)
+            throw new Error(`Failed to fetch roster: ${response.status}`);
           }
-          const data = await response.json()
-          console.log(`[ChannelSwitch] Roster fetch complete at ${performance.now().toFixed(2)}ms`)
+          const data = await response.json();
+          console.log(
+            `[ChannelSwitch] Roster fetch complete at ${performance.now().toFixed(2)}ms`,
+          );
           // Map backend RosterEntry to frontend RosterAgent format
           if (data.roster && Array.isArray(data.roster)) {
-            const rosterAgents: RosterAgent[] = data.roster.map((r: {
-              callsign: string
-              agentType: string
-              status: string
-              callbackUrl?: string
-              tunnelHash?: string
-              lastHeartbeat?: string
-            }) => ({
-              callsign: r.callsign,
-              // isOnline: requires fresh heartbeat (within 60s)
-              isOnline: r.lastHeartbeat
-                ? (Date.now() - new Date(r.lastHeartbeat).getTime() < 60000)
-                : false,
-              // Tunnel hash for HTTP exposure
-              tunnelHash: r.tunnelHash,
-              // Agent type for visual identification
-              agentType: r.agentType,
-            }))
-            setRoster(rosterAgents)
+            const rosterAgents: RosterAgent[] = data.roster.map(
+              (r: {
+                callsign: string;
+                agentType: string;
+                status: string;
+                callbackUrl?: string;
+                tunnelHash?: string;
+                lastHeartbeat?: string;
+              }) => ({
+                callsign: r.callsign,
+                // isOnline: requires fresh heartbeat (within 60s)
+                isOnline: r.lastHeartbeat
+                  ? Date.now() - new Date(r.lastHeartbeat).getTime() < 60000
+                  : false,
+                // Tunnel hash for HTTP exposure
+                tunnelHash: r.tunnelHash,
+                // Agent type for visual identification
+                agentType: r.agentType,
+              }),
+            );
+            setRoster(rosterAgents);
             // Clear working agents on channel switch (fresh start)
-            setWorkingAgents(new Set())
+            setWorkingAgents(new Set());
           }
         } catch (error) {
-          console.error('Failed to fetch roster:', error)
+          console.error("Failed to fetch roster:", error);
         }
       }
-      fetchRoster()
-    }, 250) // Delay to not compete with initial message sync
+      fetchRoster();
+    }, 250); // Delay to not compete with initial message sync
 
-    return () => clearTimeout(timeoutId)
-  }, [selectedThread, connected])
+    return () => clearTimeout(timeoutId);
+  }, [selectedThread, connected]);
 
   // Update thread state based on isWaitingForResponse
   useEffect(() => {
-    if (!selectedThread) return
+    if (!selectedThread) return;
     setThreads((prev) =>
       prev.map((t) =>
         t.id === selectedThread
-          ? { ...t, agentState: isWaitingForResponse ? 'thinking' : 'idle' }
-          : t
-      )
-    )
-  }, [selectedThread, isWaitingForResponse])
+          ? { ...t, agentState: isWaitingForResponse ? "thinking" : "idle" }
+          : t,
+      ),
+    );
+  }, [selectedThread, isWaitingForResponse]);
 
   // Compute roster with isWorking state merged in
   const rosterWithWorkingState = useMemo(() => {
-    return roster.map(agent => ({
+    return roster.map((agent) => ({
       ...agent,
       isWorking: workingAgents.has(agent.callsign),
-    }))
-  }, [roster, workingAgents])
+    }));
+  }, [roster, workingAgents]);
 
   // Sidebar toggle keyboard shortcut (Cmd+B / Ctrl+B)
   // Board toggle keyboard shortcut (Cmd+Shift+B / Ctrl+Shift+B)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
-        e.preventDefault()
+      if ((e.metaKey || e.ctrlKey) && e.key === "b") {
+        e.preventDefault();
         if (e.shiftKey) {
-          toggleBoard()
+          toggleBoard();
         } else {
-          setSidebarOpen((prev: boolean) => !prev)
+          setSidebarOpen((prev: boolean) => !prev);
         }
       }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [toggleBoard])
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [toggleBoard]);
 
   // Persist sidebar state to localStorage
   useEffect(() => {
-    localStorage.setItem('sidebar-open', JSON.stringify(sidebarOpen))
-  }, [sidebarOpen])
+    localStorage.setItem("sidebar-open", JSON.stringify(sidebarOpen));
+  }, [sidebarOpen]);
 
   // Create a new channel (displayed as "thread" in UI) - legacy version
-  const handleCreateThread = useCallback(async (agentId: string, name?: string) => {
-    setIsCreatingThread(true)
-    try {
-      const response = await apiFetch(`${API_HOST}/channels`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name || agentId, description: `Channel for ${agentId}` }),
-      })
+  const handleCreateThread = useCallback(
+    async (agentId: string, name?: string) => {
+      setIsCreatingThread(true);
+      try {
+        const response = await apiFetch(`${API_HOST}/channels`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: name || agentId,
+            description: `Channel for ${agentId}`,
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error(`Failed to create channel: ${response.status}`)
+        if (!response.ok) {
+          throw new Error(`Failed to create channel: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const agent = agents.find((a) => a.id === agentId);
+        const newThread: ThreadWithState = {
+          id: data.channel.id,
+          agentId: agentId,
+          agentName: name || data.channel.name || agentId,
+          agentType: agent?.name || agentId,
+          agentState: "idle",
+          createdAt: data.channel.createdAt || new Date().toISOString(),
+        };
+
+        setThreads((prev) => [...prev, newThread]);
+        navigateToChannel(newThread.id);
+      } catch (error) {
+        console.error("Failed to create channel:", error);
+      } finally {
+        setIsCreatingThread(false);
       }
-
-      const data = await response.json()
-      const agent = agents.find(a => a.id === agentId)
-      const newThread: ThreadWithState = {
-        id: data.channel.id,
-        agentId: agentId,
-        agentName: name || data.channel.name || agentId,
-        agentType: agent?.name || agentId,
-        agentState: 'idle',
-        createdAt: data.channel.createdAt || new Date().toISOString(),
-      }
-
-      setThreads((prev) => [...prev, newThread])
-      navigateToChannel(newThread.id)
-    } catch (error) {
-      console.error('Failed to create channel:', error)
-    } finally {
-      setIsCreatingThread(false)
-    }
-  }, [agents, navigateToChannel])
+    },
+    [agents, navigateToChannel],
+  );
 
   // Create a new channel with focus area
-  const handleCreateChannel = useCallback(async (name: string, focusSlug: string | null) => {
-    setIsCreatingThread(true)
-    try {
-      const response = await apiFetch(`${API_HOST}/channels`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          focusSlug: focusSlug || undefined,
-        }),
-      })
+  const handleCreateChannel = useCallback(
+    async (name: string, focusSlug: string | null) => {
+      setIsCreatingThread(true);
+      try {
+        const response = await apiFetch(`${API_HOST}/channels`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            focusSlug: focusSlug || undefined,
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error(`Failed to create channel: ${response.status}`)
+        if (!response.ok) {
+          throw new Error(`Failed to create channel: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const newThread: ThreadWithState = {
+          id: data.channel.id,
+          agentId: data.channel.id,
+          agentName: data.channel.name || name,
+          agentType: focusSlug || "channel",
+          agentState: "idle",
+          createdAt: data.channel.createdAt || new Date().toISOString(),
+        };
+
+        setThreads((prev) => [...prev, newThread]);
+        navigateToChannel(newThread.id);
+      } catch (error) {
+        console.error("Failed to create channel:", error);
+        throw error; // Re-throw so modal can handle it
+      } finally {
+        setIsCreatingThread(false);
       }
+    },
+    [navigateToChannel],
+  );
 
-      const data = await response.json()
-      const newThread: ThreadWithState = {
-        id: data.channel.id,
-        agentId: data.channel.id,
-        agentName: data.channel.name || name,
-        agentType: focusSlug || 'channel',
-        agentState: 'idle',
-        createdAt: data.channel.createdAt || new Date().toISOString(),
-      }
-
-      setThreads((prev) => [...prev, newThread])
-      navigateToChannel(newThread.id)
-    } catch (error) {
-      console.error('Failed to create channel:', error)
-      throw error // Re-throw so modal can handle it
-    } finally {
-      setIsCreatingThread(false)
-    }
-  }, [navigateToChannel])
-
-  const handleSelectThread = useCallback((threadId: string) => {
-    navigateToChannel(threadId)
-  }, [navigateToChannel])
+  const handleSelectThread = useCallback(
+    (threadId: string) => {
+      navigateToChannel(threadId);
+    },
+    [navigateToChannel],
+  );
 
   const handleSendMessage = useCallback(
     (content: string) => {
-      if (!selectedThread) return
-      sendMessage(content)
+      if (!selectedThread) return;
+      sendMessage(content);
     },
-    [selectedThread, sendMessage]
-  )
+    [selectedThread, sendMessage],
+  );
 
   // Placeholder for channel selection (phase 2)
   const handleSelectChannel = useCallback((id: string) => {
-    console.log('Channel selection coming in phase 2:', id)
-  }, [])
+    console.log("Channel selection coming in phase 2:", id);
+  }, []);
 
   // Handle agent added to roster
   const handleAgentAdded = useCallback((agent: RosterAgent) => {
-    setRoster(prev => [...prev, agent])
-  }, [])
+    setRoster((prev) => [...prev, agent]);
+  }, []);
 
   // Handle agent dismissed from roster
-  const handleAgentDismiss = useCallback(async (callsign: string) => {
-    if (!selectedThread) return
+  const handleAgentDismiss = useCallback(
+    async (callsign: string) => {
+      if (!selectedThread) return;
 
-    try {
-      const response = await apiFetch(`${API_HOST}/channels/${selectedThread}/agents/${callsign}`, {
-        method: 'DELETE',
-      })
+      try {
+        const response = await apiFetch(
+          `${API_HOST}/channels/${selectedThread}/agents/${callsign}`,
+          {
+            method: "DELETE",
+          },
+        );
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        console.error('Failed to dismiss agent:', data.error || response.status)
-        return
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          console.error(
+            "Failed to dismiss agent:",
+            data.error || response.status,
+          );
+          return;
+        }
+
+        // Remove from local roster
+        setRoster((prev) => prev.filter((a) => a.callsign !== callsign));
+      } catch (error) {
+        console.error("Failed to dismiss agent:", error);
       }
-
-      // Remove from local roster
-      setRoster(prev => prev.filter(a => a.callsign !== callsign))
-    } catch (error) {
-      console.error('Failed to dismiss agent:', error)
-    }
-  }, [selectedThread])
+    },
+    [selectedThread],
+  );
 
   // Show auth error page if there was an OAuth error
   if (authError) {
     const handleRetryAuth = () => {
-      setAuthError(null)
-      if (AUTH_MODE === 'workos') {
-        window.location.href = `${API_HOST}/auth/login`
+      setAuthError(null);
+      if (AUTH_MODE === "workos") {
+        window.location.href = `${API_HOST}/auth/login`;
       }
-    }
-    return <AuthErrorPage error={authError} onRetry={handleRetryAuth} />
+    };
+    return <AuthErrorPage error={authError} onRetry={handleRetryAuth} />;
   }
 
   // Show onboarding page for new WorkOS users
@@ -723,7 +826,7 @@ export function App() {
         onComplete={handleOnboardingComplete}
         apiHost={API_HOST}
       />
-    )
+    );
   }
 
   // Show loading while checking auth
@@ -732,12 +835,12 @@ export function App() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <p className="text-muted-foreground">Loading...</p>
       </div>
-    )
+    );
   }
 
   // Show login page if not authenticated (dev mode only - prod redirects to /auth/login)
   if (authSession === null) {
-    return <LoginPage onLogin={handleLogin} apiHost={API_HOST} />
+    return <LoginPage onLogin={handleLogin} apiHost={API_HOST} />;
   }
 
   return (
@@ -748,7 +851,7 @@ export function App() {
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
           className="p-1.5 rounded hover:bg-secondary/50 transition-colors"
-          title={sidebarOpen ? 'Hide sidebar (⌘B)' : 'Show sidebar (⌘B)'}
+          title={sidebarOpen ? "Hide sidebar (⌘B)" : "Show sidebar (⌘B)"}
         >
           {sidebarOpen ? (
             <PanelLeftClose className="w-4 h-4 text-muted-foreground" />
@@ -758,13 +861,17 @@ export function App() {
         </button>
 
         {/* Branding */}
-        <span className="font-semibold text-[#FF6600] text-sm tracking-[0.05em]">CAST</span>
+        <span className="font-semibold text-[#FF6600] text-sm tracking-[0.05em]">
+          CAST
+        </span>
 
         {/* Channel name */}
         {selectedThread && (
           <>
             <span className="text-[#ccc]">—</span>
-            <span className="font-medium text-foreground">#{currentThread?.agentName || 'channel'}</span>
+            <span className="font-medium text-foreground">
+              #{currentThread?.agentName || "channel"}
+            </span>
           </>
         )}
 
@@ -773,8 +880,10 @@ export function App() {
 
         {/* Connection status */}
         {selectedThread && (
-          <span className={`text-xs ${connected ? 'text-green-500' : 'text-muted-foreground'}`}>
-            {connected ? '● Connected' : '○ Disconnected'}
+          <span
+            className={`text-xs ${connected ? "text-green-500" : "text-muted-foreground"}`}
+          >
+            {connected ? "● Connected" : "○ Disconnected"}
           </span>
         )}
 
@@ -791,9 +900,11 @@ export function App() {
         <button
           onClick={toggleTheme}
           className="p-1.5 hover:bg-[var(--cast-bg-hover)] transition-colors"
-          title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+          title={
+            theme === "light" ? "Switch to dark mode" : "Switch to light mode"
+          }
         >
-          {theme === 'light' ? (
+          {theme === "light" ? (
             <Moon className="w-4 h-4 text-[var(--cast-text-muted)]" />
           ) : (
             <Sun className="w-4 h-4 text-[var(--cast-text-muted)]" />
@@ -816,10 +927,12 @@ export function App() {
       {/* Main content area */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Sidebar */}
-        <aside className={cn(
-          "flex flex-col bg-card border-r border-border transition-all duration-200 overflow-hidden",
-          sidebarOpen ? "w-[220px]" : "w-0 border-r-0"
-        )}>
+        <aside
+          className={cn(
+            "flex flex-col bg-card border-r border-border transition-all duration-200 overflow-hidden",
+            sidebarOpen ? "w-[220px]" : "w-0 border-r-0",
+          )}
+        >
           <div className="flex-1 overflow-y-auto">
             <ThreadList
               threads={threads}
@@ -858,7 +971,7 @@ export function App() {
                 threadName={currentThread?.agentName}
                 threadAgentType={currentThread?.agentType}
                 apiHost={API_HOST}
-                channelId={selectedThread || ''}
+                channelId={selectedThread || ""}
                 roster={rosterWithWorkingState}
                 isSwitching={isSwitchingChannel}
                 isLoading={showLoadingSpinner}
@@ -866,20 +979,6 @@ export function App() {
                 isLoadingOlder={isLoadingOlder}
                 onRequestOlderMessages={requestOlderMessages}
               />
-              {/* Cold start indicator - shows when workspace container is starting */}
-              {isStartingWorkspace && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-2 bg-secondary/30 flex-shrink-0">
-                  <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-                  <span>Starting workspace...</span>
-                </div>
-              )}
-              {/* Simple thinking indicator - shows when waiting for response */}
-              {isWaitingForResponse && !isStartingWorkspace && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-2 flex-shrink-0">
-                  <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                  <span>{currentThread?.agentName || 'Agent'} is thinking...</span>
-                </div>
-              )}
               {/* Input area with roster bar above message input */}
               <div className="border-t border-border bg-card">
                 {/* Roster bar - horizontal row above input */}
@@ -896,7 +995,11 @@ export function App() {
                   />
                 </div>
                 {/* Message input below roster */}
-                <MessageInput onSend={handleSendMessage} disabled={!connected} roster={rosterWithWorkingState} />
+                <MessageInput
+                  onSend={handleSendMessage}
+                  disabled={!connected}
+                  roster={rosterWithWorkingState}
+                />
               </div>
             </>
           ) : (
@@ -937,5 +1040,5 @@ export function App() {
         spaceId={authSession?.spaceId}
       />
     </div>
-  )
+  );
 }

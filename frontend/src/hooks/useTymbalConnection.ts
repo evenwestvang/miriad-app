@@ -109,6 +109,19 @@ interface SyncInfo {
   oldestId?: string
 }
 
+// Cost frame data from agent turns
+export interface CostInfo {
+  totalCostUsd: number
+  durationMs: number
+  numTurns: number
+  usage?: {
+    inputTokens: number
+    outputTokens: number
+    cacheReadInputTokens?: number
+    cacheCreationInputTokens?: number
+  }
+}
+
 interface UseTymbalConnectionOptions {
   channelId: string | null
   onMessage: (message: Message) => void
@@ -120,6 +133,8 @@ interface UseTymbalConnectionOptions {
   onRosterStateEvent?: (event: RosterStateEvent) => void
   /** Called when an agent sends an idle frame (turn complete) */
   onAgentIdle?: (sender: string) => void
+  /** Called when an agent reports cost data (after each turn) */
+  onCostFrame?: (callsign: string, cost: CostInfo) => void
   /** Called when sync completes (useful for clearing loading states) */
   onSyncComplete?: (syncInfo?: SyncInfo) => void
   currentUser?: string
@@ -148,6 +163,7 @@ export function useTymbalConnection({
   onRosterEvent,
   onRosterStateEvent,
   onAgentIdle,
+  onCostFrame,
   onSyncComplete,
   currentUser = 'user',
   wsToken: providedWsToken,
@@ -399,6 +415,29 @@ export function useTymbalConnection({
           return
         }
 
+        // Handle cost frames - agent turn cost reporting
+        if ((value.type as string) === 'cost' && onCostFrame) {
+          const costValue = value as unknown as {
+            sender: string
+            totalCostUsd: number
+            durationMs: number
+            numTurns: number
+            usage?: {
+              inputTokens: number
+              outputTokens: number
+              cacheReadInputTokens?: number
+              cacheCreationInputTokens?: number
+            }
+          }
+          onCostFrame(costValue.sender, {
+            totalCostUsd: costValue.totalCostUsd,
+            durationMs: costValue.durationMs,
+            numTurns: costValue.numTurns,
+            usage: costValue.usage,
+          })
+          return
+        }
+
         // Handle tool_call frames - tool data is flat on value
         if (value.type === 'tool_call') {
           onMessage({
@@ -501,7 +540,7 @@ export function useTymbalConnection({
         return
       }
     },
-    [onMessage, onMessageUpdate, onArtifactEvent, onRosterEvent, onRosterStateEvent, onAgentIdle, onSyncComplete]
+    [onMessage, onMessageUpdate, onArtifactEvent, onRosterEvent, onRosterStateEvent, onAgentIdle, onCostFrame, onSyncComplete]
   )
 
   // Track current channel for the WebSocket

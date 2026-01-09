@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { Plus, X } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { getSenderDotColor } from '../../utils/senderColors'
+import { getRosterColor } from '../../utils/senderColors'
 import { AgentSummonPicker } from './AgentSummonPicker'
 import { DismissConfirmDialog } from './DismissConfirmDialog'
 import { AgentDetailPopup } from './AgentDetailPopup'
@@ -34,6 +34,10 @@ interface AgentRosterProps {
 interface AgentBadgeProps {
   agent: RosterAgent
   isLeader: boolean
+  /** Channel ID for color calculation */
+  channelId: string
+  /** Agent's index in the roster (for color assignment) */
+  rosterIndex: number
   onDismiss?: () => void
   onClick?: (e: React.MouseEvent) => void
 }
@@ -45,11 +49,11 @@ interface AgentBadgeProps {
  * 3. Online/Idle: Black name, colored dot
  * 4. Working: Black name with cycling animation, colored dot
  */
-function AgentBadge({ agent, isLeader, onDismiss, onClick }: AgentBadgeProps) {
+function AgentBadge({ agent, isLeader, channelId, rosterIndex, onDismiss, onClick }: AgentBadgeProps) {
   const [showDismiss, setShowDismiss] = useState(false)
 
-  // Get agent's signature color for dot (deterministic based on callsign)
-  const dotColor = getSenderDotColor(agent.callsign)
+  // Get agent's color based on roster position (matches message list cartouche)
+  const dotColor = getRosterColor(channelId, rosterIndex)
 
   // Derive state label for tooltip
   const stateLabel = agent.isConnecting
@@ -100,6 +104,11 @@ function AgentBadge({ agent, isLeader, onDismiss, onClick }: AgentBadgeProps) {
               : "text-[#a0a0a0]"
         )}>
           {agent.callsign}
+          {agent.sessionCost !== undefined && agent.sessionCost > 0 && (
+            <span className="text-[#a0a0a0] ml-1">
+              ${agent.sessionCost < 0.01 ? agent.sessionCost.toFixed(4) : agent.sessionCost.toFixed(2)}
+            </span>
+          )}
         </span>
         {isLeader && (
           <span className="text-amber-500 text-[10px]">★</span>
@@ -186,11 +195,13 @@ export function AgentRoster({
     <div className="relative flex items-center justify-between text-xs text-[#8c8c8c]">
       {/* Agent roster - horizontal list */}
       <div className="flex items-center gap-3">
-        {roster.map((agent) => (
+        {roster.map((agent, index) => (
           <AgentBadge
             key={agent.callsign}
             agent={agent}
             isLeader={agent.callsign === leader}
+            channelId={channelId || ''}
+            rosterIndex={index}
             onClick={(e) => handleAgentClick(agent, e)}
             onDismiss={
               canManageAgents && onAgentDismiss
