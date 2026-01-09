@@ -3,6 +3,7 @@ import Markdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { format, isToday, isYesterday, isThisWeek, isThisYear } from 'date-fns'
 import type { Message, StructuredAskMessage } from '../../types'
 import { highlightMentions, type ArtifactInfo } from '../../utils'
 import { ToolMessage } from './ToolMessage'
@@ -253,8 +254,30 @@ interface MessageItemProps {
   showHeader?: boolean
 }
 
+/**
+ * Format timestamp for display:
+ * - Today: just time (e.g., "2:30 PM")
+ * - Yesterday: "Yesterday at 2:30 PM"
+ * - This week: day name + time (e.g., "Monday at 2:30 PM")
+ * - This year: month + day + time (e.g., "Jan 5 at 2:30 PM")
+ * - Older: full date (e.g., "Jan 5, 2024 at 2:30 PM")
+ */
 function formatTime(timestamp: string): string {
-  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const date = new Date(timestamp)
+
+  if (isToday(date)) {
+    return format(date, 'h:mm a')
+  }
+  if (isYesterday(date)) {
+    return `Yesterday at ${format(date, 'h:mm a')}`
+  }
+  if (isThisWeek(date)) {
+    return format(date, "EEEE 'at' h:mm a")
+  }
+  if (isThisYear(date)) {
+    return format(date, "MMM d 'at' h:mm a")
+  }
+  return format(date, "MMM d, yyyy 'at' h:mm a")
 }
 
 
