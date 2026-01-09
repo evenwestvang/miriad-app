@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { format, isToday, isYesterday, isThisWeek, isThisYear } from 'date-fns'
-import { Copy, Check, MoreHorizontal } from 'lucide-react'
+import { Copy, Check, MoreHorizontal, CirclePlus, AlertCircle } from 'lucide-react'
 import type { Message, StructuredAskMessage } from '../../types'
 import { highlightMentions, type ArtifactInfo } from '../../utils'
 import { ToolMessage } from './ToolMessage'
@@ -115,6 +115,49 @@ function MessageMenu({ content, className = '' }: { content: string; className?:
   )
 }
 
+/**
+ * Unified message header with Cartouche, callsign, agent type, timestamp, and optional menu.
+ * Used by all message types for consistent styling.
+ */
+interface MessageHeaderProps {
+  name: string
+  displayName: string
+  agentType?: string
+  timestamp: string
+  channelId: string
+  rosterIndex: number
+  /** Whether sender is a human (renders square instead of circle) */
+  isHuman?: boolean
+  /** Optional content for copy menu (omit to hide menu) */
+  menuContent?: string
+}
+
+function MessageHeader({ name, displayName, agentType, timestamp, channelId, rosterIndex, isHuman, menuContent }: MessageHeaderProps) {
+  return (
+    <>
+      {/* Cartouche in left gutter, centered horizontally and aligned with text */}
+      <div className="absolute -left-5 top-[6px] flex justify-center w-4">
+        <Cartouche name={name} channelId={channelId} rosterIndex={rosterIndex} isHuman={isHuman} className="text-[14px]" />
+      </div>
+      {/* Header line with callsign, agent type, timestamp, optional menu */}
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[14px] font-semibold text-[var(--cast-text-primary)] tracking-[-0.01em]">
+          {displayName}
+        </span>
+        {agentType && (
+          <span className="text-[14px] font-normal text-[var(--cast-text-muted)]">
+            {agentType}
+          </span>
+        )}
+        <span className="ml-auto text-[14px] text-[var(--cast-text-muted)]">
+          {formatTime(timestamp)}
+        </span>
+        {menuContent !== undefined && <MessageMenu content={menuContent} />}
+      </div>
+    </>
+  )
+}
+
 interface MessageListProps {
   messages: Message[]
   threadName?: string
@@ -145,6 +188,15 @@ export function MessageList({ messages, threadName = 'Agent', threadAgentType, m
         map.set(agent.callsign, agent.agentType)
       }
     }
+    return map
+  }, [roster])
+
+  // Create callsign → roster index map for Cartouche colors
+  const rosterIndexMap = useMemo(() => {
+    const map = new Map<string, number>()
+    roster.forEach((agent, index) => {
+      map.set(agent.callsign, index)
+    })
     return map
   }, [roster])
   const wasAtBottomRef = useRef(true)
@@ -325,6 +377,8 @@ export function MessageList({ messages, threadName = 'Agent', threadAgentType, m
                 apiHost={apiHost}
                 artifacts={artifactMap}
                 agentType={message.sender ? agentTypeMap.get(message.sender) : threadAgentType}
+                channelId={channelId}
+                rosterIndex={message.sender ? rosterIndexMap.get(message.sender) : undefined}
                 onStructuredAskSubmit={onStructuredAskSubmit}
                 showHeader={showHeader}
               />
@@ -347,6 +401,10 @@ interface MessageItemProps {
   artifacts?: Map<string, ArtifactInfo>
   /** Agent type for cartouche color scheme */
   agentType?: string
+  /** Channel ID for Cartouche color shuffling */
+  channelId?: string
+  /** Roster index for Cartouche color assignment */
+  rosterIndex?: number
   onStructuredAskSubmit?: (messageId: string, response: Record<string, unknown>) => void
   /** Whether to show the header (glyph, name, timestamp). False for consecutive messages from same sender. */
   showHeader?: boolean
@@ -379,7 +437,7 @@ function formatTime(timestamp: string): string {
 }
 
 
-function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '', artifacts, agentType, onStructuredAskSubmit, showHeader = true }: MessageItemProps) {
+function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '', artifacts, agentType, channelId = '', rosterIndex = 0, onStructuredAskSubmit, showHeader = true }: MessageItemProps) {
   const isDarkMode = useIsDarkMode()
   const isUser = message.senderType === 'user'
   const hasAttachments = message.attachments && message.attachments.length > 0
@@ -413,20 +471,18 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
     }
 
     return (
-      <div className="flex flex-col min-w-0 max-w-[90%]">
-        {/* Header line with glyph, callsign, timestamp - pulled left (only for first in group) */}
+      <div className="flex flex-col min-w-0 max-w-[90%] relative">
         {showHeader && (
-          <div className="flex items-center gap-2 mb-1.5 -ml-4">
-            <Cartouche name={message.sender || displayName} agentType={agentType} className="text-[14px]" />
-            <span className="text-[14px] font-semibold text-[var(--cast-text-primary)] tracking-[-0.01em]">
-              {displayName}
-            </span>
-            <span className="text-[14px] text-[var(--cast-text-muted)] tracking-[0.02em]">
-              {formatTime(message.timestamp)}
-            </span>
-          </div>
+          <MessageHeader
+            name={message.sender || displayName}
+            displayName={displayName}
+            agentType={agentType}
+            timestamp={message.timestamp}
+            channelId={channelId}
+            rosterIndex={rosterIndex}
+            isHuman={isUser}
+          />
         )}
-        {/* Content - normal position */}
         <StructuredAskForm
           message={structuredAskMessage}
           myName={myName}
@@ -454,7 +510,7 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
   if (message.type === 'error') {
     return (
       <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md">
-        <span>❌</span>
+        <AlertCircle size={14} className="flex-shrink-0" />
         <span>{highlightMentions(getTextContent(message.content), { myName, artifacts })}</span>
       </div>
     )
@@ -464,7 +520,7 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
   if (message.type === 'status') {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-2">
-        <span>⏳</span>
+        <CirclePlus size={14} className="flex-shrink-0" />
         <span>{highlightMentions(getTextContent(message.content), { myName, artifacts })}</span>
       </div>
     )
@@ -487,7 +543,7 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
     if (!attachmentData) {
       return (
         <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md">
-          <span>❌</span>
+          <AlertCircle size={14} className="flex-shrink-0" />
           <span>Invalid attachment data</span>
         </div>
       )
@@ -507,20 +563,18 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
     }
 
     return (
-      <div className="flex flex-col min-w-0 max-w-[80%]">
-        {/* Header line with glyph, callsign, timestamp - pulled left (only for first in group) */}
+      <div className="flex flex-col min-w-0 max-w-[80%] relative">
         {showHeader && (
-          <div className="flex items-center gap-2 mb-1.5 -ml-4">
-            <Cartouche name={message.sender || displayName} agentType={agentType} className="text-[14px]" />
-            <span className="text-[14px] font-semibold text-[var(--cast-text-primary)] tracking-[-0.01em]">
-              {displayName}
-            </span>
-            <span className="text-[14px] text-[var(--cast-text-muted)] tracking-[0.02em]">
-              {formatTime(message.timestamp)}
-            </span>
-          </div>
+          <MessageHeader
+            name={message.sender || displayName}
+            displayName={displayName}
+            agentType={agentType}
+            timestamp={message.timestamp}
+            channelId={channelId}
+            rosterIndex={rosterIndex}
+            isHuman={isUser}
+          />
         )}
-        {/* Content - normal position */}
         <div className="bg-card border border-border overflow-hidden">
           {/* Title - show prominently if provided */}
           {attachmentData.title && (
@@ -554,21 +608,19 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
 
   // Regular user/assistant messages
   return (
-    <div className="flex flex-col min-w-0 group">
-      {/* Header line with glyph, callsign, timestamp, menu - pulled left (only for first in group) */}
+    <div className="flex flex-col min-w-0 group relative">
       {showHeader && (
-        <div className="flex items-center gap-2 mb-1.5 -ml-4">
-          <Cartouche name={message.sender || displayName} agentType={agentType} className="text-[14px]" />
-          <span className="text-[14px] font-semibold text-[var(--cast-text-primary)] tracking-[-0.01em]">
-            {displayName}
-          </span>
-          <span className="text-[14px] text-[var(--cast-text-muted)] tracking-[0.02em]">
-            {formatTime(message.timestamp)}
-          </span>
-          <MessageMenu content={rawContent} />
-        </div>
+        <MessageHeader
+          name={message.sender || displayName}
+          displayName={displayName}
+          agentType={agentType}
+          timestamp={message.timestamp}
+          channelId={channelId}
+          rosterIndex={rosterIndex}
+          isHuman={isUser}
+          menuContent={rawContent}
+        />
       )}
-      {/* Content - normal position */}
       <div className="message-content">
         {renderMessageContent(message, myName, artifacts, isDarkMode)}
       </div>
