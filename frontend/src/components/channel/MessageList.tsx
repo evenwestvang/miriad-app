@@ -388,7 +388,10 @@ export function MessageList({
   }, [messages]);
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 pl-8" ref={containerRef}>
+    <div className="flex-1 overflow-y-auto pt-6 px-6 pl-8 pb-2" ref={containerRef}>
+      {/* Spacer pushes content to bottom when thread is short */}
+      <div className="flex flex-col min-h-full">
+        <div className="flex-1" />
       {messages.length === 0 ? (
         isSwitching ? (
           // Channel switch in progress
@@ -510,6 +513,7 @@ export function MessageList({
         })
       )}
       <div ref={bottomRef} />
+      </div>
     </div>
   );
 }
