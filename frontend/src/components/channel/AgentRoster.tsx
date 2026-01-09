@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { Plus, X } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { getSenderDotColor } from '../../utils/senderColors'
 import { AgentSummonPicker } from './AgentSummonPicker'
 import { DismissConfirmDialog } from './DismissConfirmDialog'
 import { AgentDetailPopup } from './AgentDetailPopup'
@@ -30,15 +31,6 @@ interface AgentRosterProps {
   canManageAgents?: boolean
 }
 
-// Status dot colors per Cast design
-const statusColors: Record<string, string> = {
-  working: 'bg-[#de946a] animate-pulse',
-  thinking: 'bg-[#de946a] animate-pulse',
-  attentive: 'bg-[#de946a]',
-  idle: 'bg-[#c0c0c0]',
-  offline: 'bg-[#c0c0c0]',
-}
-
 interface AgentBadgeProps {
   agent: RosterAgent
   isLeader: boolean
@@ -47,12 +39,33 @@ interface AgentBadgeProps {
 }
 
 /**
- * Individual agent badge with hover dismiss action.
+ * Individual agent badge with four visual states:
+ * 1. Offline: Light gray name, gray dot
+ * 2. Connecting: Yellow pulsing dot, normal name (container starting)
+ * 3. Online/Idle: Black name, colored dot
+ * 4. Working: Black name with cycling animation, colored dot
  */
 function AgentBadge({ agent, isLeader, onDismiss, onClick }: AgentBadgeProps) {
   const [showDismiss, setShowDismiss] = useState(false)
-  const isWorking = agent.status === 'thinking'
-  const isAttentive = false // RosterAgent only has 'idle' | 'thinking' | 'offline'
+
+  // Get agent's signature color for dot (deterministic based on callsign)
+  const dotColor = getSenderDotColor(agent.callsign)
+
+  // Derive state label for tooltip
+  const stateLabel = agent.isConnecting
+    ? 'connecting'
+    : !agent.isOnline
+      ? 'offline'
+      : agent.isWorking
+        ? 'working'
+        : 'idle'
+
+  // Derive dot color: yellow for connecting, gray for offline, otherwise signature color
+  const displayDotColor = agent.isConnecting
+    ? '#eab308' // yellow-500
+    : agent.isOnline
+      ? dotColor
+      : '#a0a0a0'
 
   return (
     <div
@@ -65,17 +78,26 @@ function AgentBadge({ agent, isLeader, onDismiss, onClick }: AgentBadgeProps) {
         className={cn(
           "flex items-center gap-1 text-xs cursor-pointer transition-opacity hover:opacity-80"
         )}
-        title={`@${agent.callsign} - ${agent.status}${isLeader ? ' (leader)' : ''}`}
+        title={`@${agent.callsign} - ${stateLabel}${isLeader ? ' (leader)' : ''}`}
       >
-        <span className={cn(
-          "w-1.5 h-1.5 rounded-full flex-shrink-0",
-          statusColors[agent.status] || statusColors.idle
-        )} />
+        {/* Dot: yellow+pulse when connecting, gray when offline, colored when online */}
+        <span
+          className={cn(
+            "w-1.5 h-1.5 rounded-full flex-shrink-0",
+            agent.isConnecting && "animate-pulse"
+          )}
+          style={{ backgroundColor: displayDotColor }}
+        />
+        {/* Name: light gray when offline, black otherwise */}
         <span className={cn(
           "transition-colors",
-          isWorking && "text-[#de946a]",
-          isAttentive && "text-[#de946a]",
-          !isWorking && !isAttentive && "text-[#a0a0a0]"
+          agent.isConnecting
+            ? "text-[var(--cast-text-primary)]"
+            : agent.isOnline
+              ? agent.isWorking
+                ? "text-[var(--cast-text-primary)] animate-working"
+                : "text-[var(--cast-text-primary)]"
+              : "text-[#a0a0a0]"
         )}>
           {agent.callsign}
         </span>
@@ -133,9 +155,9 @@ export function AgentRoster({
     setDetailAgent(agent)
   }
 
-  // Handle dismiss click - show confirmation for active agents, dismiss immediately otherwise
+  // Handle dismiss click - show confirmation for working agents, dismiss immediately otherwise
   const handleDismissClick = (agent: RosterAgent, event: React.MouseEvent) => {
-    const isActive = agent.status === 'thinking'
+    const isActive = agent.isWorking
 
     if (isActive) {
       // Show confirmation dialog (positioned above the trigger)
@@ -216,7 +238,7 @@ export function AgentRoster({
       {/* Dismiss confirmation dialog */}
       <DismissConfirmDialog
         callsign={dismissTarget?.callsign || ''}
-        isActive={dismissTarget?.status === 'thinking'}
+        isActive={dismissTarget?.isWorking ?? false}
         onConfirm={handleConfirmDismiss}
         onClose={() => setDismissTarget(null)}
         isOpen={!!dismissTarget}

@@ -26,6 +26,7 @@
 
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
+import { ulid } from 'ulid';
 import type { Storage } from '@cast/storage';
 import {
   type ArtifactType,
@@ -177,7 +178,8 @@ function formatZodError(error: z.ZodError): { error: string; details: Array<{ pa
 }
 
 /**
- * Broadcast artifact event via Tymbal.
+ * Broadcast artifact event as a proper Tymbal SetFrame.
+ * Uses the standard { i, t, v, c } format for consistency with all other frames.
  */
 async function broadcastArtifactEvent(
   connectionManager: ConnectionManager,
@@ -186,11 +188,14 @@ async function broadcastArtifactEvent(
   artifact: { slug: string; type?: string; title?: string; tldr?: string; status: string }
 ) {
   const frame = JSON.stringify({
-    artifact: {
+    i: ulid(), // Unique frame ID
+    t: new Date().toISOString(), // Timestamp
+    v: { // SetFrame value
+      type: 'artifact',
       action,
-      channelId,
-      payload: artifact,
+      artifact,
     },
+    c: channelId, // Channel for client routing
   });
   await connectionManager.broadcast(channelId, frame);
 }

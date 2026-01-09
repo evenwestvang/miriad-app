@@ -567,9 +567,81 @@ async function checkin(): Promise<void> {
     }
 
     console.log("[Server] Checkin successful, waiting for messages...");
+
+    // Start heartbeat after successful checkin
+    startHeartbeat();
   } catch (error) {
     console.error("[Server] Checkin error:", error);
   }
+}
+
+// Heartbeat interval handle (for cleanup on shutdown)
+let heartbeatInterval: NodeJS.Timeout | null = null;
+
+// Heartbeat interval in milliseconds (30 seconds)
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
+/**
+ * Send a single heartbeat to the server.
+ */
+async function sendHeartbeat(endpoint: string): Promise<void> {
+  try {
+    const response = await fetch(`${CAST_API_URL}/agents/heartbeat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(CAST_AUTH_TOKEN ? { Authorization: `Bearer ${CAST_AUTH_TOKEN}` } : {}),
+      },
+      body: JSON.stringify({
+        channelId: CAST_CHANNEL_ID,
+        callsign: CAST_CALLSIGN,
+        endpoint,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn(`[Server] Heartbeat failed: ${response.status} ${errorText}`);
+    }
+  } catch (error) {
+    console.warn("[Server] Heartbeat error:", error);
+  }
+}
+
+/**
+ * Start periodic heartbeat to keep the server informed we're alive.
+ * Sends POST /agents/heartbeat immediately, then every 30s.
+ */
+async function startHeartbeat(): Promise<void> {
+  if (!CAST_API_URL || !CAST_CHANNEL_ID || !CAST_CALLSIGN) {
+    console.log("[Server] Heartbeat skipped - missing CAST_API_URL, CAST_CHANNEL_ID, or CAST_CALLSIGN");
+    return;
+  }
+
+  // Clear any existing heartbeat interval
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+  }
+
+  const host = await getCallbackHost();
+  const endpoint = `http://${host}:${PORT}`;
+
+  console.log(`[Server] Starting heartbeat (every ${HEARTBEAT_INTERVAL_MS / 1000}s)`);
+
+  // Send first heartbeat immediately so agent shows online right away
+  await sendHeartbeat(endpoint);
+
+  // Then start the periodic interval
+  heartbeatInterval = setInterval(async () => {
+    if (isShuttingDown) {
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
+      return;
+    }
+    await sendHeartbeat(endpoint);
+  }, HEARTBEAT_INTERVAL_MS);
 }
 
 /**
@@ -580,6 +652,13 @@ async function gracefulShutdown(): Promise<void> {
   isShuttingDown = true;
 
   console.log("[Server] Initiating graceful shutdown...");
+
+  // Stop heartbeat
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+    console.log("[Server] Stopped heartbeat");
+  }
 
   // Stop idle monitor
   idleMonitor.stop();

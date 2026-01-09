@@ -1,4 +1,4 @@
-import { Circle, Square } from "lucide-react";
+import { Circle } from "lucide-react";
 
 /**
  * FNV-1a hash function for strings.
@@ -61,7 +61,7 @@ interface CartoucheProps {
   channelId?: string;
   /** Roster index - determines which color from the shuffled palette */
   rosterIndex?: number;
-  /** Whether this is a human (user) - renders as black square instead of colored circle */
+  /** Whether this is a human (user) - renders as emdash instead of colored circle */
   isHuman?: boolean;
   className?: string;
 }
@@ -70,7 +70,7 @@ interface CartoucheProps {
  * Cartouche: A visual identifier for message senders.
  *
  * - Agents: colored circle, color determined by roster position
- * - Humans: black square
+ * - Humans: emdash (—)
  */
 export function Cartouche({
   name,
@@ -79,16 +79,11 @@ export function Cartouche({
   isHuman = false,
   className = "",
 }: CartoucheProps) {
-  // Humans get a black square
+  // Humans get an emdash
   if (isHuman) {
     return (
       <span className={`inline-flex items-center ${className}`} title={name}>
-        <Square
-          size="1em"
-          className="text-black dark:text-white"
-          fill="currentColor"
-          strokeWidth={0}
-        />
+        <span className="text-black dark:text-white leading-none">—</span>
       </span>
     );
   }

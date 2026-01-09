@@ -413,13 +413,13 @@
 
 /* @channel - Cast orange (broadcast to everyone) */
 .mention-channel {
-    color: #de946a;
+    color: #FF6600;
 }
 
 /* @me - Cast orange with subtle highlight (needs my attention) */
 .mention-me {
-    color: #de946a;
-    background-color: rgba(222, 148, 106, 0.15);
+    color: #FF6600;
+    background-color: rgba(255, 102, 0, 0.15);
     padding: 0 0.25rem;
     border-radius: 2px;
 }
@@ -461,4 +461,18 @@
 .status-message,
 .error-message {
     @apply flex items-center gap-2;
+}
+
+/* Agent working animation - subtle purple-black cycling */
+@keyframes working {
+    0%, 100% {
+        color: var(--cast-text-primary);
+    }
+    50% {
+        color: #9333ea; /* purple-600 */
+    }
+}
+
+.animate-working {
+    animation: working 2s ease-in-out infinite;
 }

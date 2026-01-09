@@ -14,8 +14,10 @@
 import { Hono } from 'hono';
 import type { Storage } from '@cast/storage';
 import type { StoredMessage } from '@cast/core';
+import { tymbal, generateMessageId } from '@cast/core';
 import type { ContainerOrchestrator } from '@cast/runtime';
 import { generateContainerToken } from '../auth/index.js';
+import type { ConnectionManager } from '../websocket/index.js';
 
 // =============================================================================
 // Types
@@ -39,6 +41,8 @@ export interface CheckinHandlerOptions {
   spaceId: string;
   /** Container orchestrator for local Docker (uses port mapping instead of callbackUrl) */
   orchestrator?: ContainerOrchestrator;
+  /** WebSocket connection manager for broadcasting state changes */
+  connectionManager?: ConnectionManager;
 }
 
 // =============================================================================
@@ -172,8 +176,56 @@ export async function pushMessagesToContainer(
 /**
  * Create the /agents/checkin route.
  */
+// Heartbeat staleness threshold (60 seconds)
+export const HEARTBEAT_STALE_MS = 60_000;
+
+/**
+ * Check if a heartbeat timestamp is stale (older than threshold).
+ */
+export function isHeartbeatStale(lastHeartbeat: string | null | undefined): boolean {
+  if (!lastHeartbeat) return true;
+  const lastTime = new Date(lastHeartbeat).getTime();
+  return Date.now() - lastTime > HEARTBEAT_STALE_MS;
+}
+
+/**
+ * Broadcast an agent_state frame to all WebSocket clients in a channel.
+ * For 'online' state, includes lastHeartbeat so clients can track offline timeout.
+ */
+export async function broadcastAgentState(
+  connectionManager: ConnectionManager | undefined,
+  channelId: string,
+  callsign: string,
+  state: 'connecting' | 'online' | 'offline',
+  lastHeartbeat?: string
+): Promise<void> {
+  if (!connectionManager) return;
+
+  const value: Record<string, unknown> = {
+    type: 'agent_state',
+    sender: callsign,
+    state,
+  };
+
+  // Include lastHeartbeat timestamp for client-side offline timeout tracking
+  if (lastHeartbeat) {
+    value.lastHeartbeat = lastHeartbeat;
+  }
+
+  // Build frame with channel ID directly (avoid string manipulation bugs)
+  const frame = {
+    i: generateMessageId(),
+    t: new Date().toISOString(),
+    v: value,
+    c: channelId,
+  };
+
+  await connectionManager.broadcast(channelId, JSON.stringify(frame));
+  console.log(`[AgentState] Broadcast ${state} for ${callsign} in ${channelId}`);
+}
+
 export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
-  const { storage, spaceId: defaultSpaceId, orchestrator } = options;
+  const { storage, spaceId: defaultSpaceId, orchestrator, connectionManager } = options;
 
   const app = new Hono();
 
@@ -289,6 +341,62 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
     }
 
     return c.json({ ok: true, delivered });
+  });
+
+  /**
+   * POST /agents/heartbeat
+   *
+   * Container calls this periodically (~30s) to signal it's alive.
+   * Updates lastHeartbeat timestamp in roster (and optionally callbackUrl).
+   * Lightweight - no message delivery, just timestamp update.
+   */
+  app.post('/heartbeat', async (c) => {
+    let body: CheckinRequest;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const { channelId, callsign, endpoint } = body;
+
+    if (!channelId || !callsign) {
+      return c.json(
+        { error: 'channelId and callsign are required' },
+        400
+      );
+    }
+
+    // Find roster entry
+    const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+    if (!rosterEntry) {
+      console.error(`[Heartbeat] Agent ${callsign} not found in roster for channel ${channelId}`);
+      return c.json({ error: 'Agent not found in roster' }, 404);
+    }
+
+    // Check if agent was offline (stale heartbeat) before this heartbeat
+    const wasOffline = isHeartbeatStale(rosterEntry.lastHeartbeat);
+
+    // Update lastHeartbeat (and optionally callbackUrl if provided)
+    const now = new Date().toISOString();
+    const update: { lastHeartbeat: string; callbackUrl?: string } = {
+      lastHeartbeat: now,
+    };
+
+    // Update callbackUrl if provided (for robustness if IP changes)
+    if (endpoint) {
+      update.callbackUrl = endpoint;
+    }
+
+    await storage.updateRosterEntry(channelId, rosterEntry.id, update);
+
+    // Always broadcast heartbeat with timestamp so clients can track offline timeout locally
+    // (Server can't run timers in Lambda - clients handle their own 60s timeout)
+    await broadcastAgentState(connectionManager, channelId, callsign, 'online', now);
+
+    console.log(`[Heartbeat] Agent ${callsign} in channel ${channelId} - heartbeat at ${now}${wasOffline ? ' (now online)' : ''}`);
+
+    return c.json({ ok: true, timestamp: now });
   });
 
   /**

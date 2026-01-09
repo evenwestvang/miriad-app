@@ -36,8 +36,8 @@ export function AgentDetailPopup({
     ? `https://${agent.tunnelHash}.${TUNNEL_DOMAIN}`
     : null
 
-  // Infer tunnel connection status from agent status
-  const isTunnelConnected = agent.status !== 'offline'
+  // Tunnel is connected if agent is online
+  const isTunnelConnected = agent.isOnline
 
   // Close on click outside
   useEffect(() => {
@@ -89,14 +89,12 @@ export function AgentDetailPopup({
 
   if (!isOpen) return null
 
-  // Status display mapping
-  const statusDisplay: Record<string, { label: string; color: string }> = {
-    idle: { label: 'Idle', color: 'bg-green-500' },
-    thinking: { label: 'Working', color: 'bg-blue-500 animate-pulse' },
-    offline: { label: 'Offline', color: 'bg-gray-500' },
-  }
-
-  const status = statusDisplay[agent.status] || statusDisplay.idle
+  // Derive status display from isOnline/isWorking
+  const status = !agent.isOnline
+    ? { label: 'Offline', color: 'bg-gray-500' }
+    : agent.isWorking
+      ? { label: 'Working', color: 'bg-blue-500 animate-pulse' }
+      : { label: 'Idle', color: 'bg-green-500' }
 
   return (
     <div

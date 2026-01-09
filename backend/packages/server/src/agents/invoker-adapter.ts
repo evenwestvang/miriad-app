@@ -11,8 +11,9 @@
 import type { AgentManager } from './agent-manager.js';
 import type { Storage } from '@cast/storage';
 import type { ContainerOrchestrator } from '@cast/runtime';
+import type { ConnectionManager } from '../websocket/index.js';
 import type { AgentInvoker, Message } from '../handlers/messages.js';
-import { pushMessagesToContainer, compileMessages } from '../handlers/checkin.js';
+import { pushMessagesToContainer, compileMessages, broadcastAgentState } from '../handlers/checkin.js';
 import { generateContainerToken } from '../auth/index.js';
 
 // =============================================================================
@@ -48,6 +49,8 @@ export interface AgentInvokerAdapterOptions {
   localAgentRouter?: LocalAgentRouter;
   /** Build system prompt for an agent */
   buildSystemPrompt?: (spaceId: string, channelId: string, callsign: string) => Promise<string>;
+  /** WebSocket connection manager for broadcasting agent state */
+  connectionManager?: ConnectionManager;
 }
 
 // =============================================================================
@@ -68,7 +71,7 @@ export interface AgentInvokerAdapterOptions {
 export function createAgentInvokerAdapter(
   options: AgentInvokerAdapterOptions
 ): AgentInvoker {
-  const { agentManager, storage, spaceId, orchestrator, localAgentRouter, buildSystemPrompt } = options;
+  const { agentManager, storage, spaceId, orchestrator, localAgentRouter, buildSystemPrompt, connectionManager } = options;
 
   return {
     invokeAgents: async (
@@ -173,6 +176,8 @@ export function createAgentInvokerAdapter(
                 await storage.updateRosterEntry(channelId, rosterEntry.id, {
                   callbackUrl: undefined,
                 });
+                // Broadcast 'connecting' state before spawning
+                await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
                 // Fall through to spawn
                 await agentManager.sendMessage(
                   spaceId,
@@ -185,6 +190,8 @@ export function createAgentInvokerAdapter(
             } else {
               // Step 2b: No container running - spawn new one
               console.log(`[AgentInvoker] @${callsign} has no callbackUrl, spawning new container`);
+              // Broadcast 'connecting' state before spawning
+              await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
               await agentManager.sendMessage(
                 spaceId,
                 channelId,

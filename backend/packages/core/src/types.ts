@@ -207,6 +207,12 @@ export interface RosterEntry {
    * Generated on agent spawn, persists across container restarts.
    */
   tunnelHash?: string;
+
+  /**
+   * ISO timestamp of last heartbeat from container.
+   * Used to determine if agent is online (stale = offline).
+   */
+  lastHeartbeat?: string;
 }
 
 /**
@@ -231,6 +237,8 @@ export interface UpdateRosterInput {
   readmark?: string;
   /** Tunnel hash (for rotation) */
   tunnelHash?: string;
+  /** Last heartbeat timestamp (ISO 8601) */
+  lastHeartbeat?: string;
 }
 
 // =============================================================================

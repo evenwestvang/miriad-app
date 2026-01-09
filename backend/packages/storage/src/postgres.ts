@@ -104,6 +104,7 @@ interface RosterRow {
   callback_url: string | null;
   readmark: string | null;
   tunnel_hash: string | null;
+  last_heartbeat: Date | null;
 }
 
 interface UserRow {
@@ -727,6 +728,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     }
     if (update.tunnelHash !== undefined) {
       updateObj.tunnel_hash = update.tunnelHash;
+    }
+    if (update.lastHeartbeat !== undefined) {
+      updateObj.last_heartbeat = new Date(update.lastHeartbeat);
     }
 
     if (Object.keys(updateObj).length === 0) return;
@@ -1893,13 +1897,14 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       ON roster(channel_id, created_at ASC)
     `;
 
-    // Add callback_url, readmark, and tunnel_hash columns to roster if they don't exist
+    // Add callback_url, readmark, tunnel_hash, and last_heartbeat columns to roster if they don't exist
     // (These may be added in migrations for existing databases)
     await sql`
       DO $$ BEGIN
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS callback_url TEXT;
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS readmark VARCHAR(26);
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS tunnel_hash VARCHAR(64);
+        ALTER TABLE roster ADD COLUMN IF NOT EXISTS last_heartbeat TIMESTAMPTZ;
       EXCEPTION
         WHEN duplicate_column THEN NULL;
       END $$;
@@ -2366,6 +2371,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       callbackUrl: row.callback_url ?? undefined,
       readmark: row.readmark ?? undefined,
       tunnelHash: row.tunnel_hash ?? undefined,
+      lastHeartbeat: row.last_heartbeat?.toISOString() ?? undefined,
     };
   }
 

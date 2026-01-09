@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { PanelLeft, PanelLeftClose, LogOut, Sun, Moon, Settings } from 'lucide-react'
 import { ThreadList, type ThreadWithState } from './components/sidebar/ThreadList'
 import { BoardPanel } from './components/board'
@@ -7,7 +7,7 @@ import { MessageList } from './components/channel/MessageList'
 import { MessageInput } from './components/channel/MessageInput'
 import { AgentRoster, type AgentType } from './components/channel/AgentRoster'
 import { ChatHeader } from './components/channel/ChatHeader'
-import { useTymbalConnection, type ArtifactEvent, type RosterEvent } from './hooks/useTymbalConnection'
+import { useTymbalConnection, type ArtifactEvent, type RosterEvent, type RosterStateEvent } from './hooks/useTymbalConnection'
 import { useUrlState } from './hooks/useUrlState'
 import { useTheme } from './hooks/useTheme'
 import { EmptyStateChannelCreation } from './components/focus'
@@ -84,6 +84,8 @@ export function App() {
   const currentUser = authSession?.user.callsign || 'user'
   const [isCreatingThread, setIsCreatingThread] = useState(false)
   const [roster, setRoster] = useState<RosterAgent[]>([])
+  // Track which agents are "working" (sent messages but no idle frame yet)
+  const [workingAgents, setWorkingAgents] = useState<Set<string>>(new Set())
   const [leader, setLeader] = useState<string | undefined>(undefined)
   const [agentTypes, setAgentTypes] = useState<AgentType[]>([])
   const [isStartingWorkspace, setIsStartingWorkspace] = useState(false)
@@ -217,6 +219,16 @@ export function App() {
     if (msg.type === 'agent' || msg.type === 'tool_call') {
       setIsStartingWorkspace(false)
     }
+
+    // Mark agent as "working" when they send a message (will clear on idle frame)
+    if (msg.senderType === 'agent' && msg.sender) {
+      setWorkingAgents((prev) => {
+        if (prev.has(msg.sender)) return prev
+        const next = new Set(prev)
+        next.add(msg.sender)
+        return next
+      })
+    }
   }, [])
 
   const handleMessageUpdate = useCallback((id: string, content: string) => {
@@ -255,18 +267,100 @@ export function App() {
         }
         return [...prev, {
           callsign: event.agent.callsign,
-          status: (event.agent.status === 'idle' ? 'idle' : 'offline') as RosterAgent['status'],
+          isOnline: event.agent.status === 'idle', // idle means container is ready
         }]
       })
     } else if (event.action === 'agent_dismissed') {
       // Remove agent from roster
       setRoster(prev => prev.filter(a => a.callsign !== event.agent.callsign))
+      // Also clear working state for dismissed agent
+      setWorkingAgents(prev => {
+        if (!prev.has(event.agent.callsign)) return prev
+        const next = new Set(prev)
+        next.delete(event.agent.callsign)
+        return next
+      })
     }
+  }, [])
+
+  // Agent idle handler - clears working state when agent finishes turn
+  const handleAgentIdle = useCallback((sender: string) => {
+    setWorkingAgents((prev) => {
+      if (!prev.has(sender)) return prev
+      const next = new Set(prev)
+      next.delete(sender)
+      return next
+    })
+  }, [])
+
+  // Roster state event handler - updates agent online/offline/connecting state in real-time
+  // Tracks lastHeartbeat for client-side offline timeout (60s threshold)
+  const handleRosterStateEvent = useCallback((event: RosterStateEvent) => {
+    console.log('Roster state event:', event.callsign, event.state, event.lastHeartbeat)
+    setRoster(prev => {
+      const idx = prev.findIndex(a => a.callsign === event.callsign)
+      if (idx === -1) {
+        // Agent not in roster yet - might be joining, add them
+        if (event.state === 'connecting' || event.state === 'online') {
+          return [...prev, {
+            callsign: event.callsign,
+            isOnline: event.state === 'online',
+            isConnecting: event.state === 'connecting',
+            lastHeartbeat: event.lastHeartbeat,
+          }]
+        }
+        return prev // offline for unknown agent, ignore
+      }
+      // Update existing agent
+      const updated = [...prev]
+      updated[idx] = {
+        ...updated[idx],
+        isOnline: event.state === 'online',
+        isConnecting: event.state === 'connecting',
+        lastHeartbeat: event.lastHeartbeat ?? updated[idx].lastHeartbeat,
+      }
+      return updated
+    })
   }, [])
 
   // Sync complete handler - clears switching state when no messages
   const handleSyncComplete = useCallback(() => {
     setIsSwitchingChannel(false)
+  }, [])
+
+  // Client-side offline timeout - check every 15s for stale heartbeats (60s threshold)
+  // Server broadcasts heartbeat timestamps, client handles offline detection locally
+  // (Required because Lambda can't run persistent timers)
+  useEffect(() => {
+    const HEARTBEAT_STALE_MS = 60_000 // 60 seconds
+    const CHECK_INTERVAL_MS = 15_000 // Check every 15 seconds
+
+    const checkHeartbeats = () => {
+      const now = Date.now()
+      setRoster(prev => {
+        let changed = false
+        const updated = prev.map(agent => {
+          // Skip agents that are already offline or connecting
+          if (!agent.isOnline || agent.isConnecting) return agent
+          // Skip agents without a heartbeat timestamp
+          if (!agent.lastHeartbeat) return agent
+
+          const lastTime = new Date(agent.lastHeartbeat).getTime()
+          const isStale = now - lastTime > HEARTBEAT_STALE_MS
+
+          if (isStale) {
+            console.log(`[HeartbeatTimeout] Agent ${agent.callsign} is stale (last heartbeat: ${agent.lastHeartbeat})`)
+            changed = true
+            return { ...agent, isOnline: false, isConnecting: false }
+          }
+          return agent
+        })
+        return changed ? updated : prev
+      })
+    }
+
+    const interval = setInterval(checkHeartbeats, CHECK_INTERVAL_MS)
+    return () => clearInterval(interval)
   }, [])
 
   // Delayed loading spinner - only show after 500ms to avoid flash on fast loads
@@ -308,6 +402,8 @@ export function App() {
     onMessageUpdate: handleMessageUpdate,
     onArtifactEvent: handleArtifactEvent,
     onRosterEvent: handleRosterEvent,
+    onRosterStateEvent: handleRosterStateEvent,
+    onAgentIdle: handleAgentIdle,
     onSyncComplete: handleSyncComplete,
     currentUser,
     wsToken: authSession?.wsToken,
@@ -424,16 +520,21 @@ export function App() {
               status: string
               callbackUrl?: string
               tunnelHash?: string
+              lastHeartbeat?: string
             }) => ({
               callsign: r.callsign,
-              // Map status based on callbackUrl presence (has container = idle, no container = offline)
-              status: r.callbackUrl ? 'idle' : 'offline' as const,
+              // isOnline: requires fresh heartbeat (within 60s)
+              isOnline: r.lastHeartbeat
+                ? (Date.now() - new Date(r.lastHeartbeat).getTime() < 60000)
+                : false,
               // Tunnel hash for HTTP exposure
               tunnelHash: r.tunnelHash,
               // Agent type for visual identification
               agentType: r.agentType,
             }))
             setRoster(rosterAgents)
+            // Clear working agents on channel switch (fresh start)
+            setWorkingAgents(new Set())
           }
         } catch (error) {
           console.error('Failed to fetch roster:', error)
@@ -456,6 +557,14 @@ export function App() {
       )
     )
   }, [selectedThread, isWaitingForResponse])
+
+  // Compute roster with isWorking state merged in
+  const rosterWithWorkingState = useMemo(() => {
+    return roster.map(agent => ({
+      ...agent,
+      isWorking: workingAgents.has(agent.callsign),
+    }))
+  }, [roster, workingAgents])
 
   // Sidebar toggle keyboard shortcut (Cmd+B / Ctrl+B)
   // Board toggle keyboard shortcut (Cmd+Shift+B / Ctrl+Shift+B)
@@ -649,7 +758,7 @@ export function App() {
         </button>
 
         {/* Branding */}
-        <span className="font-semibold text-[#de946a] text-sm tracking-[0.05em]">CAST</span>
+        <span className="font-semibold text-[#FF6600] text-sm tracking-[0.05em]">CAST</span>
 
         {/* Channel name */}
         {selectedThread && (
@@ -750,7 +859,7 @@ export function App() {
                 threadAgentType={currentThread?.agentType}
                 apiHost={API_HOST}
                 channelId={selectedThread || ''}
-                roster={roster}
+                roster={rosterWithWorkingState}
                 isSwitching={isSwitchingChannel}
                 isLoading={showLoadingSpinner}
                 hasMoreMessages={hasMoreMessages}
@@ -776,7 +885,7 @@ export function App() {
                 {/* Roster bar - horizontal row above input */}
                 <div className="px-4 pt-3 pb-2">
                   <AgentRoster
-                    roster={roster}
+                    roster={rosterWithWorkingState}
                     leader={leader}
                     agentTypes={agentTypes}
                     channelId={selectedThread || undefined}
@@ -787,7 +896,7 @@ export function App() {
                   />
                 </div>
                 {/* Message input below roster */}
-                <MessageInput onSend={handleSendMessage} disabled={!connected} roster={roster} />
+                <MessageInput onSend={handleSendMessage} disabled={!connected} roster={rosterWithWorkingState} />
               </div>
             </>
           ) : (

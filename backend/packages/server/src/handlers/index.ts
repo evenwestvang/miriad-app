@@ -18,6 +18,9 @@ export {
   compileMessages,
   getPendingMessages,
   pushMessagesToContainer,
+  broadcastAgentState,
+  isHeartbeatStale,
+  HEARTBEAT_STALE_MS,
   type CheckinRequest,
   type CheckinHandlerOptions,
 } from './checkin.js';

@@ -4,11 +4,18 @@ import { getSenderColor } from '../../utils'
 
 export interface RosterAgent {
   callsign: string
-  status: 'idle' | 'thinking' | 'offline'
+  /** Whether agent has a callbackUrl (container is running) */
+  isOnline: boolean
+  /** Whether agent container is starting up */
+  isConnecting?: boolean
+  /** Whether agent is in an active turn (sent messages, no idle frame yet) */
+  isWorking?: boolean
   /** Tunnel hash for HTTP exposure (32-char hex, generated on spawn) */
   tunnelHash?: string
   /** Agent type/definition slug (e.g., "engineer", "lead") for visual identification */
   agentType?: string
+  /** ISO timestamp of last heartbeat (for client-side offline timeout tracking) */
+  lastHeartbeat?: string
 }
 
 interface MentionAutocompleteProps {
@@ -20,18 +27,18 @@ interface MentionAutocompleteProps {
   position: { top: number; left: number }
 }
 
-// Status dot colors
-const statusColors: Record<string, string> = {
-  idle: 'bg-green-500',
-  thinking: 'bg-blue-500 animate-pulse',
-  offline: 'bg-gray-500',
-}
-
-// Status display labels with hints for non-idle states
-const statusLabels: Record<string, string> = {
-  idle: 'idle',
-  thinking: 'busy',
-  offline: 'queued',
+// Get status display info from agent state
+function getAgentStatusInfo(agent: RosterAgent): { colorClass: string; label: string } {
+  if (agent.isConnecting) {
+    return { colorClass: 'bg-yellow-500 animate-pulse', label: 'connecting' }
+  }
+  if (!agent.isOnline) {
+    return { colorClass: 'bg-gray-500', label: 'offline' }
+  }
+  if (agent.isWorking) {
+    return { colorClass: 'bg-blue-500 animate-pulse', label: 'working' }
+  }
+  return { colorClass: 'bg-green-500', label: 'idle' }
 }
 
 export function MentionAutocomplete({
@@ -92,15 +99,20 @@ export function MentionAutocomplete({
               <span className="text-muted-foreground text-xs ml-auto">broadcast</span>
             </>
           ) : (
-            <>
-              <span className={cn("w-2 h-2 rounded-full", statusColors[option.status || 'idle'])} />
-              <span className={cn("font-medium", getSenderColor(option.value))}>
-                @{option.value}
-              </span>
-              <span className="text-muted-foreground text-xs ml-auto">
-                {statusLabels[option.status || 'idle']}
-              </span>
-            </>
+            (() => {
+              const statusInfo = option.agent ? getAgentStatusInfo(option.agent) : { colorClass: 'bg-gray-500', label: 'offline' }
+              return (
+                <>
+                  <span className={cn("w-2 h-2 rounded-full", statusInfo.colorClass)} />
+                  <span className={cn("font-medium", getSenderColor(option.value))}>
+                    @{option.value}
+                  </span>
+                  <span className="text-muted-foreground text-xs ml-auto">
+                    {statusInfo.label}
+                  </span>
+                </>
+              )
+            })()
           )}
         </button>
       ))}
@@ -111,7 +123,7 @@ export function MentionAutocomplete({
 interface FilteredOption {
   type: 'agent' | 'channel'
   value: string
-  status?: string
+  agent?: RosterAgent
 }
 
 function getFilteredOptions(query: string, roster: RosterAgent[]): FilteredOption[] {
@@ -129,7 +141,7 @@ function getFilteredOptions(query: string, roster: RosterAgent[]): FilteredOptio
       options.push({
         type: 'agent',
         value: agent.callsign,
-        status: agent.status,
+        agent,
       })
     }
   }

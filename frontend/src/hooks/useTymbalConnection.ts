@@ -27,6 +27,14 @@ export interface RosterEvent {
   }
 }
 
+// Roster state event - agent lifecycle changes from backend
+export interface RosterStateEvent {
+  callsign: string
+  state: 'connecting' | 'online' | 'offline'
+  /** ISO timestamp of last heartbeat (for client-side offline timeout tracking) */
+  lastHeartbeat?: string
+}
+
 // Tymbal protocol types
 interface TymbalFrame {
   i: string // ULID
@@ -108,6 +116,10 @@ interface UseTymbalConnectionOptions {
   onAgentStateChange?: (agent: string, state: AgentStateInfo) => void
   onArtifactEvent?: (event: ArtifactEvent) => void
   onRosterEvent?: (event: RosterEvent) => void
+  /** Called when backend broadcasts agent lifecycle state (online/offline/connecting) */
+  onRosterStateEvent?: (event: RosterStateEvent) => void
+  /** Called when an agent sends an idle frame (turn complete) */
+  onAgentIdle?: (sender: string) => void
   /** Called when sync completes (useful for clearing loading states) */
   onSyncComplete?: (syncInfo?: SyncInfo) => void
   currentUser?: string
@@ -134,6 +146,8 @@ export function useTymbalConnection({
   onAgentStateChange,
   onArtifactEvent,
   onRosterEvent,
+  onRosterStateEvent,
+  onAgentIdle,
   onSyncComplete,
   currentUser = 'user',
   wsToken: providedWsToken,
@@ -251,6 +265,21 @@ export function useTymbalConnection({
             state: value.state,
             toolName: value.toolName,
             updatedAt: Date.now(),
+          }
+
+          // Handle roster lifecycle states (from backend heartbeat)
+          // Client handles offline timeout locally using lastHeartbeat timestamp
+          if (value.state === 'online' || value.state === 'offline' || value.state === 'connecting') {
+            const event: RosterStateEvent = {
+              callsign: value.sender,
+              state: value.state,
+            }
+            // Include lastHeartbeat for client-side timeout tracking
+            if ('lastHeartbeat' in value && typeof value.lastHeartbeat === 'string') {
+              event.lastHeartbeat = value.lastHeartbeat as string
+            }
+            onRosterStateEvent?.(event)
+            return
           }
 
           setAgentStates(prev => {
@@ -426,8 +455,15 @@ export function useTymbalConnection({
         }
 
         // Skip non-renderable types that we recognize but don't display
-        if (value.type === 'idle' || value.type === 'thinking') {
-          // idle: turn completion signal, thinking: internal traces - don't render as bubbles
+        if (value.type === 'idle') {
+          // idle: turn completion signal - notify App to update roster working state
+          if (value.sender) {
+            onAgentIdle?.(value.sender)
+          }
+          return
+        }
+        if (value.type === 'thinking') {
+          // thinking: internal traces - don't render as bubbles
           return
         }
 
@@ -465,7 +501,7 @@ export function useTymbalConnection({
         return
       }
     },
-    [onMessage, onMessageUpdate, onArtifactEvent, onRosterEvent, onSyncComplete]
+    [onMessage, onMessageUpdate, onArtifactEvent, onRosterEvent, onRosterStateEvent, onAgentIdle, onSyncComplete]
   )
 
   // Track current channel for the WebSocket

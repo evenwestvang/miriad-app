@@ -14,7 +14,7 @@ import type { ChannelRoster, StoredMessage, RosterEntry, StoredMessageType, SetF
 import { parseFrame, isSetFrame, isResetFrame, tymbal, generateMessageId, getMimeType } from '@cast/core';
 import { createTymbalRoutes } from './handlers/tymbal.js';
 import { createMessageRoutes, type MessageStorage, type RosterProvider, type Message } from './handlers/messages.js';
-import { createCheckinRoutes } from './handlers/checkin.js';
+import { createCheckinRoutes, broadcastAgentState } from './handlers/checkin.js';
 import { createMcpRoutes } from './handlers/mcp-http.js';
 import { createArtifactRoutes } from './handlers/artifacts.js';
 import { createFilesystemAssetStorage } from './assets/index.js';
@@ -380,6 +380,9 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
       });
       await connectionManager.broadcast(channelId, frame);
       console.log(`[Agents] Broadcast summoning message to channel`);
+
+      // Broadcast 'connecting' agent state - user knows to wait
+      await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
 
       // Step 3: Set summoning message ID as initial readmark
       await storage.updateRosterEntry(channelId, rosterEntry.id, {
@@ -930,6 +933,7 @@ export function createApp(options: AppOptions): Hono {
               spaceId,
               orchestrator,
               localAgentRouter,
+              connectionManager,
             });
             return invoker.invokeAgents(cid, targets, message);
           },
@@ -966,6 +970,7 @@ export function createApp(options: AppOptions): Hono {
     // No default spaceId - extracted from body
     spaceId: '', // Placeholder - checkin extracts from body.spaceId
     orchestrator,
+    connectionManager,
   });
   app.route('/agents', checkinRoutes);
 

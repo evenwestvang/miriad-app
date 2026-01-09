@@ -245,6 +245,10 @@ export type AgentState =
   | 'tool_use'
   | 'stopped'
   | 'error'
+  // Roster lifecycle states (broadcast from backend)
+  | 'connecting'
+  | 'online'
+  | 'offline'
 
 // Agent output types for streaming
 export interface AgentOutput {

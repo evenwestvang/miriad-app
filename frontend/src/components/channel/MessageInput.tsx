@@ -12,10 +12,10 @@ interface MessageInputProps {
 
 // Mock roster for development - will be replaced with real data from channel
 const MOCK_ROSTER: RosterAgent[] = [
-  { callsign: 'fox', status: 'idle' },
-  { callsign: 'bear', status: 'thinking' },
-  { callsign: 'owl', status: 'idle' },
-  { callsign: 'wolf', status: 'offline' },
+  { callsign: 'fox', isOnline: true },
+  { callsign: 'bear', isOnline: true, isWorking: true },
+  { callsign: 'owl', isOnline: true },
+  { callsign: 'wolf', isOnline: false },
 ]
 
 export function MessageInput({
