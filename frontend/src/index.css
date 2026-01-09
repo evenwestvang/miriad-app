@@ -327,6 +327,41 @@
     content: none !important;
 }
 
+/* Tighter prose spacing for chat messages */
+.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+}
+.prose h1:first-child, .prose h2:first-child, .prose h3:first-child,
+.prose h4:first-child, .prose h5:first-child, .prose h6:first-child {
+    margin-top: 0;
+}
+.prose p {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+}
+.prose ul, .prose ol {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+    padding-left: 1.25em;
+}
+.prose li {
+    margin-top: 0.25em;
+    margin-bottom: 0.25em;
+}
+.prose li > p {
+    margin-top: 0.25em;
+    margin-bottom: 0.25em;
+}
+.prose blockquote {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+}
+.prose pre {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+}
+
 .markdown-content ul,
 .markdown-content ol {
     @apply my-2 pl-6;
