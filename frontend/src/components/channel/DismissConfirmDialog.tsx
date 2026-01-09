@@ -14,8 +14,8 @@ interface DismissConfirmDialogProps {
   onClose: () => void
   /** Whether dialog is open */
   isOpen: boolean
-  /** Position relative to trigger button */
-  position?: { top: number; left: number }
+  /** Position relative to trigger button (bottom = distance from viewport bottom) */
+  position?: { bottom: number; left: number }
 }
 
 /**
@@ -73,7 +73,7 @@ export function DismissConfirmDialog({
     <div
       ref={dialogRef}
       className="fixed z-50 bg-card border border-border rounded-lg shadow-lg w-64"
-      style={position ? { top: position.top, left: position.left } : undefined}
+      style={position ? { bottom: position.bottom, left: position.left } : undefined}
     >
       <div className="p-3 border-b border-border">
         <div className="flex items-center justify-between">

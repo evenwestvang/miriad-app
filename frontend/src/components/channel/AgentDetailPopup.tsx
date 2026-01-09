@@ -14,8 +14,8 @@ interface AgentDetailPopupProps {
   onClose: () => void
   /** Whether popup is open */
   isOpen: boolean
-  /** Position relative to trigger button */
-  position?: { top: number; left: number }
+  /** Position relative to trigger button (bottom = distance from viewport bottom) */
+  position?: { bottom: number; left: number }
 }
 
 /**
@@ -102,7 +102,7 @@ export function AgentDetailPopup({
     <div
       ref={popupRef}
       className="fixed z-50 bg-card border border-border rounded-lg shadow-lg w-72"
-      style={position ? { top: position.top, left: position.left } : undefined}
+      style={position ? { bottom: position.bottom, left: position.left } : undefined}
     >
       {/* Header */}
       <div className="p-3 border-b border-border">

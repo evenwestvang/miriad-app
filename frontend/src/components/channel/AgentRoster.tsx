@@ -120,15 +120,16 @@ export function AgentRoster({
   void _onAgentAdded
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dismissTarget, setDismissTarget] = useState<RosterAgent | null>(null)
-  const [dismissPosition, setDismissPosition] = useState<{ top: number; left: number } | undefined>()
+  const [dismissPosition, setDismissPosition] = useState<{ bottom: number; left: number } | undefined>()
   const [detailAgent, setDetailAgent] = useState<RosterAgent | null>(null)
-  const [detailPosition, setDetailPosition] = useState<{ top: number; left: number } | undefined>()
+  const [detailPosition, setDetailPosition] = useState<{ bottom: number; left: number } | undefined>()
   const addButtonRef = useRef<HTMLButtonElement>(null)
 
-  // Handle agent click - open detail popup
+  // Handle agent click - open detail popup (positioned above the trigger)
   const handleAgentClick = (agent: RosterAgent, event: React.MouseEvent) => {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    setDetailPosition({ top: rect.bottom + 8, left: rect.left })
+    // Position above: bottom is distance from viewport bottom to trigger top
+    setDetailPosition({ bottom: window.innerHeight - rect.top + 8, left: rect.left })
     setDetailAgent(agent)
   }
 
@@ -137,9 +138,9 @@ export function AgentRoster({
     const isActive = agent.status === 'thinking'
 
     if (isActive) {
-      // Show confirmation dialog
+      // Show confirmation dialog (positioned above the trigger)
       const rect = (event.target as HTMLElement).getBoundingClientRect()
-      setDismissPosition({ top: rect.bottom + 4, left: rect.left - 200 })
+      setDismissPosition({ bottom: window.innerHeight - rect.top + 4, left: rect.left - 200 })
       setDismissTarget(agent)
     } else {
       // Dismiss immediately
