@@ -263,10 +263,10 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
   const isUser = message.senderType === 'user'
   const hasAttachments = message.attachments && message.attachments.length > 0
 
-  // Get display name: use sender if available, fallback to threadName or defaults
-  const displayName = isUser
-    ? 'You'
-    : (message.sender && message.sender !== 'agent' ? message.sender : threadName)
+  // Get display name: use sender if available, fallback to myName/threadName
+  const displayName = message.sender && message.sender !== 'agent'
+    ? message.sender
+    : (isUser ? (myName || 'You') : threadName)
 
   // Special handling for structured_ask messages
   // API returns formData nested inside message.content as JSON
