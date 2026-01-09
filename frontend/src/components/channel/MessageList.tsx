@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useCallback, useMemo, useState } from 'react'
 import Markdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import type { Message, StructuredAskMessage } from '../../types'
 import { highlightMentions, type ArtifactInfo } from '../../utils'
 import { ToolMessage } from './ToolMessage'
@@ -10,6 +12,7 @@ import type { AttachmentMessageContent, Attachment } from '../../types'
 import { AgentAvatar, UserAvatar } from './AgentAvatar'
 import type { RosterAgent } from './AgentRoster'
 import { apiFetch } from '../../lib/api'
+import { useIsDarkMode } from '../../hooks/useIsDarkMode'
 
 interface MessageListProps {
   messages: Message[]
@@ -232,6 +235,7 @@ function formatTime(timestamp: string): string {
 
 
 function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '', channelId = '', agentIndex = -1, artifacts, onStructuredAskSubmit }: MessageItemProps) {
+  const isDarkMode = useIsDarkMode()
   const isUser = message.senderType === 'user'
   const isAgent = message.senderType === 'agent'
   const hasAttachments = message.attachments && message.attachments.length > 0
@@ -437,7 +441,7 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
           </span>
         </div>
         <div className="message-content">
-          {renderMessageContent(message, myName, artifacts)}
+          {renderMessageContent(message, myName, artifacts, isDarkMode)}
         </div>
         {/* Render attachments below the message */}
         {hasAttachments && apiHost && (
@@ -456,7 +460,7 @@ function MessageItem({ message, threadName = 'Agent', myName = '', apiHost = '',
 /**
  * Create markdown components that highlight @mentions and [[slug]] links.
  */
-function createMarkdownComponents(myName: string, artifacts?: Map<string, ArtifactInfo>): Components {
+function createMarkdownComponents(myName: string, artifacts?: Map<string, ArtifactInfo>, isDarkMode?: boolean): Components {
   // Process children to highlight @mentions and [[slug]] links in text nodes
   const processChildren = (children: React.ReactNode): React.ReactNode => {
     if (typeof children === 'string') {
@@ -473,23 +477,66 @@ function createMarkdownComponents(myName: string, artifacts?: Map<string, Artifa
     return children
   }
 
+  // Select syntax highlighting theme based on mode
+  const codeTheme = isDarkMode ? oneDark : oneLight
+
   return {
     // Override text rendering to highlight @mentions and [[slug]] links
     p: ({ children }) => <p>{processChildren(children)}</p>,
     li: ({ children }) => <li>{processChildren(children)}</li>,
     td: ({ children }) => <td>{processChildren(children)}</td>,
     th: ({ children }) => <th>{processChildren(children)}</th>,
+    // Syntax highlighting for code blocks
+    code: ({ className, children, node, ...props }) => {
+      const match = /language-(\w+)/.exec(className || '')
+      // Check if this is a code block: has language class, or parent is pre (node check), or has newlines
+      const codeString = String(children)
+      const hasNewlines = codeString.includes('\n')
+      const isCodeBlock = match || hasNewlines
+
+      if (!isCodeBlock) {
+        // Inline code - render as styled span
+        return (
+          <code className="bg-secondary px-1.5 py-0.5 text-sm font-mono rounded" {...props}>
+            {children}
+          </code>
+        )
+      }
+
+      // Code block - use syntax highlighter
+      const language = match ? match[1] : 'text'
+      return (
+        <div className="not-prose">
+          <SyntaxHighlighter
+            style={codeTheme}
+            language={language}
+            PreTag="div"
+            customStyle={{
+              margin: 0,
+              padding: '1rem',
+              fontSize: '13px',
+              lineHeight: '1.2',
+              borderRadius: '0.25rem',
+            }}
+          >
+            {codeString.replace(/\n$/, '')}
+          </SyntaxHighlighter>
+        </div>
+      )
+    },
+    // Override pre to avoid double wrapping
+    pre: ({ children }) => <>{children}</>,
   }
 }
 
-function renderMessageContent(message: Message, myName: string = '', artifacts?: Map<string, ArtifactInfo>): React.ReactNode {
+function renderMessageContent(message: Message, myName: string = '', artifacts?: Map<string, ArtifactInfo>, isDarkMode: boolean = false): React.ReactNode {
   // Handle content that may be a string or { text: "..." } object
   const content = typeof message.content === 'string'
     ? message.content
     : (message.content as { text?: string })?.text || ''
 
   // Create markdown components with myName for @mention highlighting and artifacts for [[slug]] lookup
-  const markdownComponents = createMarkdownComponents(myName, artifacts)
+  const markdownComponents = createMarkdownComponents(myName, artifacts, isDarkMode)
 
   // For user/assistant/thinking messages, render markdown
   return (

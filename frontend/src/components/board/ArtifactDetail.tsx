@@ -13,7 +13,7 @@ import { Pencil, Save, AlertTriangle, Download, ExternalLink, Copy, Check, Arrow
 import Markdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { cn } from '../../lib/utils'
 import { apiFetch } from '../../lib/api'
 import { getArtifactIcon, isSpaArtifact } from '../../lib/artifact-icons'
@@ -24,6 +24,7 @@ import { FocusPropsEditor, type FocusProps } from './FocusPropsEditor'
 import { AppPropsDisplay, type AppProps } from './AppPropsDisplay'
 import { SpaRenderer } from './SpaRenderer'
 import { highlightMentions, type ArtifactInfo } from '../../utils'
+import { useIsDarkMode } from '../../hooks/useIsDarkMode'
 
 // =============================================================================
 // Types
@@ -167,6 +168,9 @@ export function ArtifactDetail({
   onBack,
   onArchive,
 }: ArtifactDetailProps) {
+  // Theme detection for syntax highlighting
+  const isDarkMode = useIsDarkMode()
+
   // Edit state
   const [isEditing, setIsEditing] = useState(false)
   const [editTitle, setEditTitle] = useState('')
@@ -771,13 +775,14 @@ export function ArtifactDetail({
             />
           </div>
         ) : isCodeArtifact ? (
-          <CodeContent content={isViewingHistory ? versionData!.content : artifact.content} language={codeLanguage} />
+          <CodeContent content={isViewingHistory ? versionData!.content : artifact.content} language={codeLanguage} isDarkMode={isDarkMode} />
         ) : (
           <div className="p-3">
             <ArtifactContent
               content={isViewingHistory ? versionData!.content : artifact.content}
               onLinkClick={onLinkClick}
               artifacts={artifactMap}
+              isDarkMode={isDarkMode}
             />
           </div>
         )}
@@ -1072,12 +1077,14 @@ function ValidationErrorDisplay({
   )
 }
 
-function CodeContent({ content, language }: { content: string; language: string }) {
+function CodeContent({ content, language, isDarkMode }: { content: string; language: string; isDarkMode: boolean }) {
+  const codeTheme = isDarkMode ? oneDark : oneLight
+
   return (
     <div className="text-sm">
       <SyntaxHighlighter
         language={language}
-        style={oneDark}
+        style={codeTheme}
         customStyle={{
           margin: 0,
           padding: '1rem',
@@ -1097,9 +1104,12 @@ interface ArtifactContentProps {
   content: string
   onLinkClick: (slug: string) => void
   artifacts?: Map<string, ArtifactInfo>
+  isDarkMode: boolean
 }
 
-function ArtifactContent({ content, onLinkClick, artifacts }: ArtifactContentProps) {
+function ArtifactContent({ content, onLinkClick, artifacts, isDarkMode }: ArtifactContentProps) {
+  const codeTheme = isDarkMode ? oneDark : oneLight
+
   // Process children to highlight @mentions and [[artifact]] links
   const processChildren = (children: React.ReactNode): React.ReactNode => {
     if (typeof children === 'string') {
@@ -1122,6 +1132,46 @@ function ArtifactContent({ content, onLinkClick, artifacts }: ArtifactContentPro
     li: ({ children }) => <li>{processChildren(children)}</li>,
     td: ({ children }) => <td>{processChildren(children)}</td>,
     th: ({ children }) => <th>{processChildren(children)}</th>,
+    // Syntax highlighting for code blocks
+    code: ({ className, children, node, ...props }) => {
+      const match = /language-(\w+)/.exec(className || '')
+      // Check if this is a code block: has language class, or has newlines
+      const codeString = String(children)
+      const hasNewlines = codeString.includes('\n')
+      const isCodeBlock = match || hasNewlines
+
+      if (!isCodeBlock) {
+        // Inline code - render as styled span
+        return (
+          <code className="bg-secondary px-1.5 py-0.5 text-sm font-mono rounded" {...props}>
+            {children}
+          </code>
+        )
+      }
+
+      // Code block - use syntax highlighter
+      const language = match ? match[1] : 'text'
+      return (
+        <div className="not-prose">
+          <SyntaxHighlighter
+            style={codeTheme}
+            language={language}
+            PreTag="div"
+            customStyle={{
+              margin: 0,
+              padding: '1rem',
+              fontSize: '13px',
+              lineHeight: '1.2',
+              borderRadius: '0.25rem',
+            }}
+          >
+            {codeString.replace(/\n$/, '')}
+          </SyntaxHighlighter>
+        </div>
+      )
+    },
+    // Override pre to avoid double wrapping
+    pre: ({ children }) => <>{children}</>,
   }
 
   return (

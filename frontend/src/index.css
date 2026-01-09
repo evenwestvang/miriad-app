@@ -3,421 +3,427 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    /* Cast Light Theme (default) */
-    --background: 0 0% 100%;
-    --foreground: 0 0% 10%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 10%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 10%;
-    --primary: 24 65% 64%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 96%;
-    --secondary-foreground: 0 0% 10%;
-    --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 35%;
-    --accent: 0 0% 96%;
-    --accent-foreground: 0 0% 10%;
-    --destructive: 0 65% 50%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 90%;
-    --input: 0 0% 90%;
-    --ring: 0 0% 10%;
-    --radius: 0px;
+    :root {
+        /* Cast Light Theme (default) */
+        --background: 0 0% 100%;
+        --foreground: 0 0% 10%;
+        --card: 0 0% 100%;
+        --card-foreground: 0 0% 10%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 0 0% 10%;
+        --primary: 24 65% 64%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 0 0% 96%;
+        --secondary-foreground: 0 0% 10%;
+        --muted: 0 0% 96%;
+        --muted-foreground: 0 0% 35%;
+        --accent: 0 0% 96%;
+        --accent-foreground: 0 0% 10%;
+        --destructive: 0 65% 50%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 0 0% 90%;
+        --input: 0 0% 90%;
+        --ring: 0 0% 10%;
+        --radius: 0px;
 
-    /* Cast-specific color tokens */
-    --cast-text-primary: #1a1a1a;
-    --cast-text-secondary: #666666;
-    --cast-text-muted: #8c8c8c;
-    --cast-text-subtle: #a0a0a0;
-    --cast-border-default: #e5e5e5;
-    --cast-border-subtle: #f0f0f0;
-    --cast-bg-hover: #f5f5f5;
-    --cast-bg-active: #f0f0f0;
-    --cast-accent: #de946a;
+        /* Cast-specific color tokens */
+        --cast-text-primary: #1a1a1a;
+        --cast-text-secondary: #666666;
+        --cast-text-muted: #8c8c8c;
+        --cast-text-subtle: #a0a0a0;
+        --cast-border-default: #e5e5e5;
+        --cast-border-subtle: #f0f0f0;
+        --cast-bg-hover: #f5f5f5;
+        --cast-bg-active: #f0f0f0;
+        --cast-accent: #de946a;
 
-    /* Status colors */
-    --status-idle: 142 76% 36%;
-    --status-thinking: 217 91% 60%;
-    --status-tool: 271 81% 56%;
-    --status-error: 0 84% 60%;
-    --status-starting: 48 96% 53%;
-    --status-stopped: 0 0% 45%;
-  }
+        /* Status colors */
+        --status-idle: 142 76% 36%;
+        --status-thinking: 217 91% 60%;
+        --status-tool: 271 81% 56%;
+        --status-error: 0 84% 60%;
+        --status-starting: 48 96% 53%;
+        --status-stopped: 0 0% 45%;
+    }
 
-  /* Cast Dark Theme */
-  .dark {
-    --background: 0 0% 7%;
-    --foreground: 0 0% 95%;
-    --card: 0 0% 10%;
-    --card-foreground: 0 0% 95%;
-    --popover: 0 0% 10%;
-    --popover-foreground: 0 0% 95%;
-    --secondary: 0 0% 15%;
-    --secondary-foreground: 0 0% 95%;
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 60%;
-    --accent: 0 0% 15%;
-    --accent-foreground: 0 0% 95%;
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 0 0% 95%;
-    --primary: 24 65% 64%;
-    --radius: 0px;
+    /* Cast Dark Theme */
+    .dark {
+        --background: 0 0% 7%;
+        --foreground: 0 0% 95%;
+        --card: 0 0% 10%;
+        --card-foreground: 0 0% 95%;
+        --popover: 0 0% 10%;
+        --popover-foreground: 0 0% 95%;
+        --secondary: 0 0% 15%;
+        --secondary-foreground: 0 0% 95%;
+        --muted: 0 0% 15%;
+        --muted-foreground: 0 0% 60%;
+        --accent: 0 0% 15%;
+        --accent-foreground: 0 0% 95%;
+        --border: 0 0% 20%;
+        --input: 0 0% 20%;
+        --ring: 0 0% 95%;
+        --primary: 24 65% 64%;
+        --radius: 0px;
 
-    /* Inverted Cast tokens */
-    --cast-text-primary: #f5f5f5;
-    --cast-text-secondary: #a0a0a0;
-    --cast-text-muted: #8c8c8c;
-    --cast-text-subtle: #666666;
-    --cast-border-default: #333333;
-    --cast-border-subtle: #2a2a2a;
-    --cast-bg-hover: #1a1a1a;
-    --cast-bg-active: #252525;
-    --cast-accent: #de946a;
-  }
+        /* Inverted Cast tokens */
+        --cast-text-primary: #f5f5f5;
+        --cast-text-secondary: #a0a0a0;
+        --cast-text-muted: #8c8c8c;
+        --cast-text-subtle: #666666;
+        --cast-border-default: #333333;
+        --cast-border-subtle: #2a2a2a;
+        --cast-bg-hover: #1a1a1a;
+        --cast-bg-active: #252525;
+        --cast-accent: #de946a;
+    }
 
-  * {
-    @apply border-border;
-  }
+    * {
+        @apply border-border;
+    }
 
-  body {
-    @apply bg-background text-foreground;
-    font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-    line-height: 1.5;
-    font-weight: 400;
-    font-synthesis: none;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
+    body {
+        @apply bg-background text-foreground;
+        font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+        line-height: 1.5;
+        font-weight: 400;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
 }
 
 /* Layout */
 .app {
-  @apply flex min-h-screen;
+    @apply flex min-h-screen;
 }
 
 .sidebar {
-  @apply w-64 bg-card border-r border-border flex flex-col;
+    @apply w-64 bg-card border-r border-border flex flex-col;
 }
 
 .logo {
-  @apply p-4 text-xl font-bold text-foreground border-b border-border;
+    @apply p-4 text-xl font-bold text-foreground border-b border-border;
 }
 
 .main {
-  @apply flex-1 flex flex-col bg-background;
+    @apply flex-1 flex flex-col bg-background;
 }
 
 /* Channel/Thread Header */
 .channel-header {
-  @apply h-14 px-4 border-b border-border flex items-center gap-4;
+    @apply h-14 px-4 border-b border-border flex items-center gap-4;
 }
 
 .channel-header h2 {
-  @apply text-lg font-semibold;
+    @apply text-lg font-semibold;
 }
 
 .thread-id {
-  @apply text-xs text-muted-foreground font-mono;
+    @apply text-xs text-muted-foreground font-mono;
 }
 
 .connection-status {
-  @apply text-xs px-2 py-1 rounded;
+    @apply text-xs px-2 py-1 rounded;
 }
 
 .connection-status.connected {
-  @apply bg-green-500/20 text-green-500;
+    @apply bg-green-500/20 text-green-500;
 }
 
 .connection-status.disconnected {
-  @apply bg-red-500/20 text-red-500;
+    @apply bg-red-500/20 text-red-500;
 }
 
 /* Channel List */
 .channel-list {
-  @apply flex-1 overflow-y-auto p-2;
+    @apply flex-1 overflow-y-auto p-2;
 }
 
 .channel-list h3 {
-  @apply px-2 py-1 text-xs uppercase text-muted-foreground;
+    @apply px-2 py-1 text-xs uppercase text-muted-foreground;
 }
 
 .channel-list ul {
-  @apply list-none;
+    @apply list-none;
 }
 
 .channel-item {
-  @apply w-full px-3 py-2 bg-transparent border-0 rounded-md text-muted-foreground text-left cursor-pointer flex flex-col gap-0.5;
+    @apply w-full px-3 py-2 bg-transparent border-0 rounded-md text-muted-foreground text-left cursor-pointer flex flex-col gap-0.5;
 }
 
 .channel-item:hover {
-  @apply bg-secondary text-foreground;
+    @apply bg-secondary text-foreground;
 }
 
 .channel-item.selected {
-  @apply bg-primary text-primary-foreground;
+    @apply bg-primary text-primary-foreground;
 }
 
 .channel-name {
-  @apply font-medium text-sm;
+    @apply font-medium text-sm;
 }
 
 .channel-tagline {
-  @apply text-xs opacity-70;
+    @apply text-xs opacity-70;
 }
 
 /* Message List */
 .message-list {
-  @apply flex-1 overflow-y-auto p-4 flex flex-col gap-3;
+    @apply flex-1 overflow-y-auto p-4 flex flex-col gap-3;
 }
 
 .empty-messages,
 .empty-state {
-  @apply flex items-center justify-center h-full text-muted-foreground;
+    @apply flex items-center justify-center h-full text-muted-foreground;
 }
 
 .message-item {
-  @apply p-3 bg-card rounded-lg border-l-[3px] border-l-transparent;
+    @apply p-3 bg-card rounded-lg border-l-[3px] border-l-transparent;
 }
 
 .message-item.agent {
-  @apply border-l-primary;
+    @apply border-l-primary;
 }
 
 .message-item.user {
-  @apply border-l-green-500;
+    @apply border-l-green-500;
 }
 
 .message-item.tool_call,
 .message-item.tool_result {
-  @apply border-l-purple-500;
+    @apply border-l-purple-500;
 }
 
 .message-item.thinking {
-  @apply border-l-yellow-500 opacity-80;
+    @apply border-l-yellow-500 opacity-80;
 }
 
 .message-item.error {
-  @apply border-l-red-500 bg-red-500/10;
+    @apply border-l-red-500 bg-red-500/10;
 }
 
 .message-header {
-  @apply flex items-center gap-2 mb-2 text-sm;
+    @apply flex items-center gap-2 mb-2 text-sm;
 }
 
 .sender {
-  @apply font-semibold;
+    @apply font-semibold;
 }
 
 .sender.agent {
-  @apply text-primary;
+    @apply text-primary;
 }
 
 .sender.user {
-  @apply text-green-500;
+    @apply text-green-500;
 }
 
 .timestamp {
-  @apply text-muted-foreground text-xs;
+    @apply text-muted-foreground text-xs;
 }
 
 .message-type {
-  @apply bg-secondary px-1.5 py-0.5 rounded text-[10px] uppercase;
+    @apply bg-secondary px-1.5 py-0.5 rounded text-[10px] uppercase;
 }
 
 .message-content {
-  font-size: 14px;
-  line-height: 1.6;
-  color: #2c2c2c;
-  letter-spacing: -0.008em;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #2c2c2c;
+    letter-spacing: -0.008em;
 }
 
 .dark .message-content {
-  color: #e0e0e0;
+    color: #e0e0e0;
 }
 
 .message-content pre {
-  @apply border border-[var(--cast-border-default)] bg-[#fafafa] overflow-x-auto my-2;
-  font-size: 13px;
-  line-height: 1.625;
-  padding: 16px;
-  color: #1a1a1a;
+    @apply border border-[var(--cast-border-default)] bg-[#fafafa] overflow-x-auto my-2;
+    font-size: 13px;
+    line-height: 1.3;
+    padding: 16px;
+    color: #1a1a1a;
 }
 
 .dark .message-content pre {
-  @apply bg-[#1a1a1a];
-  color: #e5e5e5;
+    @apply bg-[#1a1a1a];
+    color: #e5e5e5;
 }
 
 /* Thinking Indicator */
 .thinking-indicator {
-  @apply flex items-center gap-2 px-4 py-3 text-primary text-sm;
+    @apply flex items-center gap-2 px-4 py-3 text-primary text-sm;
 }
 
 .thinking-dot {
-  @apply w-2 h-2 bg-primary rounded-full animate-pulse;
+    @apply w-2 h-2 bg-primary rounded-full animate-pulse;
 }
 
 /* Message Input */
 .message-input {
-  @apply h-28 p-4 border-t border-border flex gap-2;
+    @apply h-28 p-4 border-t border-border flex gap-2;
 }
 
 .message-input textarea {
-  @apply flex-1 p-3 bg-card border border-input rounded-lg text-foreground resize-none font-sans text-sm;
+    @apply flex-1 p-3 bg-card border border-input rounded-lg text-foreground resize-none font-sans text-sm;
 }
 
 .message-input textarea:focus {
-  @apply outline-none ring-2 ring-ring;
+    @apply outline-none ring-2 ring-ring;
 }
 
 .message-input textarea::placeholder {
-  @apply text-muted-foreground;
+    @apply text-muted-foreground;
 }
 
 .send-button {
-  @apply px-6 bg-primary border-0 rounded-lg text-primary-foreground font-medium cursor-pointer;
+    @apply px-6 bg-primary border-0 rounded-lg text-primary-foreground font-medium cursor-pointer;
 }
 
 .send-button:hover:not(:disabled) {
-  @apply bg-primary/90;
+    @apply bg-primary/90;
 }
 
 .send-button:disabled {
-  @apply opacity-50 cursor-not-allowed;
+    @apply opacity-50 cursor-not-allowed;
 }
 
 /* Markdown Content */
 .markdown-content {
-  @apply leading-relaxed;
+    @apply leading-relaxed;
 }
 
 .markdown-content p {
-  @apply mb-2 last:mb-0;
+    @apply mb-2 last:mb-0;
 }
 
 .markdown-content code {
-  @apply bg-secondary px-1.5 py-0.5 text-sm font-mono;
+    @apply bg-secondary px-1.5 py-0.5 text-sm font-mono;
 }
 
 .markdown-content pre {
-  @apply border border-[var(--cast-border-default)] bg-[#fafafa] overflow-x-auto my-2;
-  font-size: 13px;
-  line-height: 1.625;
-  padding: 16px;
-  color: #1a1a1a;
+    @apply border border-[var(--cast-border-default)] bg-[#fafafa] overflow-x-auto my-2;
+    font-size: 13px;
+    line-height: 1ex;
+    padding: 16px;
+    color: #1a1a1a;
 }
 
 .dark .markdown-content pre {
-  @apply bg-[#1a1a1a];
-  color: #e5e5e5;
+    @apply bg-[#1a1a1a];
+    color: #e5e5e5;
 }
 
 .markdown-content pre code {
-  @apply bg-transparent p-0;
-  font-size: 13px;
+    @apply bg-transparent p-0;
+    font-size: 13px;
+}
+
+/* Remove prose backticks from all code elements (both inline and block) */
+.prose code::before,
+.prose code::after {
+    content: none !important;
 }
 
 .markdown-content ul,
 .markdown-content ol {
-  @apply my-2 pl-6;
+    @apply my-2 pl-6;
 }
 
 .markdown-content li {
-  @apply my-1;
+    @apply my-1;
 }
 
 .markdown-content blockquote {
-  @apply border-l-[3px] border-l-primary my-2 pl-4 text-muted-foreground;
+    @apply border-l-[3px] border-l-primary my-2 pl-4 text-muted-foreground;
 }
 
 .markdown-content h1,
 .markdown-content h2,
 .markdown-content h3,
 .markdown-content h4 {
-  @apply mt-3 mb-2 font-semibold;
+    @apply mt-3 mb-2 font-semibold;
 }
 
 .markdown-content h1:first-child,
 .markdown-content h2:first-child,
 .markdown-content h3:first-child,
 .markdown-content h4:first-child {
-  @apply mt-0;
+    @apply mt-0;
 }
 
 .markdown-content a {
-  @apply text-primary no-underline hover:underline;
+    @apply text-primary no-underline hover:underline;
 }
 
 .markdown-content table {
-  @apply border-collapse my-2 w-full;
+    @apply border-collapse my-2 w-full;
 }
 
 .markdown-content th,
 .markdown-content td {
-  @apply border border-border p-2 text-left;
+    @apply border border-border p-2 text-left;
 }
 
 .markdown-content th {
-  @apply bg-card font-semibold;
+    @apply bg-card font-semibold;
 }
 
 /* @mention highlighting - color-coded by type (aligned with design manual) */
 .mention {
-  @apply font-medium;
+    @apply font-medium;
 }
 
 /* @channel - Cast orange (broadcast to everyone) */
 .mention-channel {
-  color: #de946a;
+    color: #de946a;
 }
 
 /* @me - Cast orange with subtle highlight (needs my attention) */
 .mention-me {
-  color: #de946a;
-  background-color: rgba(222, 148, 106, 0.15);
-  padding: 0 0.25rem;
-  border-radius: 2px;
+    color: #de946a;
+    background-color: rgba(222, 148, 106, 0.15);
+    padding: 0 0.25rem;
+    border-radius: 2px;
 }
 
 /* @other - Primary text, emphasized (someone else mentioned) */
 .mention-other {
-  color: #1a1a1a;
-  font-weight: 500;
+    color: #1a1a1a;
+    font-weight: 500;
 }
 
 /* Dark mode adjustments for mentions */
 .dark .mention-other {
-  color: #e5e5e5;
+    color: #e5e5e5;
 }
 
 /* [[artifact]] links */
 .artifact-link {
-  @apply text-primary cursor-pointer inline-flex items-center gap-1 px-1.5 py-0.5 bg-primary/10 rounded font-medium transition-colors;
+    @apply text-primary cursor-pointer inline-flex items-center gap-1 px-1.5 py-0.5 bg-primary/10 rounded font-medium transition-colors;
 }
 
 .artifact-link:hover {
-  @apply bg-primary/20 underline;
+    @apply bg-primary/20 underline;
 }
 
 .artifact-link:focus {
-  @apply outline outline-2 outline-primary/50 outline-offset-1;
+    @apply outline outline-2 outline-primary/50 outline-offset-1;
 }
 
 .artifact-icon {
-  @apply text-sm;
+    @apply text-sm;
 }
 
 /* Tool indicators */
 .tool-call,
 .tool-result {
-  @apply flex items-center gap-2;
+    @apply flex items-center gap-2;
 }
 
 .status-message,
 .error-message {
-  @apply flex items-center gap-2;
+    @apply flex items-center gap-2;
 }
