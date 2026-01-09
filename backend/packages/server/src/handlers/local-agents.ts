@@ -301,19 +301,56 @@ export function createLocalAgentManager(options: LocalAgentManagerOptions): Loca
       const serialized = JSON.stringify(frame);
       await connectionManager.broadcast(channelId, serialized);
 
-      // Persist SetFrames as messages
+      // Persist SetFrames as messages (skip cost frames)
       if (isSetFrame(frame)) {
         const channel = await storage.getChannelById(channelId);
         if (channel && frame.v && typeof frame.v === 'object') {
           const value = frame.v as Record<string, unknown>;
+          const messageType = (value.type as string) ?? 'agent';
+
+          // Handle cost frames separately - persist to costs table, not messages
+          if (messageType === 'cost') {
+            console.log(`[LocalAgents] Cost frame from ${value.sender}: $${value.totalCostUsd} (${value.numTurns} turns, ${value.durationMs}ms)`);
+            if (value.modelUsage) {
+              console.log(`[LocalAgents] Model usage:`, JSON.stringify(value.modelUsage));
+            }
+            // Persist to costs table
+            try {
+              await storage.saveCostRecord({
+                spaceId: channel.spaceId,
+                channelId,
+                callsign: (value.sender as string) ?? connection.callsign ?? 'unknown',
+                costUsd: value.totalCostUsd as number,
+                durationMs: value.durationMs as number,
+                numTurns: value.numTurns as number,
+                usage: value.usage as { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number },
+                modelUsage: value.modelUsage as Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number; costUsd: number }> | undefined,
+              });
+              console.log(`[LocalAgents] Cost record saved for ${value.sender}`);
+            } catch (err) {
+              console.error(`[LocalAgents] Failed to save cost record:`, err);
+            }
+            return; // Don't save cost frames as messages
+          }
+
+          // For tool_call and tool_result, store the full value object as JSON
+          // so we can reconstruct all fields (toolCallId, name, args, isError, etc.)
+          // when reading back. Other types can use value.content directly.
+          let messageContent: string | Record<string, unknown>;
+          if (messageType === 'tool_call' || messageType === 'tool_result') {
+            messageContent = JSON.stringify(value);
+          } else {
+            messageContent = (value.content as string | Record<string, unknown>) ?? value;
+          }
+
           await storage.saveMessage({
             id: frame.i,
             spaceId: channel.spaceId,
             channelId,
             sender: (value.sender as string) ?? connection.callsign,
             senderType: 'agent',
-            type: ((value.type as string) ?? 'agent') as 'user' | 'agent' | 'tool_call' | 'tool_result' | 'thinking' | 'status' | 'error' | 'idle',
-            content: value.content ?? value,
+            type: messageType as 'user' | 'agent' | 'tool_call' | 'tool_result' | 'thinking' | 'status' | 'error' | 'idle',
+            content: messageContent,
             isComplete: true,
             metadata: { fromLocalAgent: true, workspace: connection.workspace },
           });

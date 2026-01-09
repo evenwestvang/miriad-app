@@ -43,6 +43,10 @@ import type {
   // Bootstrap Token types (Stage 3)
   StoredBootstrapToken,
   CreateBootstrapTokenInput,
+  // Cost tracking types
+  StoredCostRecord,
+  CreateCostRecordInput,
+  CostTally,
 } from '@cast/core';
 
 // =============================================================================
@@ -560,6 +564,28 @@ export interface Storage {
    * @returns Number of tokens deleted
    */
   cleanupExpiredBootstrapTokens(): Promise<number>;
+
+  // ---------------------------------------------------------------------------
+  // Cost Tracking Operations
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Save a cost record.
+   * Called when an agent completes a turn and reports cost.
+   *
+   * @param input - Cost record data
+   * @returns The stored cost record
+   */
+  saveCostRecord(input: CreateCostRecordInput): Promise<StoredCostRecord>;
+
+  /**
+   * Get aggregated cost tally for a channel, broken down by callsign.
+   * Used to initialize frontend cost display on channel load.
+   *
+   * @param channelId - Channel ID
+   * @returns Array of cost tallies per agent
+   */
+  getChannelCostTally(channelId: string): Promise<CostTally[]>;
 
   // ---------------------------------------------------------------------------
   // Lifecycle

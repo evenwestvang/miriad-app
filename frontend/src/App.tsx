@@ -572,29 +572,44 @@ export function App() {
     // This prevents HTTP request from blocking WebSocket connection
   }, [selectedThread]);
 
-  // Fetch roster AFTER initial paint - delayed to not compete with message sync
+  // Fetch roster and cost tally AFTER initial paint - delayed to not compete with message sync
   useEffect(() => {
     if (!selectedThread || !connected) return;
 
     const timeoutId = setTimeout(() => {
-      async function fetchRoster() {
+      async function fetchRosterAndCosts() {
         console.log(
           `[ChannelSwitch] Starting roster fetch at ${performance.now().toFixed(2)}ms`,
         );
         try {
-          const response = await apiFetch(
-            `${API_HOST}/channels/${selectedThread}/roster`,
-          );
-          if (!response.ok) {
-            throw new Error(`Failed to fetch roster: ${response.status}`);
+          // Fetch roster and costs in parallel
+          const [rosterResponse, costsResponse] = await Promise.all([
+            apiFetch(`${API_HOST}/channels/${selectedThread}/roster`),
+            apiFetch(`${API_HOST}/channels/${selectedThread}/costs`),
+          ]);
+
+          if (!rosterResponse.ok) {
+            throw new Error(`Failed to fetch roster: ${rosterResponse.status}`);
           }
-          const data = await response.json();
+          const rosterData = await rosterResponse.json();
+
+          // Parse costs response (may fail for new channels with no costs)
+          let costsByCallsign = new Map<string, number>();
+          if (costsResponse.ok) {
+            const costsData = await costsResponse.json();
+            if (costsData.tally && Array.isArray(costsData.tally)) {
+              for (const t of costsData.tally) {
+                costsByCallsign.set(t.callsign, t.totalCostUsd);
+              }
+            }
+          }
+
           console.log(
             `[ChannelSwitch] Roster fetch complete at ${performance.now().toFixed(2)}ms`,
           );
           // Map backend RosterEntry to frontend RosterAgent format
-          if (data.roster && Array.isArray(data.roster)) {
-            const rosterAgents: RosterAgent[] = data.roster.map(
+          if (rosterData.roster && Array.isArray(rosterData.roster)) {
+            const rosterAgents: RosterAgent[] = rosterData.roster.map(
               (r: {
                 callsign: string;
                 agentType: string;
@@ -612,6 +627,8 @@ export function App() {
                 tunnelHash: r.tunnelHash,
                 // Agent type for visual identification
                 agentType: r.agentType,
+                // Initialize with persisted cost (if any)
+                sessionCost: costsByCallsign.get(r.callsign) ?? 0,
               }),
             );
             setRoster(rosterAgents);
@@ -622,7 +639,7 @@ export function App() {
           console.error("Failed to fetch roster:", error);
         }
       }
-      fetchRoster();
+      fetchRosterAndCosts();
     }, 250); // Delay to not compete with initial message sync
 
     return () => clearTimeout(timeoutId);
@@ -965,6 +982,7 @@ export function App() {
                 isThinking={isWaitingForResponse}
                 boardOpen={boardOpen}
                 onToggleBoard={toggleBoard}
+                channelCost={roster.reduce((sum, a) => sum + (a.sessionCost || 0), 0)}
               />
               <MessageList
                 messages={messages}

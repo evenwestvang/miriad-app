@@ -126,6 +126,16 @@ export function AgentDetailPopup({
           <span>{status.label}</span>
         </div>
 
+        {/* Session Cost */}
+        {agent.sessionCost !== undefined && agent.sessionCost > 0 && (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Session cost:</span>
+            <span className="font-mono">
+              ${agent.sessionCost < 0.01 ? agent.sessionCost.toFixed(4) : agent.sessionCost.toFixed(2)}
+            </span>
+          </div>
+        )}
+
         {/* Tunnel Section */}
         {tunnelUrl ? (
           <div className="space-y-2">

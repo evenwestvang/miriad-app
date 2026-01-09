@@ -104,11 +104,6 @@ function AgentBadge({ agent, isLeader, channelId, rosterIndex, onDismiss, onClic
               : "text-[#a0a0a0]"
         )}>
           {agent.callsign}
-          {agent.sessionCost !== undefined && agent.sessionCost > 0 && (
-            <span className="text-[#a0a0a0] ml-1">
-              ${agent.sessionCost < 0.01 ? agent.sessionCost.toFixed(4) : agent.sessionCost.toFixed(2)}
-            </span>
-          )}
         </span>
         {isLeader && (
           <span className="text-amber-500 text-[10px]">★</span>

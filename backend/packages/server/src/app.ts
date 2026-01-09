@@ -771,14 +771,53 @@ export function createApp(options: AppOptions): Hono {
       // spaceIdFromContainer is passed from the container auth context
       if (frame.v && typeof frame.v === 'object') {
         const value = frame.v as Record<string, unknown>;
+
+        // Handle cost frames separately - persist to costs table, not messages
+        if (value.type === 'cost') {
+          console.log(`[Tymbal] Cost frame from ${value.sender}: $${value.totalCostUsd} (${value.numTurns} turns, ${value.durationMs}ms)`);
+          if (value.modelUsage) {
+            console.log(`[Tymbal] Model usage:`, JSON.stringify(value.modelUsage));
+          }
+          // Persist to costs table
+          try {
+            await storage.saveCostRecord({
+              spaceId: spaceIdFromContainer,
+              channelId,
+              callsign: value.sender as string,
+              costUsd: value.totalCostUsd as number,
+              durationMs: value.durationMs as number,
+              numTurns: value.numTurns as number,
+              usage: value.usage as { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number },
+              modelUsage: value.modelUsage as Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number; costUsd: number }> | undefined,
+            });
+            console.log(`[Tymbal] Cost record saved for ${value.sender}`);
+          } catch (err) {
+            console.error(`[Tymbal] Failed to save cost record:`, err);
+          }
+          return; // Don't save cost frames as messages
+        }
+
+        // For tool_call and tool_result, store the full value object as JSON
+        // so we can reconstruct all fields (toolCallId, name, args, isError, etc.)
+        // when reading back. Other types can use value.content directly.
+        const messageType = (value.type as string) ?? 'agent';
+        let messageContent: string | Record<string, unknown>;
+        if (messageType === 'tool_call' || messageType === 'tool_result') {
+          // Store entire value object as JSON string
+          messageContent = JSON.stringify(value);
+        } else {
+          // For other types, use content field or fall back to whole value
+          messageContent = (value.content as string | Record<string, unknown>) ?? value;
+        }
+
         await storage.saveMessage({
           id: frame.i,
           spaceId: spaceIdFromContainer,
           channelId,
           sender: (value.sender as string) ?? 'system',
           senderType: (value.senderType as 'user' | 'agent') ?? 'agent',
-          type: ((value.type as string) ?? 'agent') as StoredMessageType,
-          content: value.content ?? value,
+          type: messageType as StoredMessageType,
+          content: messageContent,
           isComplete: true,
           addressedAgents: value.mentions as string[] | undefined,
           metadata: { fromTymbal: true },
@@ -822,17 +861,56 @@ export function createApp(options: AppOptions): Hono {
         const serialized = JSON.stringify(normalizedFrame);
         await connectionManager.broadcast(channelId, serialized);
 
-        // Persist SetFrames as messages
+        // Persist SetFrames as messages (skip cost frames)
         if (normalizedFrame.v && typeof normalizedFrame.v === 'object') {
           const value = normalizedFrame.v as Record<string, unknown>;
+
+          // Handle cost frames separately - persist to costs table, not messages
+          if (value.type === 'cost') {
+            console.log(`[Tymbal/Legacy] Cost frame from ${value.sender}: $${value.totalCostUsd} (${value.numTurns} turns, ${value.durationMs}ms)`);
+            if (value.modelUsage) {
+              console.log(`[Tymbal/Legacy] Model usage:`, JSON.stringify(value.modelUsage));
+            }
+            // Persist to costs table
+            try {
+              await storage.saveCostRecord({
+                spaceId: spaceIdFromThread,
+                channelId,
+                callsign: value.sender as string,
+                costUsd: value.totalCostUsd as number,
+                durationMs: value.durationMs as number,
+                numTurns: value.numTurns as number,
+                usage: value.usage as { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number },
+                modelUsage: value.modelUsage as Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number; costUsd: number }> | undefined,
+              });
+              console.log(`[Tymbal/Legacy] Cost record saved for ${value.sender}`);
+            } catch (err) {
+              console.error(`[Tymbal/Legacy] Failed to save cost record:`, err);
+            }
+            return c.json({ ok: true }); // Don't save cost frames as messages
+          }
+
+          // For tool_call and tool_result, store the full value object as JSON
+          // so we can reconstruct all fields (toolCallId, name, args, isError, etc.)
+          // when reading back. Other types can use value.content directly.
+          const messageType = (value.type as string) ?? 'agent';
+          let messageContent: string | Record<string, unknown>;
+          if (messageType === 'tool_call' || messageType === 'tool_result') {
+            // Store entire value object as JSON string
+            messageContent = JSON.stringify(value);
+          } else {
+            // For other types, use content field or fall back to whole value
+            messageContent = (value.content as string | Record<string, unknown>) ?? value;
+          }
+
           await storage.saveMessage({
             id: normalizedFrame.i,
             spaceId: spaceIdFromThread,
             channelId,
             sender: (value.sender as string) ?? 'system',
             senderType: (value.senderType as 'user' | 'agent') ?? 'agent',
-            type: ((value.type as string) ?? 'agent') as StoredMessageType,
-            content: value.content ?? value,
+            type: messageType as StoredMessageType,
+            content: messageContent,
             isComplete: true,
             addressedAgents: value.mentions as string[] | undefined,
             metadata: { fromTymbal: true },
@@ -956,6 +1034,19 @@ export function createApp(options: AppOptions): Hono {
     } catch (error) {
       console.error('[Messages] Error sending message:', error);
       return c.json({ error: 'Failed to send message' }, 500);
+    }
+  });
+
+  // Cost tally endpoint - get aggregated costs per agent for a channel
+  app.get('/channels/:channelId/costs', async (c) => {
+    const channelId = c.req.param('channelId');
+
+    try {
+      const tally = await storage.getChannelCostTally(channelId);
+      return c.json({ tally });
+    } catch (error) {
+      console.error('[Costs] Error getting cost tally:', error);
+      return c.json({ error: 'Failed to get cost tally' }, 500);
     }
   });
 

@@ -49,6 +49,12 @@ import type {
   // Bootstrap Token types (Stage 3)
   StoredBootstrapToken,
   CreateBootstrapTokenInput,
+  // Cost tracking types
+  StoredCostRecord,
+  CreateCostRecordInput,
+  CostTally,
+  TokenUsage,
+  ModelUsage,
 } from '@cast/core';
 // Import functions separately (not as types)
 import {
@@ -2094,6 +2100,36 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       CREATE INDEX IF NOT EXISTS idx_bootstrap_tokens_expires
       ON bootstrap_tokens(expires_at) WHERE consumed = FALSE
     `;
+
+    // ---------------------------------------------------------------------------
+    // Cost Records Table (Cost Tracking)
+    // ---------------------------------------------------------------------------
+    await sql`
+      CREATE TABLE IF NOT EXISTS cost_records (
+        id VARCHAR(26) PRIMARY KEY,
+        space_id VARCHAR(26) NOT NULL,
+        channel_id VARCHAR(26) NOT NULL,
+        callsign VARCHAR(100) NOT NULL,
+        cost_usd DOUBLE PRECISION NOT NULL,
+        duration_ms INTEGER NOT NULL,
+        num_turns INTEGER NOT NULL,
+        usage JSONB NOT NULL,
+        model_usage JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+
+    // Index for channel cost tally aggregation
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_cost_records_channel
+      ON cost_records(channel_id, callsign)
+    `;
+
+    // Index for space-level reporting
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_cost_records_space
+      ON cost_records(space_id, created_at DESC)
+    `;
   }
 
   async function close(): Promise<void> {
@@ -2544,6 +2580,94 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     return result.length;
   }
 
+  // ---------------------------------------------------------------------------
+  // Cost Tracking Operations
+  // ---------------------------------------------------------------------------
+
+  interface CostRecordRow {
+    id: string;
+    space_id: string;
+    channel_id: string;
+    callsign: string;
+    cost_usd: number;
+    duration_ms: number;
+    num_turns: number;
+    usage: TokenUsage;
+    model_usage: Record<string, ModelUsage> | null;
+    created_at: Date;
+  }
+
+  function rowToCostRecord(row: CostRecordRow): StoredCostRecord {
+    return {
+      id: row.id,
+      spaceId: row.space_id,
+      channelId: row.channel_id,
+      callsign: row.callsign,
+      costUsd: row.cost_usd,
+      durationMs: row.duration_ms,
+      numTurns: row.num_turns,
+      usage: row.usage,
+      modelUsage: row.model_usage ?? undefined,
+      createdAt: row.created_at.toISOString(),
+    };
+  }
+
+  async function saveCostRecord(
+    input: CreateCostRecordInput
+  ): Promise<StoredCostRecord> {
+    const id = ulid();
+    const now = new Date();
+
+    const result = await sql<CostRecordRow[]>`
+      INSERT INTO cost_records (
+        id, space_id, channel_id, callsign, cost_usd, duration_ms, num_turns, usage, model_usage, created_at
+      )
+      VALUES (
+        ${id},
+        ${input.spaceId},
+        ${input.channelId},
+        ${input.callsign},
+        ${input.costUsd},
+        ${input.durationMs},
+        ${input.numTurns},
+        ${sql.json(input.usage as unknown as JSONValue)},
+        ${input.modelUsage ? sql.json(input.modelUsage as unknown as JSONValue) : null},
+        ${now}
+      )
+      RETURNING *
+    `;
+
+    return rowToCostRecord(result[0]);
+  }
+
+  interface CostTallyRow {
+    callsign: string;
+    total_cost_usd: number;
+    total_turns: number;
+    total_duration_ms: number;
+  }
+
+  async function getChannelCostTally(channelId: string): Promise<CostTally[]> {
+    const result = await sql<CostTallyRow[]>`
+      SELECT
+        callsign,
+        SUM(cost_usd)::float8 as total_cost_usd,
+        SUM(num_turns)::int as total_turns,
+        SUM(duration_ms)::int as total_duration_ms
+      FROM cost_records
+      WHERE channel_id = ${channelId}
+      GROUP BY callsign
+      ORDER BY total_cost_usd DESC
+    `;
+
+    return result.map((row) => ({
+      callsign: row.callsign,
+      totalCostUsd: row.total_cost_usd,
+      totalTurns: row.total_turns,
+      totalDurationMs: row.total_duration_ms,
+    }));
+  }
+
   return {
     // Message operations
     saveMessage,
@@ -2608,6 +2732,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     getBootstrapToken,
     consumeBootstrapToken,
     cleanupExpiredBootstrapTokens,
+    // Cost tracking operations
+    saveCostRecord,
+    getChannelCostTally,
     // Lifecycle
     initialize,
     close,

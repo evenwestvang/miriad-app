@@ -1023,3 +1023,106 @@ export interface CreateBootstrapTokenInput {
   /** Expiration timestamp */
   expiresAt: Date;
 }
+
+// =============================================================================
+// Cost Tracking Types
+// =============================================================================
+
+/**
+ * Usage breakdown by token type.
+ */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+}
+
+/**
+ * Usage breakdown per model.
+ */
+export interface ModelUsage extends TokenUsage {
+  costUsd: number;
+}
+
+/**
+ * A cost record as stored in the database.
+ * Records cost per agent turn for billing and analytics.
+ */
+export interface StoredCostRecord {
+  /** Unique identifier (ULID) */
+  id: string;
+
+  /** Space this cost belongs to */
+  spaceId: string;
+
+  /** Channel where the cost was incurred */
+  channelId: string;
+
+  /** Agent callsign who incurred the cost */
+  callsign: string;
+
+  /** Total cost in USD for this turn */
+  costUsd: number;
+
+  /** Turn duration in milliseconds */
+  durationMs: number;
+
+  /** Number of conversation turns */
+  numTurns: number;
+
+  /** Aggregate token usage */
+  usage: TokenUsage;
+
+  /** Per-model usage breakdown (optional) */
+  modelUsage?: Record<string, ModelUsage>;
+
+  /** ISO timestamp of when cost was recorded */
+  createdAt: string;
+}
+
+/**
+ * Input for creating a new cost record.
+ */
+export interface CreateCostRecordInput {
+  /** Space ID */
+  spaceId: string;
+
+  /** Channel ID */
+  channelId: string;
+
+  /** Agent callsign */
+  callsign: string;
+
+  /** Cost in USD */
+  costUsd: number;
+
+  /** Duration in ms */
+  durationMs: number;
+
+  /** Number of turns */
+  numTurns: number;
+
+  /** Token usage */
+  usage: TokenUsage;
+
+  /** Per-model breakdown */
+  modelUsage?: Record<string, ModelUsage>;
+}
+
+/**
+ * Aggregated cost tally per agent for a channel.
+ */
+export interface CostTally {
+  /** Agent callsign */
+  callsign: string;
+
+  /** Total cost in USD */
+  totalCostUsd: number;
+
+  /** Total number of turns */
+  totalTurns: number;
+
+  /** Total duration in ms */
+  totalDurationMs: number;
+}
