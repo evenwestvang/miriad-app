@@ -34,6 +34,7 @@ interface TymbalFrame {
   m?: MessageMetadata // Start frame metadata
   a?: string // Append content
   v?: MessageValue | null // Set value (null = reset)
+  c?: string // Channel ID (server injects this for client routing)
   request?: string // Sync request
   error?: string // Error code
   message?: string // Error message
@@ -93,6 +94,13 @@ function isErrorFrame(frame: TymbalFrame): frame is TymbalFrame & { error: strin
   return 'error' in frame
 }
 
+interface SyncInfo {
+  /** Whether there are more messages older than what we've loaded */
+  hasMore: boolean
+  /** ID of the oldest message loaded (use as 'before' cursor for pagination) */
+  oldestId?: string
+}
+
 interface UseTymbalConnectionOptions {
   channelId: string | null
   onMessage: (message: Message) => void
@@ -101,10 +109,12 @@ interface UseTymbalConnectionOptions {
   onArtifactEvent?: (event: ArtifactEvent) => void
   onRosterEvent?: (event: RosterEvent) => void
   /** Called when sync completes (useful for clearing loading states) */
-  onSyncComplete?: () => void
+  onSyncComplete?: (syncInfo?: SyncInfo) => void
   currentUser?: string
   /** Pre-fetched WebSocket auth token (avoids re-fetch on every channel switch) */
   wsToken?: string
+  /** Timestamp of newest cached message - use for incremental sync */
+  newestCachedTimestamp?: string
 }
 
 interface PendingMessage {
@@ -127,14 +137,18 @@ export function useTymbalConnection({
   onSyncComplete,
   currentUser = 'user',
   wsToken: providedWsToken,
+  newestCachedTimestamp,
 }: UseTymbalConnectionOptions) {
   const [connected, setConnected] = useState(false)
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false)
   const [agentStates, setAgentStates] = useState<Map<string, AgentStateInfo>>(new Map())
+  const [hasMoreMessages, setHasMoreMessages] = useState(true)
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const pendingMessages = useRef<Map<string, PendingMessage>>(new Map())
   const agentOutputBuffers = useRef<Map<string, { buffer: string; messageId: string }>>(new Map())
   const lastTimestampRef = useRef<string | null>(null)
+  const oldestMessageIdRef = useRef<string | null>(null)
 
   // Parse a single frame from JSON string
   const parseFrame = useCallback((line: string): TymbalFrame | null => {
@@ -146,13 +160,35 @@ export function useTymbalConnection({
     }
   }, [])
 
+  // Fallback ref for channelId (used if server doesn't send 'c' field)
+  const channelIdRef = useRef<string | null>(channelId)
+  channelIdRef.current = channelId
+
   // Process incoming Tymbal frames
+  // Server includes channelId ('c' field) on each frame for reliable routing
   const processFrame = useCallback(
     (frame: TymbalFrame) => {
+      // Read channel from frame (server-authoritative), fallback to ref for backwards compatibility
+      const currentChannelId = frame.c || channelIdRef.current
+
       // Sync response frame - signals end of message history sync
       if ('sync' in frame) {
-        console.log(`[ChannelSwitch] Sync complete at ${performance.now().toFixed(2)}ms`)
-        onSyncComplete?.()
+        const syncFrame = frame as { sync: string; hasMore?: boolean; oldestId?: string }
+        console.log(`[ChannelSwitch] Sync complete at ${performance.now().toFixed(2)}ms, hasMore=${syncFrame.hasMore}, oldestId=${syncFrame.oldestId}`)
+
+        // Update pagination state
+        if (syncFrame.hasMore !== undefined) {
+          setHasMoreMessages(syncFrame.hasMore)
+        }
+        if (syncFrame.oldestId) {
+          // Only update if this is older than what we have (or first load)
+          if (!oldestMessageIdRef.current || syncFrame.oldestId < oldestMessageIdRef.current) {
+            oldestMessageIdRef.current = syncFrame.oldestId
+          }
+        }
+        setIsLoadingOlder(false)
+
+        onSyncComplete?.({ hasMore: syncFrame.hasMore ?? true, oldestId: syncFrame.oldestId })
         return
       }
 
@@ -180,7 +216,7 @@ export function useTymbalConnection({
             // First content chunk - now emit the message with initial content
             onMessage({
               id: frame.i,
-              channelId: channelId!,
+              channelId: currentChannelId!,
               type: pending.metadata.type,
               content: pending.buffer,
               sender: pending.metadata.sender,
@@ -204,7 +240,7 @@ export function useTymbalConnection({
 
         // Handle agent_state frames - lifecycle updates
         if (value.type === 'agent_state' && value.state) {
-          const agentKey = `${channelId}:${value.sender}`
+          const agentKey = `${currentChannelId}:${value.sender}`
           const stateInfo: AgentStateInfo = {
             state: value.state,
             toolName: value.toolName,
@@ -227,7 +263,7 @@ export function useTymbalConnection({
           // If transitioning to idle or stopped, mark response as complete
           if (value.state === 'idle' || value.state === 'stopped') {
             setIsWaitingForResponse(false)
-            const bufferKey = `${channelId}:${value.sender}`
+            const bufferKey = `${currentChannelId}:${value.sender}`
             const buffer = agentOutputBuffers.current.get(bufferKey)
             if (buffer && buffer.buffer) {
               onMessageUpdate(buffer.messageId, buffer.buffer)
@@ -239,7 +275,7 @@ export function useTymbalConnection({
 
         // Handle agent_output frames - streaming agent responses
         if (value.type === 'agent_output' && value.agentOutput) {
-          const agentKey = `${channelId}:${value.sender}`
+          const agentKey = `${currentChannelId}:${value.sender}`
           const output = value.agentOutput
 
           if (output.type === 'text') {
@@ -259,7 +295,7 @@ export function useTymbalConnection({
               // Emit message with initial content (not empty)
               onMessage({
                 id: frame.i,
-                channelId: channelId!,
+                channelId: currentChannelId!,
                 type: 'agent',
                 content: buffer.buffer,
                 sender: value.sender,
@@ -274,7 +310,7 @@ export function useTymbalConnection({
             // Tool invocation - emit as tool_call message with all tool fields
             onMessage({
               id: frame.i,
-              channelId: channelId!,
+              channelId: currentChannelId!,
               type: 'tool_call',
               content: '',
               sender: value.sender,
@@ -289,7 +325,7 @@ export function useTymbalConnection({
             const isError = output.status === 'error'
             onMessage({
               id: frame.i,
-              channelId: channelId!,
+              channelId: currentChannelId!,
               type: 'tool_result',
               content: '',
               sender: value.sender,
@@ -332,7 +368,7 @@ export function useTymbalConnection({
         if (value.type === 'tool_call') {
           onMessage({
             id: frame.i,
-            channelId: channelId!,
+            channelId: currentChannelId!,
             type: 'tool_call',
             content: '',
             sender: value.sender || 'agent',
@@ -350,7 +386,7 @@ export function useTymbalConnection({
           const isError = value.isError === true
           onMessage({
             id: frame.i,
-            channelId: channelId!,
+            channelId: currentChannelId!,
             type: 'tool_result',
             content: '',
             sender: value.sender || 'agent',
@@ -373,7 +409,7 @@ export function useTymbalConnection({
           console.error('[Tymbal] Unrecognized message type:', value.type, frame.i, value)
           onMessage({
             id: frame.i,
-            channelId: channelId!,
+            channelId: currentChannelId!,
             type: 'error',
             content: `Unrecognized message type: "${value.type}"\n\nRaw: ${JSON.stringify(value, null, 2)}`,
             sender: 'system',
@@ -400,7 +436,7 @@ export function useTymbalConnection({
         }
         onMessage({
           id: frame.i,
-          channelId: channelId!,
+          channelId: currentChannelId!,
           type: value.type,
           content: typeof value.content === 'string' ? value.content : '',
           sender: value.sender,
@@ -423,7 +459,7 @@ export function useTymbalConnection({
         return
       }
     },
-    [channelId, onMessage, onMessageUpdate, onArtifactEvent, onRosterEvent, onSyncComplete]
+    [onMessage, onMessageUpdate, onArtifactEvent, onRosterEvent, onSyncComplete]
   )
 
   // Track current channel for the WebSocket
@@ -431,9 +467,13 @@ export function useTymbalConnection({
   // Track the desired channel (for onopen to read latest value)
   const desiredChannelRef = useRef<string | null>(channelId)
 
+  // Track newest cached timestamp per channel for incremental sync
+  const newestCachedTimestampRef = useRef<string | undefined>(newestCachedTimestamp)
+  newestCachedTimestampRef.current = newestCachedTimestamp
+
   // Send sync request to switch/sync channel
   const sendSyncRequest = useCallback((targetChannelId: string) => {
-    console.log(`[ChannelSwitch] sendSyncRequest called for ${targetChannelId}`)
+    console.log(`[ChannelSwitch] sendSyncRequest called for ${targetChannelId}, newestCachedTimestamp=${newestCachedTimestampRef.current}`)
     const ws = wsRef.current
     if (!ws) {
       console.log(`[ChannelSwitch] sendSyncRequest: ws is null`)
@@ -448,10 +488,14 @@ export function useTymbalConnection({
       request: 'sync',
       channelId: targetChannelId,
     }
-    // Don't use lastTimestamp when switching channels - get fresh messages
-    if (currentChannelRef.current === targetChannelId && lastTimestampRef.current) {
-      syncRequest.since = lastTimestampRef.current
+    // Use cached timestamp for incremental sync if available
+    // newestCachedTimestampRef.current is computed for the target channel in App.tsx
+    // If undefined, this is a new/uncached channel - fetch full history
+    if (newestCachedTimestampRef.current) {
+      syncRequest.since = newestCachedTimestampRef.current
+      console.log(`[ChannelSwitch] Using cached timestamp for incremental sync: ${newestCachedTimestampRef.current}`)
     }
+    // Note: lastTimestampRef is for live updates on same channel, not used for channel switches
     if (providedWsToken) {
       syncRequest.token = providedWsToken
     }
@@ -459,6 +503,44 @@ export function useTymbalConnection({
     ws.send(JSON.stringify(syncRequest))
     currentChannelRef.current = targetChannelId
   }, [providedWsToken])
+
+  // Request older messages (for infinite scroll)
+  const requestOlderMessages = useCallback((limit = 25) => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.log('[Pagination] Cannot request older messages: WebSocket not ready')
+      return
+    }
+    if (!channelId) {
+      console.log('[Pagination] Cannot request older messages: no channel')
+      return
+    }
+    if (!hasMoreMessages) {
+      console.log('[Pagination] No more messages to load')
+      return
+    }
+    if (isLoadingOlder) {
+      console.log('[Pagination] Already loading older messages')
+      return
+    }
+    if (!oldestMessageIdRef.current) {
+      console.log('[Pagination] No oldest message ID yet')
+      return
+    }
+
+    setIsLoadingOlder(true)
+    const syncRequest: Record<string, unknown> = {
+      request: 'sync',
+      channelId,
+      before: oldestMessageIdRef.current,
+      limit,
+    }
+    if (providedWsToken) {
+      syncRequest.token = providedWsToken
+    }
+    console.log('[Pagination] Requesting older messages:', syncRequest)
+    ws.send(JSON.stringify(syncRequest))
+  }, [channelId, hasMoreMessages, isLoadingOlder, providedWsToken])
 
   // Manage WebSocket connection and channel switching
   useLayoutEffect(() => {
@@ -526,6 +608,8 @@ export function useTymbalConnection({
     if (channelId && channelId !== currentChannelRef.current) {
       console.log(`[ChannelSwitch] Channel changed to ${channelId}`)
       lastTimestampRef.current = null // Reset for new channel
+      oldestMessageIdRef.current = null // Reset pagination cursor
+      setHasMoreMessages(true) // Assume more messages until proven otherwise
 
       const ws = wsRef.current
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -592,5 +676,11 @@ export function useTymbalConnection({
     isWaitingForResponse,
     sendMessage,
     agentStates,
+    // Pagination
+    hasMoreMessages,
+    isLoadingOlder,
+    requestOlderMessages,
   }
 }
+
+export type { SyncInfo }

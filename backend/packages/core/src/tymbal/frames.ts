@@ -64,8 +64,12 @@ export interface SyncRequest {
   request: 'sync';
   /** Channel to sync/switch to (enables persistent connections) */
   channelId?: string;
-  /** Optional timestamp cursor - server sends messages >= this time */
+  /** Optional cursor - server sends messages after this ID (for real-time sync) */
   since?: string;
+  /** Optional cursor - server sends messages before this ID (for loading older messages) */
+  before?: string;
+  /** Maximum number of messages to return */
+  limit?: number;
 }
 
 /**

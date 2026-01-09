@@ -57,6 +57,21 @@ function normalizeSetFrame(frame: SetFrame): { frame: SetFrame; serialized: stri
   return { frame, serialized: JSON.stringify(frame) };
 }
 
+/**
+ * Inject channelId into a frame for client routing.
+ * This makes frames self-describing so clients don't need to track channel state.
+ */
+function injectChannelId(frameJson: string, channelId: string): string {
+  try {
+    const frame = JSON.parse(frameJson);
+    frame.c = channelId; // 'c' for channel, keeps wire format compact
+    return JSON.stringify(frame);
+  } catch {
+    // If parsing fails, return original (shouldn't happen with valid frames)
+    return frameJson;
+  }
+}
+
 // =============================================================================
 // Route Handler
 // =============================================================================
@@ -99,25 +114,25 @@ export function createTymbalRoutes(options: TymbalHandlerOptions): Hono<{ Variab
     // Handle frame types
     try {
       if (isSetFrame(frame)) {
-        // Normalize and broadcast SetFrame
+        // Normalize and broadcast SetFrame with channelId injected
         const { frame: normalizedFrame, serialized } = normalizeSetFrame(frame);
-        await connectionManager.broadcast(channelId, serialized);
+        await connectionManager.broadcast(channelId, injectChannelId(serialized, channelId));
 
         // Persist if handler provided
         if (onSetFrame) {
           await onSetFrame(channelId, normalizedFrame, spaceId);
         }
       } else if (isResetFrame(frame)) {
-        // Broadcast ResetFrame
-        await connectionManager.broadcast(channelId, body);
+        // Broadcast ResetFrame with channelId injected
+        await connectionManager.broadcast(channelId, injectChannelId(body, channelId));
 
         // Handle deletion if handler provided
         if (onResetFrame) {
           await onResetFrame(channelId, frame.i, spaceId);
         }
       } else {
-        // All other frames (Start, Append) just get broadcast
-        await connectionManager.broadcast(channelId, body);
+        // All other frames (Start, Append) with channelId injected
+        await connectionManager.broadcast(channelId, injectChannelId(body, channelId));
       }
 
       return c.json({ ok: true });
@@ -161,17 +176,17 @@ export function createTymbalRoutes(options: TymbalHandlerOptions): Hono<{ Variab
       try {
         if (isSetFrame(frame)) {
           const { frame: normalizedFrame, serialized } = normalizeSetFrame(frame);
-          await connectionManager.broadcast(channelId, serialized);
+          await connectionManager.broadcast(channelId, injectChannelId(serialized, channelId));
           if (onSetFrame) {
             await onSetFrame(channelId, normalizedFrame, spaceId);
           }
         } else if (isResetFrame(frame)) {
-          await connectionManager.broadcast(channelId, line);
+          await connectionManager.broadcast(channelId, injectChannelId(line, channelId));
           if (onResetFrame) {
             await onResetFrame(channelId, frame.i, spaceId);
           }
         } else {
-          await connectionManager.broadcast(channelId, line);
+          await connectionManager.broadcast(channelId, injectChannelId(line, channelId));
         }
         results.push({ line: i, ok: true });
       } catch (error) {

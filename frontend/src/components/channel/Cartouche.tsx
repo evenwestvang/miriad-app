@@ -18,30 +18,16 @@ function hashString(str: string): number {
  * Selected for visibility and distinctiveness across themes.
  */
 const COLORS = [
-  "#e63946", // red
-  "#f4a261", // sandy orange
-  "#2a9d8f", // teal
-  "#457b9d", // steel blue
-  "#8338ec", // purple
-  "#06d6a0", // mint green
-  "#ef476f", // coral pink
-  "#118ab2", // ocean blue
-  "#f77f00", // orange
-  "#7209b7", // violet
-  "#3a86ff", // bright blue
-  "#fb5607", // tangerine
-  "#ff006e", // magenta
-  "#8ac926", // lime green
-  "#6a4c93", // purple grape
-  "#1982c4", // azure
-  "#ffbe0b", // golden yellow
-  "#ff595e", // salmon red
-  "#9b5de5", // lavender
-  "#00bbf9", // sky blue
-  "#00f5d4", // turquoise
-  "#fee440", // bright yellow
-  "#f15bb5", // pink
-  "#00c49a", // emerald
+  "#FF6600", // orange (brand)
+  "#E5194D", // red
+  "#FF9ED0", // pink
+  "#9B4DCA", // purple
+  "#3359FF", // blue
+  "#00B8D9", // cyan
+  "#00A86B", // green
+  "#B8D500", // lime
+  "#FFB700", // gold
+  "#8B5E3C", // brown
 ];
 
 /**
@@ -86,12 +72,23 @@ interface CartoucheProps {
  * - Agents: colored circle, color determined by roster position
  * - Humans: black square
  */
-export function Cartouche({ name, channelId = "", rosterIndex = 0, isHuman = false, className = "" }: CartoucheProps) {
+export function Cartouche({
+  name,
+  channelId = "",
+  rosterIndex = 0,
+  isHuman = false,
+  className = "",
+}: CartoucheProps) {
   // Humans get a black square
   if (isHuman) {
     return (
       <span className={`inline-flex items-center ${className}`} title={name}>
-        <Square size="1em" className="text-black dark:text-white" fill="currentColor" strokeWidth={0} />
+        <Square
+          size="1em"
+          className="text-black dark:text-white"
+          fill="currentColor"
+          strokeWidth={0}
+        />
       </span>
     );
   }

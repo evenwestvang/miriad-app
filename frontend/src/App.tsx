@@ -74,7 +74,12 @@ export function App() {
   const [threads, setThreads] = useState<ThreadWithState[]>([])
   const [threadsLoading, setThreadsLoading] = useState(true)
   const [channels] = useState<Channel[]>([]) // Placeholder for phase 2
-  const [messages, setMessages] = useState<Message[]>([])
+  // Message cache: Map<channelId, Message[]> - persists across channel switches
+  // Uses Map insertion order for LRU eviction (max 10 channels)
+  const [messageCache, setMessageCache] = useState<Map<string, Message[]>>(new Map())
+  const MESSAGE_CACHE_LIMIT = 10
+  // Derive current messages from cache
+  const messages = selectedThread ? (messageCache.get(selectedThread) || []) : []
   // Get current user from auth session
   const currentUser = authSession?.user.callsign || 'user'
   const [isCreatingThread, setIsCreatingThread] = useState(false)
@@ -172,7 +177,7 @@ export function App() {
       }
     }
 
-    // Regular message - add to list
+    // Regular message - add to cache for this channel
     // Clear switching state as soon as first message arrives
     setIsSwitchingChannel((wasSwitching) => {
       if (wasSwitching) {
@@ -180,12 +185,32 @@ export function App() {
       }
       return false
     })
-    setMessages((prev) => {
-      // Avoid duplicates (sync might send messages we already have)
-      if (prev.some((m) => m.id === msg.id)) {
-        return prev.map((m) => (m.id === msg.id ? msg : m))
+    setMessageCache((cache) => {
+      const channelId = msg.channelId
+      const existing = cache.get(channelId) || []
+      // Merge by ULID: update existing or add new, then sort by ULID
+      const messageMap = new Map(existing.map((m) => [m.id, m]))
+      messageMap.set(msg.id, msg)
+      // ULIDs are lexicographically sortable (chronological order)
+      const updated = Array.from(messageMap.values()).sort((a, b) => a.id.localeCompare(b.id))
+
+      // Build new cache, maintaining insertion order for FIFO eviction
+      const newCache = new Map(cache)
+      // Delete and re-add to move to end (most recent)
+      newCache.delete(channelId)
+      newCache.set(channelId, updated)
+
+      // Evict least recently used channels if over limit (LRU)
+      // Map maintains insertion order, so first key is least recently accessed
+      while (newCache.size > MESSAGE_CACHE_LIMIT) {
+        const lruKey = newCache.keys().next().value
+        if (lruKey) {
+          console.log(`[MessageCache] Evicting LRU channel: ${lruKey}`)
+          newCache.delete(lruKey)
+        }
       }
-      return [...prev, msg]
+
+      return newCache
     })
 
     // Any agent/tool response means container is ready
@@ -195,9 +220,20 @@ export function App() {
   }, [])
 
   const handleMessageUpdate = useCallback((id: string, content: string) => {
-    setMessages((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, content } : m))
-    )
+    setMessageCache((cache) => {
+      // Find which channel has this message
+      for (const [channelId, msgs] of cache.entries()) {
+        const idx = msgs.findIndex((m) => m.id === id)
+        if (idx !== -1) {
+          const updated = [...msgs]
+          updated[idx] = { ...updated[idx], content }
+          const newCache = new Map(cache)
+          newCache.set(channelId, updated)
+          return newCache
+        }
+      }
+      return cache
+    })
   }, [])
 
   // Artifact event handler - triggers board refresh
@@ -245,9 +281,28 @@ export function App() {
     }
   }, [isSwitchingChannel])
 
+  // Get newest cached message timestamp for incremental sync
+  const newestCachedTimestamp = selectedThread
+    ? (() => {
+        const cachedMsgs = messageCache.get(selectedThread)
+        if (cachedMsgs && cachedMsgs.length > 0) {
+          // Messages are sorted by ULID, last one is newest
+          return cachedMsgs[cachedMsgs.length - 1].timestamp
+        }
+        return undefined
+      })()
+    : undefined
+
   // Channel WebSocket connection for real-time streaming
   // Pass wsToken from auth session to avoid re-fetching on every channel switch
-  const { connected, isWaitingForResponse, sendMessage } = useTymbalConnection({
+  const {
+    connected,
+    isWaitingForResponse,
+    sendMessage,
+    hasMoreMessages,
+    isLoadingOlder,
+    requestOlderMessages,
+  } = useTymbalConnection({
     channelId: selectedThread,
     onMessage: handleMessage,
     onMessageUpdate: handleMessageUpdate,
@@ -256,6 +311,7 @@ export function App() {
     onSyncComplete: handleSyncComplete,
     currentUser,
     wsToken: authSession?.wsToken,
+    newestCachedTimestamp,
   })
 
   // Set default agents (local Cikada runtime doesn't have /agents endpoint)
@@ -313,19 +369,33 @@ export function App() {
     fetchChannels()
   }, [])
 
-  // Fetch thread details (including roster) and message history when thread changes
+  // Handle thread/channel changes
   useEffect(() => {
     // Reset cold start state when changing threads
     setIsStartingWorkspace(false)
 
-    // Clear messages when channel changes - WebSocket sync will repopulate
-    // Set switching state to show loading instead of empty welcome message
-    setMessages([])
+    // Don't clear messages - they're cached per channel
+    // Only show switching state if we don't have cached messages for this channel
     setRoster([])
     setLeader(undefined)
     if (selectedThread) {
-      setIsSwitchingChannel(true)
-      console.log(`[ChannelSwitch] Started switching to channel ${selectedThread} at ${performance.now().toFixed(2)}ms`)
+      // Check cache at the time of switch (not reactive to cache changes)
+      setMessageCache((cache) => {
+        const hasCachedMessages = cache.has(selectedThread) && cache.get(selectedThread)!.length > 0
+        if (!hasCachedMessages) {
+          setIsSwitchingChannel(true)
+          console.log(`[ChannelSwitch] Started switching to channel ${selectedThread} at ${performance.now().toFixed(2)}ms (no cache)`)
+          return cache // Don't modify cache - no messages yet
+        } else {
+          console.log(`[ChannelSwitch] Switched to channel ${selectedThread} (cached ${cache.get(selectedThread)!.length} messages)`)
+          // Move to end of Map to mark as recently accessed (LRU)
+          const messages = cache.get(selectedThread)!
+          const newCache = new Map(cache)
+          newCache.delete(selectedThread)
+          newCache.set(selectedThread, messages)
+          return newCache
+        }
+      })
     }
 
     // Note: Roster fetch moved to happen AFTER WebSocket connects (see below)
@@ -683,6 +753,9 @@ export function App() {
                 roster={roster}
                 isSwitching={isSwitchingChannel}
                 isLoading={showLoadingSpinner}
+                hasMoreMessages={hasMoreMessages}
+                isLoadingOlder={isLoadingOlder}
+                onRequestOlderMessages={requestOlderMessages}
               />
               {/* Cold start indicator - shows when workspace container is starting */}
               {isStartingWorkspace && (

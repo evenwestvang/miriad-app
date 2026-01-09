@@ -33,7 +33,9 @@ export interface ConnectionManagerOptions {
   onSyncRequest?: (
     connection: ConnectionInfo,
     channelId: string,
-    since?: string
+    since?: string,
+    before?: string,
+    limit?: number
   ) => Promise<void>;
   /** Handler for incoming frames from containers */
   onFrame?: (
@@ -155,7 +157,7 @@ export function createConnectionManager(
             // The handler is responsible for calling switchChannel after auth
             const requestedChannelId = frame.channelId || info.channelId;
             if (onSyncRequest) {
-              await onSyncRequest(info, requestedChannelId, frame.since);
+              await onSyncRequest(info, requestedChannelId, frame.since, frame.before, frame.limit);
             }
             return;
           }

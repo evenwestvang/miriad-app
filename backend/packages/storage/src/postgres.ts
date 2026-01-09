@@ -266,14 +266,16 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         LIMIT ${limit}
       `;
     } else if (params?.before) {
+      // Get newest N messages before the cursor, then reverse for chronological order
       result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
           AND id < ${params.before}
-        ORDER BY id ASC
+        ORDER BY id DESC
         LIMIT ${limit}
       `;
+      result = result.reverse(); // Return in chronological order
     } else {
       result = await sql<MessageRow[]>`
         SELECT * FROM messages
@@ -318,13 +320,15 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         LIMIT ${limit}
       `;
     } else if (params?.before) {
+      // Get newest N messages before the cursor, then reverse for chronological order
       result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE channel_id = ${channelId}
           AND id < ${params.before}
-        ORDER BY id ASC
+        ORDER BY id DESC
         LIMIT ${limit}
       `;
+      result = result.reverse(); // Return in chronological order
     } else if (params?.newestFirst) {
       // Get newest messages first (for initial sync), then reverse for chronological order
       result = await sql<MessageRow[]>`

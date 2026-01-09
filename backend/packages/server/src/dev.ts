@@ -85,8 +85,8 @@ async function main() {
   };
 
   const connectionManager = createConnectionManager({
-    onSyncRequest: async (connection: ConnectionInfo, channelId: string, since?: string) => {
-      console.log(`[Sync] Received sync request for channel: ${channelId}, since: ${since}`);
+    onSyncRequest: async (connection: ConnectionInfo, channelId: string, since?: string, before?: string, limit?: number) => {
+      console.log(`[Sync] Received sync request for channel: ${channelId}, since: ${since}, before: ${before}, limit: ${limit}`);
       const t0 = performance.now();
       try {
         const extConn = connection as ExtendedConnection;
@@ -125,14 +125,19 @@ async function main() {
         }
 
         // Fetch message history and send to client
+        // Use provided limit, default to 25 for fast initial sync
+        const effectiveLimit = limit ?? 25;
         const messages = await storage.getMessagesByChannelId(channelId, {
           since,
-          limit: 25, // Keep small for fast initial sync - content column is large
-          newestFirst: !since, // Get newest messages for initial sync, oldest-first for incremental
+          before,
+          limit: effectiveLimit,
+          // Get newest messages for initial sync (no cursors), oldest-first for incremental
+          newestFirst: !since && !before,
         });
         const t1 = performance.now();
 
         // Build NDJSON payload with all messages + sync response
+        // Each frame includes 'c' (channelId) so client can route messages correctly
         const frames = messages.map(msg => {
           // For tool_call and tool_result messages, the content is stored as a JSON string
           // containing the full message data. We need to extract and flatten these fields
@@ -180,11 +185,19 @@ async function main() {
             i: msg.id,
             t: msg.timestamp,
             v: frameValue,
+            c: channelId, // Channel ID for client routing
           });
         });
 
         // Add sync response at the end
-        frames.push(JSON.stringify({ sync: new Date().toISOString() }));
+        // Include hasMore flag - if we got fewer messages than requested, there are no more
+        const hasMore = messages.length >= effectiveLimit;
+        frames.push(JSON.stringify({
+          sync: new Date().toISOString(),
+          hasMore,
+          // Include first message ID for client to use as 'before' cursor for next request
+          oldestId: messages.length > 0 ? messages[0].id : undefined,
+        }));
         const t2 = performance.now();
 
         // Send all frames as single NDJSON payload

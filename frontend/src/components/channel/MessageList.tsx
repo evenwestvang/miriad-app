@@ -218,6 +218,12 @@ interface MessageListProps {
   isSwitching?: boolean;
   /** Show loading spinner (delayed - only after 500ms) */
   isLoading?: boolean;
+  /** Whether there are more older messages to load */
+  hasMoreMessages?: boolean;
+  /** Whether currently loading older messages */
+  isLoadingOlder?: boolean;
+  /** Callback to request older messages */
+  onRequestOlderMessages?: () => void;
   onStructuredAskSubmit?: (
     messageId: string,
     response: Record<string, unknown>,
@@ -234,6 +240,9 @@ export function MessageList({
   roster = [],
   isSwitching = false,
   isLoading = false,
+  hasMoreMessages = true,
+  isLoadingOlder = false,
+  onRequestOlderMessages,
   onStructuredAskSubmit,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -349,6 +358,20 @@ export function MessageList({
     }
   }, [messages.length === 0]);
 
+  // Track scroll height before render to preserve position
+  const scrollHeightBeforeRef = useRef<number>(0);
+  const scrollTopBeforeRef = useRef<number>(0);
+
+  // Capture scroll state BEFORE React updates the DOM
+  // This runs synchronously before useLayoutEffect
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (container) {
+      scrollHeightBeforeRef.current = container.scrollHeight;
+      scrollTopBeforeRef.current = container.scrollTop;
+    }
+  });
+
   // Handle scrolling based on sync state
   useLayoutEffect(() => {
     const prevCount = prevMessageCountRef.current;
@@ -359,14 +382,17 @@ export function MessageList({
       return;
     }
 
+    const container = containerRef.current;
+    if (!container) return;
+
     // Detect sync start: going from 0 to having messages
     if (prevCount === 0 && currentCount > 0) {
       syncStateRef.current = "syncing";
     }
 
     // During sync: keep scrolling to bottom instantly (no animation)
-    if (syncStateRef.current === "syncing" && containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    if (syncStateRef.current === "syncing") {
+      container.scrollTop = container.scrollHeight;
       wasAtBottomRef.current = true;
 
       // Reset the sync completion timer on each new message
@@ -381,11 +407,62 @@ export function MessageList({
       return;
     }
 
-    // After sync complete: smooth scroll for new messages if at bottom
-    if (syncStateRef.current === "ready" && wasAtBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    // After sync complete: preserve scroll position
+    if (syncStateRef.current === "ready") {
+      if (wasAtBottomRef.current) {
+        // If at bottom, stay at bottom (instant)
+        container.scrollTop = container.scrollHeight;
+      } else {
+        // If scrolled up, preserve position relative to content
+        const scrollHeightAfter = container.scrollHeight;
+        const heightDiff = scrollHeightAfter - scrollHeightBeforeRef.current;
+        if (heightDiff !== 0) {
+          container.scrollTop = scrollTopBeforeRef.current + heightDiff;
+        }
+      }
     }
   }, [messages]);
+
+  // Infinite scroll: Load older messages when scrolling near top or viewport not filled
+  useEffect(() => {
+    if (!onRequestOlderMessages || !hasMoreMessages || isLoadingOlder || isSwitching) {
+      return;
+    }
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Check if viewport needs to be filled (content doesn't fill the container)
+    const checkViewportFill = () => {
+      if (syncStateRef.current !== "ready") return;
+      if (container.scrollHeight <= container.clientHeight && messages.length > 0) {
+        console.log("[InfiniteScroll] Viewport not filled, requesting more messages");
+        onRequestOlderMessages();
+      }
+    };
+
+    // Check after sync completes and messages render
+    const fillTimeoutId = setTimeout(checkViewportFill, 200);
+
+    // Check when scrolling near the top
+    const handleScroll = () => {
+      if (syncStateRef.current !== "ready") return;
+      const scrollTop = container.scrollTop;
+      const threshold = 100; // pixels from top to trigger load
+
+      if (scrollTop < threshold) {
+        console.log("[InfiniteScroll] Near top, requesting older messages");
+        onRequestOlderMessages();
+      }
+    };
+
+    container.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      clearTimeout(fillTimeoutId);
+      container.removeEventListener("scroll", handleScroll);
+    };
+  }, [onRequestOlderMessages, hasMoreMessages, isLoadingOlder, isSwitching, messages.length]);
 
   return (
     <div className="flex-1 overflow-y-auto pt-6 px-6 pl-8 pb-2" ref={containerRef}>
@@ -422,7 +499,20 @@ export function MessageList({
           </div>
         )
       ) : (
-        groupMessages(messages).map((item) => {
+        <>
+          {/* Loading indicator for older messages */}
+          {isLoadingOlder && (
+            <div className="flex justify-center py-4">
+              <div className="w-5 h-5 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+            </div>
+          )}
+          {/* "No more messages" indicator */}
+          {!hasMoreMessages && messages.length > 0 && (
+            <div className="flex justify-center py-4">
+              <span className="text-xs text-muted-foreground">Beginning of conversation</span>
+            </div>
+          )}
+        {groupMessages(messages).map((item) => {
           if (item.type === "tool_group") {
             // Render grouped tool messages
             const firstMsg = item.messages[0];
@@ -510,7 +600,8 @@ export function MessageList({
               />
             </div>
           );
-        })
+        })}
+        </>
       )}
       <div ref={bottomRef} />
       </div>
