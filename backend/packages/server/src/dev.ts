@@ -133,16 +133,55 @@ async function main() {
         const t1 = performance.now();
 
         // Build NDJSON payload with all messages + sync response
-        const frames = messages.map(msg => JSON.stringify({
-          i: msg.id,
-          t: msg.timestamp,
-          v: {
+        const frames = messages.map(msg => {
+          // For tool_call and tool_result messages, the content is stored as a JSON string
+          // containing the full message data. We need to extract and flatten these fields
+          // so the frontend receives them in the same format as streaming messages.
+          let frameValue: Record<string, unknown> = {
             type: msg.type,
             content: msg.content,
             sender: msg.sender,
             senderType: msg.senderType,
-          },
-        }));
+          };
+
+          if (msg.type === 'tool_call' || msg.type === 'tool_result') {
+            try {
+              // Content may be a JSON string or already an object
+              const parsed = typeof msg.content === 'string'
+                ? JSON.parse(msg.content)
+                : msg.content;
+
+              if (msg.type === 'tool_call') {
+                frameValue = {
+                  type: 'tool_call',
+                  sender: parsed.sender || msg.sender,
+                  senderType: parsed.senderType || msg.senderType,
+                  toolCallId: parsed.toolCallId,
+                  name: parsed.name,
+                  args: parsed.args,
+                };
+              } else if (msg.type === 'tool_result') {
+                frameValue = {
+                  type: 'tool_result',
+                  sender: parsed.sender || msg.sender,
+                  senderType: parsed.senderType || msg.senderType,
+                  toolCallId: parsed.toolCallId,
+                  content: parsed.content,
+                  isError: parsed.isError,
+                };
+              }
+            } catch {
+              // If parsing fails, fall back to original format
+              console.warn(`[Sync] Failed to parse ${msg.type} content:`, msg.id);
+            }
+          }
+
+          return JSON.stringify({
+            i: msg.id,
+            t: msg.timestamp,
+            v: frameValue,
+          });
+        });
 
         // Add sync response at the end
         frames.push(JSON.stringify({ sync: new Date().toISOString() }));

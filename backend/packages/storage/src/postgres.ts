@@ -211,12 +211,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ${input.sender},
         ${input.senderType},
         ${input.type},
-        ${JSON.stringify(input.content)},
+        ${sql.json(input.content as JSONValue)},
         ${timestamp},
         ${isComplete},
         ${input.addressedAgents ?? null},
         ${input.turnId ?? null},
-        ${input.metadata ? JSON.stringify(input.metadata) : null}
+        ${input.metadata ? sql.json(input.metadata as JSONValue) : null}
       )
       RETURNING *
     `;
@@ -360,7 +360,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const updateObj: Record<string, unknown> = {};
 
     if (update.content !== undefined) {
-      updateObj.content = JSON.stringify(update.content);
+      updateObj.content = sql.json(update.content as JSONValue);
     }
     if (update.isComplete !== undefined) {
       updateObj.is_complete = update.isComplete;
@@ -369,7 +369,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       updateObj.addressed_agents = update.addressedAgents;
     }
     if (update.metadata !== undefined) {
-      updateObj.metadata = JSON.stringify(update.metadata);
+      updateObj.metadata = sql.json(update.metadata as JSONValue);
     }
 
     if (Object.keys(updateObj).length === 0) return;

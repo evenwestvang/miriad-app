@@ -217,11 +217,12 @@ function SingleToolItem({ pair }: { pair: ToolPair }) {
 
 /**
  * Pair tool_call messages with their corresponding tool_result messages.
- * Uses toolCallId/toolResultCallId to match them.
+ * Uses toolCallId/toolResultCallId to match them, or falls back to positional pairing.
  */
 function pairToolMessages(messages: Message[]): ToolPair[] {
   const pairs: ToolPair[] = []
   const resultMap = new Map<string, Message>()
+  const usedResults = new Set<string>()
 
   // First pass: collect all results by their call ID
   for (const msg of messages) {
@@ -230,13 +231,29 @@ function pairToolMessages(messages: Message[]): ToolPair[] {
     }
   }
 
+  // Collect results in order for fallback positional matching
+  const resultsInOrder = messages.filter(m => m.type === 'tool_result')
+  let resultIndex = 0
+
   // Second pass: create pairs for each call
   for (const msg of messages) {
     if (msg.type === 'tool_call') {
       const callId = msg.toolCallId || msg.id
+      let result = resultMap.get(callId)
+
+      // If no ID match, try positional matching (next unused result)
+      if (!result && resultIndex < resultsInOrder.length) {
+        result = resultsInOrder[resultIndex]
+        resultIndex++
+      }
+
+      if (result) {
+        usedResults.add(result.id)
+      }
+
       pairs.push({
         call: msg,
-        result: resultMap.get(callId)
+        result
       })
     }
   }
