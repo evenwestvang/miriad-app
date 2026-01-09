@@ -84,7 +84,8 @@ export type TymbalValueType =
   | "tool_call"
   | "tool_result"
   | "error"
-  | "idle";
+  | "idle"
+  | "cost";
 
 // Base for all set frame values
 interface TymbalValueBase {
@@ -121,12 +122,34 @@ export interface IdleValue extends TymbalValueBase {
   type: "idle";
 }
 
+export interface CostUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+}
+
+export interface CostModelUsage extends CostUsage {
+  costUsd: number;
+}
+
+export interface CostValue extends TymbalValueBase {
+  type: "cost";
+  totalCostUsd: number;
+  durationMs: number;
+  durationApiMs: number;
+  numTurns: number;
+  usage: CostUsage;
+  modelUsage?: Record<string, CostModelUsage>;
+}
+
 export type TymbalValue =
   | AgentValue
   | ToolCallValue
   | ToolResultValue
   | ErrorValue
-  | IdleValue;
+  | IdleValue
+  | CostValue;
 
 // ============================================================================
 // Configuration

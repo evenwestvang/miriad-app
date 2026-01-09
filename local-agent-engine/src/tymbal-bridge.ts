@@ -24,7 +24,7 @@ import type {
   SDKResultMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 
-import type { TymbalFrame, FrameMessage } from "./types.js";
+import type { TymbalFrame, FrameMessage, CostValue, CostModelUsage } from "./types.js";
 import type WebSocket from "ws";
 
 // Content block types from Anthropic API
@@ -353,6 +353,47 @@ export class TymbalBridge {
       });
     }
 
+    // Emit cost frame with usage data (before idle so frontend can show running cost)
+    const costId = generateId();
+    const costValue: CostValue = {
+      type: "cost",
+      sender: this.callsign,
+      senderType: "agent",
+      totalCostUsd: message.total_cost_usd,
+      durationMs: message.duration_ms,
+      durationApiMs: message.duration_api_ms,
+      numTurns: message.num_turns,
+      usage: {
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens,
+        cacheReadInputTokens: message.usage.cache_read_input_tokens ?? 0,
+        cacheCreationInputTokens: message.usage.cache_creation_input_tokens ?? 0,
+      },
+    };
+
+    // Include per-model breakdown if available
+    if (message.modelUsage && Object.keys(message.modelUsage).length > 0) {
+      const modelUsage: Record<string, CostModelUsage> = {};
+      for (const [model, usage] of Object.entries(message.modelUsage)) {
+        modelUsage[model] = {
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          cacheReadInputTokens: usage.cacheReadInputTokens,
+          cacheCreationInputTokens: usage.cacheCreationInputTokens,
+          costUsd: usage.costUSD,
+        };
+      }
+      costValue.modelUsage = modelUsage;
+    }
+
+    await this.emitFrame({
+      i: costId,
+      t: new Date().toISOString(),
+      v: costValue,
+    });
+
+    console.log(`[TymbalBridge] Cost frame emitted: $${message.total_cost_usd.toFixed(4)} (${message.num_turns} turns)`);
+
     // Emit idle frame
     const idleId = generateId();
     await this.emitFrame({
@@ -364,11 +405,6 @@ export class TymbalBridge {
         senderType: "agent",
       },
     });
-
-    // Log usage stats
-    if (message.subtype === "success") {
-      console.log(`[TymbalBridge] Turn complete: ${message.num_turns} turns, $${message.total_cost_usd.toFixed(4)}`);
-    }
   }
 
   /**
