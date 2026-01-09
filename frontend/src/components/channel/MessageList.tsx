@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import type { Message, StructuredAskMessage } from "../../types";
 import { highlightMentions, type ArtifactInfo } from "../../utils";
-import { ToolMessage } from "./ToolMessage";
+import { ToolGroup } from "./ToolGroup";
 import { StructuredAskForm } from "../structured-ask";
 import { AttachmentList, AttachmentRenderer } from "./AttachmentRenderer";
 import type { AttachmentMessageContent, Attachment } from "../../types";
@@ -419,7 +419,41 @@ export function MessageList({
           </div>
         )
       ) : (
-        messages.map((message, index) => {
+        groupMessages(messages).map((item) => {
+          if (item.type === "tool_group") {
+            // Render grouped tool messages
+            const firstMsg = item.messages[0];
+            const lastMsg = item.messages[item.messages.length - 1];
+
+            // Check if next message starts a new group (determines bottom margin)
+            const lastIndex = item.startIndex + item.messages.length - 1;
+            const nextMessage =
+              lastIndex < messages.length - 1 ? messages[lastIndex + 1] : null;
+            const isLastInGroup =
+              !nextMessage ||
+              nextMessage.sender !== lastMsg.sender ||
+              nextMessage.senderType !== lastMsg.senderType ||
+              new Date(nextMessage.timestamp).getTime() -
+                new Date(lastMsg.timestamp).getTime() >
+                20 * 60 * 1000;
+
+            const marginClass = isLastInGroup ? "mb-8 last:mb-0" : "mb-1";
+
+            return (
+              <div
+                key={`tool-group-${firstMsg.id}`}
+                data-message-id={firstMsg.id}
+                className={marginClass}
+              >
+                <ToolGroup messages={item.messages} />
+              </div>
+            );
+          }
+
+          // Regular message
+          const message = item.message;
+          const index = item.index;
+
           // Check if this message should show the header
           // Show header if: first message, different sender, or >20 min gap
           const prevMessage = index > 0 ? messages[index - 1] : null;
@@ -528,6 +562,55 @@ function formatTime(timestamp: string): string {
   return format(date, "MMM d, yyyy 'at' h:mm a");
 }
 
+/**
+ * Represents either a single message or a group of consecutive tool messages.
+ */
+type MessageOrGroup =
+  | { type: "message"; message: Message; index: number }
+  | { type: "tool_group"; messages: Message[]; startIndex: number };
+
+/**
+ * Group consecutive tool_call and tool_result messages from the same sender.
+ * Other messages pass through individually.
+ */
+function groupMessages(messages: Message[]): MessageOrGroup[] {
+  const result: MessageOrGroup[] = [];
+  let i = 0;
+
+  while (i < messages.length) {
+    const msg = messages[i];
+
+    // Check if this is a tool message
+    if (msg.type === "tool_call" || msg.type === "tool_result") {
+      // Collect consecutive tool messages from the same sender
+      const toolGroup: Message[] = [msg];
+      const sender = msg.sender;
+      let j = i + 1;
+
+      while (j < messages.length) {
+        const nextMsg = messages[j];
+        if (
+          (nextMsg.type === "tool_call" || nextMsg.type === "tool_result") &&
+          nextMsg.sender === sender
+        ) {
+          toolGroup.push(nextMsg);
+          j++;
+        } else {
+          break;
+        }
+      }
+
+      result.push({ type: "tool_group", messages: toolGroup, startIndex: i });
+      i = j;
+    } else {
+      result.push({ type: "message", message: msg, index: i });
+      i++;
+    }
+  }
+
+  return result;
+}
+
 function MessageItem({
   message,
   threadName = "Agent",
@@ -602,10 +685,8 @@ function MessageItem({
     );
   }
 
-  // Special handling for tool calls and results - use dedicated component
-  if (message.type === "tool_call" || message.type === "tool_result") {
-    return <ToolMessage message={message} />;
-  }
+  // Note: tool_call and tool_result messages are handled by ToolGroup
+  // in the parent render loop, so they won't reach this component
 
   // Helper to extract text content (may be string or { text: "..." } object)
   const getTextContent = (content: unknown): string => {
