@@ -504,7 +504,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         r.callback_url as roster_callback_url, r.readmark as roster_readmark,
         r.tunnel_hash as roster_tunnel_hash
       FROM channels c
-      LEFT JOIN roster r ON r.channel_id = c.id
+      LEFT JOIN roster r ON r.channel_id = c.id AND r.status != 'archived'
       WHERE c.space_id = ${spaceId} AND c.id = ${channelId}
       ORDER BY r.created_at ASC
     `;
@@ -554,7 +554,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         r.callback_url as roster_callback_url, r.readmark as roster_readmark,
         r.tunnel_hash as roster_tunnel_hash
       FROM channels c
-      LEFT JOIN roster r ON r.channel_id = c.id
+      LEFT JOIN roster r ON r.channel_id = c.id AND r.status != 'archived'
       WHERE c.space_id = ${spaceId}
         AND (c.id = ${idOrName} OR c.name = ${idOrName})
       ORDER BY CASE WHEN c.id = ${idOrName} THEN 0 ELSE 1 END, r.created_at ASC
@@ -709,6 +709,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const result = await sql<RosterRow[]>`
       SELECT * FROM roster
       WHERE channel_id = ${channelId}
+        AND status != 'archived'
       ORDER BY created_at ASC
     `;
 

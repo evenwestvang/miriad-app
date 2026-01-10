@@ -599,6 +599,56 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
     }
   });
 
+  /**
+   * DELETE /channels/:id/agents/:callsign - Dismiss an agent
+   *
+   * Archives the agent (hidden from roster but data preserved).
+   * Stops container, clears callbackUrl, broadcasts dismissed state.
+   */
+  app.delete('/:channelId/agents/:callsign', async (c) => {
+    const channelId = c.req.param('channelId');
+    const callsign = c.req.param('callsign');
+
+    try {
+      // Find agent in roster
+      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+      if (!rosterEntry) {
+        return c.json({ error: 'Agent not found in roster' }, 404);
+      }
+
+      // Check if already archived
+      if (rosterEntry.status === 'archived') {
+        return c.json({ error: 'Agent is already dismissed' }, 400);
+      }
+
+      console.log(`[Agents] Dismissing ${callsign} in channel ${channelId}`);
+
+      // Stop container if running
+      const spaceId = getSpaceId(c);
+      try {
+        await agentManager.stop(spaceId, channelId, callsign);
+      } catch (stopError) {
+        console.warn(`[Agents] Error stopping container for ${callsign}:`, stopError);
+        // Continue anyway - container may already be stopped
+      }
+
+      // Update roster status to archived and clear callbackUrl
+      await storage.updateRosterEntry(channelId, rosterEntry.id, {
+        status: 'archived',
+        callbackUrl: undefined,
+      });
+
+      // Broadcast dismissed state
+      await broadcastAgentState(connectionManager, channelId, callsign, 'dismissed');
+
+      console.log(`[Agents] ${callsign} dismissed successfully`);
+      return c.json({ success: true, callsign });
+    } catch (error) {
+      console.error('[Agents] Error dismissing agent:', error);
+      return c.json({ error: 'Failed to dismiss agent' }, 500);
+    }
+  });
+
   return app;
 }
 

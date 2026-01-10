@@ -196,7 +196,7 @@ export async function broadcastAgentState(
   connectionManager: ConnectionManager | undefined,
   channelId: string,
   callsign: string,
-  state: 'connecting' | 'online' | 'offline' | 'paused',
+  state: 'connecting' | 'online' | 'offline' | 'paused' | 'dismissed',
   lastHeartbeat?: string
 ): Promise<void> {
   if (!connectionManager) return;
