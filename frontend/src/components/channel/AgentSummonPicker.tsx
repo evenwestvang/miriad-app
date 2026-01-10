@@ -275,7 +275,7 @@ export function AgentSummonPicker({
   return (
     <div
       ref={popoverRef}
-      className="absolute bottom-full right-0 mb-1 w-72 bg-card border border-border rounded-lg shadow-lg z-50"
+      className="absolute bottom-full left-4 mb-1 w-72 bg-card border border-border rounded-lg shadow-lg z-50"
       onKeyDown={handleKeyDown}
     >
       {state === 'browse' ? (
