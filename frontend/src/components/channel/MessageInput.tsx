@@ -3,7 +3,6 @@ import {
   Send,
   Paperclip,
   AtSign,
-  Sparkles,
   Play,
   Bot,
   BotOff,
@@ -28,7 +27,7 @@ interface MessageInputProps {
 
 // Slash commands configuration
 const SLASH_COMMANDS = [
-  { name: 'summon', description: 'Summon an agent to the channel', icon: Sparkles },
+  { name: 'summon', description: 'Summon an agent to the channel', icon: Plus },
   { name: 'mute', description: 'Mute an agent', icon: BotOff },
   { name: 'unmute', description: 'Unmute an agent', icon: Bot },
   { name: 'mute-all', description: 'Mute all agents', icon: BotOff },
