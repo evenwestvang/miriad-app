@@ -253,43 +253,41 @@ export function AgentDetailPanel({
                 Activate
               </button>
             )}
-            {/* Mute/Unmute for online agents */}
-            {agent.isOnline && (
-              agent.isPaused ? (
-                <button
-                  onClick={handleResume}
-                  disabled={actionLoading !== null}
-                  className={cn(
-                    "flex items-center gap-1.5 px-2 py-1 text-sm",
-                    "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
-                    "disabled:opacity-50 disabled:cursor-not-allowed"
-                  )}
-                >
-                  {actionLoading === 'resume' ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Bot className="w-4 h-4" />
-                  )}
-                  Unmute
-                </button>
-              ) : (
-                <button
-                  onClick={handlePause}
-                  disabled={actionLoading !== null}
-                  className={cn(
-                    "flex items-center gap-1.5 px-2 py-1 text-sm",
-                    "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
-                    "disabled:opacity-50 disabled:cursor-not-allowed"
-                  )}
-                >
-                  {actionLoading === 'pause' ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <BotOff className="w-4 h-4" />
-                  )}
-                  Mute
-                </button>
-              )
+            {/* Mute/Unmute - always available */}
+            {agent.isPaused ? (
+              <button
+                onClick={handleResume}
+                disabled={actionLoading !== null}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1 text-sm",
+                  "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
+              >
+                {actionLoading === 'resume' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Bot className="w-4 h-4" />
+                )}
+                Unmute
+              </button>
+            ) : (
+              <button
+                onClick={handlePause}
+                disabled={actionLoading !== null}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1 text-sm",
+                  "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
+              >
+                {actionLoading === 'pause' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <BotOff className="w-4 h-4" />
+                )}
+                Mute
+              </button>
             )}
             <button
               onClick={handleDismiss}
@@ -341,43 +339,41 @@ export function AgentDetailPanel({
                     Activate
                   </button>
                 )}
-                {/* Mute/Unmute for online agents */}
-                {agent.isOnline && (
-                  agent.isPaused ? (
-                    <button
-                      onClick={() => { handleResume(); setMenuOpen(false) }}
-                      disabled={actionLoading !== null}
-                      className={cn(
-                        "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
-                        "text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
-                        "disabled:opacity-50 disabled:cursor-not-allowed"
-                      )}
-                    >
-                      {actionLoading === 'resume' ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Bot className="w-4 h-4" />
-                      )}
-                      Unmute
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => { handlePause(); setMenuOpen(false) }}
-                      disabled={actionLoading !== null}
-                      className={cn(
-                        "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
-                        "text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
-                        "disabled:opacity-50 disabled:cursor-not-allowed"
-                      )}
-                    >
-                      {actionLoading === 'pause' ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <BotOff className="w-4 h-4" />
-                      )}
-                      Mute
-                    </button>
-                  )
+                {/* Mute/Unmute - always available */}
+                {agent.isPaused ? (
+                  <button
+                    onClick={() => { handleResume(); setMenuOpen(false) }}
+                    disabled={actionLoading !== null}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
+                      "text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                      "disabled:opacity-50 disabled:cursor-not-allowed"
+                    )}
+                  >
+                    {actionLoading === 'resume' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Bot className="w-4 h-4" />
+                    )}
+                    Unmute
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => { handlePause(); setMenuOpen(false) }}
+                    disabled={actionLoading !== null}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
+                      "text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                      "disabled:opacity-50 disabled:cursor-not-allowed"
+                    )}
+                  >
+                    {actionLoading === 'pause' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <BotOff className="w-4 h-4" />
+                    )}
+                    Mute
+                  </button>
                 )}
                 <button
                   onClick={() => { handleDismiss(); setMenuOpen(false) }}
