@@ -478,7 +478,7 @@ export function useTymbalConnection({
 
         // Standard message handling - whitelist approach
         // Only render known renderable message types
-        const renderableTypes = ['user', 'agent', 'error', 'status', 'attachment', 'structured_ask', 'idle', 'thinking', 'system']
+        const renderableTypes = ['user', 'agent', 'error', 'status', 'attachment', 'structured_ask', 'idle', 'thinking']
         if (!renderableTypes.includes(value.type)) {
           // Render unrecognized types as error messages for visibility
           // This catches compliance issues (e.g., old 'assistant' type from stored data)
@@ -521,7 +521,7 @@ export function useTymbalConnection({
           id: frame.i,
           channelId: currentChannelId!,
           type: value.type,
-          content: typeof value.content === 'string' ? value.content : '',
+          content: value.content ?? '',
           sender: value.sender,
           senderType: value.senderType,
           timestamp: frame.t,

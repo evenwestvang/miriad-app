@@ -16,6 +16,14 @@ import type { AgentInvoker, Message } from '../handlers/messages.js';
 import { pushMessagesToContainer, compileMessages, broadcastAgentState } from '../handlers/checkin.js';
 import { generateContainerToken } from '../auth/index.js';
 
+/**
+ * Convert message content to string for agent consumption.
+ * Text messages are already strings, structured messages (like status) are JSON-stringified.
+ */
+function contentToString(content: string | Record<string, unknown>): string {
+  return typeof content === 'string' ? content : JSON.stringify(content);
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -120,7 +128,7 @@ export function createAgentInvokerAdapter(
                 id: message.id,
                 channelId,
                 callsign,
-                content: message.content,
+                content: contentToString(message.content),
                 sender: message.sender,
                 systemPrompt,
               });
@@ -193,7 +201,7 @@ export function createAgentInvokerAdapter(
                   channelId,
                   callsign,
                   message.sender,
-                  message.content
+                  contentToString(message.content)
                 );
               }
             } else {
@@ -206,7 +214,7 @@ export function createAgentInvokerAdapter(
                 channelId,
                 callsign,
                 message.sender,
-                message.content
+                contentToString(message.content)
               );
               console.log(`[AgentInvoker] Spawned container for @${callsign} (will checkin and get pending messages)`);
             }

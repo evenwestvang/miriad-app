@@ -24,9 +24,9 @@ export interface Message {
   id: string;
   channelId: string;
   sender: string;
-  senderType: 'user' | 'agent';  // Per spec: 'user' or 'agent'
+  senderType: 'user' | 'agent' | 'system';  // Per spec: 'user', 'agent', or 'system'
   type: string;
-  content: string;
+  content: string | Record<string, unknown>;  // String for text messages, object for structured (e.g., status)
   timestamp: string;
   isComplete: boolean;
   addressedAgents?: string[];

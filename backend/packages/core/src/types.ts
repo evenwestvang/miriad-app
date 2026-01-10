@@ -8,7 +8,7 @@
 // Message Types (Phase 1 - Minimal)
 // =============================================================================
 
-export type ParticipantType = 'user' | 'agent';
+export type ParticipantType = 'user' | 'agent' | 'system';
 
 export type StoredMessageType =
   | 'user'

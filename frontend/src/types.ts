@@ -29,9 +29,9 @@ export interface Message {
   id: string
   channelId: string
   type: MessageType
-  content: string
+  content: string | Record<string, unknown>
   sender: string
-  senderType: 'user' | 'agent'
+  senderType: 'user' | 'agent' | 'system'
   timestamp: string
   // For tool_call messages
   toolCallId?: string
@@ -107,7 +107,6 @@ export type MessageType =
   | 'roster'
   | 'structured_ask'
   | 'attachment'
-  | 'system'
 
 // Tymbal frame types (wire format)
 export type TymbalFrame =
@@ -153,7 +152,7 @@ export interface ErrorFrame {
 export interface MessageMetadata {
   type: MessageType
   sender: string
-  senderType: 'user' | 'agent'
+  senderType: 'user' | 'agent' | 'system'
   // For tool_call
   toolCallId?: string
   name?: string
@@ -163,7 +162,7 @@ export interface MessageValue {
   type: MessageType
   content?: string
   sender: string
-  senderType: 'user' | 'agent'
+  senderType: 'user' | 'agent' | 'system'
   // For tool_call
   toolCallId?: string
   name?: string

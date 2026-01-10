@@ -82,7 +82,8 @@ function createMessageStorageAdapter(storage: Storage): {
           sender: msg.sender,
           senderType: msg.senderType,
           type: msg.type,
-          content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+          // Pass content directly - strings for text, objects for structured (e.g., status)
+          content: msg.content as string | Record<string, unknown>,
           timestamp: msg.timestamp,
           isComplete: msg.isComplete,
           addressedAgents: msg.addressedAgents,
@@ -355,15 +356,15 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
       // Step 2: Create summoning message (save + broadcast)
       const messageId = generateMessageId();
       const now = new Date().toISOString();
-      const summoningContent = `Summoning ${callsign}...`;
+      const summoningContent = { action: 'summon', callsign };
 
-      // Save message to storage
+      // Save message to storage (content as object - stored as JSONB)
       await storage.saveMessage({
         id: messageId,
         spaceId,
         channelId,
         sender: 'system',
-        senderType: 'agent',
+        senderType: 'system',
         type: 'status',
         content: summoningContent,
         isComplete: true,
@@ -374,7 +375,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
       const frame = tymbal.set(messageId, {
         type: 'status',
         sender: 'system',
-        senderType: 'agent',
+        senderType: 'system',
         content: summoningContent,
         timestamp: now,
       });
@@ -641,11 +642,106 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
       // Broadcast dismissed state
       await broadcastAgentState(connectionManager, channelId, callsign, 'dismissed');
 
+      // Create and broadcast status message for dismiss action
+      const messageId = generateMessageId();
+      const now = new Date().toISOString();
+      const dismissContent = { action: 'dismiss', callsign };
+      // Save message to storage (content as object - stored as JSONB)
+      await storage.saveMessage({
+        id: messageId,
+        spaceId,
+        channelId,
+        sender: 'system',
+        senderType: 'system',
+        type: 'status',
+        content: dismissContent,
+        isComplete: true,
+      });
+
+      // Broadcast status message to channel
+      const frame = tymbal.set(messageId, {
+        type: 'status',
+        sender: 'system',
+        senderType: 'system',
+        content: dismissContent,
+        timestamp: now,
+      });
+      await connectionManager.broadcast(channelId, frame);
+
       console.log(`[Agents] ${callsign} dismissed successfully`);
       return c.json({ success: true, callsign });
     } catch (error) {
       console.error('[Agents] Error dismissing agent:', error);
       return c.json({ error: 'Failed to dismiss agent' }, 500);
+    }
+  });
+
+  /**
+   * GET /channels/:id/agents/archived - List archived agents
+   *
+   * Returns a flat list of archived (dismissed) agents.
+   * Used by frontend to detect @mentions of dismissed agents
+   * and offer to reactivate them.
+   */
+  app.get('/:channelId/agents/archived', async (c) => {
+    const channelId = c.req.param('channelId');
+
+    try {
+      const archived = await storage.listArchivedRoster(channelId);
+      return c.json({ agents: archived });
+    } catch (error) {
+      console.error('[Agents] Error listing archived agents:', error);
+      return c.json({ error: 'Failed to list archived agents' }, 500);
+    }
+  });
+
+  /**
+   * POST /channels/:id/agents/:callsign/unarchive - Restore a dismissed agent
+   *
+   * Sets status back to 'active' and spawns a new container.
+   * Used when user wants to re-summon a previously dismissed agent.
+   */
+  app.post('/:channelId/agents/:callsign/unarchive', async (c) => {
+    const channelId = c.req.param('channelId');
+    const callsign = c.req.param('callsign');
+
+    try {
+      // Find agent in roster (archived agents are still in DB)
+      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+      if (!rosterEntry) {
+        return c.json({ error: 'Agent not found in roster' }, 404);
+      }
+
+      // Check if actually archived
+      if (rosterEntry.status !== 'archived') {
+        return c.json({ error: 'Agent is not dismissed' }, 400);
+      }
+
+      console.log(`[Agents] Unarchiving ${callsign} in channel ${channelId}`);
+
+      // Update roster status back to active
+      await storage.updateRosterEntry(channelId, rosterEntry.id, {
+        status: 'active',
+      });
+
+      // Broadcast connecting state
+      await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
+
+      // Spawn new container
+      const spaceId = getSpaceId(c);
+      try {
+        await agentManager.spawn(spaceId, channelId, callsign);
+        console.log(`[Agents] ${callsign} unarchived and container spawned`);
+      } catch (spawnError) {
+        console.warn(`[Agents] Error spawning container for ${callsign}:`, spawnError);
+        // Agent is restored to active state even if spawn fails
+        // They'll get a container on next message
+      }
+
+      return c.json({ success: true, callsign, status: 'active' });
+    } catch (error) {
+      console.error('[Agents] Error unarchiving agent:', error);
+      return c.json({ error: 'Failed to unarchive agent' }, 500);
     }
   });
 
