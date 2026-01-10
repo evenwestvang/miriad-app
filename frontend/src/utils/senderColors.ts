@@ -1,6 +1,6 @@
 /**
  * Sender color utilities for consistent callsign coloring across the UI.
- * Used in message attribution, agent roster, @mention autocomplete, etc.
+ * Used in message attribution, agent roster, @mention autocomplete, Cartouche, etc.
  */
 
 // Predefined colors for common senders
@@ -21,6 +21,74 @@ const AGENT_COLORS = [
   'text-indigo-400',
   'text-amber-400',
 ]
+
+/**
+ * 24 colors that work well in both light and dark modes.
+ * Used for Cartouche and roster dots.
+ */
+const ROSTER_COLORS = [
+  "#FF6600", // orange (brand)
+  "#E5194D", // red
+  "#FF9ED0", // pink
+  "#9B4DCA", // purple
+  "#3359FF", // blue
+  "#00B8D9", // cyan
+  "#00A86B", // green
+  "#B8D500", // lime
+  "#FFB700", // gold
+  "#8B5E3C", // brown
+]
+
+/**
+ * FNV-1a hash function for strings.
+ * Returns a 32-bit integer.
+ */
+function hashString(str: string): number {
+  let hash = 2166136261
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+/**
+ * Shuffle an array using a seed (Fisher-Yates with seeded random).
+ */
+function seededShuffle<T>(array: T[], seed: number): T[] {
+  const result = [...array]
+  let s = seed
+
+  // Simple seeded random number generator (mulberry32)
+  const random = () => {
+    s |= 0
+    s = (s + 0x6d2b79f5) | 0
+    let t = Math.imul(s ^ (s >>> 15), 1 | s)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1))
+    ;[result[i], result[j]] = [result[j], result[i]]
+  }
+
+  return result
+}
+
+/**
+ * Get a hex color for an agent based on channel and roster position.
+ * Colors are shuffled per-channel so each channel has a unique color order.
+ *
+ * @param channelId - The channel ID (used to shuffle color order)
+ * @param rosterIndex - The agent's index in the roster
+ * @returns Hex color string (e.g., '#FF6600')
+ */
+export function getRosterColor(channelId: string, rosterIndex: number): string {
+  const channelSeed = hashString(channelId)
+  const shuffledColors = seededShuffle(ROSTER_COLORS, channelSeed)
+  return shuffledColors[rosterIndex % shuffledColors.length]
+}
 
 /**
  * Generate a consistent color class for a sender callsign.

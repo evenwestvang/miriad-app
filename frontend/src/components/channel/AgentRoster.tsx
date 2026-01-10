@@ -1,5 +1,4 @@
-import { useState, useRef } from 'react'
-import { Plus } from 'lucide-react'
+import { useState } from 'react'
 import { cn } from '../../lib/utils'
 import { getRosterColor } from '../../utils/senderColors'
 import { AgentSummonPicker } from './AgentSummonPicker'
@@ -32,6 +31,10 @@ interface AgentRosterProps {
   selectedAgent?: string | null
   /** Whether agent management is enabled */
   canManageAgents?: boolean
+  /** Controlled: is summon picker open */
+  summonOpen?: boolean
+  /** Controlled: called when summon picker should close */
+  onSummonClose?: () => void
 }
 
 interface AgentBadgeProps {
@@ -132,13 +135,13 @@ export function AgentRoster({
   onAgentSelect,
   selectedAgent,
   canManageAgents = false,
+  summonOpen = false,
+  onSummonClose,
 }: AgentRosterProps) {
   // Note: agentTypes and onAgentAdded are deprecated but kept for backwards compatibility
   void _agentTypes
   void _onAgentAdded
-  const [pickerOpen, setPickerOpen] = useState(false)
   const [dismissTarget, setDismissTarget] = useState<RosterAgent | null>(null)
-  const addButtonRef = useRef<HTMLButtonElement>(null)
 
   const handleConfirmDismiss = () => {
     if (dismissTarget) {
@@ -174,30 +177,15 @@ export function AgentRoster({
         )}
       </div>
 
-      {/* Summon agent button - inline on the right */}
+      {/* Summon agent picker (controlled by parent via summonOpen prop) */}
       {canManageAgents && channelId && (
-        <div className="relative z-10">
-          <button
-            ref={addButtonRef}
-            onClick={() => setPickerOpen(true)}
-            className={cn(
-              "flex items-center gap-1 text-xs",
-              "text-[#a0a0a0] hover:text-[var(--cast-text-primary)]",
-              pickerOpen && "text-[var(--cast-text-primary)] pointer-events-none"
-            )}
-          >
-            <Plus className="w-3 h-3" />
-            <span>Summon</span>
-          </button>
-
-          <AgentSummonPicker
-            roster={roster}
-            channelId={channelId}
-            apiHost={apiHost}
-            onClose={() => setPickerOpen(false)}
-            isOpen={pickerOpen}
-          />
-        </div>
+        <AgentSummonPicker
+          roster={roster}
+          channelId={channelId}
+          apiHost={apiHost}
+          onClose={() => onSummonClose?.()}
+          isOpen={summonOpen}
+        />
       )}
 
       {/* Dismiss confirmation dialog - used when dismissing working agent from panel */}

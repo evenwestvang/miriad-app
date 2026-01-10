@@ -10,6 +10,8 @@ export interface RosterAgent {
   isConnecting?: boolean
   /** Whether agent is in an active turn (sent messages, no idle frame yet) */
   isWorking?: boolean
+  /** Whether agent is paused (explicitly paused by user) */
+  isPaused?: boolean
   /** Tunnel hash for HTTP exposure (32-char hex, generated on spawn) */
   tunnelHash?: string
   /** Agent type/definition slug (e.g., "engineer", "lead") for visual identification */
@@ -31,6 +33,9 @@ interface MentionAutocompleteProps {
 
 // Get status display info from agent state
 function getAgentStatusInfo(agent: RosterAgent): { colorClass: string; label: string } {
+  if (agent.isPaused) {
+    return { colorClass: 'bg-gray-400', label: 'paused' }
+  }
   if (agent.isConnecting) {
     return { colorClass: 'bg-yellow-500 animate-pulse', label: 'connecting' }
   }
@@ -103,10 +108,15 @@ export function MentionAutocomplete({
           ) : (
             (() => {
               const statusInfo = option.agent ? getAgentStatusInfo(option.agent) : { colorClass: 'bg-gray-500', label: 'offline' }
+              const isPaused = option.agent?.isPaused
               return (
                 <>
                   <span className={cn("w-2 h-2 rounded-full", statusInfo.colorClass)} />
-                  <span className={cn("font-medium", getSenderColor(option.value))}>
+                  <span className={cn(
+                    "font-medium",
+                    getSenderColor(option.value),
+                    isPaused && "line-through opacity-60"
+                  )}>
                     @{option.value}
                   </span>
                   <span className="text-muted-foreground text-xs ml-auto">

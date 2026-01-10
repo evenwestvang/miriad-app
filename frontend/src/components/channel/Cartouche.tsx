@@ -1,58 +1,5 @@
 import { Circle } from "lucide-react";
-
-/**
- * FNV-1a hash function for strings.
- * Returns a 32-bit integer.
- */
-function hashString(str: string): number {
-  let hash = 2166136261;
-  for (let i = 0; i < str.length; i++) {
-    hash ^= str.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-/**
- * 24 colors that work well in both light and dark modes.
- * Selected for visibility and distinctiveness across themes.
- */
-const COLORS = [
-  "#FF6600", // orange (brand)
-  "#E5194D", // red
-  "#FF9ED0", // pink
-  "#9B4DCA", // purple
-  "#3359FF", // blue
-  "#00B8D9", // cyan
-  "#00A86B", // green
-  "#B8D500", // lime
-  "#FFB700", // gold
-  "#8B5E3C", // brown
-];
-
-/**
- * Shuffle an array using a seed (Fisher-Yates with seeded random).
- */
-function seededShuffle<T>(array: T[], seed: number): T[] {
-  const result = [...array];
-  let s = seed;
-
-  // Simple seeded random number generator (mulberry32)
-  const random = () => {
-    s |= 0;
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-
-  return result;
-}
+import { getRosterColor } from "../../utils/senderColors";
 
 interface CartoucheProps {
   /** The name/callsign - for tooltip */
@@ -88,13 +35,8 @@ export function Cartouche({
     );
   }
 
-  // Agents get colored circles
-  // Shuffle colors based on channel ID so each channel has a different color order
-  const channelSeed = hashString(channelId);
-  const shuffledColors = seededShuffle(COLORS, channelSeed);
-
-  // Pick color by roster index (wraps if more agents than colors)
-  const color = shuffledColors[rosterIndex % shuffledColors.length];
+  // Agents get colored circles (color determined by channel + roster position)
+  const color = getRosterColor(channelId, rosterIndex);
 
   return (
     <span className={`inline-flex items-center ${className}`} title={name}>

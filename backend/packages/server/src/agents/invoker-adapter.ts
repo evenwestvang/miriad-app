@@ -92,10 +92,21 @@ export function createAgentInvokerAdapter(
       const results = await Promise.allSettled(
         targets.map(async (callsign) => {
           try {
+            // Step 0a: Check if agent is paused or archived - skip if so
+            const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+            if (rosterEntry?.status === 'paused') {
+              console.log(`[AgentInvoker] Skipping @${callsign}: agent is paused`);
+              return;
+            }
+            if (rosterEntry?.status === 'archived') {
+              console.log(`[AgentInvoker] Skipping @${callsign}: agent is archived`);
+              return;
+            }
+
             const threadId = `${spaceId}:${channelId}:${callsign}`;
             const userMessage = `Message from @${message.sender}: ${message.content}`;
 
-            // Step 0: Check if local agent is connected (local-agent-engine)
+            // Step 0b: Check if local agent is connected (local-agent-engine)
             if (localAgentRouter?.isAgentConnected(channelId, callsign)) {
               console.log(`[AgentInvoker] @${callsign} is a local agent, sending via WebSocket`);
 
@@ -115,8 +126,7 @@ export function createAgentInvokerAdapter(
               });
 
               if (sent) {
-                // Update readmark after successful delivery
-                const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+                // Update readmark after successful delivery (rosterEntry already fetched above)
                 if (rosterEntry) {
                   await storage.updateRosterEntry(channelId, rosterEntry.id, {
                     readmark: message.id,
@@ -136,8 +146,7 @@ export function createAgentInvokerAdapter(
               console.log(`[AgentInvoker] @${callsign} container running (via orchestrator), sending directly`);
               await orchestrator.sendMessage(threadId, userMessage);
 
-              // Update readmark after successful delivery
-              const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+              // Update readmark after successful delivery (rosterEntry already fetched above)
               if (rosterEntry) {
                 await storage.updateRosterEntry(channelId, rosterEntry.id, {
                   readmark: message.id,
@@ -148,7 +157,7 @@ export function createAgentInvokerAdapter(
             }
 
             // Step 2: Check roster for existing callbackUrl (Fargate path)
-            const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+            // Note: rosterEntry already fetched at start of loop for status check
 
             if (rosterEntry?.callbackUrl) {
               // Step 2a: Container is running - push directly

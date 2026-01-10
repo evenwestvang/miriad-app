@@ -494,6 +494,111 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
     }
   });
 
+  /**
+   * POST /channels/:id/agents/:callsign/pause - Pause an agent
+   *
+   * Stops the container and sets status to 'paused'.
+   * Agent remains in roster but won't receive messages.
+   */
+  app.post('/:channelId/agents/:callsign/pause', async (c) => {
+    const channelId = c.req.param('channelId');
+    const callsign = c.req.param('callsign');
+
+    try {
+      // Find agent in roster
+      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+      if (!rosterEntry) {
+        return c.json({ error: 'Agent not found in roster' }, 404);
+      }
+
+      // Check if already paused
+      if (rosterEntry.status === 'paused') {
+        return c.json({ error: 'Agent is already paused' }, 400);
+      }
+
+      // Check if archived
+      if (rosterEntry.status === 'archived') {
+        return c.json({ error: 'Cannot pause archived agent' }, 400);
+      }
+
+      console.log(`[Agents] Pausing ${callsign} in channel ${channelId}`);
+
+      // Stop container if running
+      const spaceId = getSpaceId(c);
+      try {
+        await agentManager.stop(spaceId, channelId, callsign);
+      } catch (stopError) {
+        console.warn(`[Agents] Error stopping container for ${callsign}:`, stopError);
+        // Continue anyway - container may already be stopped
+      }
+
+      // Update roster status to paused and clear callbackUrl
+      await storage.updateRosterEntry(channelId, rosterEntry.id, {
+        status: 'paused',
+        callbackUrl: undefined,
+      });
+
+      // Broadcast paused state
+      await broadcastAgentState(connectionManager, channelId, callsign, 'paused');
+
+      console.log(`[Agents] ${callsign} paused successfully`);
+      return c.json({ success: true, callsign, status: 'paused' });
+    } catch (error) {
+      console.error('[Agents] Error pausing agent:', error);
+      return c.json({ error: 'Failed to pause agent' }, 500);
+    }
+  });
+
+  /**
+   * POST /channels/:id/agents/:callsign/resume - Resume a paused agent
+   *
+   * Spawns a new container and sets status back to 'active'.
+   */
+  app.post('/:channelId/agents/:callsign/resume', async (c) => {
+    const channelId = c.req.param('channelId');
+    const callsign = c.req.param('callsign');
+
+    try {
+      // Find agent in roster
+      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+      if (!rosterEntry) {
+        return c.json({ error: 'Agent not found in roster' }, 404);
+      }
+
+      // Check if actually paused
+      if (rosterEntry.status !== 'paused') {
+        return c.json({ error: 'Agent is not paused' }, 400);
+      }
+
+      console.log(`[Agents] Resuming ${callsign} in channel ${channelId}`);
+
+      const spaceId = getSpaceId(c);
+
+      // Update roster status to active
+      await storage.updateRosterEntry(channelId, rosterEntry.id, {
+        status: 'active',
+      });
+
+      // Broadcast connecting state (container not ready yet)
+      await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
+
+      // Spawn new container
+      try {
+        await agentManager.spawn(spaceId, channelId, callsign);
+        console.log(`[Agents] Container spawned for ${callsign}`);
+      } catch (spawnError) {
+        console.error(`[Agents] Failed to spawn container for ${callsign}:`, spawnError);
+        // Don't fail the request - agent is active, container spawn can retry
+      }
+
+      console.log(`[Agents] ${callsign} resumed successfully`);
+      return c.json({ success: true, callsign, status: 'active' });
+    } catch (error) {
+      console.error('[Agents] Error resuming agent:', error);
+      return c.json({ error: 'Failed to resume agent' }, 500);
+    }
+  });
+
   return app;
 }
 

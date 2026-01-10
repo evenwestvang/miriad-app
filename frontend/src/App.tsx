@@ -131,6 +131,8 @@ export function App() {
   const [artifactEventTrigger, setArtifactEventTrigger] = useState(0);
   // Selected agent for detail panel (callsign or null)
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  // Summon picker open state (controlled from MessageInput button)
+  const [summonOpen, setSummonOpen] = useState(false);
 
   // Check authentication on mount
   useEffect(() => {
@@ -1078,6 +1080,8 @@ export function App() {
                     onAgentSelect={handleAgentSelect}
                     selectedAgent={selectedAgent}
                     canManageAgents={!!selectedThread}
+                    summonOpen={summonOpen}
+                    onSummonClose={() => setSummonOpen(false)}
                   />
                 </div>
                 {/* Message input below roster */}
@@ -1087,6 +1091,7 @@ export function App() {
                   roster={rosterWithWorkingState}
                   channelId={selectedThread || undefined}
                   apiHost={API_HOST}
+                  onSummon={() => setSummonOpen(true)}
                 />
               </div>
             </>

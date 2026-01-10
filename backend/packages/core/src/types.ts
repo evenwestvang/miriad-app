@@ -171,7 +171,7 @@ export interface ListChannelsParams {
 // Roster Types (Phase 2)
 // =============================================================================
 
-export type RosterStatus = 'active' | 'idle' | 'busy' | 'offline';
+export type RosterStatus = 'active' | 'idle' | 'busy' | 'offline' | 'paused' | 'archived';
 
 /**
  * A roster entry (agent in a channel) as stored in the database.
