@@ -133,6 +133,8 @@ export function App() {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   // Summon picker open state (controlled from MessageInput button)
   const [summonOpen, setSummonOpen] = useState(false);
+  // Recently dismissed agents (for warning when mentioning them)
+  const [dismissedAgents, setDismissedAgents] = useState<Set<string>>(new Set());
 
   // Check authentication on mount
   useEffect(() => {
@@ -364,6 +366,12 @@ export function App() {
       setSelectedAgent((current) =>
         current === event.callsign ? null : current,
       );
+      // Track dismissed agent for warning when user @mentions them
+      setDismissedAgents((prev) => {
+        const next = new Set(prev);
+        next.add(event.callsign);
+        return next;
+      });
     }
 
     setRoster((prev) => {
@@ -583,6 +591,8 @@ export function App() {
     setLeader(undefined);
     // Clear agent selection on channel switch
     setSelectedAgent(null);
+    // Clear dismissed agents tracking on channel switch
+    setDismissedAgents(new Set());
     if (selectedThread) {
       // Check cache at the time of switch (not reactive to cache changes)
       setMessageCache((cache) => {
@@ -1105,6 +1115,7 @@ export function App() {
                   apiHost={API_HOST}
                   onSummon={() => setSummonOpen(true)}
                   resetKey={selectedThread}
+                  dismissedAgents={dismissedAgents}
                 />
               </div>
             </>

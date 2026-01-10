@@ -9,7 +9,8 @@ import {
   Search,
   X,
   Loader2,
-  Plus
+  Plus,
+  Coffee
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { MentionAutocomplete, useMentionAutocomplete, type RosterAgent } from './MentionAutocomplete'
@@ -25,6 +26,8 @@ interface MessageInputProps {
   onSummon?: () => void
   /** Reset key - change this to clear input state (e.g., on channel switch) */
   resetKey?: string | number
+  /** Set of callsigns for recently dismissed agents (to warn when mentioning) */
+  dismissedAgents?: Set<string>
 }
 
 // Slash commands configuration
@@ -45,6 +48,7 @@ export function MessageInput({
   apiHost,
   onSummon,
   resetKey,
+  dismissedAgents = new Set(),
 }: MessageInputProps) {
   const [content, setContent] = useState('')
   const [showAutocomplete, setShowAutocomplete] = useState(false)
@@ -67,6 +71,8 @@ export function MessageInput({
 
   // Loading state for resume actions in dormant dialog
   const [dormantActionLoading, setDormantActionLoading] = useState<string | null>(null)
+  // Loading state for re-summon actions for dismissed agents
+  const [summonActionLoading, setSummonActionLoading] = useState<string | null>(null)
 
   const { findMentionTrigger, getOptionsCount, getOptionAtIndex } = useMentionAutocomplete(roster)
 
@@ -103,17 +109,27 @@ export function MessageInput({
     return match ? match[0] : ''
   }, [])
 
-  // Paused agents mentioned in current content
-  const dormantAgents = useMemo(() => {
+  // Extract @mentions from content
+  const mentionedCallsigns = useMemo(() => {
     const mentionRegex = /@(\w+)/g
     const mentions: string[] = []
     let match
     while ((match = mentionRegex.exec(content)) !== null) {
       mentions.push(match[1])
     }
+    return mentions
+  }, [content])
+
+  // Paused agents mentioned in current content
+  const dormantAgents = useMemo(() => {
     // Only include paused roster agents
-    return roster.filter(a => a.isPaused && mentions.includes(a.callsign))
-  }, [content, roster])
+    return roster.filter(a => a.isPaused && mentionedCallsigns.includes(a.callsign))
+  }, [mentionedCallsigns, roster])
+
+  // Dismissed agents mentioned in current content
+  const mentionedDismissedAgents = useMemo(() => {
+    return mentionedCallsigns.filter(callsign => dismissedAgents.has(callsign))
+  }, [mentionedCallsigns, dismissedAgents])
 
   // Handle resume action for paused agent from dormant dialog
   const handleResumeDormant = useCallback(async (callsign: string) => {
@@ -122,7 +138,7 @@ export function MessageInput({
     try {
       const response = await fetch(
         `${apiHost}/channels/${channelId}/agents/${callsign}/resume`,
-        { method: 'POST' }
+        { method: 'POST', credentials: 'include' }
       )
       const data = await response.json()
       if (!response.ok) {
@@ -132,6 +148,26 @@ export function MessageInput({
       console.error('Failed to resume agent:', err)
     } finally {
       setDormantActionLoading(null)
+    }
+  }, [apiHost, channelId])
+
+  // Handle re-summon action for dismissed (archived) agent
+  const handleResummonDismissed = useCallback(async (callsign: string) => {
+    if (!apiHost || !channelId) return
+    setSummonActionLoading(callsign)
+    try {
+      const response = await fetch(
+        `${apiHost}/channels/${channelId}/agents/${callsign}/unarchive`,
+        { method: 'POST', credentials: 'include' }
+      )
+      const data = await response.json()
+      if (!response.ok) {
+        console.error('Failed to re-summon agent:', data.error || response.status)
+      }
+    } catch (err) {
+      console.error('Failed to re-summon agent:', err)
+    } finally {
+      setSummonActionLoading(null)
     }
   }, [apiHost, channelId])
 
@@ -503,36 +539,73 @@ export function MessageInput({
           />
         )}
 
-        {/* Dormant agents notice - compact inline style */}
-        {dormantAgents.length > 0 && !showAgentPicker && !showSlashMenu && (
+        {/* Dormant/dismissed agents notice - compact inline style */}
+        {(dormantAgents.length > 0 || mentionedDismissedAgents.length > 0) && !showAgentPicker && !showSlashMenu && (
           <div
             className="absolute z-40 bg-card border border-border rounded-lg shadow-sm px-3 py-2 text-sm"
             style={{ bottom: 8, left: 16 }}
           >
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-muted-foreground">Paused:</span>
-              {dormantAgents.map((agent) => (
-                <span key={agent.callsign} className="flex items-center gap-1">
-                  <span className={cn("font-medium", getSenderColor(agent.callsign))}>
-                    @{agent.callsign}
-                  </span>
-                  <button
-                    onClick={() => handleResumeDormant(agent.callsign)}
-                    disabled={dormantActionLoading === agent.callsign}
-                    className={cn(
-                      "p-0.5 rounded hover:bg-secondary/50 transition-colors",
-                      dormantActionLoading === agent.callsign && "opacity-50 cursor-not-allowed"
-                    )}
-                    title="Resume agent"
-                  >
-                    {dormantActionLoading === agent.callsign ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                    ) : (
-                      <Play className="w-3.5 h-3.5 text-muted-foreground" />
-                    )}
-                  </button>
-                </span>
-              ))}
+              {/* Muted agents section */}
+              {dormantAgents.length > 0 && (
+                <>
+                  <span className="text-muted-foreground">Muted:</span>
+                  {dormantAgents.map((agent) => (
+                    <span key={agent.callsign} className="flex items-center gap-1">
+                      <span className={cn("font-medium", getSenderColor(agent.callsign))}>
+                        @{agent.callsign}
+                      </span>
+                      <button
+                        onClick={() => handleResumeDormant(agent.callsign)}
+                        disabled={dormantActionLoading === agent.callsign}
+                        className={cn(
+                          "p-0.5 rounded hover:bg-secondary/50 transition-colors",
+                          dormantActionLoading === agent.callsign && "opacity-50 cursor-not-allowed"
+                        )}
+                        title="Unmute agent"
+                      >
+                        {dormantActionLoading === agent.callsign ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                        ) : (
+                          <Play className="w-3.5 h-3.5 text-muted-foreground" />
+                        )}
+                      </button>
+                    </span>
+                  ))}
+                </>
+              )}
+              {/* Separator if both sections present */}
+              {dormantAgents.length > 0 && mentionedDismissedAgents.length > 0 && (
+                <span className="text-muted-foreground mx-1">·</span>
+              )}
+              {/* Dismissed agents section */}
+              {mentionedDismissedAgents.length > 0 && (
+                <>
+                  <span className="text-muted-foreground">Dismissed:</span>
+                  {mentionedDismissedAgents.map((callsign) => (
+                    <span key={callsign} className="flex items-center gap-1">
+                      <span className={cn("font-medium", getSenderColor(callsign))}>
+                        @{callsign}
+                      </span>
+                      <button
+                        onClick={() => handleResummonDismissed(callsign)}
+                        disabled={summonActionLoading === callsign}
+                        className={cn(
+                          "p-0.5 rounded hover:bg-secondary/50 transition-colors",
+                          summonActionLoading === callsign && "opacity-50 cursor-not-allowed"
+                        )}
+                        title="Re-summon agent"
+                      >
+                        {summonActionLoading === callsign ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                        ) : (
+                          <Coffee className="w-3.5 h-3.5 text-muted-foreground" />
+                        )}
+                      </button>
+                    </span>
+                  ))}
+                </>
+              )}
             </div>
           </div>
         )}
