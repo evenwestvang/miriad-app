@@ -56,6 +56,7 @@ export function MessageInput({
   const [showSlashMenu, setShowSlashMenu] = useState(false)
   const [slashQuery, setSlashQuery] = useState('')
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0)
+  const slashMenuRef = useRef<HTMLDivElement>(null)
 
   // Agent action picker state (for /pause and /resume commands)
   const [showAgentPicker, setShowAgentPicker] = useState<'pause' | 'resume' | null>(null)
@@ -413,6 +414,18 @@ export function MessageInput({
     }
   }, [content, showAgentPicker])
 
+  // Close slash menu on click outside
+  useEffect(() => {
+    if (!showSlashMenu) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (slashMenuRef.current && !slashMenuRef.current.contains(e.target as Node)) {
+        setShowSlashMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showSlashMenu])
+
   // Calculate autocomplete position (above the textarea)
   const getAutocompletePosition = () => {
     return { top: 8, left: 16 }
@@ -424,6 +437,7 @@ export function MessageInput({
         {/* Slash command menu */}
         {showSlashMenu && filteredCommands.length > 0 && (
           <div
+            ref={slashMenuRef}
             className="absolute z-50 bg-white border border-[var(--cast-border-default)] shadow-sm py-1 min-w-[180px] max-h-[200px] overflow-y-auto"
             style={{ bottom: 8, left: 16 }}
           >
