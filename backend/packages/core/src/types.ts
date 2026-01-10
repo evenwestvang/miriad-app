@@ -101,6 +101,12 @@ export interface GetMessagesParams {
   limit?: number;
   /** If true, fetch newest messages first (for initial sync) - results still returned in chronological order */
   newestFirst?: boolean;
+  /** Keyword search - case-insensitive substring match on content and sender */
+  search?: string;
+  /** Filter by sender callsign (exact match) */
+  sender?: string;
+  /** If true, include tool call messages (default: false - only text messages) */
+  includeToolCalls?: boolean;
 }
 
 // =============================================================================

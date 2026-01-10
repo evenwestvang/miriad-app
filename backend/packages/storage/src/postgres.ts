@@ -252,54 +252,81 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     params?: GetMessagesParams
   ): Promise<StoredMessage[]> {
     const limit = params?.limit ?? 50;
+    const { since, before, newestFirst, search, sender, includeToolCalls } = params ?? {};
+
+    // Build search pattern for ILIKE (null if no search)
+    const searchPattern = search ? `%${search}%` : null;
+    // Ensure sender is null not undefined for postgres.js type safety
+    const senderFilter = sender ?? null;
+    // By default, only return conversation messages (user, agent, assistant, system, error)
+    // Tool calls, tool results, status updates, idle markers, etc. are filtered out
+    const conversationOnly = !includeToolCalls;
 
     let result: MessageRow[];
 
-    if (params?.since && params?.before) {
+    if (since && before) {
+      // Range query between two cursors
       result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
-          AND id > ${params.since}
-          AND id < ${params.before}
+          AND id > ${since}
+          AND id < ${before}
+          AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
+          AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}
       `;
-    } else if (params?.since) {
+    } else if (since) {
+      // Forward pagination (newer messages)
       result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
-          AND id > ${params.since}
+          AND id > ${since}
+          AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
+          AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}
       `;
-    } else if (params?.before) {
-      // Get newest N messages before the cursor, then reverse for chronological order
+    } else if (before) {
+      // Backward pagination (older messages) - fetch DESC then reverse
       result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
-          AND id < ${params.before}
+          AND id < ${before}
+          AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
+          AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id DESC
         LIMIT ${limit}
       `;
       result = result.reverse(); // Return in chronological order
-    } else if (params?.newestFirst) {
-      // Get newest messages first (for initial sync), then reverse for chronological order
+    } else if (newestFirst) {
+      // Initial load - fetch newest, then reverse for chronological order
       result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
+          AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
+          AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id DESC
         LIMIT ${limit}
       `;
       result = result.reverse(); // Return in chronological order
     } else {
+      // Default: oldest first
       result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
+          AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
+          AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}
       `;
@@ -317,42 +344,63 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     params?: GetMessagesParams
   ): Promise<StoredMessage[]> {
     const limit = params?.limit ?? 50;
+    const { since, before, newestFirst, search, sender, includeToolCalls } = params ?? {};
     const t0 = performance.now();
+
+    // Build search pattern for ILIKE (null if no search)
+    const searchPattern = search ? `%${search}%` : null;
+    // Ensure sender is null not undefined for postgres.js type safety
+    const senderFilter = sender ?? null;
+    // By default, only return conversation messages (user, agent, assistant, system, error)
+    // Tool calls, tool results, status updates, idle markers, etc. are filtered out
+    const conversationOnly = !includeToolCalls;
 
     let result: MessageRow[];
 
-    if (params?.since && params?.before) {
+    if (since && before) {
       result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE channel_id = ${channelId}
-          AND id > ${params.since}
-          AND id < ${params.before}
+          AND id > ${since}
+          AND id < ${before}
+          AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
+          AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}
       `;
-    } else if (params?.since) {
+    } else if (since) {
       result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE channel_id = ${channelId}
-          AND id > ${params.since}
+          AND id > ${since}
+          AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
+          AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}
       `;
-    } else if (params?.before) {
+    } else if (before) {
       // Get newest N messages before the cursor, then reverse for chronological order
       result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE channel_id = ${channelId}
-          AND id < ${params.before}
+          AND id < ${before}
+          AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
+          AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id DESC
         LIMIT ${limit}
       `;
       result = result.reverse(); // Return in chronological order
-    } else if (params?.newestFirst) {
+    } else if (newestFirst) {
       // Get newest messages first (for initial sync), then reverse for chronological order
       result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE channel_id = ${channelId}
+          AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
+          AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id DESC
         LIMIT ${limit}
       `;
@@ -361,6 +409,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       result = await sql<MessageRow[]>`
         SELECT * FROM messages
         WHERE channel_id = ${channelId}
+          AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
+          AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}
       `;

@@ -554,7 +554,7 @@ Messages without @mentions are logged but won't notify anyone.`,
   },
   {
     name: 'get_messages',
-    description: `Browse channel message history with bidirectional pagination. Returns messages in chronological order. Use 'before' to paginate backwards (older), 'since' to paginate forwards (newer/polling).`,
+    description: `Browse channel message history with bidirectional pagination and optional filtering. Returns messages in chronological order. Use 'before' to paginate backwards (older), 'since' to paginate forwards (newer/polling). Filters compose with pagination.`,
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -569,6 +569,18 @@ Messages without @mentions are logged but won't notify anyone.`,
         since: {
           type: 'string',
           description: 'Message ID cursor - return messages newer than this ID (forwards pagination / polling)',
+        },
+        search: {
+          type: 'string',
+          description: 'Keyword search - case-insensitive substring match on message content and sender',
+        },
+        sender: {
+          type: 'string',
+          description: 'Filter by sender callsign (exact match)',
+        },
+        includeToolCalls: {
+          type: 'boolean',
+          description: 'Include non-text messages like tool calls, status updates, etc. (default: false - only conversation messages with string content)',
         },
       },
       required: ['limit'],
@@ -1226,10 +1238,13 @@ const toolHandlers: Record<string, ToolHandler> = {
   },
 
   async get_messages(args, { storage, spaceId, channelId, channelName }) {
-    const { limit: requestedLimit, before, since } = args as {
+    const { limit: requestedLimit, before, since, search, sender, includeToolCalls } = args as {
       limit?: number;
       before?: string;
       since?: string;
+      search?: string;
+      sender?: string;
+      includeToolCalls?: boolean;
     };
 
     // Validate: limit is required
@@ -1253,7 +1268,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     // Validate and cap limit
     const limit = Math.min(Math.max(requestedLimit, 1), 100);
 
-    // Fetch messages with appropriate cursor
+    // Fetch messages with appropriate cursor and filters
     // - No cursor: fetch newest messages (initial load)
     // - before: fetch older messages (backwards pagination)
     // - since: fetch newer messages (forwards pagination / polling)
@@ -1262,6 +1277,9 @@ const toolHandlers: Record<string, ToolHandler> = {
       before,
       since,
       newestFirst: !before && !since, // Only use newestFirst when no cursor
+      search,
+      sender,
+      includeToolCalls,
     });
 
     // Filter out status messages (ephemeral, not conversation content)
@@ -1291,21 +1309,43 @@ const toolHandlers: Record<string, ToolHandler> = {
     const oldestId = formatted.length > 0 ? formatted[0].id : undefined;
     const newestId = formatted.length > 0 ? formatted[formatted.length - 1].id : undefined;
 
+    // Check if filters are active
+    const hasFilters = search || sender;
+
     // Build response based on query direction
     const response: Record<string, unknown> = {
       channel: channelName,
       messages: formatted,
     };
 
+    // Echo filters back so agents know what they searched for
+    if (hasFilters) {
+      response.filters = {
+        search: search || null,
+        sender: sender || null,
+      };
+    }
+
     // Build hint and pagination indicators based on direction
-    let hint = `${formatted.length} message${formatted.length !== 1 ? 's' : ''} (chronological)`;
+    let hint = `${formatted.length} message${formatted.length !== 1 ? 's' : ''}`;
+
+    // Add filter context to hint
+    if (search && sender) {
+      hint += ` matching '${search}' from @${sender}`;
+    } else if (search) {
+      hint += ` matching '${search}'`;
+    } else if (sender) {
+      hint += ` from @${sender}`;
+    } else {
+      hint += ' (chronological)';
+    }
 
     if (since) {
       // Forward pagination mode (polling for new)
       response.hasNewer = hasMore;
       response.newestId = newestId;
       if (hasMore) {
-        hint += `. More new messages — use since: '${newestId}' to continue.`;
+        hint += `. More ${hasFilters ? 'matches' : 'new messages'} — use since: '${newestId}' to continue.`;
       }
     } else {
       // Backward pagination mode (history browsing) or initial load
@@ -1313,7 +1353,7 @@ const toolHandlers: Record<string, ToolHandler> = {
       response.oldestId = oldestId;
       response.newestId = newestId;
       if (hasMore) {
-        hint += `. Older history available — use before: '${oldestId}' to paginate backwards.`;
+        hint += `. Older ${hasFilters ? 'matches' : 'history'} available — use before: '${oldestId}' to paginate backwards.`;
       }
     }
 
