@@ -501,11 +501,14 @@ export function BoardPanel({
       className="relative flex flex-col border-l border-[var(--cast-border-default)] bg-card"
       style={{ width: `${width}px` }}
     >
-      {/* Resize handle */}
+      {/* Resize handle - wider hit area with visible indicator */}
       <div
-        className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 transition-colors"
+        className="absolute left-0 top-0 bottom-0 w-2 cursor-col-resize z-10 group"
         onMouseDown={handleResizeStart}
-      />
+      >
+        {/* Visible indicator line */}
+        <div className="absolute left-0 top-0 bottom-0 w-px bg-transparent group-hover:bg-primary/30 transition-colors" />
+      </div>
 
       <BoardHeader
         onCreateClick={(type) => {
