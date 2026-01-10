@@ -1039,8 +1039,8 @@ export function App() {
           CAST
         </span>
 
-        {/* Channel name */}
-        {selectedThread && (
+        {/* Channel name - only show when sidebar is collapsed */}
+        {selectedThread && !sidebarOpen && (
           <>
             <span className="text-[#ccc]">—</span>
             <span className="font-medium text-foreground">

@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Radical } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { Agent, Thread } from '../../types'
 import { NewChannelModal } from '../focus'
@@ -201,34 +201,65 @@ export function ThreadList({
             </button>
           </div>
         ) : (
-          <ul className="space-y-0">
-            {isCreatingThread && (
-              <li className="flex items-center gap-2 px-4 py-1.5 bg-[var(--cast-bg-hover)]">
-                <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-                <span className="text-sm text-[var(--cast-text-muted)]">Creating...</span>
-              </li>
+          <>
+            {/* Regular channels */}
+            <ul className="space-y-0">
+              {isCreatingThread && (
+                <li className="flex items-center gap-2 px-4 py-1.5 bg-[var(--cast-bg-hover)]">
+                  <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+                  <span className="text-sm text-[var(--cast-text-muted)]">Creating...</span>
+                </li>
+              )}
+              {threads.filter(t => t.agentName !== 'root').map((thread) => (
+                <li key={thread.id}>
+                  <button
+                    className={cn(
+                      'w-full flex items-center gap-2 px-4 py-1.5 cursor-pointer text-left transition-colors',
+                      'hover:bg-[var(--cast-bg-hover)]',
+                      selectedThread === thread.id
+                        ? 'bg-[var(--cast-bg-active)] text-[var(--cast-text-primary)] font-medium'
+                        : 'text-[var(--cast-text-secondary)]'
+                    )}
+                    onClick={() => onSelectThread(thread.id)}
+                  >
+                    <span className="text-[var(--cast-text-subtle)]">#</span>
+                    <StatusDot state={thread.agentState} />
+                    <span className="text-sm truncate">
+                      {thread.agentName}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {/* Root channel separator and item */}
+            {threads.find(t => t.agentName === 'root') && (
+              <>
+                <div className="px-4 py-2">
+                  <span className="text-[var(--cast-text-subtle)]">—</span>
+                </div>
+                {threads.filter(t => t.agentName === 'root').map((thread) => (
+                  <button
+                    key={thread.id}
+                    className={cn(
+                      'w-full flex items-center gap-2 px-4 py-1.5 cursor-pointer text-left transition-colors',
+                      'hover:bg-[var(--cast-bg-hover)]',
+                      selectedThread === thread.id
+                        ? 'bg-[var(--cast-bg-active)] text-[var(--cast-text-primary)] font-medium'
+                        : 'text-[var(--cast-text-secondary)]'
+                    )}
+                    onClick={() => onSelectThread(thread.id)}
+                  >
+                    <Radical className="w-3 h-3 text-[var(--cast-text-subtle)]" />
+                    <StatusDot state={thread.agentState} />
+                    <span className="text-sm truncate">
+                      {thread.agentName}
+                    </span>
+                  </button>
+                ))}
+              </>
             )}
-            {threads.map((thread) => (
-              <li key={thread.id}>
-                <button
-                  className={cn(
-                    'w-full flex items-center gap-2 px-4 py-1.5 cursor-pointer text-left transition-colors',
-                    'hover:bg-[var(--cast-bg-hover)]',
-                    selectedThread === thread.id
-                      ? 'bg-[var(--cast-bg-active)] text-[var(--cast-text-primary)] font-medium'
-                      : 'text-[var(--cast-text-secondary)]'
-                  )}
-                  onClick={() => onSelectThread(thread.id)}
-                >
-                  <span className="text-[var(--cast-text-subtle)]">#</span>
-                  <StatusDot state={thread.agentState} />
-                  <span className="text-sm truncate">
-                    {thread.agentName}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          </>
         )}
       </div>
 
