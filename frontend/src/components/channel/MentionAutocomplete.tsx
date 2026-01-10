@@ -20,6 +20,10 @@ export interface RosterAgent {
   lastHeartbeat?: string
   /** Session cost in USD (accumulated from cost frames) */
   sessionCost?: number
+  /** Current agent state from set_status calls */
+  current?: {
+    status?: string
+  }
 }
 
 interface MentionAutocompleteProps {

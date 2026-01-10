@@ -268,6 +268,28 @@ export function App() {
         return next;
       });
     }
+
+    // Update roster current.status when agent status message arrives
+    if (
+      msg.type === "status" &&
+      msg.senderType === "agent" &&
+      msg.sender &&
+      typeof msg.content === "object" &&
+      msg.content !== null &&
+      "status" in msg.content
+    ) {
+      const statusText = (msg.content as { status: string }).status;
+      setRoster((prev) => {
+        const idx = prev.findIndex((a) => a.callsign === msg.sender);
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        updated[idx] = {
+          ...updated[idx],
+          current: { status: statusText },
+        };
+        return updated;
+      });
+    }
   }, []);
 
   const handleMessageUpdate = useCallback((id: string, content: string) => {
@@ -686,6 +708,7 @@ export function App() {
                 callbackUrl?: string;
                 tunnelHash?: string;
                 lastHeartbeat?: string;
+                current?: { status?: string };
               }) => ({
                 callsign: r.callsign,
                 // isOnline: requires fresh heartbeat (within 60s)
@@ -702,6 +725,8 @@ export function App() {
                 lastHeartbeat: r.lastHeartbeat,
                 // Initialize with persisted cost (if any)
                 sessionCost: costsByCallsign.get(r.callsign) ?? 0,
+                // Current agent state from set_status calls
+                current: r.current,
               }),
             );
             setRoster(rosterAgents);

@@ -190,6 +190,10 @@ export function AgentDetailPanel({
 
   // Derive status description
   const getStatusDescription = () => {
+    // Show explicit status from agent if available
+    if (agent.current?.status) return agent.current.status
+
+    // Fall back to derived status
     if (agent.isPaused) return 'Muted — will not respond to mentions'
     if (agent.isConnecting) return 'Starting container...'
     if (!agent.isOnline) return 'Suspended — container stopped'
