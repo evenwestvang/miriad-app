@@ -99,8 +99,6 @@ export interface LocalAgentManagerOptions {
   storage: Storage;
   /** Connection manager for broadcasting Tymbal frames */
   connectionManager: ConnectionManager;
-  /** Callback to build system prompt for an agent */
-  buildSystemPrompt?: (spaceId: string, channelId: string, callsign: string) => Promise<string>;
   /** Whether to require auth (false for localhost dev, true for production) */
   requireAuth?: boolean;
 }
@@ -122,7 +120,7 @@ export interface LocalAgentManager {
  * Create a local agent manager.
  */
 export function createLocalAgentManager(options: LocalAgentManagerOptions): LocalAgentManager {
-  const { storage, connectionManager, buildSystemPrompt, requireAuth = false } = options;
+  const { storage, connectionManager, requireAuth = false } = options;
 
   // Create auth verifier with storage backend
   const verifyServerAuth = createServerAuthVerifier(storage);
