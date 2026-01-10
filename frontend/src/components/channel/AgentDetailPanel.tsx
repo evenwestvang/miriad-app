@@ -11,6 +11,7 @@ import {
   Loader2,
   Circle,
   MoreVertical,
+  Power,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { getRosterColor } from '../../utils/senderColors'
@@ -45,7 +46,7 @@ function getStateBadge(agent: RosterAgent): { label: string; colorClass: string 
     return { label: 'Connecting', colorClass: 'bg-yellow-500 text-black' }
   }
   if (!agent.isOnline) {
-    return { label: 'Offline', colorClass: 'bg-gray-500 text-white' }
+    return { label: 'Suspended', colorClass: 'bg-gray-500 text-white' }
   }
   if (agent.isWorking) {
     return { label: 'Working', colorClass: 'bg-blue-500 text-white' }
@@ -66,7 +67,7 @@ export function AgentDetailPanel({
   onDismiss,
 }: AgentDetailPanelProps) {
   const [copied, setCopied] = useState(false)
-  const [actionLoading, setActionLoading] = useState<'pause' | 'resume' | 'dismiss' | null>(null)
+  const [actionLoading, setActionLoading] = useState<'pause' | 'resume' | 'dismiss' | 'activate' | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -168,11 +169,30 @@ export function AgentDetailPanel({
     }
   }
 
+  // Handle activate action (for suspended agents)
+  const handleActivate = async () => {
+    setActionLoading('activate')
+    try {
+      const response = await fetch(
+        `${apiHost}/channels/${channelId}/agents/${agent.callsign}/activate`,
+        { method: 'POST', credentials: 'include' }
+      )
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        console.error('Failed to activate agent:', data.error || response.status)
+      }
+    } catch (err) {
+      console.error('Failed to activate agent:', err)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   // Derive status description
   const getStatusDescription = () => {
     if (agent.isPaused) return 'Muted — will not respond to mentions'
     if (agent.isConnecting) return 'Starting container...'
-    if (!agent.isOnline) return 'Offline — no recent heartbeat'
+    if (!agent.isOnline) return 'Suspended — container stopped'
     if (agent.isWorking) return 'Working on a task'
     return 'Idle — ready for work'
   }
@@ -181,9 +201,9 @@ export function AgentDetailPanel({
     <div className="px-4 py-3 bg-[var(--cast-bg-primary)]">
       {/* Two-row layout */}
       <div className="flex flex-col gap-2">
-        {/* Top row: callsign, status badge, kebab menu, close */}
+        {/* Top row: callsign, agent type, status badge, actions, close */}
         <div className="flex items-center gap-3">
-          {/* Agent identity */}
+          {/* Agent identity + status badge */}
           <div className="flex items-center gap-2">
             <Circle
               size={14}
@@ -200,24 +220,24 @@ export function AgentDetailPanel({
                 {agent.agentType}
               </span>
             )}
+            {/* Status badge */}
+            <span className={cn(
+              "px-2 py-0.5 text-xs font-medium",
+              stateBadge.colorClass
+            )}>
+              {stateBadge.label}
+            </span>
           </div>
 
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Status badge */}
-          <span className={cn(
-            "px-2 py-0.5 text-xs font-medium",
-            stateBadge.colorClass
-          )}>
-            {stateBadge.label}
-          </span>
-
           {/* Wide: inline action buttons (hidden on narrow) */}
           <div className="hidden sm:flex items-center gap-1">
-            {agent.isPaused ? (
+            {/* Activate button for suspended agents */}
+            {!agent.isOnline && !agent.isConnecting && (
               <button
-                onClick={handleResume}
+                onClick={handleActivate}
                 disabled={actionLoading !== null}
                 className={cn(
                   "flex items-center gap-1.5 px-2 py-1 text-sm",
@@ -225,30 +245,51 @@ export function AgentDetailPanel({
                   "disabled:opacity-50 disabled:cursor-not-allowed"
                 )}
               >
-                {actionLoading === 'resume' ? (
+                {actionLoading === 'activate' ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <Bot className="w-4 h-4" />
+                  <Power className="w-4 h-4" />
                 )}
-                Unmute
+                Activate
               </button>
-            ) : (
-              <button
-                onClick={handlePause}
-                disabled={actionLoading !== null}
-                className={cn(
-                  "flex items-center gap-1.5 px-2 py-1 text-sm",
-                  "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
-                  "disabled:opacity-50 disabled:cursor-not-allowed"
-                )}
-              >
-                {actionLoading === 'pause' ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <BotOff className="w-4 h-4" />
-                )}
-                Mute
-              </button>
+            )}
+            {/* Mute/Unmute for online agents */}
+            {agent.isOnline && (
+              agent.isPaused ? (
+                <button
+                  onClick={handleResume}
+                  disabled={actionLoading !== null}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2 py-1 text-sm",
+                    "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                    "disabled:opacity-50 disabled:cursor-not-allowed"
+                  )}
+                >
+                  {actionLoading === 'resume' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Bot className="w-4 h-4" />
+                  )}
+                  Unmute
+                </button>
+              ) : (
+                <button
+                  onClick={handlePause}
+                  disabled={actionLoading !== null}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2 py-1 text-sm",
+                    "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                    "disabled:opacity-50 disabled:cursor-not-allowed"
+                  )}
+                >
+                  {actionLoading === 'pause' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <BotOff className="w-4 h-4" />
+                  )}
+                  Mute
+                </button>
+              )
             )}
             <button
               onClick={handleDismiss}
@@ -281,9 +322,10 @@ export function AgentDetailPanel({
             {/* Dropdown menu */}
             {menuOpen && (
               <div className="absolute right-0 top-full mt-1 bg-white border border-[#e5e5e5] shadow-sm z-10 min-w-[140px]">
-                {agent.isPaused ? (
+                {/* Activate for suspended agents */}
+                {!agent.isOnline && !agent.isConnecting && (
                   <button
-                    onClick={() => { handleResume(); setMenuOpen(false) }}
+                    onClick={() => { handleActivate(); setMenuOpen(false) }}
                     disabled={actionLoading !== null}
                     className={cn(
                       "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
@@ -291,30 +333,51 @@ export function AgentDetailPanel({
                       "disabled:opacity-50 disabled:cursor-not-allowed"
                     )}
                   >
-                    {actionLoading === 'resume' ? (
+                    {actionLoading === 'activate' ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
-                      <Bot className="w-4 h-4" />
+                      <Power className="w-4 h-4" />
                     )}
-                    Unmute
+                    Activate
                   </button>
-                ) : (
-                  <button
-                    onClick={() => { handlePause(); setMenuOpen(false) }}
-                    disabled={actionLoading !== null}
-                    className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
-                      "text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
-                      "disabled:opacity-50 disabled:cursor-not-allowed"
-                    )}
-                  >
-                    {actionLoading === 'pause' ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <BotOff className="w-4 h-4" />
-                    )}
-                    Mute
-                  </button>
+                )}
+                {/* Mute/Unmute for online agents */}
+                {agent.isOnline && (
+                  agent.isPaused ? (
+                    <button
+                      onClick={() => { handleResume(); setMenuOpen(false) }}
+                      disabled={actionLoading !== null}
+                      className={cn(
+                        "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
+                        "text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                        "disabled:opacity-50 disabled:cursor-not-allowed"
+                      )}
+                    >
+                      {actionLoading === 'resume' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Bot className="w-4 h-4" />
+                      )}
+                      Unmute
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => { handlePause(); setMenuOpen(false) }}
+                      disabled={actionLoading !== null}
+                      className={cn(
+                        "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
+                        "text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                        "disabled:opacity-50 disabled:cursor-not-allowed"
+                      )}
+                    >
+                      {actionLoading === 'pause' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <BotOff className="w-4 h-4" />
+                      )}
+                      Mute
+                    </button>
+                  )
                 )}
                 <button
                   onClick={() => { handleDismiss(); setMenuOpen(false) }}
