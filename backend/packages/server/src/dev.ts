@@ -142,11 +142,14 @@ async function main() {
           // For tool_call and tool_result messages, the content is stored as a JSON string
           // containing the full message data. We need to extract and flatten these fields
           // so the frontend receives them in the same format as streaming messages.
+          // Include method from metadata for agent message styling (send_message vs agent_output)
+          const metadata = msg.metadata as { method?: string } | undefined;
           let frameValue: Record<string, unknown> = {
             type: msg.type,
             content: msg.content,
             sender: msg.sender,
             senderType: msg.senderType,
+            ...(metadata?.method && { method: metadata.method }),
           };
 
           if (msg.type === 'tool_call' || msg.type === 'tool_result') {
