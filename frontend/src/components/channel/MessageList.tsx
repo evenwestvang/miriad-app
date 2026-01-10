@@ -20,6 +20,7 @@ import {
   CirclePlus,
   AlertCircle,
   MoreVertical,
+  Bed,
 } from "lucide-react";
 import type { Message, StructuredAskMessage } from "../../types";
 import { highlightMentions, type ArtifactInfo } from "../../utils";
@@ -851,6 +852,41 @@ function MessageItem({
             artifacts,
           })}
         </span>
+      </div>
+    );
+  }
+
+  // System messages (e.g., agent dismissed)
+  if (message.type === "system") {
+    // Parse content which may be { action: string, callsign: string }
+    let systemContent: { action?: string; callsign?: string } = {};
+    try {
+      if (typeof message.content === "string" && message.content.startsWith("{")) {
+        systemContent = JSON.parse(message.content);
+      } else if (typeof message.content === "object" && message.content !== null) {
+        systemContent = message.content as { action?: string; callsign?: string };
+      }
+    } catch {
+      // Ignore parse errors
+    }
+
+    // Render dismiss action with bed icon
+    if (systemContent.action === "dismiss" && systemContent.callsign) {
+      return (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-2">
+          <Bed size={14} className="flex-shrink-0" />
+          <span>
+            <span className="font-medium">{systemContent.callsign}</span> has been dismissed
+          </span>
+        </div>
+      );
+    }
+
+    // Fallback for other system messages
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-2">
+        <CirclePlus size={14} className="flex-shrink-0" />
+        <span>{getTextContent(message.content)}</span>
       </div>
     );
   }
