@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { cn } from '../../lib/utils'
-import { getSenderColor } from '../../utils'
+import { getRosterColor } from '../../utils/senderColors'
 
 export interface RosterAgent {
   callsign: string
@@ -29,23 +29,8 @@ interface MentionAutocompleteProps {
   onSelect: (mention: string) => void
   onClose: () => void
   position: { top: number; left: number }
-}
-
-// Get status display info from agent state
-function getAgentStatusInfo(agent: RosterAgent): { colorClass: string; label: string } {
-  if (agent.isPaused) {
-    return { colorClass: 'bg-gray-400', label: 'paused' }
-  }
-  if (agent.isConnecting) {
-    return { colorClass: 'bg-yellow-500 animate-pulse', label: 'connecting' }
-  }
-  if (!agent.isOnline) {
-    return { colorClass: 'bg-gray-500', label: 'offline' }
-  }
-  if (agent.isWorking) {
-    return { colorClass: 'bg-blue-500 animate-pulse', label: 'working' }
-  }
-  return { colorClass: 'bg-green-500', label: 'idle' }
+  /** Channel ID for computing coordinated colors */
+  channelId?: string
 }
 
 export function MentionAutocomplete({
@@ -55,6 +40,7 @@ export function MentionAutocomplete({
   onSelect,
   onClose,
   position,
+  channelId = '',
 }: MentionAutocompleteProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -85,49 +71,55 @@ export function MentionAutocomplete({
   return (
     <div
       ref={containerRef}
-      className="absolute z-50 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[180px] max-h-[200px] overflow-y-auto"
+      className="absolute z-50 bg-[var(--cast-bg-primary)] border border-[var(--cast-border-default)] shadow-sm py-1 min-w-[180px] max-h-[200px] overflow-y-auto"
       style={{ bottom: position.top, left: position.left }}
     >
-      {filteredOptions.map((option, index) => (
-        <button
-          key={option.value}
-          data-selected={index === selectedIndex}
-          className={cn(
-            "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
-            "hover:bg-secondary/50 transition-colors",
-            index === selectedIndex && "bg-secondary"
-          )}
-          onClick={() => onSelect(option.value)}
-        >
-          {option.type === 'channel' ? (
-            <>
-              <span className="w-2 h-2 rounded-full bg-purple-500" />
-              <span className="font-medium text-purple-400">@channel</span>
-              <span className="text-muted-foreground text-xs ml-auto">broadcast</span>
-            </>
-          ) : (
-            (() => {
-              const statusInfo = option.agent ? getAgentStatusInfo(option.agent) : { colorClass: 'bg-gray-500', label: 'offline' }
-              const isPaused = option.agent?.isPaused
-              return (
-                <>
-                  <span className={cn("w-2 h-2 rounded-full", statusInfo.colorClass)} />
-                  <span className={cn(
-                    "font-medium",
-                    getSenderColor(option.value),
-                    isPaused && "line-through opacity-60"
-                  )}>
-                    @{option.value}
+      {filteredOptions.map((option, index) => {
+        // Get roster index for coordinated color
+        const rosterIndex = option.agent
+          ? roster.findIndex(a => a.callsign === option.agent?.callsign)
+          : -1
+        const dotColor = rosterIndex >= 0 ? getRosterColor(channelId, rosterIndex) : undefined
+
+        return (
+          <button
+            key={option.value}
+            data-selected={index === selectedIndex}
+            className={cn(
+              "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
+              "hover:bg-[#f5f5f5] transition-colors",
+              index === selectedIndex && "bg-[#f5f5f5]"
+            )}
+            onClick={() => onSelect(option.value)}
+          >
+            {option.type === 'channel' ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-[#a0a0a0]" />
+                <span className="font-medium text-[var(--cast-text-primary)]">channel</span>
+                <span className="text-[var(--cast-text-muted)] text-xs ml-auto">broadcast</span>
+              </>
+            ) : (
+              <>
+                <span
+                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: dotColor }}
+                />
+                <span className={cn(
+                  "font-medium text-[var(--cast-text-primary)]",
+                  option.agent?.isPaused && "line-through opacity-60"
+                )}>
+                  {option.value}
+                </span>
+                {option.agent?.agentType && (
+                  <span className="text-[var(--cast-text-muted)] text-xs ml-auto">
+                    {option.agent.agentType}
                   </span>
-                  <span className="text-muted-foreground text-xs ml-auto">
-                    {statusInfo.label}
-                  </span>
-                </>
-              )
-            })()
-          )}
-        </button>
-      ))}
+                )}
+              </>
+            )}
+          </button>
+        )
+      })}
     </div>
   )
 }

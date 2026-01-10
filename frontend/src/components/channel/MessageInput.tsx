@@ -479,6 +479,7 @@ export function MessageInput({
             onSelect={insertMention}
             onClose={() => setShowAutocomplete(false)}
             position={getAutocompletePosition()}
+            channelId={channelId}
           />
         )}
 
