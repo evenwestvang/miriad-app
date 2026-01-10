@@ -19,10 +19,14 @@ interface ChatHeaderProps {
 
 /**
  * Format cost for display.
+ * - 0: show $0.00
  * - < $0.01: show 4 decimal places (e.g., $0.0012)
  * - >= $0.01: show 2 decimal places (e.g., $0.17)
  */
 function formatCost(cost: number): string {
+  if (cost === 0) {
+    return '$0.00'
+  }
   if (cost < 0.01) {
     return `$${cost.toFixed(4)}`
   }
@@ -45,11 +49,9 @@ export function ChatHeader({
       </div>
       <div className="flex items-center gap-2">
         {/* Channel cost total */}
-        {channelCost > 0 && (
-          <span className="text-xs text-[#a0a0a0]" title="Total channel cost">
-            {formatCost(channelCost)}
-          </span>
-        )}
+        <span className="text-xs text-[#a0a0a0]" title="Total channel cost">
+          {formatCost(channelCost)}
+        </span>
         {/* Board toggle - hidden when board is open (close button takes its place) */}
         {!boardOpen && onToggleBoard && (
           <button
