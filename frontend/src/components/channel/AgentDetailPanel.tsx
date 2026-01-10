@@ -11,7 +11,7 @@ import {
   Loader2,
   Circle,
   MoreVertical,
-  Power,
+  Coffee,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { getRosterColor } from '../../utils/senderColors'
@@ -248,7 +248,7 @@ export function AgentDetailPanel({
                 {actionLoading === 'activate' ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <Power className="w-4 h-4" />
+                  <Coffee className="w-4 h-4" />
                 )}
                 Activate
               </button>
@@ -334,7 +334,7 @@ export function AgentDetailPanel({
                     {actionLoading === 'activate' ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
-                      <Power className="w-4 h-4" />
+                      <Coffee className="w-4 h-4" />
                     )}
                     Activate
                   </button>
