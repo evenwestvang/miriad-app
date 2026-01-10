@@ -249,7 +249,6 @@ export function MessageList({
   onStructuredAskSubmit,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
 
   // Create callsign → agentType lookup map from roster
   const agentTypeMap = useMemo(() => {
@@ -515,98 +514,103 @@ export function MessageList({
               <span className="text-xs text-muted-foreground">Beginning of conversation</span>
             </div>
           )}
-        {groupMessages(messages).map((item) => {
-          if (item.type === "tool_group") {
-            // Render grouped tool messages
-            const firstMsg = item.messages[0];
-            const lastMsg = item.messages[item.messages.length - 1];
+        {(() => {
+          const groupedItems = groupMessages(messages);
+          return groupedItems.map((item, groupIndex) => {
+            const isLastItem = groupIndex === groupedItems.length - 1;
 
-            // Check if next message starts a new group (determines bottom margin)
-            const lastIndex = item.startIndex + item.messages.length - 1;
-            const nextMessage =
-              lastIndex < messages.length - 1 ? messages[lastIndex + 1] : null;
-            const isLastInGroup =
-              !nextMessage ||
-              nextMessage.sender !== lastMsg.sender ||
-              nextMessage.senderType !== lastMsg.senderType ||
-              new Date(nextMessage.timestamp).getTime() -
-                new Date(lastMsg.timestamp).getTime() >
+            if (item.type === "tool_group") {
+              // Render grouped tool messages
+              const firstMsg = item.messages[0];
+              const lastMsg = item.messages[item.messages.length - 1];
+
+              // Check if next message starts a new group (determines bottom margin)
+              const lastIndex = item.startIndex + item.messages.length - 1;
+              const nextMessage =
+                lastIndex < messages.length - 1 ? messages[lastIndex + 1] : null;
+              const isLastInGroup =
+                !nextMessage ||
+                nextMessage.sender !== lastMsg.sender ||
+                nextMessage.senderType !== lastMsg.senderType ||
+                new Date(nextMessage.timestamp).getTime() -
+                  new Date(lastMsg.timestamp).getTime() >
+                  20 * 60 * 1000;
+
+              // Within a group: small margin. End of group: large margin. Last item: no margin.
+              const marginClass = isLastItem ? "mb-0" : isLastInGroup ? "mb-8" : "mb-1";
+
+              return (
+                <div
+                  key={`tool-group-${firstMsg.id}`}
+                  data-message-id={firstMsg.id}
+                  className={marginClass}
+                >
+                  <ToolGroup messages={item.messages} />
+                </div>
+              );
+            }
+
+            // Regular message
+            const message = item.message;
+            const index = item.index;
+
+            // Check if this message should show the header
+            // Show header if: first message, different sender, or >20 min gap
+            const prevMessage = index > 0 ? messages[index - 1] : null;
+            const showHeader =
+              !prevMessage ||
+              prevMessage.sender !== message.sender ||
+              prevMessage.senderType !== message.senderType ||
+              new Date(message.timestamp).getTime() -
+                new Date(prevMessage.timestamp).getTime() >
                 20 * 60 * 1000;
 
-            const marginClass = isLastInGroup ? "mb-8 last:mb-0" : "mb-1";
+            // Check if next message starts a new group (determines bottom margin)
+            const nextMessage =
+              index < messages.length - 1 ? messages[index + 1] : null;
+            const isLastInGroup =
+              !nextMessage ||
+              nextMessage.sender !== message.sender ||
+              nextMessage.senderType !== message.senderType ||
+              new Date(nextMessage.timestamp).getTime() -
+                new Date(message.timestamp).getTime() >
+                20 * 60 * 1000;
+
+            // Within a group: small margin. End of group: large margin. Last item: no margin.
+            const marginClass = isLastItem ? "mb-0" : isLastInGroup ? "mb-8" : "mb-1";
 
             return (
               <div
-                key={`tool-group-${firstMsg.id}`}
-                data-message-id={firstMsg.id}
+                key={message.id}
+                data-message-id={message.id}
                 className={marginClass}
               >
-                <ToolGroup messages={item.messages} />
+                <MessageItem
+                  message={message}
+                  threadName={threadName}
+                  myName={myName}
+                  apiHost={apiHost}
+                  artifacts={artifactMap}
+                  agentType={
+                    message.sender
+                      ? agentTypeMap.get(message.sender)
+                      : threadAgentType
+                  }
+                  channelId={channelId}
+                  rosterIndex={
+                    message.sender
+                      ? rosterIndexMap.get(message.sender)
+                      : undefined
+                  }
+                  onStructuredAskSubmit={onStructuredAskSubmit}
+                  showHeader={showHeader}
+                />
               </div>
             );
-          }
-
-          // Regular message
-          const message = item.message;
-          const index = item.index;
-
-          // Check if this message should show the header
-          // Show header if: first message, different sender, or >20 min gap
-          const prevMessage = index > 0 ? messages[index - 1] : null;
-          const showHeader =
-            !prevMessage ||
-            prevMessage.sender !== message.sender ||
-            prevMessage.senderType !== message.senderType ||
-            new Date(message.timestamp).getTime() -
-              new Date(prevMessage.timestamp).getTime() >
-              20 * 60 * 1000;
-
-          // Check if next message starts a new group (determines bottom margin)
-          const nextMessage =
-            index < messages.length - 1 ? messages[index + 1] : null;
-          const isLastInGroup =
-            !nextMessage ||
-            nextMessage.sender !== message.sender ||
-            nextMessage.senderType !== message.senderType ||
-            new Date(nextMessage.timestamp).getTime() -
-              new Date(message.timestamp).getTime() >
-              20 * 60 * 1000;
-
-          // Within a group: small margin. End of group: large margin.
-          const marginClass = isLastInGroup ? "mb-8 last:mb-0" : "mb-1";
-
-          return (
-            <div
-              key={message.id}
-              data-message-id={message.id}
-              className={marginClass}
-            >
-              <MessageItem
-                message={message}
-                threadName={threadName}
-                myName={myName}
-                apiHost={apiHost}
-                artifacts={artifactMap}
-                agentType={
-                  message.sender
-                    ? agentTypeMap.get(message.sender)
-                    : threadAgentType
-                }
-                channelId={channelId}
-                rosterIndex={
-                  message.sender
-                    ? rosterIndexMap.get(message.sender)
-                    : undefined
-                }
-                onStructuredAskSubmit={onStructuredAskSubmit}
-                showHeader={showHeader}
-              />
-            </div>
-          );
-        })}
+          });
+        })()}
         </>
       )}
-      <div ref={bottomRef} />
       </div>
     </div>
   );
