@@ -464,7 +464,7 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
       expect(json.id).toBe(1);
       expect(json.result.tools).toBeDefined();
       expect(Array.isArray(json.result.tools)).toBe(true);
-      expect(json.result.tools.length).toBe(15); // 10 artifact + 2 message + 1 instructions + 2 communication tools
+      expect(json.result.tools.length).toBe(19); // 10 artifact + 2 message + 1 instructions + 2 communication + 4 channel awareness
 
       // Verify tool names
       const toolNames = json.result.tools.map((t: { name: string }) => t.name);
@@ -483,6 +483,10 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
       expect(toolNames).toContain('read_instructions');
       expect(toolNames).toContain('send_message');
       expect(toolNames).toContain('set_status');
+      expect(toolNames).toContain('get_roster');
+      expect(toolNames).toContain('get_messages');
+      expect(toolNames).toContain('list_agent_types');
+      expect(toolNames).toContain('explain_artifact_type');
     });
 
     it('includes proper inputSchema for each tool', async () => {
@@ -980,6 +984,586 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
         const json = await res.json();
         expect(json.result.content[0].text).toContain('Unknown article');
         expect(json.result.content[0].text).toContain('nonexistent-article');
+      });
+    });
+
+    describe('get_roster', () => {
+      it('returns roster with active agents and excludes archived', async () => {
+        // Mock listRoster to return mixed status entries
+        mockStorage.listRoster.mockResolvedValueOnce([
+          {
+            id: 'roster-1',
+            channelId: TEST_CHANNEL_ID,
+            callsign: 'fox',
+            agentType: 'builder',
+            status: 'active',
+            createdAt: '2026-01-10T00:00:00Z',
+            current: { status: 'implementing auth' },
+          },
+          {
+            id: 'roster-2',
+            channelId: TEST_CHANNEL_ID,
+            callsign: 'owl',
+            agentType: 'reviewer',
+            status: 'paused',
+            createdAt: '2026-01-10T00:00:00Z',
+          },
+          {
+            id: 'roster-3',
+            channelId: TEST_CHANNEL_ID,
+            callsign: 'bear',
+            agentType: 'tester',
+            status: 'archived',
+            createdAt: '2026-01-10T00:00:00Z',
+          },
+        ]);
+
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'get_roster',
+            arguments: {},
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.error).toBeUndefined();
+
+        const result = JSON.parse(json.result.content[0].text);
+        expect(result.channel).toBe(TEST_CHANNEL_NAME);
+        expect(result.agents).toHaveLength(2); // Excludes archived bear
+
+        // Check fox (active with statusMessage)
+        const fox = result.agents.find((a: { callsign: string }) => a.callsign === 'fox');
+        expect(fox.agentType).toBe('builder');
+        expect(fox.status).toBe('active');
+        expect(fox.statusMessage).toBe('implementing auth');
+
+        // Check owl (paused, no statusMessage)
+        const owl = result.agents.find((a: { callsign: string }) => a.callsign === 'owl');
+        expect(owl.agentType).toBe('reviewer');
+        expect(owl.status).toBe('paused');
+        expect(owl.statusMessage).toBeUndefined();
+
+        // Hint includes counts and status
+        expect(result.hint).toContain('2 agents');
+        expect(result.hint).toContain('1 active');
+        expect(result.hint).toContain('1 paused');
+        expect(result.hint).toContain('@fox: implementing auth');
+      });
+
+      it('returns empty roster when no agents', async () => {
+        mockStorage.listRoster.mockResolvedValueOnce([]);
+
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'get_roster',
+            arguments: {},
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        const result = JSON.parse(json.result.content[0].text);
+        expect(result.agents).toHaveLength(0);
+        expect(result.hint).toBe('0 agents');
+      });
+    });
+
+    describe('get_messages', () => {
+      it('returns messages in chronological order with senderType mapping', async () => {
+        // Mock getMessages to return messages with various senderTypes
+        mockStorage.getMessages.mockResolvedValueOnce([
+          {
+            id: 'msg-001',
+            spaceId: TEST_SPACE_ID,
+            channelId: TEST_CHANNEL_ID,
+            sender: 'simen',
+            senderType: 'user',
+            type: 'user',
+            content: 'Hello team',
+            timestamp: '2026-01-10T14:00:00Z',
+            isComplete: true,
+          },
+          {
+            id: 'msg-002',
+            spaceId: TEST_SPACE_ID,
+            channelId: TEST_CHANNEL_ID,
+            sender: 'fox',
+            senderType: 'agent',
+            type: 'agent',
+            content: 'On it!',
+            timestamp: '2026-01-10T14:01:00Z',
+            isComplete: true,
+          },
+          {
+            id: 'msg-003',
+            spaceId: TEST_SPACE_ID,
+            channelId: TEST_CHANNEL_ID,
+            sender: 'system',
+            senderType: 'system',
+            type: 'system',
+            content: '@fox joined',
+            timestamp: '2026-01-10T14:02:00Z',
+            isComplete: true,
+          },
+        ]);
+
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'get_messages',
+            arguments: { limit: 50 },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.error).toBeUndefined();
+
+        const result = JSON.parse(json.result.content[0].text);
+        expect(result.channel).toBe(TEST_CHANNEL_NAME);
+        expect(result.messages).toHaveLength(3);
+
+        // Check senderType mapping: 'user' -> 'human'
+        expect(result.messages[0].senderType).toBe('human');
+        expect(result.messages[1].senderType).toBe('agent');
+        expect(result.messages[2].senderType).toBe('system');
+
+        // Verify chronological order (oldest first)
+        expect(result.messages[0].id).toBe('msg-001');
+        expect(result.messages[2].id).toBe('msg-003');
+
+        expect(result.oldestId).toBe('msg-001');
+        expect(result.newestId).toBe('msg-003');
+        expect(result.hint).toContain('3 messages');
+      });
+
+      it('excludes status messages from results', async () => {
+        mockStorage.getMessages.mockResolvedValueOnce([
+          {
+            id: 'msg-001',
+            spaceId: TEST_SPACE_ID,
+            channelId: TEST_CHANNEL_ID,
+            sender: 'fox',
+            senderType: 'agent',
+            type: 'agent',
+            content: 'Working on it',
+            timestamp: '2026-01-10T14:00:00Z',
+            isComplete: true,
+          },
+          {
+            id: 'msg-002',
+            spaceId: TEST_SPACE_ID,
+            channelId: TEST_CHANNEL_ID,
+            sender: 'fox',
+            senderType: 'agent',
+            type: 'status', // This should be excluded
+            content: { status: 'implementing auth' },
+            timestamp: '2026-01-10T14:01:00Z',
+            isComplete: true,
+          },
+        ]);
+
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'get_messages',
+            arguments: { limit: 50 },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        const result = JSON.parse(json.result.content[0].text);
+
+        // Status message should be excluded
+        expect(result.messages).toHaveLength(1);
+        expect(result.messages[0].id).toBe('msg-001');
+      });
+
+      it('indicates hasOlder when more messages available', async () => {
+        // Return limit + 1 messages to indicate hasOlder
+        const messages = Array.from({ length: 4 }, (_, i) => ({
+          id: `msg-${String(i).padStart(3, '0')}`,
+          spaceId: TEST_SPACE_ID,
+          channelId: TEST_CHANNEL_ID,
+          sender: 'fox',
+          senderType: 'agent' as const,
+          type: 'agent' as const,
+          content: `Message ${i}`,
+          timestamp: `2026-01-10T14:0${i}:00Z`,
+          isComplete: true,
+        }));
+        mockStorage.getMessages.mockResolvedValueOnce(messages);
+
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'get_messages',
+            arguments: { limit: 3 },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        const result = JSON.parse(json.result.content[0].text);
+
+        expect(result.messages).toHaveLength(3);
+        expect(result.hasOlder).toBe(true);
+        expect(result.hint).toContain('Older history available');
+      });
+
+      it('supports since param for forward pagination (polling)', async () => {
+        const messages = [
+          {
+            id: 'msg-004',
+            spaceId: TEST_SPACE_ID,
+            channelId: TEST_CHANNEL_ID,
+            sender: 'fox',
+            senderType: 'agent' as const,
+            type: 'agent' as const,
+            content: 'New message 1',
+            timestamp: '2026-01-10T14:04:00Z',
+            isComplete: true,
+          },
+          {
+            id: 'msg-005',
+            spaceId: TEST_SPACE_ID,
+            channelId: TEST_CHANNEL_ID,
+            sender: 'bear',
+            senderType: 'agent' as const,
+            type: 'agent' as const,
+            content: 'New message 2',
+            timestamp: '2026-01-10T14:05:00Z',
+            isComplete: true,
+          },
+        ];
+        mockStorage.getMessages.mockResolvedValueOnce(messages);
+
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'get_messages',
+            arguments: { since: 'msg-003', limit: 10 },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        const result = JSON.parse(json.result.content[0].text);
+
+        expect(result.messages).toHaveLength(2);
+        expect(result.hasNewer).toBe(false); // No more messages
+        expect(result.newestId).toBe('msg-005');
+
+        // Verify storage was called with since param
+        expect(mockStorage.getMessages).toHaveBeenCalledWith(
+          TEST_SPACE_ID,
+          TEST_CHANNEL_ID,
+          expect.objectContaining({ since: 'msg-003' })
+        );
+      });
+
+      it('rejects using both before and since params', async () => {
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'get_messages',
+            arguments: { limit: 50, before: 'msg-010', since: 'msg-001' },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        const result = JSON.parse(json.result.content[0].text);
+
+        expect(result.error).toBe('invalid_params');
+        expect(result.message).toContain('Cannot use both');
+      });
+    });
+
+    describe('list_agent_types', () => {
+      it('returns merged agent types from channel and root', async () => {
+        // Mock channel agents
+        mockStorage.listArtifacts.mockImplementation(async (channelId: string) => {
+          if (channelId === TEST_CHANNEL_ID) {
+            return [
+              {
+                slug: 'custom-builder',
+                type: 'system.agent',
+                title: 'Custom Builder',
+                tldr: 'Channel-specific builder',
+                status: 'published',
+                props: { engine: 'claude' },
+              },
+            ];
+          }
+          // Root channel
+          return [
+            {
+              slug: 'builder',
+              type: 'system.agent',
+              title: 'Builder',
+              tldr: 'Default builder agent',
+              status: 'published',
+              props: { engine: 'claude' },
+            },
+            {
+              slug: 'reviewer',
+              type: 'system.agent',
+              title: 'Reviewer',
+              tldr: 'Code reviewer agent',
+              status: 'published',
+              props: { engine: 'claude' },
+            },
+          ];
+        });
+
+        // Mock root channel lookup
+        mockStorage.getChannelByName.mockImplementation(async (spaceId: string, name: string) => {
+          if (name === 'root') {
+            return { id: 'root-channel-id', name: 'root', spaceId };
+          }
+          if (name === TEST_CHANNEL_NAME) return testChannel;
+          return null;
+        });
+
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'list_agent_types',
+            arguments: {},
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.error).toBeUndefined();
+
+        const result = JSON.parse(json.result.content[0].text);
+        expect(result.channel).toBe(TEST_CHANNEL_NAME);
+        expect(result.agentTypes).toHaveLength(3);
+
+        // Check custom-builder from channel
+        const customBuilder = result.agentTypes.find((a: { slug: string }) => a.slug === 'custom-builder');
+        expect(customBuilder.source).toBe('channel');
+        expect(customBuilder.engine).toBe('claude');
+
+        // Check builder from root
+        const builder = result.agentTypes.find((a: { slug: string }) => a.slug === 'builder');
+        expect(builder.source).toBe('root');
+
+        // Hint includes counts
+        expect(result.hint).toContain('3 agent types');
+        expect(result.hint).toContain('1 from channel');
+        expect(result.hint).toContain('2 from root');
+      });
+
+      it('handles channel override of root agent type', async () => {
+        // Mock channel overriding root's builder
+        mockStorage.listArtifacts.mockImplementation(async (channelId: string) => {
+          if (channelId === TEST_CHANNEL_ID) {
+            return [
+              {
+                slug: 'builder', // Same slug as root - should override
+                type: 'system.agent',
+                title: 'Custom Builder',
+                tldr: 'Channel-specific builder override',
+                status: 'published',
+                props: { engine: 'openai' },
+              },
+            ];
+          }
+          // Root channel
+          return [
+            {
+              slug: 'builder',
+              type: 'system.agent',
+              title: 'Default Builder',
+              tldr: 'Default builder agent',
+              status: 'published',
+              props: { engine: 'claude' },
+            },
+          ];
+        });
+
+        mockStorage.getChannelByName.mockImplementation(async (spaceId: string, name: string) => {
+          if (name === 'root') {
+            return { id: 'root-channel-id', name: 'root', spaceId };
+          }
+          if (name === TEST_CHANNEL_NAME) return testChannel;
+          return null;
+        });
+
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'list_agent_types',
+            arguments: {},
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        const result = JSON.parse(json.result.content[0].text);
+
+        // Should only have one builder (channel override)
+        expect(result.agentTypes).toHaveLength(1);
+        const builder = result.agentTypes[0];
+        expect(builder.slug).toBe('builder');
+        expect(builder.source).toBe('channel');
+        expect(builder.title).toBe('Custom Builder');
+        expect(builder.engine).toBe('openai');
+      });
+
+      it('handles missing root channel gracefully', async () => {
+        mockStorage.listArtifacts.mockResolvedValueOnce([
+          {
+            slug: 'builder',
+            type: 'system.agent',
+            title: 'Builder',
+            tldr: 'Channel builder',
+            status: 'published',
+          },
+        ]);
+        mockStorage.getChannelByName.mockImplementation(async (spaceId: string, name: string) => {
+          if (name === 'root') return null; // No root channel
+          if (name === TEST_CHANNEL_NAME) return testChannel;
+          return null;
+        });
+
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'list_agent_types',
+            arguments: {},
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        const result = JSON.parse(json.result.content[0].text);
+
+        // Should return only channel agents
+        expect(result.agentTypes).toHaveLength(1);
+        expect(result.agentTypes[0].source).toBe('channel');
+      });
+    });
+
+    describe('explain_artifact_type', () => {
+      it('returns metadata for system.agent type', async () => {
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'explain_artifact_type',
+            arguments: { type: 'system.agent' },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.error).toBeUndefined();
+
+        const result = JSON.parse(json.result.content[0].text);
+        expect(result.type).toBe('system.agent');
+        expect(result.description).toContain('Agent definition');
+        expect(result.statusValues).toContain('published');
+        expect(result.propsSchema).toBeDefined();
+        expect(result.propsSchema.properties.engine).toBeDefined();
+        expect(result.example).toBeDefined();
+        expect(result.hint).toContain('#root');
+      });
+
+      it('returns metadata for task type with correct status values', async () => {
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'explain_artifact_type',
+            arguments: { type: 'task' },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        const result = JSON.parse(json.result.content[0].text);
+
+        expect(result.type).toBe('task');
+        expect(result.statusValues).toEqual(['pending', 'in_progress', 'done', 'blocked']);
+        expect(result.example.status).toBe('pending');
+        expect(result.hint).toContain('compare-and-swap');
+      });
+
+      it('returns error for unknown type', async () => {
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'explain_artifact_type',
+            arguments: { type: 'invalid-type' },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        const result = JSON.parse(json.result.content[0].text);
+
+        expect(result.error).toBe('unknown_type');
+        expect(result.message).toContain('invalid-type');
+        expect(result.hint).toContain('Supported types');
       });
     });
 

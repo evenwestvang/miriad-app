@@ -150,13 +150,13 @@ create({
 
 ## Schema Discovery
 
-Use `get_artifact_props_schema` to get the JSON Schema for valid props:
+Use `explain_artifact_type` to get the JSON Schema for valid props:
 
 ```
-get_artifact_props_schema({ type: "system.mcp" })
+explain_artifact_type({ type: "system.mcp" })
 ```
 
-This returns the schema for validation. When creating/updating artifacts with invalid props, structured error feedback includes the full schema.
+This returns the schema for validation along with documentation and examples. When creating/updating artifacts with invalid props, structured error feedback includes the full schema.
 
 ## Common MCP Server Examples
 

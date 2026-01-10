@@ -7,6 +7,9 @@ export const VERSION = '0.0.1';
 // Types
 export * from './types.js';
 
+// Artifact schemas and validation
+export * from './artifact-schemas.js';
+
 // Tymbal streaming protocol
 export * from './tymbal/index.js';
 

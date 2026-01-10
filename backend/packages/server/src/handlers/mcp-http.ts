@@ -23,6 +23,8 @@ import {
   determineRouting,
   tymbal,
   generateMessageId,
+  getJsonSchema,
+  SYSTEM_ARTIFACT_TYPES,
   type ChannelRoster,
   type RosterEntry,
 } from '@cast/core';
@@ -539,6 +541,61 @@ Messages without @mentions are logged but won't notify anyone.`,
       required: ['status'],
     },
   },
+  // ---------------------------------------------------------------------------
+  // Channel Awareness Tools
+  // ---------------------------------------------------------------------------
+  {
+    name: 'get_roster',
+    description: `Get the current channel roster with agent status and statusMessage. Returns active and paused agents (archived agents are excluded).`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
+  {
+    name: 'get_messages',
+    description: `Browse channel message history with bidirectional pagination. Returns messages in chronological order. Use 'before' to paginate backwards (older), 'since' to paginate forwards (newer/polling).`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        limit: {
+          type: 'number',
+          description: 'Max messages to return (1-100)',
+        },
+        before: {
+          type: 'string',
+          description: 'Message ID cursor - return messages older than this ID (backwards pagination)',
+        },
+        since: {
+          type: 'string',
+          description: 'Message ID cursor - return messages newer than this ID (forwards pagination / polling)',
+        },
+      },
+      required: ['limit'],
+    },
+  },
+  {
+    name: 'list_agent_types',
+    description: `List available agent definitions (system.agent artifacts) that can be spawned in this channel. Merges channel-specific definitions with root defaults (channel overrides root on slug collision).`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
+  {
+    name: 'explain_artifact_type',
+    description: `Get documentation and JSON schema for an artifact type. Helps agents create valid artifacts by showing required fields, status values, and examples. Supports: system.agent, system.focus, system.playbook, system.mcp, doc, task, decision, code.`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        type: {
+          type: 'string',
+          description: 'Artifact type to explain (e.g., "system.agent", "task", "doc")',
+        },
+      },
+      required: ['type'],
+    },
+  },
 ];
 
 /**
@@ -563,6 +620,7 @@ interface ToolContext {
   storage: Storage;
   spaceId: string;
   channelId: string;
+  channelName: string;
   callsign: string;
   assetStorage?: AssetStorage;
   connectionManager?: ConnectionManager;
@@ -1105,6 +1163,371 @@ const toolHandlers: Record<string, ToolHandler> = {
       timestamp: now,
     }, null, 2);
   },
+
+  // ---------------------------------------------------------------------------
+  // Channel Awareness Tools
+  // ---------------------------------------------------------------------------
+
+  async get_roster(_args, { storage, channelId, channelName }) {
+    // Get all roster entries for this channel
+    const rosterEntries = await storage.listRoster(channelId);
+
+    // Filter out archived agents (they're "out of the story")
+    const activeRoster = rosterEntries.filter(
+      (entry: RosterEntry) => entry.status !== 'archived'
+    );
+
+    // Map to response format
+    const agents = activeRoster.map((entry: RosterEntry) => {
+      // Map roster status to simplified active/paused
+      // active, idle, busy, offline -> "active" (they're in the channel)
+      // paused -> "paused"
+      const status = entry.status === 'paused' ? 'paused' : 'active';
+
+      const agent: Record<string, unknown> = {
+        callsign: entry.callsign,
+        agentType: entry.agentType,
+        title: entry.agentType.charAt(0).toUpperCase() + entry.agentType.slice(1), // Capitalize as fallback
+        status,
+      };
+
+      // Add statusMessage if present
+      if (entry.current?.status) {
+        agent.statusMessage = entry.current.status;
+      }
+
+      return agent;
+    });
+
+    // Build hint
+    const activeCount = agents.filter((a) => a.status === 'active').length;
+    const pausedCount = agents.filter((a) => a.status === 'paused').length;
+
+    let hint = `${agents.length} agent${agents.length !== 1 ? 's' : ''}`;
+    if (activeCount > 0 || pausedCount > 0) {
+      const parts = [];
+      if (activeCount > 0) parts.push(`${activeCount} active`);
+      if (pausedCount > 0) parts.push(`${pausedCount} paused`);
+      hint += ` (${parts.join(', ')})`;
+    }
+
+    // Add status messages to hint
+    const withStatus = agents.filter((a) => a.statusMessage);
+    if (withStatus.length > 0) {
+      const statusParts = withStatus.map((a) => `@${a.callsign}: ${a.statusMessage}`);
+      hint += `. ${statusParts.join('; ')}.`;
+    }
+
+    return JSON.stringify({
+      channel: channelName,
+      agents,
+      hint,
+    }, null, 2);
+  },
+
+  async get_messages(args, { storage, spaceId, channelId, channelName }) {
+    const { limit: requestedLimit, before, since } = args as {
+      limit?: number;
+      before?: string;
+      since?: string;
+    };
+
+    // Validate: limit is required
+    if (requestedLimit === undefined || requestedLimit === null) {
+      return JSON.stringify({
+        error: 'invalid_params',
+        message: "Missing required parameter 'limit'",
+        hint: 'Specify limit (1-100) to control how many messages to fetch',
+      }, null, 2);
+    }
+
+    // Validate: before and since are mutually exclusive
+    if (before && since) {
+      return JSON.stringify({
+        error: 'invalid_params',
+        message: "Cannot use both 'before' and 'since' — pick one direction",
+        hint: "Use 'before' to paginate backwards (older), 'since' to paginate forwards (newer)",
+      }, null, 2);
+    }
+
+    // Validate and cap limit
+    const limit = Math.min(Math.max(requestedLimit, 1), 100);
+
+    // Fetch messages with appropriate cursor
+    // - No cursor: fetch newest messages (initial load)
+    // - before: fetch older messages (backwards pagination)
+    // - since: fetch newer messages (forwards pagination / polling)
+    const messages = await storage.getMessages(spaceId, channelId, {
+      limit: limit + 1, // Fetch one extra to determine hasMore
+      before,
+      since,
+      newestFirst: !before && !since, // Only use newestFirst when no cursor
+    });
+
+    // Filter out status messages (ephemeral, not conversation content)
+    const conversationMessages = messages.filter(
+      (msg) => msg.type !== 'status'
+    );
+
+    // Determine pagination indicators and trim to requested limit
+    // When using 'since', hasMore means there are newer messages (hasNewer)
+    // When using 'before' or no cursor, hasMore means there are older messages (hasOlder)
+    const hasMore = conversationMessages.length > limit;
+    const resultMessages = hasMore
+      ? conversationMessages.slice(0, limit)
+      : conversationMessages;
+
+    // Map to response format with senderType
+    // Storage uses 'user' but spec says 'human' for consistency
+    const formatted = resultMessages.map((msg) => ({
+      id: msg.id,
+      sender: msg.sender,
+      senderType: msg.senderType === 'user' ? 'human' : msg.senderType,
+      content: msg.content,
+      timestamp: msg.timestamp,
+    }));
+
+    // Get cursor IDs for pagination
+    const oldestId = formatted.length > 0 ? formatted[0].id : undefined;
+    const newestId = formatted.length > 0 ? formatted[formatted.length - 1].id : undefined;
+
+    // Build response based on query direction
+    const response: Record<string, unknown> = {
+      channel: channelName,
+      messages: formatted,
+    };
+
+    // Build hint and pagination indicators based on direction
+    let hint = `${formatted.length} message${formatted.length !== 1 ? 's' : ''} (chronological)`;
+
+    if (since) {
+      // Forward pagination mode (polling for new)
+      response.hasNewer = hasMore;
+      response.newestId = newestId;
+      if (hasMore) {
+        hint += `. More new messages — use since: '${newestId}' to continue.`;
+      }
+    } else {
+      // Backward pagination mode (history browsing) or initial load
+      response.hasOlder = hasMore;
+      response.oldestId = oldestId;
+      response.newestId = newestId;
+      if (hasMore) {
+        hint += `. Older history available — use before: '${oldestId}' to paginate backwards.`;
+      }
+    }
+
+    response.hint = hint;
+
+    return JSON.stringify(response, null, 2);
+  },
+
+  async list_agent_types(_args, { storage, spaceId, channelId, channelName }) {
+    // Get system.agent artifacts from current channel
+    const channelAgents = await storage.listArtifacts(channelId, {
+      type: 'system.agent',
+    });
+
+    // Get root channel to fetch global agent definitions
+    const rootChannel = await storage.getChannelByName(spaceId, 'root');
+    let rootAgents: typeof channelAgents = [];
+    if (rootChannel) {
+      rootAgents = await storage.listArtifacts(rootChannel.id, {
+        type: 'system.agent',
+      });
+    }
+
+    // Merge: channel overrides root (same slug)
+    const agentMap = new Map<string, { artifact: typeof channelAgents[0]; source: 'channel' | 'root' }>();
+
+    // Add root agents first
+    for (const agent of rootAgents) {
+      agentMap.set(agent.slug, { artifact: agent, source: 'root' });
+    }
+
+    // Channel agents override root
+    for (const agent of channelAgents) {
+      agentMap.set(agent.slug, { artifact: agent, source: 'channel' });
+    }
+
+    // Build response
+    const agentTypes = Array.from(agentMap.values()).map(({ artifact, source }) => {
+      const entry: Record<string, unknown> = {
+        slug: artifact.slug,
+        title: artifact.title || artifact.slug.charAt(0).toUpperCase() + artifact.slug.slice(1),
+        tldr: artifact.tldr || '',
+        source,
+      };
+
+      // Include engine from props if present
+      if (artifact.props?.engine) {
+        entry.engine = artifact.props.engine;
+      }
+
+      return entry;
+    });
+
+    // Build hint
+    const channelCount = Array.from(agentMap.values()).filter(({ source }) => source === 'channel').length;
+    const rootCount = agentTypes.length - channelCount;
+
+    let hint = `${agentTypes.length} agent type${agentTypes.length !== 1 ? 's' : ''} available`;
+    if (channelCount > 0 || rootCount > 0) {
+      const parts = [];
+      if (channelCount > 0) parts.push(`${channelCount} from channel`);
+      if (rootCount > 0) parts.push(`${rootCount} from root`);
+      hint += ` (${parts.join(', ')})`;
+    }
+
+    return JSON.stringify({
+      channel: channelName,
+      agentTypes,
+      hint,
+    }, null, 2);
+  },
+
+  async explain_artifact_type(args) {
+    const { type } = args as { type: string };
+
+    // Artifact type metadata registry (descriptions, status values, examples, hints)
+    // Props schemas come from @cast/core via getJsonSchema()
+    const typeMetadata: Record<string, {
+      description: string;
+      statusValues: string[];
+      example?: object;
+      hint: string;
+    }> = {
+      // System types (props schemas from @cast/core)
+      'system.agent': {
+        description: 'Agent definition specifying AI engine, model, and capabilities. Agents are spawned from these definitions when added to a channel roster.',
+        statusValues: ['draft', 'published', 'archived'],
+        example: {
+          slug: 'engineer',
+          type: 'system.agent',
+          tldr: 'Full-stack engineer agent',
+          props: { engine: 'claude', model: 'claude-sonnet-4-20250514', nameTheme: 'animals' },
+        },
+        hint: 'Define in #root channel for global availability, or in specific channel for local override.',
+      },
+
+      'system.focus': {
+        description: 'Channel template defining default agents and initial setup. When a channel is created with this focus, the specified agents are automatically spawned.',
+        statusValues: ['draft', 'published', 'archived'],
+        example: {
+          slug: 'code-review',
+          type: 'system.focus',
+          tldr: 'Code review workflow with reviewer and engineer',
+          props: { agents: ['reviewer', 'engineer'], defaultTagline: 'Code review session' },
+        },
+        hint: 'Create in #root to make available as channel template. Agents array references system.agent slugs.',
+      },
+
+      'system.mcp': {
+        description: 'MCP server configuration for stdio or HTTP transports. Referenced by system.agent to provide tools to agents.',
+        statusValues: ['draft', 'published', 'archived'],
+        example: {
+          slug: 'github-mcp',
+          type: 'system.mcp',
+          tldr: 'GitHub API integration via MCP',
+          props: { transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] },
+        },
+        hint: 'Reference from system.agent via mcp array. Use ${VAR} in env/headers for server-side variable expansion.',
+      },
+
+      'system.playbook': {
+        description: 'Workflow guidelines and conventions for a channel. Agents should read playbooks when joining to understand how work is done.',
+        statusValues: ['draft', 'published', 'archived'],
+        example: {
+          slug: 'git-workflow',
+          type: 'system.playbook',
+          tldr: 'Git branching and commit conventions',
+          content: '## Branch Naming\n- feature/TICKET-description\n- fix/TICKET-description\n\n## Commits\nUse conventional commits...',
+        },
+        hint: 'Agents should read playbooks when joining a channel to understand conventions.',
+      },
+
+      // Standard content types (no props schemas)
+      'doc': {
+        description: 'General documentation: specs, plans, notes, READMEs. The default artifact type for most content.',
+        statusValues: ['draft', 'published', 'archived'],
+        example: {
+          slug: 'api-spec',
+          type: 'doc',
+          tldr: 'REST API specification for user service',
+          content: '# User API\n\n## Endpoints\n\n### GET /users...',
+        },
+        hint: 'Default type for specs, plans, and general documentation. Use parentSlug for tree organization.',
+      },
+
+      'task': {
+        description: 'Work items with status tracking. Use for actionable items that need to be completed. Supports assignees.',
+        statusValues: ['pending', 'in_progress', 'done', 'blocked'],
+        example: {
+          slug: 'implement-auth',
+          type: 'task',
+          status: 'pending',
+          tldr: 'Implement JWT authentication for API',
+          assignees: ['fox'],
+          content: '## Requirements\n- Token expiry: 24h\n- Refresh tokens...',
+        },
+        hint: 'Use update tool with compare-and-swap to claim tasks atomically and prevent race conditions.',
+      },
+
+      'decision': {
+        description: 'Logged choices with rationale. Use to document architectural decisions, tradeoffs considered, and why a path was chosen.',
+        statusValues: ['draft', 'published', 'archived'],
+        example: {
+          slug: 'use-postgres',
+          type: 'decision',
+          tldr: 'Chose PostgreSQL over MongoDB for relational data needs',
+          content: '## Context\nNeed a database for user data with complex relations...\n\n## Decision\nPostgreSQL\n\n## Rationale\n...',
+        },
+        hint: 'Document the context, options considered, and rationale. Helps future contributors understand why.',
+      },
+
+      'code': {
+        description: 'Code snippets and file references. Slug should include file extension for syntax highlighting (e.g., auth.ts, config.json).',
+        statusValues: ['draft', 'published', 'archived'],
+        example: {
+          slug: 'auth-middleware.ts',
+          type: 'code',
+          tldr: 'JWT validation middleware for Express',
+          content: 'import jwt from "jsonwebtoken";\n\nexport function authMiddleware(req, res, next) {\n  const token = req.headers.authorization?.split(" ")[1];\n  // ...\n}',
+        },
+        hint: 'Use file extension in slug (e.g., foo.ts) for syntax highlighting. Content is raw code, not markdown.',
+      },
+    };
+
+    const metadata = typeMetadata[type];
+    if (!metadata) {
+      const knownTypes = Object.keys(typeMetadata).join(', ');
+      return JSON.stringify({
+        error: 'unknown_type',
+        message: `Unknown artifact type: "${type}"`,
+        hint: `Supported types: ${knownTypes}`,
+      }, null, 2);
+    }
+
+    const response: Record<string, unknown> = {
+      type,
+      description: metadata.description,
+      statusValues: metadata.statusValues,
+    };
+
+    // Get props schema from @cast/core for system types
+    const propsSchema = getJsonSchema(type);
+    if (propsSchema) {
+      response.propsSchema = propsSchema;
+    }
+
+    if (metadata.example) {
+      response.example = metadata.example;
+    }
+
+    response.hint = metadata.hint;
+
+    return JSON.stringify(response, null, 2);
+  },
 };
 
 // =============================================================================
@@ -1224,6 +1647,7 @@ export function createMcpRoutes(opts: McpHttpHandlerOptions): Hono<{ Variables: 
             storage,
             spaceId,
             channelId: channel.id,
+            channelName: channel.name,
             callsign: container.callsign,
             assetStorage,
             connectionManager,

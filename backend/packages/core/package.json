@@ -18,6 +18,8 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "ulid": "^3.0.2"
+    "ulid": "^3.0.2",
+    "zod": "^3.22.0",
+    "zod-to-json-schema": "^3.22.0"
   }
 }

@@ -285,6 +285,16 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         LIMIT ${limit}
       `;
       result = result.reverse(); // Return in chronological order
+    } else if (params?.newestFirst) {
+      // Get newest messages first (for initial sync), then reverse for chronological order
+      result = await sql<MessageRow[]>`
+        SELECT * FROM messages
+        WHERE space_id = ${spaceId}
+          AND channel_id = ${channelId}
+        ORDER BY id DESC
+        LIMIT ${limit}
+      `;
+      result = result.reverse(); // Return in chronological order
     } else {
       result = await sql<MessageRow[]>`
         SELECT * FROM messages
