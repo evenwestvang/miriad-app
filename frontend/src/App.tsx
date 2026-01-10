@@ -382,8 +382,15 @@ export function App() {
 
       const idx = prev.findIndex((a) => a.callsign === event.callsign);
       if (idx === -1) {
-        // Agent not in roster yet - might be joining, add them
+        // Agent not in roster yet - might be joining (new or unarchived), add them
         if (event.state === "connecting" || event.state === "online") {
+          // Remove from dismissed set if they were archived (unarchive flow)
+          setDismissedAgents((dismissed) => {
+            if (!dismissed.has(event.callsign)) return dismissed;
+            const next = new Set(dismissed);
+            next.delete(event.callsign);
+            return next;
+          });
           return [
             ...prev,
             {
@@ -622,7 +629,7 @@ export function App() {
     // This prevents HTTP request from blocking WebSocket connection
   }, [selectedThread]);
 
-  // Fetch roster and cost tally AFTER initial paint - delayed to not compete with message sync
+  // Fetch roster, costs, and archived agents AFTER initial paint - delayed to not compete with message sync
   useEffect(() => {
     if (!selectedThread || !connected) return;
 
@@ -632,10 +639,11 @@ export function App() {
           `[ChannelSwitch] Starting roster fetch at ${performance.now().toFixed(2)}ms`,
         );
         try {
-          // Fetch roster and costs in parallel
-          const [rosterResponse, costsResponse] = await Promise.all([
+          // Fetch roster, costs, and archived agents in parallel
+          const [rosterResponse, costsResponse, archivedResponse] = await Promise.all([
             apiFetch(`${API_HOST}/channels/${selectedThread}/roster`),
             apiFetch(`${API_HOST}/channels/${selectedThread}/costs`),
+            apiFetch(`${API_HOST}/channels/${selectedThread}/agents/archived`),
           ]);
 
           if (!rosterResponse.ok) {
@@ -651,6 +659,17 @@ export function App() {
               for (const t of costsData.tally) {
                 costsByCallsign.set(t.callsign, t.totalCostUsd);
               }
+            }
+          }
+
+          // Parse archived agents response
+          if (archivedResponse.ok) {
+            const archivedData = await archivedResponse.json();
+            if (archivedData.agents && Array.isArray(archivedData.agents)) {
+              const archivedCallsigns = new Set<string>(
+                archivedData.agents.map((a: { callsign: string }) => a.callsign)
+              );
+              setDismissedAgents(archivedCallsigns);
             }
           }
 
