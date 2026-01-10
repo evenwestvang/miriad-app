@@ -16,6 +16,7 @@ import { ChannelList } from "./components/channel/ChannelList";
 import { MessageList } from "./components/channel/MessageList";
 import { MessageInput } from "./components/channel/MessageInput";
 import { AgentRoster, type AgentType } from "./components/channel/AgentRoster";
+import { AgentDetailPanel } from "./components/channel/AgentDetailPanel";
 import { ChatHeader } from "./components/channel/ChatHeader";
 import {
   useTymbalConnection,
@@ -116,7 +117,7 @@ export function App() {
   const [workingAgents, setWorkingAgents] = useState<Set<string>>(new Set());
   const [leader, setLeader] = useState<string | undefined>(undefined);
   const [agentTypes, setAgentTypes] = useState<AgentType[]>([]);
-  const [isStartingWorkspace, setIsStartingWorkspace] = useState(false);
+  const [_isStartingWorkspace, setIsStartingWorkspace] = useState(false);
   // Track channel switching to show loading instead of empty state
   const [isSwitchingChannel, setIsSwitchingChannel] = useState(false);
   // Delayed spinner - only show after 500ms to avoid flash on fast loads
@@ -128,6 +129,8 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Artifact event counter - increment to trigger board refresh
   const [artifactEventTrigger, setArtifactEventTrigger] = useState(0);
+  // Selected agent for detail panel (callsign or null)
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
   // Check authentication on mount
   useEffect(() => {
@@ -369,16 +372,37 @@ export function App() {
             },
           ];
         }
-        return prev; // offline for unknown agent, ignore
+        return prev; // offline/paused for unknown agent, ignore
       }
       // Update existing agent
+      // Paused/muted is independent of online/connecting - an agent can be online AND muted
       const updated = [...prev];
-      updated[idx] = {
-        ...updated[idx],
-        isOnline: event.state === "online",
-        isConnecting: event.state === "connecting",
-        lastHeartbeat: event.lastHeartbeat ?? updated[idx].lastHeartbeat,
-      };
+      if (event.state === "paused") {
+        // Mute event - only set isPaused, preserve online/connecting state
+        updated[idx] = {
+          ...updated[idx],
+          isPaused: true,
+          lastHeartbeat: event.lastHeartbeat ?? updated[idx].lastHeartbeat,
+        };
+      } else if (event.state === "online") {
+        // Online event clears muted state (this is how unmute/resume works)
+        updated[idx] = {
+          ...updated[idx],
+          isOnline: true,
+          isConnecting: false,
+          isPaused: false,
+          lastHeartbeat: event.lastHeartbeat ?? updated[idx].lastHeartbeat,
+        };
+      } else {
+        // Offline/connecting - update lifecycle state but preserve muted flag
+        updated[idx] = {
+          ...updated[idx],
+          isOnline: false,
+          isConnecting: event.state === "connecting",
+          // isPaused preserved - muted agent that goes offline stays muted
+          lastHeartbeat: event.lastHeartbeat ?? updated[idx].lastHeartbeat,
+        };
+      }
       return updated;
     });
   }, []);
@@ -543,6 +567,8 @@ export function App() {
     // Only show switching state if we don't have cached messages for this channel
     setRoster([]);
     setLeader(undefined);
+    // Clear agent selection on channel switch
+    setSelectedAgent(null);
     if (selectedThread) {
       // Check cache at the time of switch (not reactive to cache changes)
       setMessageCache((cache) => {
@@ -623,10 +649,14 @@ export function App() {
                 isOnline: r.lastHeartbeat
                   ? Date.now() - new Date(r.lastHeartbeat).getTime() < 60000
                   : false,
+                // Paused/muted status from API
+                isPaused: r.status === "paused",
                 // Tunnel hash for HTTP exposure
                 tunnelHash: r.tunnelHash,
                 // Agent type for visual identification
                 agentType: r.agentType,
+                // Last heartbeat for client-side timeout tracking
+                lastHeartbeat: r.lastHeartbeat,
                 // Initialize with persisted cost (if any)
                 sessionCost: costsByCallsign.get(r.callsign) ?? 0,
               }),
@@ -816,12 +846,36 @@ export function App() {
 
         // Remove from local roster
         setRoster((prev) => prev.filter((a) => a.callsign !== callsign));
+        // Close panel if dismissed agent was selected
+        if (selectedAgent === callsign) {
+          setSelectedAgent(null);
+        }
       } catch (error) {
         console.error("Failed to dismiss agent:", error);
       }
     },
-    [selectedThread],
+    [selectedThread, selectedAgent],
   );
+
+  // Handle agent selected in roster (toggle behavior)
+  const handleAgentSelect = useCallback((callsign: string) => {
+    setSelectedAgent((prev) => (prev === callsign ? null : callsign));
+  }, []);
+
+  // Handle agent panel close
+  const handleAgentPanelClose = useCallback(() => {
+    setSelectedAgent(null);
+  }, []);
+
+  // Get selected agent data from roster
+  const selectedAgentData = selectedAgent
+    ? rosterWithWorkingState.find((a) => a.callsign === selectedAgent)
+    : null;
+
+  // Get selected agent's roster index for color
+  const selectedAgentIndex = selectedAgent
+    ? rosterWithWorkingState.findIndex((a) => a.callsign === selectedAgent)
+    : -1;
 
   // Show auth error page if there was an OAuth error
   if (authError) {
@@ -997,9 +1051,21 @@ export function App() {
                 isLoadingOlder={isLoadingOlder}
                 onRequestOlderMessages={requestOlderMessages}
               />
-              {/* Input area with roster bar above message input */}
+              {/* Input area with detail panel + roster bar above message input */}
               <div className="border-t border-border bg-card">
-                {/* Roster bar - horizontal row above input */}
+                {/* Agent detail panel - appears above roster when agent selected */}
+                {selectedAgentData && selectedThread && (
+                  <AgentDetailPanel
+                    key="agent-detail-panel"
+                    agent={selectedAgentData}
+                    rosterIndex={selectedAgentIndex}
+                    channelId={selectedThread}
+                    apiHost={API_HOST}
+                    onClose={handleAgentPanelClose}
+                    onDismiss={handleAgentDismiss}
+                  />
+                )}
+                {/* Roster bar - horizontal row, acts as tabs */}
                 <div className="px-4 pt-3 pb-2">
                   <AgentRoster
                     roster={rosterWithWorkingState}
@@ -1009,6 +1075,8 @@ export function App() {
                     apiHost={API_HOST}
                     onAgentAdded={handleAgentAdded}
                     onAgentDismiss={handleAgentDismiss}
+                    onAgentSelect={handleAgentSelect}
+                    selectedAgent={selectedAgent}
                     canManageAgents={!!selectedThread}
                   />
                 </div>
@@ -1017,6 +1085,8 @@ export function App() {
                   onSend={handleSendMessage}
                   disabled={!connected}
                   roster={rosterWithWorkingState}
+                  channelId={selectedThread || undefined}
+                  apiHost={API_HOST}
                 />
               </div>
             </>

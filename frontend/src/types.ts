@@ -249,6 +249,7 @@ export type AgentState =
   | 'connecting'
   | 'online'
   | 'offline'
+  | 'paused'
 
 // Agent output types for streaming
 export interface AgentOutput {

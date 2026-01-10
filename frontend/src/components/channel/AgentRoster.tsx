@@ -1,10 +1,9 @@
 import { useState, useRef } from 'react'
-import { Plus, X } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { getRosterColor } from '../../utils/senderColors'
 import { AgentSummonPicker } from './AgentSummonPicker'
 import { DismissConfirmDialog } from './DismissConfirmDialog'
-import { AgentDetailPopup } from './AgentDetailPopup'
 import type { RosterAgent } from './MentionAutocomplete'
 
 // Re-export AgentType for backwards compatibility (used in App.tsx)
@@ -27,6 +26,10 @@ interface AgentRosterProps {
   onAgentAdded?: (agent: RosterAgent) => void
   /** Called when agent is dismissed */
   onAgentDismiss?: (callsign: string) => void
+  /** Called when agent badge is clicked (for detail panel) */
+  onAgentSelect?: (callsign: string) => void
+  /** Currently selected agent callsign */
+  selectedAgent?: string | null
   /** Whether agent management is enabled */
   canManageAgents?: boolean
 }
@@ -34,37 +37,41 @@ interface AgentRosterProps {
 interface AgentBadgeProps {
   agent: RosterAgent
   isLeader: boolean
+  isSelected: boolean
   /** Channel ID for color calculation */
   channelId: string
   /** Agent's index in the roster (for color assignment) */
   rosterIndex: number
-  onDismiss?: () => void
-  onClick?: (e: React.MouseEvent) => void
+  onClick?: () => void
 }
 
 /**
- * Individual agent badge with four visual states:
- * 1. Offline: Light gray name, gray dot
- * 2. Connecting: Yellow pulsing dot, normal name (container starting)
- * 3. Online/Idle: Black name, colored dot
- * 4. Working: Black name with cycling animation, colored dot
+ * Individual agent badge with visual states:
+ * 1. Offline: Gray dot, gray name
+ * 2. Connecting: Yellow pulsing dot, normal name
+ * 3. Online/Idle: Colored dot, black name
+ * 4. Working: Colored dot, black name with animation
+ * 5. Paused: Gray dot, strikethrough black name
+ *
+ * Selected state adds underline indicator.
  */
-function AgentBadge({ agent, isLeader, channelId, rosterIndex, onDismiss, onClick }: AgentBadgeProps) {
-  const [showDismiss, setShowDismiss] = useState(false)
-
+function AgentBadge({ agent, isLeader, isSelected, channelId, rosterIndex, onClick }: AgentBadgeProps) {
   // Get agent's color based on roster position (matches message list cartouche)
   const dotColor = getRosterColor(channelId, rosterIndex)
 
   // Derive state label for tooltip
-  const stateLabel = agent.isConnecting
-    ? 'connecting'
-    : !agent.isOnline
-      ? 'offline'
-      : agent.isWorking
-        ? 'working'
-        : 'idle'
+  const stateLabel = agent.isPaused
+    ? 'muted'
+    : agent.isConnecting
+      ? 'connecting'
+      : !agent.isOnline
+        ? 'offline'
+        : agent.isWorking
+          ? 'working'
+          : 'idle'
 
   // Derive dot color: yellow for connecting, gray for offline, otherwise signature color
+  // Muted state doesn't affect dot color - only adds strikethrough to name
   const displayDotColor = agent.isConnecting
     ? '#eab308' // yellow-500
     : agent.isOnline
@@ -72,64 +79,47 @@ function AgentBadge({ agent, isLeader, channelId, rosterIndex, onDismiss, onClic
       : '#a0a0a0'
 
   return (
-    <div
-      className="relative group"
-      onMouseEnter={() => setShowDismiss(true)}
-      onMouseLeave={() => setShowDismiss(false)}
-    >
-      <button
-        onClick={onClick}
-        className={cn(
-          "flex items-center gap-1 text-xs cursor-pointer transition-opacity hover:opacity-80"
-        )}
-        title={`@${agent.callsign} - ${stateLabel}${isLeader ? ' (leader)' : ''}`}
-      >
-        {/* Dot: yellow+pulse when connecting, gray when offline, colored when online */}
-        <span
-          className={cn(
-            "w-1.5 h-1.5 rounded-full flex-shrink-0",
-            agent.isConnecting && "animate-pulse"
-          )}
-          style={{ backgroundColor: displayDotColor }}
-        />
-        {/* Name: light gray when offline, black otherwise */}
-        <span className={cn(
-          "transition-colors",
-          agent.isConnecting
-            ? "text-[var(--cast-text-primary)]"
-            : agent.isOnline
-              ? agent.isWorking
-                ? "text-[var(--cast-text-primary)] animate-working"
-                : "text-[var(--cast-text-primary)]"
-              : "text-[#a0a0a0]"
-        )}>
-          {agent.callsign}
-        </span>
-        {isLeader && (
-          <span className="text-amber-500 text-[10px]">★</span>
-        )}
-      </button>
-
-      {/* Dismiss button - only show on hover, never for leader */}
-      {showDismiss && onDismiss && !isLeader && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onDismiss()
-          }}
-          className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center text-xs shadow-sm hover:bg-destructive/90 transition-colors"
-          title={`Dismiss @${agent.callsign}`}
-        >
-          <X className="w-2.5 h-2.5" />
-        </button>
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-1 text-xs cursor-pointer px-1.5 py-0.5",
+        "hover:bg-[#f5f5f5]",
+        isSelected && "bg-[#f5f5f5]"
       )}
-    </div>
+      title={`@${agent.callsign} - ${stateLabel}${isLeader ? ' (leader)' : ''}`}
+    >
+      {/* Dot: gray for paused/offline, yellow+pulse for connecting, colored when online */}
+      <span
+        className={cn(
+          "w-1.5 h-1.5 rounded-full flex-shrink-0",
+          agent.isConnecting && "animate-pulse"
+        )}
+        style={{ backgroundColor: displayDotColor }}
+      />
+      {/* Name: color based on online/offline, strikethrough added if muted */}
+      <span className={cn(
+        // Base color: gray for offline, black otherwise
+        agent.isOnline || agent.isConnecting
+          ? "text-[var(--cast-text-primary)]"
+          : "text-[#a0a0a0]",
+        // Working animation (only when online and working)
+        agent.isOnline && agent.isWorking && "animate-working",
+        // Strikethrough for muted (independent of online/offline)
+        agent.isPaused && "line-through"
+      )}>
+        {agent.callsign}
+      </span>
+      {isLeader && (
+        <span className="text-amber-500 text-[10px]">★</span>
+      )}
+    </button>
   )
 }
 
 /**
  * Compact agent roster display for channel header.
- * Shows callsigns with status indicators, add button, and dismiss on hover.
+ * Shows callsigns with status indicators, acts as tab navigation for detail panel.
+ * Dismiss functionality is in the detail panel, not on hover.
  */
 export function AgentRoster({
   roster,
@@ -139,6 +129,8 @@ export function AgentRoster({
   apiHost = '',
   onAgentAdded: _onAgentAdded,
   onAgentDismiss,
+  onAgentSelect,
+  selectedAgent,
   canManageAgents = false,
 }: AgentRosterProps) {
   // Note: agentTypes and onAgentAdded are deprecated but kept for backwards compatibility
@@ -146,33 +138,7 @@ export function AgentRoster({
   void _onAgentAdded
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dismissTarget, setDismissTarget] = useState<RosterAgent | null>(null)
-  const [dismissPosition, setDismissPosition] = useState<{ bottom: number; left: number } | undefined>()
-  const [detailAgent, setDetailAgent] = useState<RosterAgent | null>(null)
-  const [detailPosition, setDetailPosition] = useState<{ bottom: number; left: number } | undefined>()
   const addButtonRef = useRef<HTMLButtonElement>(null)
-
-  // Handle agent click - open detail popup (positioned above the trigger)
-  const handleAgentClick = (agent: RosterAgent, event: React.MouseEvent) => {
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    // Position above: bottom is distance from viewport bottom to trigger top
-    setDetailPosition({ bottom: window.innerHeight - rect.top + 8, left: rect.left })
-    setDetailAgent(agent)
-  }
-
-  // Handle dismiss click - show confirmation for working agents, dismiss immediately otherwise
-  const handleDismissClick = (agent: RosterAgent, event: React.MouseEvent) => {
-    const isActive = agent.isWorking
-
-    if (isActive) {
-      // Show confirmation dialog (positioned above the trigger)
-      const rect = (event.target as HTMLElement).getBoundingClientRect()
-      setDismissPosition({ bottom: window.innerHeight - rect.top + 4, left: rect.left - 200 })
-      setDismissTarget(agent)
-    } else {
-      // Dismiss immediately
-      onAgentDismiss?.(agent.callsign)
-    }
-  }
 
   const handleConfirmDismiss = () => {
     if (dismissTarget) {
@@ -195,17 +161,10 @@ export function AgentRoster({
             key={agent.callsign}
             agent={agent}
             isLeader={agent.callsign === leader}
+            isSelected={agent.callsign === selectedAgent}
             channelId={channelId || ''}
             rosterIndex={index}
-            onClick={(e) => handleAgentClick(agent, e)}
-            onDismiss={
-              canManageAgents && onAgentDismiss
-                ? () => {
-                const fakeEvent = { target: document.body, currentTarget: document.body } as unknown as React.MouseEvent
-                handleDismissClick(agent, fakeEvent)
-              }
-                : undefined
-            }
+            onClick={() => onAgentSelect?.(agent.callsign)}
           />
         ))}
 
@@ -223,7 +182,7 @@ export function AgentRoster({
             onClick={() => setPickerOpen(true)}
             className={cn(
               "flex items-center gap-1 text-xs",
-              "text-[#a0a0a0] hover:text-[var(--cast-text-primary)] transition-colors",
+              "text-[#a0a0a0] hover:text-[var(--cast-text-primary)]",
               pickerOpen && "text-[var(--cast-text-primary)] pointer-events-none"
             )}
           >
@@ -241,25 +200,14 @@ export function AgentRoster({
         </div>
       )}
 
-      {/* Dismiss confirmation dialog */}
+      {/* Dismiss confirmation dialog - used when dismissing working agent from panel */}
       <DismissConfirmDialog
         callsign={dismissTarget?.callsign || ''}
         isActive={dismissTarget?.isWorking ?? false}
         onConfirm={handleConfirmDismiss}
         onClose={() => setDismissTarget(null)}
         isOpen={!!dismissTarget}
-        position={dismissPosition}
       />
-
-      {/* Agent detail popup */}
-      {detailAgent && (
-        <AgentDetailPopup
-          agent={detailAgent}
-          onClose={() => setDetailAgent(null)}
-          isOpen={!!detailAgent}
-          position={detailPosition}
-        />
-      )}
     </div>
   )
 }
