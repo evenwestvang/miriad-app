@@ -118,6 +118,27 @@ describe('determineRouting', () => {
     expect(result.targets).toEqual(['fox', 'bear', 'owl']);
     expect(result.isBroadcast).toBe(true);
   });
+
+  it('@channel excludes sender when provided', () => {
+    const parsed = parseMentions('@channel task complete');
+    const result = determineRouting(parsed, false, roster, 'fox');
+    expect(result.targets).toEqual(['bear', 'owl']);
+    expect(result.isBroadcast).toBe(true);
+  });
+
+  it('specific mentions exclude sender when provided', () => {
+    const parsed = parseMentions('@fox @bear help me');
+    const result = determineRouting(parsed, false, roster, 'fox');
+    expect(result.targets).toEqual(['bear']);
+    expect(result.isBroadcast).toBe(false);
+  });
+
+  it('self-mention results in empty targets', () => {
+    const parsed = parseMentions('@fox thinking out loud');
+    const result = determineRouting(parsed, false, roster, 'fox');
+    expect(result.targets).toEqual([]);
+    expect(result.isBroadcast).toBe(false);
+  });
 });
 
 describe('stripMentions', () => {

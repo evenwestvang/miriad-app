@@ -19,11 +19,21 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Storage } from '@cast/storage';
 import {
+  parseMentions,
+  determineRouting,
+  tymbal,
+  generateMessageId,
+  type ChannelRoster,
+  type RosterEntry,
+} from '@cast/core';
+import {
   requireContainerAuth,
   getContainerAuth,
   type ContainerAuthVariables,
 } from '../auth/container-middleware.js';
 import type { AssetStorage } from '../assets/index.js';
+import type { ConnectionManager } from '../websocket/index.js';
+import type { AgentInvoker, Message } from './messages.js';
 
 // =============================================================================
 // Instruction Loading (Phase F)
@@ -125,6 +135,10 @@ interface McpHttpHandlerOptions {
   /** @deprecated spaceId is now extracted from container auth */
   spaceId?: string;
   assetStorage?: AssetStorage;
+  /** Connection manager for broadcasting messages */
+  connectionManager?: ConnectionManager;
+  /** Agent invoker for routing @mentions to other agents */
+  agentInvoker?: AgentInvoker;
 }
 
 // JSON-RPC error codes
@@ -491,6 +505,40 @@ const TOOLS: McpToolDefinition[] = [
       required: ['article'],
     },
   },
+  // ---------------------------------------------------------------------------
+  // Communication Tools (Agent UX)
+  // ---------------------------------------------------------------------------
+  {
+    name: 'send_message',
+    description: `Send a message to the channel. Use @mentions to address others:
+• @callsign - notify a specific agent (e.g., "@fox can you help?")
+• @channel - broadcast to all agents in this channel
+Messages without @mentions are logged but won't notify anyone.`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        content: {
+          type: 'string',
+          description: 'Message content. Use @callsign or @channel to notify others.',
+        },
+      },
+      required: ['content'],
+    },
+  },
+  {
+    name: 'set_status',
+    description: `Update your status to let others know what you're working on. Keep it short (a few words). Update frequently as your work progresses.`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        status: {
+          type: 'string',
+          description: 'Brief status (e.g., "reviewing PR #123", "fixing auth bug", "waiting for feedback")',
+        },
+      },
+      required: ['status'],
+    },
+  },
 ];
 
 /**
@@ -517,6 +565,8 @@ interface ToolContext {
   channelId: string;
   callsign: string;
   assetStorage?: AssetStorage;
+  connectionManager?: ConnectionManager;
+  agentInvoker?: AgentInvoker;
 }
 
 type ToolHandler = (args: Record<string, unknown>, ctx: ToolContext) => Promise<string>;
@@ -914,6 +964,146 @@ const toolHandlers: Record<string, ToolHandler> = {
 
     return instruction.content;
   },
+
+  // ---------------------------------------------------------------------------
+  // Communication Tools (Agent UX)
+  // ---------------------------------------------------------------------------
+
+  async send_message(args, { storage, spaceId, channelId, callsign, connectionManager, agentInvoker }) {
+    const { content } = args as { content: string };
+
+    if (!content || typeof content !== 'string') {
+      throw new Error('content is required and must be a string');
+    }
+
+    // Get roster for routing
+    const rosterEntries = await storage.listRoster(channelId);
+    const leaderEntry = rosterEntries.find((e: RosterEntry) => e.agentType.toLowerCase().includes('lead'));
+    const roster: ChannelRoster = {
+      agents: rosterEntries.map((e: RosterEntry) => e.callsign),
+      leader: leaderEntry?.callsign ?? rosterEntries[0]?.callsign ?? '',
+    };
+
+    // Parse @mentions and determine routing targets
+    const parsed = parseMentions(content);
+    // Agent messages: senderIsHuman = false
+    const routing = determineRouting(parsed, false, roster, callsign);
+
+    const messageId = generateMessageId();
+    const now = new Date().toISOString();
+
+    // Save message with method: 'send_message' in metadata
+    await storage.saveMessage({
+      id: messageId,
+      spaceId,
+      channelId,
+      sender: callsign,
+      senderType: 'agent',
+      type: 'agent',
+      content,
+      isComplete: true,
+      addressedAgents: routing.targets.length > 0 ? routing.targets : undefined,
+      metadata: { method: 'send_message' },
+    });
+
+    // Broadcast to WebSocket clients
+    if (connectionManager) {
+      const frame = tymbal.set(messageId, {
+        type: 'agent',
+        sender: callsign,
+        senderType: 'agent',
+        content,
+        timestamp: now,
+        method: 'send_message',
+        ...(routing.targets.length > 0 ? { mentions: routing.targets } : {}),
+        ...(routing.isBroadcast ? { broadcast: true } : {}),
+      });
+      await connectionManager.broadcast(channelId, frame);
+    }
+
+    // Invoke mentioned agents (this is the explicit send, so we DO route)
+    if (agentInvoker && routing.targets.length > 0) {
+      const message: Message = {
+        id: messageId,
+        channelId,
+        sender: callsign,
+        senderType: 'agent',
+        type: 'agent',
+        content,
+        timestamp: now,
+        isComplete: true,
+        addressedAgents: routing.targets,
+      };
+      await agentInvoker.invokeAgents(channelId, routing.targets, message);
+    }
+
+    const response: Record<string, unknown> = {
+      id: messageId,
+      timestamp: now,
+      delivered: routing.targets,
+    };
+
+    // Add hint when no agents were notified
+    if (routing.targets.length === 0) {
+      response.hint = 'No @mentions — message logged but no agents notified.';
+    }
+
+    return JSON.stringify(response, null, 2);
+  },
+
+  async set_status(args, { storage, spaceId, channelId, callsign, connectionManager }) {
+    const { status } = args as { status: string };
+
+    if (!status || typeof status !== 'string') {
+      throw new Error('status is required and must be a string');
+    }
+
+    // Find roster entry to update status field
+    const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+    if (rosterEntry) {
+      // Update roster entry with current status (for UI badge display)
+      // Note: status field is typically 'active'|'idle'|'busy' etc.
+      // We could add a separate statusText field, but for now we'll just broadcast
+    }
+
+    const now = new Date().toISOString();
+
+    // Broadcast status frame via Tymbal (NOT a message frame - different frame type)
+    // Status uses the "→ status" format in UI
+    if (connectionManager) {
+      // Generate a unique ID for the status update
+      const statusId = generateMessageId();
+
+      // Status is broadcast as a special frame type that the frontend handles differently
+      // Using tymbal.set with type: 'status' and simple content
+      const frame = tymbal.set(statusId, {
+        type: 'status',
+        sender: callsign,
+        senderType: 'agent',
+        content: { status },
+        timestamp: now,
+      });
+      await connectionManager.broadcast(channelId, frame);
+
+      // Also save to storage so it persists (shown as → status in chat)
+      await storage.saveMessage({
+        id: statusId,
+        spaceId,
+        channelId,
+        sender: callsign,
+        senderType: 'agent',
+        type: 'status',
+        content: { status },
+        isComplete: true,
+        metadata: { method: 'set_status' },
+      });
+    }
+
+    return JSON.stringify({
+      status,
+      timestamp: now,
+    }, null, 2);
+  },
 };
 
 // =============================================================================
@@ -952,7 +1142,7 @@ function jsonRpcSuccess(id: string | number, result: unknown): JsonRpcResponse {
 }
 
 export function createMcpRoutes(opts: McpHttpHandlerOptions): Hono<{ Variables: ContainerAuthVariables }> {
-  const { storage, assetStorage } = opts;
+  const { storage, assetStorage, connectionManager, agentInvoker } = opts;
   const app = new Hono<{ Variables: ContainerAuthVariables }>();
 
   // Apply container auth to all MCP routes
@@ -1035,6 +1225,8 @@ export function createMcpRoutes(opts: McpHttpHandlerOptions): Hono<{ Variables: 
             channelId: channel.id,
             callsign: container.callsign,
             assetStorage,
+            connectionManager,
+            agentInvoker,
           };
           const result = await handler(params.arguments ?? {}, ctx);
 

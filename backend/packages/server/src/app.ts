@@ -1061,6 +1061,10 @@ export function createApp(options: AppOptions): Hono {
           messageContent = (value.content as string | Record<string, unknown>) ?? value;
         }
 
+        // Detect method field - defaults to 'agent_output' for frames without explicit method
+        // This enables the loop-breaker: send_message routes to agents, agent_output does not
+        const method = (value.method as string) ?? 'agent_output';
+
         await storage.saveMessage({
           id: frame.i,
           spaceId: spaceIdFromContainer,
@@ -1071,7 +1075,7 @@ export function createApp(options: AppOptions): Hono {
           content: messageContent,
           isComplete: true,
           addressedAgents: value.mentions as string[] | undefined,
-          metadata: { fromTymbal: true },
+          metadata: { fromTymbal: true, method },
         });
       }
     },
@@ -1154,6 +1158,9 @@ export function createApp(options: AppOptions): Hono {
             messageContent = (value.content as string | Record<string, unknown>) ?? value;
           }
 
+          // Detect method field - defaults to 'agent_output' for frames without explicit method
+          const method = (value.method as string) ?? 'agent_output';
+
           await storage.saveMessage({
             id: normalizedFrame.i,
             spaceId: spaceIdFromThread,
@@ -1164,7 +1171,7 @@ export function createApp(options: AppOptions): Hono {
             content: messageContent,
             isComplete: true,
             addressedAgents: value.mentions as string[] | undefined,
-            metadata: { fromTymbal: true },
+            metadata: { fromTymbal: true, method },
           });
         }
       } else if (isResetFrame(frame)) {
@@ -1382,6 +1389,30 @@ export function createApp(options: AppOptions): Hono {
   const mcpRoutes = createMcpRoutes({
     storage,
     assetStorage,
+    connectionManager,
+    // AgentInvoker for send_message tool - creates invoker with spaceId from container auth context
+    agentInvoker: {
+      invokeAgents: async (channelId: string, targets: string[], message: Message) => {
+        // Get spaceId from the channel (message.channelId is guaranteed to match)
+        // Note: For MCP calls, spaceId is in the ToolContext, but agentInvoker is called
+        // from within the handler which has access to ctx.spaceId
+        // We need to look up the channel to get spaceId
+        const channel = await storage.getChannelById(channelId);
+        if (!channel) {
+          console.warn(`[MCP] Channel ${channelId} not found for agent invocation`);
+          return;
+        }
+        const invoker = createAgentInvokerAdapter({
+          agentManager,
+          storage,
+          spaceId: channel.spaceId,
+          orchestrator,
+          localAgentRouter,
+          connectionManager,
+        });
+        return invoker.invokeAgents(channelId, targets, message);
+      },
+    },
   });
   app.route('/mcp', mcpRoutes);
 

@@ -83,28 +83,39 @@ export function parseMentions(content: string): ParsedMentions {
  * Determine routing targets based on mentions and sender.
  *
  * Rules:
- * - @callsign -> route to that agent
- * - @channel -> broadcast to all agents
+ * - @callsign -> route to that agent (excluding self)
+ * - @channel -> broadcast to all agents (excluding sender)
  * - No mentions from human -> route to channel leader
  * - No mentions from agent -> no routing (just logged)
+ *
+ * @param parsed - Parsed mention data from parseMentions()
+ * @param senderIsHuman - Whether the sender is human (affects default routing)
+ * @param roster - Channel roster with available agents
+ * @param senderCallsign - Callsign of the sender (to exclude from targets)
  */
 export function determineRouting(
   parsed: ParsedMentions,
   senderIsHuman: boolean,
-  roster: ChannelRoster
+  roster: ChannelRoster,
+  senderCallsign?: string
 ): RoutingResult {
-  // @channel broadcasts to all agents
+  // @channel broadcasts to all agents (excluding sender)
   if (parsed.isChannelMention) {
+    const targets = senderCallsign
+      ? roster.agents.filter((a) => a !== senderCallsign)
+      : [...roster.agents];
     return {
-      targets: [...roster.agents],
+      targets,
       isBroadcast: true,
     };
   }
 
   // Specific @mentions
   if (parsed.mentions.length > 0) {
-    // Filter to only agents that exist in the roster
-    const validTargets = parsed.mentions.filter((m) => roster.agents.includes(m));
+    // Filter to only agents that exist in the roster (and exclude sender)
+    const validTargets = parsed.mentions.filter(
+      (m) => roster.agents.includes(m) && m !== senderCallsign
+    );
     return {
       targets: validTargets,
       isBroadcast: false,

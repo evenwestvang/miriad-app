@@ -77,6 +77,16 @@ function createMockStorage(): Storage {
       if (name === TEST_CHANNEL_NAME) return testChannel;
       return null;
     }),
+    getChannelById: vi.fn(async (channelId: string) => {
+      if (channelId === TEST_CHANNEL_ID) return testChannel;
+      return null;
+    }),
+    resolveChannel: vi.fn(async (spaceId: string, idOrName: string) => {
+      if (idOrName === TEST_CHANNEL_NAME || idOrName === TEST_CHANNEL_ID) return testChannel;
+      return null;
+    }),
+    getChannelWithRoster: vi.fn(async () => null),
+    resolveChannelWithRoster: vi.fn(async () => null),
     listChannels: vi.fn(async () => []),
     createChannel: vi.fn(async () => testChannel),
     updateChannel: vi.fn(async () => {}),
@@ -91,6 +101,7 @@ function createMockStorage(): Storage {
       return [];
     }),
     getMessage: vi.fn(async () => null),
+    getMessagesByChannelId: vi.fn(async () => []),
     saveMessage: vi.fn(async () => testMessages[0]),
     updateMessage: vi.fn(async () => {}),
     deleteMessage: vi.fn(async () => {}),
@@ -108,6 +119,7 @@ function createMockStorage(): Storage {
     getRosterEntry: vi.fn(async () => null),
     getRosterByCallsign: vi.fn(async () => null),
     listRoster: vi.fn(async () => []),
+    listArchivedRoster: vi.fn(async () => []),
     updateRosterEntry: vi.fn(async () => {}),
     removeFromRoster: vi.fn(async () => {}),
 
@@ -452,7 +464,7 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
       expect(json.id).toBe(1);
       expect(json.result.tools).toBeDefined();
       expect(Array.isArray(json.result.tools)).toBe(true);
-      expect(json.result.tools.length).toBe(13); // 10 artifact + 2 message + 1 instructions tool
+      expect(json.result.tools.length).toBe(15); // 10 artifact + 2 message + 1 instructions + 2 communication tools
 
       // Verify tool names
       const toolNames = json.result.tools.map((t: { name: string }) => t.name);
@@ -469,6 +481,8 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
       expect(toolNames).toContain('message_get');
       expect(toolNames).toContain('message_search');
       expect(toolNames).toContain('read_instructions');
+      expect(toolNames).toContain('send_message');
+      expect(toolNames).toContain('set_status');
     });
 
     it('includes proper inputSchema for each tool', async () => {

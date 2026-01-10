@@ -115,14 +115,20 @@ export function filterMessagesForAgent(
 /**
  * Determine addressed agents from message content.
  * Returns the list of agents to address and whether it's a broadcast.
+ *
+ * @param content - Message content with @mentions
+ * @param senderIsHuman - Whether the sender is human
+ * @param roster - Channel roster
+ * @param senderCallsign - Optional sender callsign (to exclude from targets)
  */
 export function getAddressedAgents(
   content: string,
   senderIsHuman: boolean,
-  roster: ChannelRoster
+  roster: ChannelRoster,
+  senderCallsign?: string
 ): { addressedAgents: string[]; isBroadcast: boolean } {
   const parsed = parseMentions(content);
-  const routing = determineRouting(parsed, senderIsHuman, roster);
+  const routing = determineRouting(parsed, senderIsHuman, roster, senderCallsign);
 
   return {
     addressedAgents: routing.targets,
