@@ -5,9 +5,8 @@ import {
   AtSign,
   Sparkles,
   Play,
-  Pause,
-  PlayCircle,
-  PauseCircle,
+  Bot,
+  BotOff,
   Search,
   X,
   Loader2,
@@ -30,10 +29,10 @@ interface MessageInputProps {
 // Slash commands configuration
 const SLASH_COMMANDS = [
   { name: 'summon', description: 'Summon an agent to the channel', icon: Sparkles },
-  { name: 'pause', description: 'Pause an agent', icon: Pause },
-  { name: 'resume', description: 'Resume a paused agent', icon: Play },
-  { name: 'pause-all', description: 'Pause all active agents', icon: PauseCircle },
-  { name: 'resume-all', description: 'Resume all paused agents', icon: PlayCircle },
+  { name: 'mute', description: 'Mute an agent', icon: BotOff },
+  { name: 'unmute', description: 'Unmute an agent', icon: Bot },
+  { name: 'mute-all', description: 'Mute all agents', icon: BotOff },
+  { name: 'unmute-all', description: 'Unmute all agents', icon: Bot },
 ]
 
 export function MessageInput({
@@ -189,17 +188,17 @@ export function MessageInput({
 
     if (command === 'summon') {
       onSummon?.()
-    } else if (command === 'pause') {
+    } else if (command === 'mute') {
       if (pausableAgents.length > 0) {
         setShowAgentPicker('pause')
       }
-    } else if (command === 'resume') {
+    } else if (command === 'unmute') {
       if (resumableAgents.length > 0) {
         setShowAgentPicker('resume')
       }
-    } else if (command === 'pause-all') {
+    } else if (command === 'mute-all') {
       handleBulkAgentAction('pause-all')
-    } else if (command === 'resume-all') {
+    } else if (command === 'unmute-all') {
       handleBulkAgentAction('resume-all')
     }
   }, [onSummon, pausableAgents, resumableAgents, handleBulkAgentAction])
