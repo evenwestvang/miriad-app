@@ -30,7 +30,7 @@ export interface RosterEvent {
 // Roster state event - agent lifecycle changes from backend
 export interface RosterStateEvent {
   callsign: string
-  state: 'connecting' | 'online' | 'offline' | 'paused'
+  state: 'connecting' | 'online' | 'offline' | 'paused' | 'dismissed'
   /** ISO timestamp of last heartbeat (for client-side offline timeout tracking) */
   lastHeartbeat?: string
 }
@@ -285,10 +285,10 @@ export function useTymbalConnection({
 
           // Handle roster lifecycle states (from backend heartbeat)
           // Client handles offline timeout locally using lastHeartbeat timestamp
-          if (value.state === 'online' || value.state === 'offline' || value.state === 'connecting' || value.state === 'paused') {
+          if (value.state === 'online' || value.state === 'offline' || value.state === 'connecting' || value.state === 'paused' || value.state === 'dismissed') {
             const event: RosterStateEvent = {
               callsign: value.sender,
-              state: value.state as 'online' | 'offline' | 'connecting' | 'paused',
+              state: value.state as 'connecting' | 'online' | 'offline' | 'paused' | 'dismissed',
             }
             // Include lastHeartbeat for client-side timeout tracking
             if ('lastHeartbeat' in value && typeof value.lastHeartbeat === 'string') {

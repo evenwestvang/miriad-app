@@ -359,7 +359,19 @@ export function App() {
       event.state,
       event.lastHeartbeat,
     );
+    // Close detail panel if dismissed agent was selected (via broadcast from another client)
+    if (event.state === "dismissed") {
+      setSelectedAgent((current) =>
+        current === event.callsign ? null : current,
+      );
+    }
+
     setRoster((prev) => {
+      // Dismissed state - remove agent from roster (archived on backend)
+      if (event.state === "dismissed") {
+        return prev.filter((a) => a.callsign !== event.callsign);
+      }
+
       const idx = prev.findIndex((a) => a.callsign === event.callsign);
       if (idx === -1) {
         // Agent not in roster yet - might be joining, add them
