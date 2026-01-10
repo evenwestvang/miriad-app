@@ -52,6 +52,8 @@ export interface Message {
   attachments?: Attachment[]
   // For attachment type messages (content is an object)
   attachmentData?: AttachmentMessageContent
+  // Method used to send the message (e.g., 'send_message' for intentional agent messages)
+  method?: string
 }
 
 /**

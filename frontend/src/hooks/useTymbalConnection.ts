@@ -70,6 +70,8 @@ interface MessageValue {
   args?: Record<string, unknown>
   // For tool_result frames (flat format)
   isError?: boolean
+  // Method used to send the message (e.g., 'send_message' for intentional agent messages)
+  method?: string
 }
 
 // Agent state info for UI
@@ -525,6 +527,7 @@ export function useTymbalConnection({
           sender: value.sender,
           senderType: value.senderType,
           timestamp: frame.t,
+          method: value.method,
         })
         return
       }

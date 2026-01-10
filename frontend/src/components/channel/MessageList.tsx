@@ -22,6 +22,7 @@ import {
   MoreVertical,
   Bed,
   Coffee,
+  ArrowRight,
 } from "lucide-react";
 import type { Message, StructuredAskMessage } from "../../types";
 import { highlightMentions, type ArtifactInfo } from "../../utils";
@@ -186,7 +187,7 @@ function MessageHeader({
       </div>
       {/* Header line with callsign, agent type, timestamp, menu */}
       <div className="flex items-center gap-2 mb-1.5">
-        <span className="text-[14px] font-semibold text-[var(--cast-text-primary)] tracking-[-0.01em]">
+        <span className="text-[14px] font-semibold tracking-[-0.01em] text-[var(--cast-text-primary)]">
           {displayName}
         </span>
         {agentType && (
@@ -757,6 +758,9 @@ function MessageItem({
   const isUser = message.senderType === "user";
   const hasAttachments = message.attachments && message.attachments.length > 0;
 
+  // Contextual messages: agent messages not sent via send_message (thinking out loud)
+  const isContextual = message.senderType === "agent" && message.method !== "send_message";
+
   // Get display name: use sender if available, fallback to myName/threadName
   const displayName =
     message.sender && message.sender !== "agent"
@@ -818,11 +822,16 @@ function MessageItem({
   // Note: tool_call and tool_result messages are handled by ToolGroup
   // in the parent render loop, so they won't reach this component
 
-  // Helper to extract text content (may be string or { text: "..." } object)
+  // Helper to extract text content (may be string, { text: "..." }, or { status: "..." } object)
   const getTextContent = (content: unknown): string => {
     if (typeof content === "string") return content;
-    if (content && typeof content === "object" && "text" in content) {
-      return (content as { text: string }).text;
+    if (content && typeof content === "object") {
+      if ("text" in content) {
+        return (content as { text: string }).text;
+      }
+      if ("status" in content) {
+        return (content as { status: string }).status;
+      }
     }
     return "";
   };
@@ -842,7 +851,7 @@ function MessageItem({
     );
   }
 
-  // Status messages (including agent lifecycle events)
+  // Status messages (including agent lifecycle events and agent status updates)
   if (message.type === "status") {
     // Enforce: structured content must be an object, never JSON-stringified
     if (typeof message.content === "string" && message.content.startsWith("{")) {
@@ -878,7 +887,31 @@ function MessageItem({
       );
     }
 
-    // Fallback for plain text status messages
+    // Agent status updates (from set_status) - show with header like regular messages
+    if (message.senderType === "agent") {
+      const statusText = getTextContent(message.content);
+      return (
+        <div className="flex flex-col min-w-0 group relative">
+          {showHeader && (
+            <MessageHeader
+              name={message.sender || displayName}
+              displayName={displayName}
+              agentType={agentType}
+              timestamp={message.timestamp}
+              channelId={channelId}
+              rosterIndex={rosterIndex}
+              isHuman={false}
+            />
+          )}
+          <div className="flex items-center gap-1.5 text-sm text-[var(--cast-text-muted)]">
+            <ArrowRight size={14} className="flex-shrink-0" />
+            <span>{statusText}</span>
+          </div>
+        </div>
+      );
+    }
+
+    // Fallback for plain text status messages (system messages)
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-2">
         <CirclePlus size={14} className="flex-shrink-0" />
@@ -999,7 +1032,7 @@ function MessageItem({
         />
       )}
       <div className="message-content">
-        {renderMessageContent(message, myName, artifacts, isDarkMode)}
+        {renderMessageContent(message, myName, artifacts, isDarkMode, isContextual)}
       </div>
       {/* Render attachments below the message */}
       {hasAttachments && apiHost && (
@@ -1107,6 +1140,7 @@ function renderMessageContent(
   myName: string = "",
   artifacts?: Map<string, ArtifactInfo>,
   isDarkMode: boolean = false,
+  isContextual: boolean = false,
 ): React.ReactNode {
   // Handle content that may be a string or { text: "..." } object
   const content =
@@ -1121,10 +1155,15 @@ function renderMessageContent(
     isDarkMode,
   );
 
+  // Base prose classes
+  const proseClasses = "prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
+  // For contextual messages, override prose text color to muted
+  const contextualClasses = isContextual ? "[&_*]:!text-[var(--cast-text-muted)]" : "";
+
   // For user/assistant/thinking messages, render markdown
   return (
     <Markdown
-      className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+      className={`${proseClasses} ${contextualClasses}`}
       components={markdownComponents}
       remarkPlugins={[remarkGfm]}
     >
