@@ -716,6 +716,17 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     return result.map(rowToRosterEntry);
   }
 
+  async function listArchivedRoster(channelId: string): Promise<RosterEntry[]> {
+    const result = await sql<RosterRow[]>`
+      SELECT * FROM roster
+      WHERE channel_id = ${channelId}
+        AND status = 'archived'
+      ORDER BY created_at ASC
+    `;
+
+    return result.map(rowToRosterEntry);
+  }
+
   async function updateRosterEntry(
     channelId: string,
     entryId: string,
@@ -2702,6 +2713,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     getRosterEntry,
     getRosterByCallsign,
     listRoster,
+    listArchivedRoster,
     updateRosterEntry,
     removeFromRoster,
     // Artifact operations (Phase A)

@@ -257,6 +257,12 @@ export interface Storage {
   listRoster(channelId: string): Promise<RosterEntry[]>;
 
   /**
+   * List archived agents in a channel's roster.
+   * Used to detect @mentions of dismissed agents for reactivation UI.
+   */
+  listArchivedRoster(channelId: string): Promise<RosterEntry[]>;
+
+  /**
    * Update a roster entry (e.g., change status).
    */
   updateRosterEntry(
