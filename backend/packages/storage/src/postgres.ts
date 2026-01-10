@@ -99,6 +99,7 @@ interface ChannelRow {
   archived: boolean;
   created_at: Date;
   updated_at: Date;
+  last_active_at: Date;
 }
 
 interface RosterRow {
@@ -474,7 +475,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
     const result = await sql<ChannelRow[]>`
       INSERT INTO channels (
-        id, space_id, name, tagline, mission, archived, created_at, updated_at
+        id, space_id, name, tagline, mission, archived, created_at, updated_at, last_active_at
       )
       VALUES (
         ${id},
@@ -483,6 +484,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ${input.tagline ?? null},
         ${input.mission ?? null},
         false,
+        ${now},
         ${now},
         ${now}
       )
@@ -562,7 +564,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       roster_tunnel_hash: string | null;
     })[]>`
       SELECT
-        c.id, c.space_id, c.name, c.tagline, c.mission, c.archived, c.created_at, c.updated_at,
+        c.id, c.space_id, c.name, c.tagline, c.mission, c.archived, c.created_at, c.updated_at, c.last_active_at,
         r.id as roster_id, r.callsign as roster_callsign, r.agent_type as roster_agent_type,
         r.status as roster_status, r.created_at as roster_created_at,
         r.callback_url as roster_callback_url, r.readmark as roster_readmark,
@@ -612,7 +614,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       roster_tunnel_hash: string | null;
     })[]>`
       SELECT
-        c.id, c.space_id, c.name, c.tagline, c.mission, c.archived, c.created_at, c.updated_at,
+        c.id, c.space_id, c.name, c.tagline, c.mission, c.archived, c.created_at, c.updated_at, c.last_active_at,
         r.id as roster_id, r.callsign as roster_callsign, r.agent_type as roster_agent_type,
         r.status as roster_status, r.created_at as roster_created_at,
         r.callback_url as roster_callback_url, r.readmark as roster_readmark,
@@ -660,14 +662,14 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       result = await sql<ChannelRow[]>`
         SELECT * FROM channels
         WHERE space_id = ${spaceId}
-        ORDER BY created_at DESC
+        ORDER BY last_active_at DESC
         LIMIT ${limit}
       `;
     } else {
       result = await sql<ChannelRow[]>`
         SELECT * FROM channels
         WHERE space_id = ${spaceId} AND archived = false
-        ORDER BY created_at DESC
+        ORDER BY last_active_at DESC
         LIMIT ${limit}
       `;
     }
@@ -695,6 +697,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     }
     if (update.archived !== undefined) {
       updateObj.archived = update.archived;
+    }
+    if (update.lastActiveAt !== undefined) {
+      updateObj.last_active_at = new Date(update.lastActiveAt);
     }
 
     await sql`
@@ -1937,8 +1942,19 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         mission TEXT,
         archived BOOLEAN NOT NULL DEFAULT false,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_active_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `;
+
+    // Add last_active_at column if it doesn't exist (migration for existing DBs)
+    await sql`
+      ALTER TABLE channels ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ DEFAULT NOW()
+    `;
+
+    // Backfill any NULL last_active_at values with created_at
+    await sql`
+      UPDATE channels SET last_active_at = created_at WHERE last_active_at IS NULL
     `;
 
     // Create channels indexes
@@ -1956,6 +1972,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     await sql`
       CREATE INDEX IF NOT EXISTS idx_channels_space_created
       ON channels(space_id, archived, created_at DESC)
+    `;
+
+    // Composite index for listChannels ORDER BY last_active_at
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_channels_space_active
+      ON channels(space_id, archived, last_active_at DESC)
     `;
 
     // Create roster table (Phase 2)
@@ -2479,6 +2501,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       archived: row.archived,
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
+      lastActiveAt: row.last_active_at.toISOString(),
     };
   }
 

@@ -4,7 +4,7 @@
  * Header for the chat panel, similar to BoardHeader structure.
  * Shows "Thread" label with board toggle button and channel cost total.
  */
-import { LayoutGrid } from 'lucide-react'
+import { LayoutGrid, PanelLeftClose, PanelLeft } from 'lucide-react'
 
 interface ChatHeaderProps {
   /** Whether the agent is currently thinking/processing */
@@ -15,6 +15,10 @@ interface ChatHeaderProps {
   onToggleBoard?: () => void
   /** Total channel cost in USD (sum of all agent costs) */
   channelCost?: number
+  /** Whether the sidebar is currently open */
+  sidebarOpen?: boolean
+  /** Callback to toggle the sidebar */
+  onToggleSidebar?: () => void
 }
 
 /**
@@ -25,12 +29,12 @@ interface ChatHeaderProps {
  */
 function formatCost(cost: number): string {
   if (cost === 0) {
-    return '$0.00'
+    return '~$0.00'
   }
   if (cost < 0.01) {
-    return `$${cost.toFixed(4)}`
+    return `~$${cost.toFixed(4)}`
   }
-  return `$${cost.toFixed(2)}`
+  return `~$${cost.toFixed(2)}`
 }
 
 export function ChatHeader({
@@ -38,10 +42,26 @@ export function ChatHeader({
   boardOpen = false,
   onToggleBoard,
   channelCost = 0,
+  sidebarOpen = true,
+  onToggleSidebar,
 }: ChatHeaderProps) {
   return (
     <div className="flex items-center justify-between h-10 px-3 border-b border-border">
       <div className="flex items-center gap-2">
+        {/* Sidebar toggle */}
+        {onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className="p-1.5 rounded hover:bg-secondary/50 transition-colors"
+            title={sidebarOpen ? "Hide sidebar (⌘B)" : "Show sidebar (⌘B)"}
+          >
+            {sidebarOpen ? (
+              <PanelLeftClose className="w-4 h-4 text-muted-foreground" />
+            ) : (
+              <PanelLeft className="w-4 h-4 text-muted-foreground" />
+            )}
+          </button>
+        )}
         {isThinking && (
           <span className="w-2 h-2 rounded-full flex-shrink-0 bg-blue-500 animate-pulse" />
         )}

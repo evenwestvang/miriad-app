@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Plus } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { Agent, Thread } from '../../types'
@@ -158,6 +158,7 @@ export function ThreadList({
 }: ThreadListProps) {
   const [showSpawnDialog, setShowSpawnDialog] = useState(false)
   const [showNewChannelModal, setShowNewChannelModal] = useState(false)
+  const newChannelButtonRef = useRef<HTMLButtonElement>(null)
 
   // Use new channel modal if onCreateChannel is provided
   const handleNewClick = () => {
@@ -173,6 +174,7 @@ export function ThreadList({
       {/* Header */}
       <div className="px-4 pt-4 pb-2">
         <button
+          ref={newChannelButtonRef}
           className="flex items-center gap-1.5 px-0 py-1.5 text-sm text-[#8c8c8c] hover:text-[#1a1a1a] dark:hover:text-[#f5f5f5] transition-colors mb-2"
           onClick={handleNewClick}
           title="New channel"
@@ -238,13 +240,14 @@ export function ThreadList({
         onCreate={onCreateThread}
       />
 
-      {/* New channel modal with focus picker */}
+      {/* New channel popover */}
       {onCreateChannel && (
         <NewChannelModal
           isOpen={showNewChannelModal}
           onClose={() => setShowNewChannelModal(false)}
           onCreate={onCreateChannel}
           apiHost={apiHost}
+          anchorRef={newChannelButtonRef}
         />
       )}
     </div>

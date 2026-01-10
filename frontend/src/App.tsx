@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
-  PanelLeft,
-  PanelLeftClose,
   LogOut,
   Sun,
   Moon,
   Settings,
+  CloudLightning,
 } from "lucide-react";
 import {
   ThreadList,
@@ -626,6 +625,7 @@ export function App() {
             tagline?: string;
             status?: string;
             createdAt: string;
+            lastActiveAt?: string;
           }) => ({
             id: c.id,
             agentId: c.id,
@@ -633,6 +633,7 @@ export function App() {
             agentType: "channel",
             agentState: c.status === "running" ? "thinking" : "idle",
             createdAt: c.createdAt,
+            lastActiveAt: c.lastActiveAt,
           }),
         );
         setThreads(threadList);
@@ -913,6 +914,15 @@ export function App() {
     (content: string) => {
       if (!selectedThread) return;
       sendMessage(content);
+
+      // Optimistically move this channel to the top of the list (most recently active)
+      setThreads((prev) => {
+        const idx = prev.findIndex((t) => t.id === selectedThread);
+        if (idx <= 0) return prev; // Already at top or not found
+        const thread = prev[idx];
+        const updated = { ...thread, lastActiveAt: new Date().toISOString() };
+        return [updated, ...prev.slice(0, idx), ...prev.slice(idx + 1)];
+      });
     },
     [selectedThread, sendMessage],
   );
@@ -1023,20 +1033,8 @@ export function App() {
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Unified header - spans full width */}
       <header className="h-12 flex items-center gap-3 px-5 border-b border-border bg-card flex-shrink-0">
-        {/* Sidebar toggle */}
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="p-1.5 rounded hover:bg-secondary/50 transition-colors"
-          title={sidebarOpen ? "Hide sidebar (⌘B)" : "Show sidebar (⌘B)"}
-        >
-          {sidebarOpen ? (
-            <PanelLeftClose className="w-4 h-4 text-muted-foreground" />
-          ) : (
-            <PanelLeft className="w-4 h-4 text-muted-foreground" />
-          )}
-        </button>
-
         {/* Branding */}
+        <CloudLightning className="w-4 h-4 text-[#FF6600]" />
         <span className="font-semibold text-[#FF6600] text-sm tracking-[0.05em]">
           CAST
         </span>
@@ -1142,6 +1140,8 @@ export function App() {
                 boardOpen={boardOpen}
                 onToggleBoard={toggleBoard}
                 channelCost={roster.reduce((sum, a) => sum + (a.sessionCost || 0), 0)}
+                sidebarOpen={sidebarOpen}
+                onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
               />
               <MessageList
                 messages={messages}

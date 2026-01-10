@@ -23,6 +23,7 @@ export interface Thread {
   agentId: string
   agentName: string
   createdAt?: string
+  lastActiveAt?: string
 }
 
 export interface Message {

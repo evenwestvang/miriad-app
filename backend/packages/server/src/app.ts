@@ -1373,6 +1373,12 @@ export function createApp(options: AppOptions): Hono {
             return invoker.invokeAgents(cid, targets, message);
           },
         },
+        onUserMessage: async (cid: string) => {
+          // Update channel lastActiveAt when user sends a message
+          await storage.updateChannel(spaceId, cid, {
+            lastActiveAt: new Date().toISOString(),
+          });
+        },
       });
 
       // Forward to message routes

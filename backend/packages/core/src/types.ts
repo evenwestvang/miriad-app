@@ -140,6 +140,9 @@ export interface StoredChannel {
 
   /** ISO timestamp of last update */
   updatedAt: string;
+
+  /** ISO timestamp of last user activity (message sent) */
+  lastActiveAt: string;
 }
 
 /**
@@ -161,6 +164,8 @@ export interface UpdateChannelInput {
   tagline?: string;
   mission?: string;
   archived?: boolean;
+  /** Update lastActiveAt timestamp (set to now when user sends a message) */
+  lastActiveAt?: string;
 }
 
 /**

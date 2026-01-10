@@ -75,6 +75,8 @@ export interface MessageHandlerOptions {
   connectionManager: ConnectionManager;
   /** Optional: invoke agents on @mentions */
   agentInvoker?: AgentInvoker;
+  /** Optional: callback to update channel lastActiveAt when user sends a message */
+  onUserMessage?: (channelId: string) => Promise<void>;
 }
 
 // =============================================================================
@@ -144,7 +146,7 @@ export function getAddressedAgents(
  * Create the /channels/:id/messages routes.
  */
 export function createMessageRoutes(options: MessageHandlerOptions): Hono {
-  const { messageStorage, rosterProvider, connectionManager, agentInvoker } = options;
+  const { messageStorage, rosterProvider, connectionManager, agentInvoker, onUserMessage } = options;
 
   const app = new Hono();
 
@@ -249,6 +251,11 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
     try {
       // Save message
       await messageStorage.saveMessage(channelId, message);
+
+      // Update channel lastActiveAt when user sends a message
+      if (senderType === 'user' && onUserMessage) {
+        await onUserMessage(channelId);
+      }
 
       // Broadcast to WebSocket clients
       const frame = tymbal.set(messageId, {
