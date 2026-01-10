@@ -458,7 +458,6 @@ function TreeNode({
         type={node.type}
         status={node.status}
         assignees={node.assignees}
-        encoding={node.encoding}
         contentType={node.contentType}
         depth={depth}
         hasChildren={hasChildren ?? false}

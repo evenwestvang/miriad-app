@@ -175,7 +175,16 @@ export interface MessageValue {
   error?: string
 }
 
-// Artifact types
+/**
+ * Artifact interface for frontend use.
+ *
+ * ⚠️  SYNC WARNING: This interface must stay aligned with StoredArtifact in
+ *     backend/packages/core/src/types.ts. If you modify fields here, check
+ *     if the backend type needs updating too.
+ *
+ * NOTE: This is the user-facing shape. Backend's StoredArtifact has additional
+ * computed fields (path, refs) that are not included here since they're derived.
+ */
 export interface Artifact {
   id: string
   slug: string
@@ -194,8 +203,6 @@ export interface Artifact {
   createdBy: string
   assignees?: string[]
   labels?: string[]
-  /** Binary asset encoding (e.g., 'file') for icon detection */
-  encoding?: string | null
   /** Binary asset MIME type (e.g., 'image/png') for icon detection */
   contentType?: string | null
   /** Named version checkpoints (e.g., ['v1.0', 'v2.0']) */
@@ -216,6 +223,9 @@ export interface ArtifactVersion {
   createdAt: string
 }
 
+/**
+ * ⚠️  SYNC WARNING: Keep aligned with ArtifactType in backend/packages/core/src/types.ts
+ */
 export type ArtifactType =
   | 'doc'
   | 'folder'
@@ -230,6 +240,9 @@ export type ArtifactType =
   | 'system.playbook'
   | 'system.app'
 
+/**
+ * ⚠️  SYNC WARNING: Keep aligned with ArtifactStatus in backend/packages/core/src/types.ts
+ */
 export type ArtifactStatus =
   | 'draft'
   | 'published'
@@ -300,7 +313,10 @@ export interface AgentActivity {
   turnSummary?: { durationMs: number; numTurns: number }
 }
 
-// Artifact tree node for board display
+/**
+ * Artifact tree node for board display.
+ * ⚠️  SYNC WARNING: Keep aligned with ArtifactTreeNode in backend/packages/core/src/types.ts
+ */
 export interface ArtifactTreeNode {
   slug: string
   path: string
@@ -310,8 +326,6 @@ export interface ArtifactTreeNode {
   assignees: string[]
   /** Lexicographic sort key for ordering within parent */
   orderKey: string
-  /** Binary asset encoding (e.g., 'file') for icon detection */
-  encoding?: string | null
   /** Binary asset MIME type (e.g., 'image/png') for icon detection */
   contentType?: string | null
   children?: ArtifactTreeNode[]

@@ -10,7 +10,6 @@ export interface ArtifactInfo {
   slug: string
   title?: string
   type: string
-  encoding?: string | null
   contentType?: string | null
 }
 
@@ -86,7 +85,6 @@ export function highlightMentions(
         ? getArtifactIcon({
             slug,
             type: artifact.type,
-            encoding: artifact.encoding,
             contentType: artifact.contentType
           })
         : FileQuestion

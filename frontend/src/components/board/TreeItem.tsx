@@ -16,8 +16,6 @@ interface TreeItemProps {
   hasChildren: boolean
   isExpanded: boolean
   isSelected: boolean
-  /** Binary asset encoding (e.g., 'file') */
-  encoding?: string | null
   /** Binary asset content type (e.g., 'image/png') */
   contentType?: string | null
   onToggle: () => void
@@ -57,7 +55,6 @@ export function TreeItem({
   hasChildren,
   isExpanded,
   isSelected,
-  encoding,
   contentType,
   onToggle,
   onSelect,
@@ -73,7 +70,7 @@ export function TreeItem({
   isInvalidDropTarget = false,
 }: TreeItemProps) {
   const rowRef = useRef<HTMLDivElement>(null)
-  const Icon = getArtifactIcon({ slug, type, status, encoding, contentType })
+  const Icon = getArtifactIcon({ slug, type, status, contentType })
 
   // Show status indicator for tasks, and for other types when not 'published'
   const showStatus = type === 'task' || (status && status !== 'published')

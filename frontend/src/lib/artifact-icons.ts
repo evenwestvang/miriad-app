@@ -71,10 +71,10 @@ export function isBinaryAssetBySlug(slug: string): boolean {
 }
 
 /**
- * Check if an artifact is a binary asset based on encoding field
+ * Check if an artifact is a binary asset based on type field
  */
-export function isBinaryAssetByEncoding(encoding?: string | null): boolean {
-  return encoding === 'file'
+export function isBinaryAssetByType(type: string): boolean {
+  return type === 'asset'
 }
 
 /**
@@ -109,7 +109,7 @@ export function getBinaryAssetType(contentType?: string | null, slug?: string): 
  * Priority:
  * 1. Task status (done = CheckSquare, other = Square)
  * 2. Interactive SPA (.app.js)
- * 3. Binary asset (by encoding or extension)
+ * 3. Binary asset (by type='asset' or extension)
  * 4. Type-based icon
  * 5. Default to FileText
  */
@@ -117,7 +117,6 @@ export function getArtifactIcon(artifact: {
   slug: string
   type: string
   status?: string
-  encoding?: string | null
   contentType?: string | null
 }): LucideIcon {
   // Tasks get special treatment based on status
@@ -130,8 +129,8 @@ export function getArtifactIcon(artifact: {
     return SquarePlay
   }
 
-  // Binary asset (check encoding first, then fall back to extension)
-  if (isBinaryAssetByEncoding(artifact.encoding) || isBinaryAssetBySlug(artifact.slug)) {
+  // Binary asset (check type first, then fall back to extension)
+  if (isBinaryAssetByType(artifact.type) || isBinaryAssetBySlug(artifact.slug)) {
     const assetType = getBinaryAssetType(artifact.contentType, artifact.slug)
     return BINARY_TYPE_ICONS[assetType]
   }
@@ -146,7 +145,6 @@ export function getArtifactIcon(artifact: {
 export function getArtifactTypeLabel(artifact: {
   slug: string
   type: string
-  encoding?: string | null
   contentType?: string | null
 }): string {
   // Interactive SPA
@@ -155,7 +153,7 @@ export function getArtifactTypeLabel(artifact: {
   }
 
   // Binary asset
-  if (isBinaryAssetByEncoding(artifact.encoding) || isBinaryAssetBySlug(artifact.slug)) {
+  if (isBinaryAssetByType(artifact.type) || isBinaryAssetBySlug(artifact.slug)) {
     const assetType = getBinaryAssetType(artifact.contentType, artifact.slug)
     const labels: Record<BinaryAssetType, string> = {
       image: 'Image',

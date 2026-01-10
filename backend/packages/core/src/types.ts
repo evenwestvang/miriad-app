@@ -462,6 +462,8 @@ export interface StoredSecret {
  * - knowledgebase: Searchable documentation
  * - asset: Binary files (images, PDFs, etc.)
  * - system.*: System configuration types
+ *
+ * ⚠️  SYNC WARNING: Keep aligned with ArtifactType in frontend/src/types.ts
  */
 export type ArtifactType =
   | 'doc'
@@ -481,6 +483,8 @@ export type ArtifactType =
  * Artifact status values.
  * - draft/published/archived: For documents
  * - pending/in_progress/done/blocked: For tasks
+ *
+ * ⚠️  SYNC WARNING: Keep aligned with ArtifactStatus in frontend/src/types.ts
  */
 export type ArtifactStatus =
   | 'draft'
@@ -494,6 +498,10 @@ export type ArtifactStatus =
 /**
  * An artifact as stored in the database.
  * Artifacts are persistent work products scoped to a channel.
+ *
+ * ⚠️  SYNC WARNING: Keep aligned with Artifact in frontend/src/types.ts
+ *     The frontend type omits computed fields (path, refs) and uses
+ *     optional arrays for assignees/labels (backend defaults to []).
  */
 export interface StoredArtifact {
   /** Unique artifact identifier (ULID) */
@@ -732,6 +740,8 @@ export interface ArtifactSummary {
 
 /**
  * Tree node for hierarchical artifact views.
+ *
+ * ⚠️  SYNC WARNING: Keep aligned with ArtifactTreeNode in frontend/src/types.ts
  */
 export interface ArtifactTreeNode {
   slug: string;

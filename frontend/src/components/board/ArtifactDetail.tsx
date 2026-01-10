@@ -1400,7 +1400,6 @@ function buildArtifactMap(nodes: ArtifactTreeNode[]): Map<string, ArtifactInfo> 
         slug: node.slug,
         title: node.title,
         type: node.type,
-        encoding: node.encoding,
         contentType: node.contentType,
       })
       if (node.children) {

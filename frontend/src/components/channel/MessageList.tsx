@@ -309,7 +309,6 @@ export function MessageList({
               slug: artifact.slug,
               title: artifact.title,
               type: artifact.type,
-              encoding: artifact.encoding,
               contentType: artifact.contentType,
             });
           }
