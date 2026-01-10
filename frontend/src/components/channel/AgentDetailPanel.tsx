@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   X,
-  MessageCircleOff,
-  MessageCircle,
+  Bot,
+  BotOff,
   Bed,
   Cloud,
   ExternalLink,
@@ -10,6 +10,7 @@ import {
   Check,
   Loader2,
   Circle,
+  MoreVertical,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { getRosterColor } from '../../utils/senderColors'
@@ -66,6 +67,20 @@ export function AgentDetailPanel({
 }: AgentDetailPanelProps) {
   const [copied, setCopied] = useState(false)
   const [actionLoading, setActionLoading] = useState<'pause' | 'resume' | 'dismiss' | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [menuOpen])
 
   // Get agent's color based on roster position
   const dotColor = getRosterColor(channelId, rosterIndex)
@@ -164,159 +179,211 @@ export function AgentDetailPanel({
 
   return (
     <div className="px-4 py-3 bg-[var(--cast-bg-primary)]">
-      {/* Single row layout - info left, actions right */}
-      <div className="flex items-center gap-4">
-        {/* Left section: Agent identity */}
-        <div className="flex items-center gap-2">
-          {/* Colored circle - matches Cartouche style */}
-          <Circle
-            size={14}
-            color={dotColor}
-            fill={dotColor}
-            strokeWidth={0}
-            className="flex-shrink-0"
-          />
-          {/* Callsign */}
-          <span className="text-[14px] font-semibold text-[var(--cast-text-primary)] tracking-[-0.01em]">
-            {agent.callsign}
-          </span>
-          {/* Agent type */}
-          {agent.agentType && (
-            <span className="text-[14px] font-normal text-[var(--cast-text-muted)]">
-              {agent.agentType}
+      {/* Two-row layout */}
+      <div className="flex flex-col gap-2">
+        {/* Top row: callsign, status badge, kebab menu, close */}
+        <div className="flex items-center gap-3">
+          {/* Agent identity */}
+          <div className="flex items-center gap-2">
+            <Circle
+              size={14}
+              color={dotColor}
+              fill={dotColor}
+              strokeWidth={0}
+              className="flex-shrink-0"
+            />
+            <span className="text-[14px] font-semibold text-[var(--cast-text-primary)] tracking-[-0.01em]">
+              {agent.callsign}
             </span>
-          )}
-        </div>
+            {agent.agentType && (
+              <span className="text-[14px] font-normal text-[var(--cast-text-muted)]">
+                {agent.agentType}
+              </span>
+            )}
+          </div>
 
-        {/* Separator */}
-        <span className="text-[var(--cast-text-muted)]">·</span>
+          {/* Spacer */}
+          <div className="flex-1" />
 
-        {/* Status description */}
-        <span className="text-sm text-[var(--cast-text-muted)]">
-          {getStatusDescription()}
-        </span>
+          {/* Status badge */}
+          <span className={cn(
+            "px-2 py-0.5 text-xs font-medium",
+            stateBadge.colorClass
+          )}>
+            {stateBadge.label}
+          </span>
 
-        {/* Separator */}
-        <span className="text-[var(--cast-text-muted)]">·</span>
-
-        {/* Cost */}
-        <span className="text-sm font-mono text-[var(--cast-text-muted)]">
-          {costDisplay}
-        </span>
-
-        {/* Tunnel link (if available) */}
-        {tunnelUrl && (
-          <>
-            <span className="text-[var(--cast-text-muted)]">·</span>
-            <div className="flex items-center gap-1">
-              <a
-                href={tunnelUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] flex items-center gap-1"
-              >
-                web
-                <ExternalLink className="w-3 h-3" />
-              </a>
+          {/* Wide: inline action buttons (hidden on narrow) */}
+          <div className="hidden sm:flex items-center gap-1">
+            {agent.isPaused ? (
               <button
-                onClick={handleCopyUrl}
-                className="p-0.5 text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]"
-                title="Copy URL"
-              >
-                {copied ? (
-                  <Check className="w-3 h-3 text-green-600" />
-                ) : (
-                  <Copy className="w-3 h-3" />
+                onClick={handleResume}
+                disabled={actionLoading !== null}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1 text-sm",
+                  "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
                 )}
+              >
+                {actionLoading === 'resume' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Bot className="w-4 h-4" />
+                )}
+                Unmute
               </button>
-            </div>
-          </>
-        )}
-
-        {/* Env indicator */}
-        <span className="text-[var(--cast-text-muted)]">·</span>
-        <span className="flex items-center gap-1 text-sm text-[var(--cast-text-muted)]">
-          <Cloud className="w-3.5 h-3.5" />
-          Container
-        </span>
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Action buttons - ghost style */}
-        <div className="flex items-center gap-1">
-          {/* Pause/Activate button */}
-          {agent.isPaused ? (
-            <button
-              onClick={handleResume}
-              disabled={actionLoading !== null}
-              className={cn(
-                "flex items-center gap-1.5 px-2 py-1 text-sm",
-                "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
-                "disabled:opacity-50 disabled:cursor-not-allowed"
-              )}
-            >
-              {actionLoading === 'resume' ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <MessageCircle className="w-4 h-4" />
-              )}
-              Unmute
-            </button>
-          ) : (
-            <button
-              onClick={handlePause}
-              disabled={actionLoading !== null}
-              className={cn(
-                "flex items-center gap-1.5 px-2 py-1 text-sm",
-                "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
-                "disabled:opacity-50 disabled:cursor-not-allowed"
-              )}
-            >
-              {actionLoading === 'pause' ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <MessageCircleOff className="w-4 h-4" />
-              )}
-              Mute
-            </button>
-          )}
-
-          {/* Dismiss button */}
-          <button
-            onClick={handleDismiss}
-            disabled={actionLoading !== null}
-            className={cn(
-              "flex items-center gap-1.5 px-2 py-1 text-sm",
-              "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
-              "disabled:opacity-50 disabled:cursor-not-allowed"
-            )}
-          >
-            {actionLoading === 'dismiss' ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Bed className="w-4 h-4" />
+              <button
+                onClick={handlePause}
+                disabled={actionLoading !== null}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1 text-sm",
+                  "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
+              >
+                {actionLoading === 'pause' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <BotOff className="w-4 h-4" />
+                )}
+                Mute
+              </button>
             )}
-            Dismiss
+            <button
+              onClick={handleDismiss}
+              disabled={actionLoading !== null}
+              className={cn(
+                "flex items-center gap-1.5 px-2 py-1 text-sm",
+                "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                "disabled:opacity-50 disabled:cursor-not-allowed"
+              )}
+            >
+              {actionLoading === 'dismiss' ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Bed className="w-4 h-4" />
+              )}
+              Dismiss
+            </button>
+          </div>
+
+          {/* Narrow: kebab menu (hidden on wide) */}
+          <div className="relative sm:hidden" ref={menuRef}>
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="p-1 text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]"
+              title="Actions"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+
+            {/* Dropdown menu */}
+            {menuOpen && (
+              <div className="absolute right-0 top-full mt-1 bg-white border border-[#e5e5e5] shadow-sm z-10 min-w-[140px]">
+                {agent.isPaused ? (
+                  <button
+                    onClick={() => { handleResume(); setMenuOpen(false) }}
+                    disabled={actionLoading !== null}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
+                      "text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                      "disabled:opacity-50 disabled:cursor-not-allowed"
+                    )}
+                  >
+                    {actionLoading === 'resume' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Bot className="w-4 h-4" />
+                    )}
+                    Unmute
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => { handlePause(); setMenuOpen(false) }}
+                    disabled={actionLoading !== null}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
+                      "text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                      "disabled:opacity-50 disabled:cursor-not-allowed"
+                    )}
+                  >
+                    {actionLoading === 'pause' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <BotOff className="w-4 h-4" />
+                    )}
+                    Mute
+                  </button>
+                )}
+                <button
+                  onClick={() => { handleDismiss(); setMenuOpen(false) }}
+                  disabled={actionLoading !== null}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
+                    "text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                    "disabled:opacity-50 disabled:cursor-not-allowed"
+                  )}
+                >
+                  {actionLoading === 'dismiss' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Bed className="w-4 h-4" />
+                  )}
+                  Dismiss
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Close button */}
+          <button
+            onClick={onClose}
+            className="p-1 text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Status badge - far right */}
-        <span className={cn(
-          "px-2 py-0.5 text-xs font-medium",
-          stateBadge.colorClass
-        )}>
-          {stateBadge.label}
-        </span>
-
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          className="p-1 text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]"
-          title="Close"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        {/* Bottom row: status, cost, tunnel, env */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[var(--cast-text-muted)]">
+          <span>{getStatusDescription()}</span>
+          <span>·</span>
+          <span className="font-mono">{costDisplay}</span>
+          {tunnelUrl && (
+            <>
+              <span>·</span>
+              <div className="flex items-center gap-1">
+                <a
+                  href={tunnelUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-[var(--cast-text-primary)] flex items-center gap-1"
+                >
+                  web
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+                <button
+                  onClick={handleCopyUrl}
+                  className="p-0.5 hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]"
+                  title="Copy URL"
+                >
+                  {copied ? (
+                    <Check className="w-3 h-3 text-green-600" />
+                  ) : (
+                    <Copy className="w-3 h-3" />
+                  )}
+                </button>
+              </div>
+            </>
+          )}
+          <span>·</span>
+          <span className="flex items-center gap-1">
+            <Cloud className="w-3.5 h-3.5" />
+            Container
+          </span>
+        </div>
       </div>
     </div>
   )

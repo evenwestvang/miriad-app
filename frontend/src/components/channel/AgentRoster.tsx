@@ -153,9 +153,9 @@ export function AgentRoster({
   }
 
   return (
-    <div className="relative flex items-center justify-between text-xs text-[#8c8c8c]">
-      {/* Agent roster - horizontal list */}
-      <div className="flex items-center gap-3">
+    <div className="relative flex flex-wrap items-center justify-between gap-y-2 text-xs text-[#8c8c8c]">
+      {/* Agent roster - horizontal list that wraps */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         {roster.map((agent, index) => (
           <AgentBadge
             key={agent.callsign}
