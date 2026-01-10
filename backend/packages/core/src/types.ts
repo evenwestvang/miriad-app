@@ -174,6 +174,15 @@ export interface ListChannelsParams {
 export type RosterStatus = 'active' | 'idle' | 'busy' | 'offline' | 'paused' | 'archived';
 
 /**
+ * Ephemeral state tracked on roster entries.
+ * Contains real-time info about what the agent is doing right now.
+ */
+export interface RosterCurrent {
+  /** Agent's current status text (e.g., "implementing feature X") */
+  status?: string;
+}
+
+/**
  * A roster entry (agent in a channel) as stored in the database.
  */
 export interface RosterEntry {
@@ -213,6 +222,12 @@ export interface RosterEntry {
    * Used to determine if agent is online (stale = offline).
    */
   lastHeartbeat?: string;
+
+  /**
+   * Ephemeral state about what the agent is currently doing.
+   * Includes status text, and will expand to include todo lists, role context, etc.
+   */
+  current?: RosterCurrent;
 }
 
 /**
@@ -239,6 +254,8 @@ export interface UpdateRosterInput {
   tunnelHash?: string;
   /** Last heartbeat timestamp (ISO 8601) */
   lastHeartbeat?: string;
+  /** Ephemeral current state (status text, etc.) */
+  current?: RosterCurrent;
 }
 
 // =============================================================================

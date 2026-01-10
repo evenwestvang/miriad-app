@@ -1058,12 +1058,13 @@ const toolHandlers: Record<string, ToolHandler> = {
       throw new Error('status is required and must be a string');
     }
 
-    // Find roster entry to update status field
+    // Find roster entry to update current.status field
     const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
     if (rosterEntry) {
-      // Update roster entry with current status (for UI badge display)
-      // Note: status field is typically 'active'|'idle'|'busy' etc.
-      // We could add a separate statusText field, but for now we'll just broadcast
+      // Update roster entry's ephemeral current state with status text
+      await storage.updateRosterEntry(channelId, rosterEntry.id, {
+        current: { status },
+      });
     }
 
     const now = new Date().toISOString();
