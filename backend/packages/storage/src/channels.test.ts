@@ -72,7 +72,7 @@ describe.skipIf(!canConnect)('Channel & Roster Storage', () => {
       }
     }
     await storage.close();
-  });
+  }, 30000); // 30 second timeout for cleanup
 
   // ===========================================================================
   // Channel Tests

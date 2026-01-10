@@ -80,7 +80,7 @@ describe.skipIf(!canConnect)('Artifact Storage', () => {
       // Ignore cleanup errors
     }
     await storage.close();
-  });
+  }, 30000); // 30 second timeout for cleanup
 
   // ===========================================================================
   // Create Tests

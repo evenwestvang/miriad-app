@@ -58,7 +58,7 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
       }
     }
     await storage.close();
-  });
+  }, 30000); // 30 second timeout for cleanup
 
   describe('saveMessage', () => {
     it('should save a message and return it with generated id', async () => {
