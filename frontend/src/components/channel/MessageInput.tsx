@@ -3,7 +3,6 @@ import {
   Send,
   Paperclip,
   AtSign,
-  Play,
   Bot,
   BotOff,
   Search,
@@ -539,11 +538,11 @@ export function MessageInput({
           />
         )}
 
-        {/* Dormant/dismissed agents notice - compact inline style */}
+        {/* Dormant/dismissed agents notice - superimposed over roster area */}
         {(dormantAgents.length > 0 || mentionedDismissedAgents.length > 0) && !showAgentPicker && !showSlashMenu && (
           <div
             className="absolute z-40 bg-card border border-border rounded-lg shadow-sm px-3 py-2 text-sm"
-            style={{ bottom: 8, left: 16 }}
+            style={{ bottom: '100%', left: 0, marginBottom: 8 }}
           >
             <div className="flex items-center gap-2 flex-wrap">
               {/* Muted agents section */}
@@ -567,7 +566,7 @@ export function MessageInput({
                         {dormantActionLoading === agent.callsign ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
                         ) : (
-                          <Play className="w-3.5 h-3.5 text-muted-foreground" />
+                          <Bot className="w-3.5 h-3.5 text-muted-foreground" />
                         )}
                       </button>
                     </span>
