@@ -1104,6 +1104,7 @@ export function App() {
                   channelId={selectedThread || undefined}
                   apiHost={API_HOST}
                   onSummon={() => setSummonOpen(true)}
+                  resetKey={selectedThread}
                 />
               </div>
             </>

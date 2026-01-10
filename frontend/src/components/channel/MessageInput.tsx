@@ -23,6 +23,8 @@ interface MessageInputProps {
   channelId?: string
   apiHost?: string
   onSummon?: () => void
+  /** Reset key - change this to clear input state (e.g., on channel switch) */
+  resetKey?: string | number
 }
 
 // Slash commands configuration
@@ -42,6 +44,7 @@ export function MessageInput({
   channelId,
   apiHost,
   onSummon,
+  resetKey,
 }: MessageInputProps) {
   const [content, setContent] = useState('')
   const [showAutocomplete, setShowAutocomplete] = useState(false)
@@ -65,10 +68,15 @@ export function MessageInput({
   // Loading state for resume actions in dormant dialog
   const [dormantActionLoading, setDormantActionLoading] = useState<string | null>(null)
 
-  // Sticky mentions prefix (used for pre-populating next message)
-  const [, setStickyPrefix] = useState('')
-
   const { findMentionTrigger, getOptionsCount, getOptionAtIndex } = useMentionAutocomplete(roster)
+
+  // Reset input state when resetKey changes (e.g., channel switch)
+  useEffect(() => {
+    setContent('')
+    setShowAutocomplete(false)
+    setShowSlashMenu(false)
+    setShowAgentPicker(null)
+  }, [resetKey])
 
   // Agents that can be paused (online and not paused)
   const pausableAgents = useMemo(() =>
@@ -208,7 +216,6 @@ export function MessageInput({
 
     // Extract leading mentions for sticky behavior
     const leadingMentions = extractLeadingMentions(trimmed)
-    setStickyPrefix(leadingMentions)
 
     onSend(trimmed)
     setContent(leadingMentions) // Pre-populate with sticky mentions

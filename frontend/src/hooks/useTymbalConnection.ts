@@ -285,10 +285,12 @@ export function useTymbalConnection({
 
           // Handle roster lifecycle states (from backend heartbeat)
           // Client handles offline timeout locally using lastHeartbeat timestamp
-          if (value.state === 'online' || value.state === 'offline' || value.state === 'connecting' || value.state === 'paused' || value.state === 'dismissed') {
+          const rosterStates = ['online', 'offline', 'connecting', 'paused', 'dismissed'] as const
+          const stateStr = value.state as string
+          if (rosterStates.includes(stateStr as typeof rosterStates[number])) {
             const event: RosterStateEvent = {
               callsign: value.sender,
-              state: value.state as 'connecting' | 'online' | 'offline' | 'paused' | 'dismissed',
+              state: stateStr as 'connecting' | 'online' | 'offline' | 'paused' | 'dismissed',
             }
             // Include lastHeartbeat for client-side timeout tracking
             if ('lastHeartbeat' in value && typeof value.lastHeartbeat === 'string') {
