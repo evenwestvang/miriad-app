@@ -90,10 +90,11 @@ describe('Tymbal Routes', () => {
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ ok: true });
       expect(mockConnectionManager.broadcastCalls).toHaveLength(1);
-      expect(mockConnectionManager.broadcastCalls[0]).toEqual({
-        channelId: 'channel-1',
-        frame,
-      });
+      // Frame gets channelId injected as 'c' field for client routing
+      const broadcastedFrame = JSON.parse(mockConnectionManager.broadcastCalls[0].frame);
+      expect(broadcastedFrame.i).toBe('01J001');
+      expect(broadcastedFrame.m).toEqual({ type: 'assistant' });
+      expect(broadcastedFrame.c).toBe('channel-1');
     });
 
     it('broadcasts append frame', async () => {
@@ -106,7 +107,11 @@ describe('Tymbal Routes', () => {
       });
 
       expect(res.status).toBe(200);
-      expect(mockConnectionManager.broadcastCalls[0].frame).toBe(frame);
+      // Frame gets channelId injected as 'c' field for client routing
+      const broadcastedFrame = JSON.parse(mockConnectionManager.broadcastCalls[0].frame);
+      expect(broadcastedFrame.i).toBe('01J001');
+      expect(broadcastedFrame.a).toBe('Hello world');
+      expect(broadcastedFrame.c).toBe('channel-1');
     });
 
     it('broadcasts and persists set frame', async () => {

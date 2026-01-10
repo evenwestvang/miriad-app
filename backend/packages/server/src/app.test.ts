@@ -10,6 +10,7 @@ import type { Storage } from '@cast/storage';
 import type { ContainerOrchestrator } from '@cast/runtime';
 import { createConnectionManager, type ConnectionManager } from './websocket/index.js';
 import type { StoredChannel, StoredArtifact } from '@cast/core';
+import { createSession } from './auth/session.js';
 
 // =============================================================================
 // Test Fixtures
@@ -115,6 +116,17 @@ function createMockStorage(): Storage {
       if (name === TEST_CHANNEL_NAME) return testChannel;
       return null;
     }),
+    resolveChannel: vi.fn(async (spaceId: string, idOrName: string) => {
+      if (idOrName === TEST_CHANNEL_ID || idOrName === TEST_CHANNEL_NAME) return testChannel;
+      return null;
+    }),
+    getChannelWithRoster: vi.fn(async () => ({ channel: testChannel, roster: [] })),
+    resolveChannelWithRoster: vi.fn(async (spaceId: string, idOrName: string) => {
+      if (idOrName === TEST_CHANNEL_ID || idOrName === TEST_CHANNEL_NAME) {
+        return { channel: testChannel, roster: [] };
+      }
+      return null;
+    }),
     listChannels: vi.fn(async () => [testChannel]),
     createChannel: vi.fn(async () => testChannel),
     updateChannel: vi.fn(async () => {}),
@@ -140,6 +152,7 @@ function createMockStorage(): Storage {
     getRosterEntry: vi.fn(async () => null),
     getRosterByCallsign: vi.fn(async () => null),
     listRoster: vi.fn(async () => []),
+    listArchivedRoster: vi.fn(async () => []),
     removeFromRoster: vi.fn(async () => {}),
     updateRosterEntry: vi.fn(async () => {}),
 
@@ -184,11 +197,16 @@ describe('/boards/:channel/:slug Route', () => {
   let app: ReturnType<typeof createApp>;
   let mockStorage: Storage;
   let connectionManager: ConnectionManager;
+  let sessionCookie: string;
   const mockAssetData = Buffer.from('fake binary data');
 
-  beforeEach(() => {
+  beforeEach(async () => {
     mockStorage = createMockStorage();
     connectionManager = createConnectionManager();
+
+    // Create a session token for auth
+    const token = await createSession('test-user', TEST_SPACE_ID, 'dev');
+    sessionCookie = `cast_session=${token}`;
 
     // Create app with mocked dependencies
     app = createApp({
@@ -199,28 +217,36 @@ describe('/boards/:channel/:slug Route', () => {
     });
   });
 
+  // Helper to make authenticated requests
+  function authHeaders(): HeadersInit {
+    return { Cookie: sessionCookie };
+  }
+
   describe('channel resolution', () => {
     it('resolves channel by name', async () => {
-      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/config.json`);
+      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/config.json`, {
+        headers: authHeaders(),
+      });
 
       expect(res.status).toBe(200);
-      expect(mockStorage.getChannelByName).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_CHANNEL_NAME);
+      expect(mockStorage.resolveChannel).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_CHANNEL_NAME);
     });
 
     it('resolves channel by ID when name not found', async () => {
-      vi.mocked(mockStorage.getChannelByName).mockResolvedValueOnce(null);
-
-      const res = await app.request(`/boards/${TEST_CHANNEL_ID}/config.json`);
+      const res = await app.request(`/boards/${TEST_CHANNEL_ID}/config.json`, {
+        headers: authHeaders(),
+      });
 
       expect(res.status).toBe(200);
-      expect(mockStorage.getChannel).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_CHANNEL_ID);
+      expect(mockStorage.resolveChannel).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_CHANNEL_ID);
     });
 
     it('returns 404 for unknown channel', async () => {
-      vi.mocked(mockStorage.getChannelByName).mockResolvedValueOnce(null);
-      vi.mocked(mockStorage.getChannel).mockResolvedValueOnce(null);
+      vi.mocked(mockStorage.resolveChannel).mockResolvedValueOnce(null);
 
-      const res = await app.request('/boards/unknown-channel/config.json');
+      const res = await app.request('/boards/unknown-channel/config.json', {
+        headers: authHeaders(),
+      });
 
       expect(res.status).toBe(404);
       const json = await res.json();
@@ -230,7 +256,9 @@ describe('/boards/:channel/:slug Route', () => {
 
   describe('text artifact serving', () => {
     it('serves JSON artifact with application/json Content-Type', async () => {
-      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/config.json`);
+      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/config.json`, {
+        headers: authHeaders(),
+      });
 
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('application/json');
@@ -239,7 +267,9 @@ describe('/boards/:channel/:slug Route', () => {
     });
 
     it('serves Markdown artifact with text/markdown Content-Type', async () => {
-      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/readme.md`);
+      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/readme.md`, {
+        headers: authHeaders(),
+      });
 
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('text/markdown');
@@ -248,7 +278,9 @@ describe('/boards/:channel/:slug Route', () => {
     });
 
     it('serves JavaScript artifact with text/javascript Content-Type', async () => {
-      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/bouncing-ball.app.js`);
+      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/bouncing-ball.app.js`, {
+        headers: authHeaders(),
+      });
 
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('text/javascript');
@@ -257,7 +289,9 @@ describe('/boards/:channel/:slug Route', () => {
     });
 
     it('returns 404 for unknown artifact', async () => {
-      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/nonexistent.json`);
+      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/nonexistent.json`, {
+        headers: authHeaders(),
+      });
 
       expect(res.status).toBe(404);
       const json = await res.json();
@@ -265,14 +299,18 @@ describe('/boards/:channel/:slug Route', () => {
     });
 
     it('sets Cache-Control header for text artifacts', async () => {
-      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/config.json`);
+      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/config.json`, {
+        headers: authHeaders(),
+      });
 
       expect(res.status).toBe(200);
       expect(res.headers.get('Cache-Control')).toBe('public, max-age=3600');
     });
 
     it('sets Content-Length header', async () => {
-      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/config.json`);
+      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/config.json`, {
+        headers: authHeaders(),
+      });
 
       expect(res.status).toBe(200);
       const contentLength = res.headers.get('Content-Length');
@@ -285,7 +323,9 @@ describe('/boards/:channel/:slug Route', () => {
       // Note: The actual asset storage is filesystem-based and would need
       // the file to exist. In unit tests, we verify the code path runs
       // but the read will fail since there's no actual file.
-      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/image.png`);
+      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/image.png`, {
+        headers: authHeaders(),
+      });
 
       // Will return 404 because assetStorage.readAsset fails (no file on disk)
       // In a real test with file fixtures, this would return 200
@@ -302,7 +342,9 @@ describe('/boards/:channel/:slug Route', () => {
         content: '',
       });
 
-      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/empty.json`);
+      const res = await app.request(`/boards/${TEST_CHANNEL_NAME}/empty.json`, {
+        headers: authHeaders(),
+      });
 
       expect(res.status).toBe(200);
       const text = await res.text();

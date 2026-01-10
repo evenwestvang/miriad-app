@@ -141,6 +141,17 @@ function createMockStorage(): Storage {
       if (name === TEST_CHANNEL_NAME) return mockChannel;
       return null;
     }),
+    resolveChannel: vi.fn(async (spaceId: string, idOrName: string) => {
+      if (idOrName === TEST_CHANNEL_ID || idOrName === TEST_CHANNEL_NAME) return mockChannel;
+      return null;
+    }),
+    getChannelWithRoster: vi.fn(async () => ({ channel: mockChannel, roster: [] })),
+    resolveChannelWithRoster: vi.fn(async (spaceId: string, idOrName: string) => {
+      if (idOrName === TEST_CHANNEL_ID || idOrName === TEST_CHANNEL_NAME) {
+        return { channel: mockChannel, roster: [] };
+      }
+      return null;
+    }),
     listChannels: vi.fn(),
     updateChannel: vi.fn(),
     archiveChannel: vi.fn(),
@@ -150,6 +161,7 @@ function createMockStorage(): Storage {
     getRosterEntry: vi.fn(),
     getRosterByCallsign: vi.fn(),
     listRoster: vi.fn(),
+    listArchivedRoster: vi.fn(async () => []),
     updateRosterEntry: vi.fn(),
     removeFromRoster: vi.fn(),
 
@@ -162,6 +174,7 @@ function createMockStorage(): Storage {
     })),
     editArtifact: vi.fn(async () => mockArtifact),
     archiveArtifact: vi.fn(async () => ({ ...mockArtifact, status: 'archived' as const })),
+    archiveArtifactRecursive: vi.fn(async () => ({ archived: [{ slug: 'test-artifact', previousStatus: 'published' }] })),
     listArtifacts: vi.fn(async () => [createMockArtifactSummary()]),
     globArtifacts: vi.fn(async () => [createMockTreeNode()]),
     checkpointArtifact: vi.fn(async () => createMockVersion()),
@@ -259,7 +272,7 @@ describe('Artifact Routes', () => {
       const res = await app.request(`/channels/${TEST_CHANNEL_NAME}/artifacts/tree`);
 
       expect(res.status).toBe(200);
-      expect(mockStorage.getChannelByName).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_CHANNEL_NAME);
+      expect(mockStorage.resolveChannel).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_CHANNEL_NAME);
     });
 
     it('returns 404 for unknown channel', async () => {
@@ -902,7 +915,8 @@ describe('Artifact Routes', () => {
         TEST_CHANNEL_ID,
         expect.objectContaining({
           type: 'asset',
-          encoding: 'file',
+          contentType: 'image/png',
+          fileSize: 1024,
         })
       );
     });
@@ -1059,14 +1073,13 @@ describe('Artifact Routes', () => {
     it('returns 400 for non-file artifact', async () => {
       vi.mocked(mockStorage.getArtifact).mockResolvedValueOnce(createMockArtifact({
         type: 'doc',
-        encoding: undefined,
       }));
 
       const res = await app.request(`/channels/${TEST_CHANNEL_ID}/assets/not-a-file`);
 
       expect(res.status).toBe(400);
       const json = await res.json();
-      expect(json.error).toContain('Not a file asset');
+      expect(json.error).toContain('Not an asset artifact');
     });
 
     it('returns 501 when assetStorage not configured', async () => {

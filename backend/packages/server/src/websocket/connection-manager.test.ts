@@ -262,7 +262,14 @@ describe('ConnectionManager', () => {
       // Wait for async handler
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(onSyncRequest).toHaveBeenCalledWith(info, '2026-01-04T10:00:00.000Z');
+      // New signature: (connection, channelId, since, before, limit)
+      expect(onSyncRequest).toHaveBeenCalledWith(
+        info,
+        'channel-1',
+        '2026-01-04T10:00:00.000Z',
+        undefined,
+        undefined
+      );
     });
 
     it('calls onFrame for other frames', async () => {

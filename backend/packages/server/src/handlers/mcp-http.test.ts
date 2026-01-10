@@ -411,7 +411,7 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
       });
 
       expect(res.status).toBe(200);
-      expect(mockStorage.getChannelByName).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_CHANNEL_NAME);
+      expect(mockStorage.resolveChannel).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_CHANNEL_NAME);
     });
 
     it('resolves channel by ID when name lookup fails', async () => {
@@ -425,10 +425,8 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
       });
 
       expect(res.status).toBe(200);
-      // Name lookup tried first (returns null for ID)
-      expect(mockStorage.getChannelByName).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_CHANNEL_ID);
-      // Then ID lookup succeeds
-      expect(mockStorage.getChannel).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_CHANNEL_ID);
+      // resolveChannel handles both name and ID resolution in a single call
+      expect(mockStorage.resolveChannel).toHaveBeenCalledWith(TEST_SPACE_ID, TEST_CHANNEL_ID);
     });
 
     it('returns 404 for non-existent channel', async () => {
@@ -896,7 +894,6 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
           expect.objectContaining({
             slug: 'doc.pdf',
             type: 'asset',
-            encoding: 'file',
             contentType: 'image/png', // from mock
             fileSize: 1024, // from mock
           })
