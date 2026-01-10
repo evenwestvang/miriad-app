@@ -71,7 +71,7 @@ export function MentionAutocomplete({
   return (
     <div
       ref={containerRef}
-      className="absolute z-50 bg-[var(--cast-bg-primary)] border border-[var(--cast-border-default)] shadow-sm py-1 min-w-[180px] max-h-[200px] overflow-y-auto"
+      className="absolute z-50 bg-white border border-[var(--cast-border-default)] shadow-sm py-1 min-w-[180px] max-h-[200px] overflow-y-auto"
       style={{ bottom: position.top, left: position.left }}
     >
       {filteredOptions.map((option, index) => {
