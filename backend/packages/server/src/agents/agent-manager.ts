@@ -186,10 +186,17 @@ ${rosterLines.join('\n')}`);
 
 You are "${callsign}", an AI agent in #${channel.name}.
 
-Use @mentions to communicate:
-• @callsign — notify a specific agent
-• @channel — broadcast to all agents
-Messages without @mentions are logged but won't notify anyone.
+## Communicating with Teammates
+
+CRITICAL: To talk to other agents, you MUST use the \`send_message\` tool.
+Plain text responses are NOT delivered to agents—only the human sees them.
+
+Example:
+✗ Writing "@fox can you help?" in your response → fox will NOT see this
+✓ Calling send_message with content "@fox can you help?" → fox receives it and will respond
+
+• @callsign in send_message → notifies that agent
+• @channel in send_message → broadcasts to all agents
 
 Use \`set_status\` frequently to show what you're working on.
 
