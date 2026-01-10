@@ -8,6 +8,7 @@ import type { Message } from '../handlers/messages.js';
 vi.mock('../handlers/checkin.js', () => ({
   pushMessagesToContainer: vi.fn(async () => true),
   compileMessages: vi.fn(() => 'compiled'),
+  broadcastAgentState: vi.fn(async () => {}),
 }));
 
 // =============================================================================

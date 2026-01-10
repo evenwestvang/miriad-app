@@ -39,6 +39,8 @@ export interface ChannelContext {
   name: string;
   tagline?: string;
   mission?: string;
+  /** Focus type slug for loading system.focus artifact */
+  focusSlug?: string;
 }
 
 export interface RosterEntry {
@@ -58,6 +60,35 @@ export interface AppSecrets {
   getMetadata: (channelId: string, slug: string, key: string) => Promise<{ expiresAt?: string } | null>;
 }
 
+/**
+ * Agent definition artifact (system.agent from #root)
+ */
+export interface AgentDefinition {
+  slug: string;
+  title?: string;
+  tldr?: string;
+  content: string;
+  props?: {
+    engine?: string;
+    nameTheme?: string;
+    mcp?: string[];
+  };
+}
+
+/**
+ * Focus type artifact (system.focus from #root)
+ */
+export interface FocusType {
+  slug: string;
+  title?: string;
+  tldr?: string;
+  content: string;
+  props?: {
+    defaultAgents?: Array<{ slug: string; role?: string }>;
+    initialPrompt?: string;
+  };
+}
+
 export interface AgentManagerConfig {
   /** Container orchestrator (Docker for local, Fargate for prod) */
   orchestrator: ContainerOrchestrator;
@@ -75,6 +106,10 @@ export interface AgentManagerConfig {
   appSecrets?: AppSecrets;
   /** Tunnel server URL for HTTP tunnel access (e.g., "https://tunnel.clanker.is") */
   tunnelServerUrl?: string;
+  /** Get agent definition by slug from #root */
+  getAgentDefinition?: (spaceId: string, agentSlug: string) => Promise<AgentDefinition | null>;
+  /** Get focus type by slug from #root */
+  getFocusType?: (spaceId: string, focusSlug: string) => Promise<FocusType | null>;
 }
 
 // =============================================================================
@@ -82,58 +117,146 @@ export interface AgentManagerConfig {
 // =============================================================================
 
 /**
- * Build a system prompt for an agent with channel context.
+ * Full context for building a system prompt.
  */
-export function buildSystemPrompt(
-  channel: ChannelContext,
-  roster: RosterEntry[],
-  callsign: string
-): string {
+export interface PromptContext {
+  channel: ChannelContext;
+  roster: RosterEntry[];
+  callsign: string;
+  agentDefinition?: AgentDefinition;
+  focusType?: FocusType;
+}
+
+/**
+ * Build a system prompt for an agent with full channel and role context.
+ *
+ * Assembly order (per spec):
+ * 1. Channel Context (name, tagline, mission)
+ * 2. Focus Type Instructions (if channel has focus)
+ * 3. Your Role (agent definition content)
+ * 4. Team Roster
+ * 5. Channel Participation Instructions
+ */
+export function buildSystemPrompt(ctx: PromptContext): string {
+  const { channel, roster, callsign, agentDefinition, focusType } = ctx;
   const sections: string[] = [];
 
-  // Channel Context
+  // 1. Channel Context
   sections.push(`## Channel Context
 
 **Channel:** #${channel.name}
 **Tagline:** ${channel.tagline ?? 'Open workspace'}
-**Mission:** ${channel.mission ?? 'A flexible space for collaboration.'}`);
+**Mission:** ${channel.mission ?? 'A flexible space for freeform collaboration and exploration.'}`);
 
-  // Your Role
-  sections.push(`## Your Role
+  // 2. Focus Type Instructions (if channel has focus)
+  if (focusType) {
+    sections.push(`---
+
+### Special Instructions
+${focusType.content}`);
+  }
+
+  // 3. Your Role (from agent definition)
+  if (agentDefinition) {
+    sections.push(`## Your Role: ${agentDefinition.title ?? agentDefinition.slug}
+
+${agentDefinition.content}`);
+  } else {
+    // Fallback if no agent definition found
+    sections.push(`## Your Role
 
 You are "${callsign}", an AI agent participating in #${channel.name}.`);
+  }
 
-  // Team Roster
+  // 4. Team Roster (with titles from agent definitions if available)
   const rosterLines = roster.map((r) => `- @${r.callsign} (${r.agentType})`);
   if (rosterLines.length > 0) {
-    sections.push(`## Team Roster
+    sections.push(`---
+
+## Team Roster
 
 Your teammates in this channel:
 ${rosterLines.join('\n')}`);
   }
 
-  // Channel Participation Rules
-  sections.push(`## Channel Participation
+  // 5. Channel Participation Instructions (CAST-adapted per @ax feedback)
+  sections.push(`---
 
-CRITICAL INSTRUCTIONS:
-1. Always use @mentions when sending messages (e.g., @someone or @channel)
-2. Messages without @mentions will NOT be delivered to other agents
-3. Your callsign is "${callsign}" - this is how others will @mention you
-4. Collaborate with other agents and humans in the channel
+## Channel Participation
 
-When you want to communicate:
-- @someone - Direct message to a specific agent or human
-- @channel - Broadcast to all agents in the channel
+You are "${callsign}", an AI agent in #${channel.name}.
 
-WHEN NOT TO RESPOND:
-- If you have nothing meaningful to add, stay quiet
-- Don't respond just to acknowledge
-- If someone else is better suited to answer, let them handle it
-- When a task is complete, say so briefly and stop
+Use @mentions to communicate:
+• @callsign — notify a specific agent
+• @channel — broadcast to all agents
+Messages without @mentions are logged but won't notify anyone.
 
-Keep comms effective and brief.`);
+Use \`set_status\` frequently to show what you're working on.
 
-  return sections.join('\n\n---\n\n');
+Keep comms effective and brief. A little personality is welcome—we're collaborating, not filing reports—but remember that verbose messages break focus and consume context windows.
+
+## Collaboration Board
+
+The channel has a shared **Board** for persistent work products—things that outlive chat messages. Use artifact tools to create specs, track tasks, log decisions, and share code.
+
+### Artifact Types
+- **doc** — Specs, plans, notes, documentation (default)
+- **task** — Work items with status tracking (pending → in_progress → done/blocked)
+- **decision** — Logged choices with rationale for future reference
+- **code** — Code snippets, file references (syntax highlighted)
+
+### Structure
+Artifacts form a **tree** like a file system. Each has a slug and optional \`parentSlug\`, creating paths like \`/auth-system/api-spec\`. **Use the tree structure to organize work—don't dump everything into content.**
+
+Example task breakdown (as shown by \`artifact_glob\`):
+\`\`\`
+/planning
+/phase-1 :task (done)
+  /setup-repo :task (done) @fox
+  /setup-ci :task (done) @bear
+/phase-2 :task (in_progress)
+  /implement-api :task (done) @fox
+  /implement-auth :task (in_progress) @bear
+/phase-3 :task (pending)
+  /write-tests :task (pending)
+  /write-docs :task (pending)
+\`\`\`
+
+Each task is a separate artifact with its own status. The \`tldr\` field is the task description—keep \`content\` for details, notes, or empty. Use \`artifact_glob\` to see the tree, \`artifact_list\` to query with filters.
+
+### Task Coordination
+For tasks, use the \`artifact_update\` tool with compare-and-swap to **claim work atomically**:
+
+\`\`\`
+artifact_update({
+  slug: "implement-login",
+  changes: [
+    { field: "status", old_value: "pending", new_value: "in_progress" },
+    { field: "assignees", old_value: [], new_value: ["${callsign}"] }
+  ]
+})
+\`\`\`
+
+This prevents race conditions—if another agent claimed it first, your update fails and you can pick a different task. Always check the current state before claiming.
+
+### Playbooks
+
+The board may contain **playbook** artifacts (type: \`system.playbook\`) with workflows and guidelines relevant to your work. When you join a channel:
+1. Use \`artifact_list\` with \`type: "system.playbook"\` to find playbooks—this returns summaries (slug, tldr) without full content
+2. Review the \`tldr\` field to understand what each playbook covers
+3. Use \`artifact_read\` to read the full content when a playbook becomes relevant to your current task
+
+Playbooks contain valuable context and procedures—consult them before diving into work.
+
+### Quick Reference
+- \`artifact_create\` - Create new artifact (fails if exists, use \`replace: true\` to overwrite)
+- \`artifact_read\` - Get full content and version history
+- \`artifact_edit\` - Surgical find-replace on content
+- \`artifact_update\` - Atomic field updates (status, assignees, labels)
+- \`artifact_checkpoint\` - Snapshot a named version for review
+- \`artifact_list\` / \`artifact_glob\` - Browse and search`);
+
+  return sections.join('\n\n');
 }
 
 // =============================================================================
@@ -156,6 +279,65 @@ export class AgentManager {
    */
   private buildThreadId(spaceId: string, channelId: string, callsign: string): string {
     return `${spaceId}:${channelId}:${callsign}`;
+  }
+
+  /**
+   * Build a full system prompt for an agent.
+   * This is the centralized method for building prompts with full context.
+   * Used by both spawn() and exposed for local agent routing.
+   */
+  async buildPromptForAgent(
+    spaceId: string,
+    channelId: string,
+    callsign: string
+  ): Promise<string> {
+    // Get channel context and roster
+    const channel = await this.config.getChannel(spaceId, channelId);
+    if (!channel) {
+      console.warn(`[AgentManager] Channel not found for prompt: ${channelId}`);
+      return `You are "${callsign}", an AI agent.`;
+    }
+
+    const roster = await this.config.getRoster(spaceId, channelId);
+
+    // Find this agent's roster entry to get agentType (definition slug)
+    const rosterEntry = roster.find((r) => r.callsign === callsign);
+    const agentType = rosterEntry?.agentType;
+
+    // Fetch agent definition from #root (if config method provided)
+    let agentDefinition: AgentDefinition | undefined;
+    if (agentType && this.config.getAgentDefinition) {
+      try {
+        agentDefinition = (await this.config.getAgentDefinition(spaceId, agentType)) ?? undefined;
+        if (agentDefinition) {
+          console.log(`[AgentManager] Loaded agent definition: ${agentType}`);
+        }
+      } catch (err) {
+        console.error(`[AgentManager] Error loading agent definition:`, err);
+      }
+    }
+
+    // Fetch focus type from #root (if channel has focusSlug and config method provided)
+    let focusType: FocusType | undefined;
+    if (channel.focusSlug && this.config.getFocusType) {
+      try {
+        focusType = (await this.config.getFocusType(spaceId, channel.focusSlug)) ?? undefined;
+        if (focusType) {
+          console.log(`[AgentManager] Loaded focus type: ${channel.focusSlug}`);
+        }
+      } catch (err) {
+        console.error(`[AgentManager] Error loading focus type:`, err);
+      }
+    }
+
+    // Build and return the full system prompt
+    return buildSystemPrompt({
+      channel,
+      roster,
+      callsign,
+      agentDefinition,
+      focusType,
+    });
   }
 
   /**
@@ -275,16 +457,14 @@ export class AgentManager {
   ): Promise<ManagedAgent> {
     console.log(`[AgentManager] Spawning agent ${callsign} in ${channelId}`);
 
-    // Get channel context and roster for system prompt
+    // Verify channel exists (needed for error handling)
     const channel = await this.config.getChannel(spaceId, channelId);
     if (!channel) {
       throw new Error(`Channel not found: ${channelId}`);
     }
 
-    const roster = await this.config.getRoster(spaceId, channelId);
-
-    // Build system prompt
-    const systemPrompt = buildSystemPrompt(channel, roster, callsign);
+    // Build system prompt using centralized method
+    const systemPrompt = await this.buildPromptForAgent(spaceId, channelId, callsign);
 
     // Generate auth token
     const authToken = generateContainerToken({ spaceId, channelId, callsign });

@@ -23,6 +23,7 @@ export {
   HEARTBEAT_STALE_MS,
   type CheckinRequest,
   type CheckinHandlerOptions,
+  type SystemPromptBuilder,
 } from './checkin.js';
 export {
   createArtifactRoutes,

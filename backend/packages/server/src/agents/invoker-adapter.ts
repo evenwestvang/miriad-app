@@ -45,7 +45,7 @@ export interface LocalAgentRouter {
 }
 
 export interface AgentInvokerAdapterOptions {
-  /** The AgentManager instance to delegate to (for spawning new containers) */
+  /** The AgentManager instance to delegate to (for spawning new containers and building prompts) */
   agentManager: AgentManager;
   /** Storage for checking roster callbackUrl */
   storage: Storage;
@@ -55,8 +55,6 @@ export interface AgentInvokerAdapterOptions {
   orchestrator?: ContainerOrchestrator;
   /** Local agent manager for routing to local-agent-engine connections */
   localAgentRouter?: LocalAgentRouter;
-  /** Build system prompt for an agent */
-  buildSystemPrompt?: (spaceId: string, channelId: string, callsign: string) => Promise<string>;
   /** WebSocket connection manager for broadcasting agent state */
   connectionManager?: ConnectionManager;
 }
@@ -79,7 +77,7 @@ export interface AgentInvokerAdapterOptions {
 export function createAgentInvokerAdapter(
   options: AgentInvokerAdapterOptions
 ): AgentInvoker {
-  const { agentManager, storage, spaceId, orchestrator, localAgentRouter, buildSystemPrompt, connectionManager } = options;
+  const { agentManager, storage, spaceId, orchestrator, localAgentRouter, connectionManager } = options;
 
   return {
     invokeAgents: async (
@@ -118,10 +116,8 @@ export function createAgentInvokerAdapter(
             if (localAgentRouter?.isAgentConnected(channelId, callsign)) {
               console.log(`[AgentInvoker] @${callsign} is a local agent, sending via WebSocket`);
 
-              // Build system prompt
-              const systemPrompt = buildSystemPrompt
-                ? await buildSystemPrompt(spaceId, channelId, callsign)
-                : `You are ${callsign}, an agent in this channel.`;
+              // Build system prompt using centralized method from AgentManager
+              const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
 
               const sent = localAgentRouter.sendToAgent(channelId, callsign, {
                 type: 'message',
@@ -152,7 +148,10 @@ export function createAgentInvokerAdapter(
             // This bypasses the roster callbackUrl which has host.docker.internal issues
             if (orchestrator?.isRunning(threadId)) {
               console.log(`[AgentInvoker] @${callsign} container running (via orchestrator), sending directly`);
-              await orchestrator.sendMessage(threadId, userMessage);
+
+              // Build system prompt using centralized method from AgentManager
+              const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
+              await orchestrator.sendMessage(threadId, userMessage, systemPrompt);
 
               // Update readmark after successful delivery (rosterEntry already fetched above)
               if (rosterEntry) {
@@ -174,11 +173,15 @@ export function createAgentInvokerAdapter(
               // Generate auth token for this agent (deterministic - same as container received at spawn)
               const authToken = generateContainerToken({ spaceId, channelId, callsign });
 
+              // Build system prompt using centralized method from AgentManager
+              const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
+
               const success = await pushMessagesToContainer(
                 rosterEntry.callbackUrl,
                 userMessage,
                 threadId,
-                authToken
+                authToken,
+                systemPrompt
               );
 
               if (success) {

@@ -5,6 +5,7 @@ import {
   type AgentManagerConfig,
   type ChannelContext,
   type RosterEntry,
+  type PromptContext,
 } from './agent-manager.js';
 import type { ContainerOrchestrator, ContainerState } from '@cast/runtime';
 
@@ -208,14 +209,18 @@ describe('AgentManager', () => {
 
 describe('buildSystemPrompt', () => {
   it('includes channel context', () => {
-    const channel: ChannelContext = {
-      id: 'ch-1',
-      name: 'dev-team',
-      tagline: 'Development workspace',
-      mission: 'Build great software',
+    const ctx: PromptContext = {
+      channel: {
+        id: 'ch-1',
+        name: 'dev-team',
+        tagline: 'Development workspace',
+        mission: 'Build great software',
+      },
+      roster: [],
+      callsign: 'agent-1',
     };
 
-    const prompt = buildSystemPrompt(channel, [], 'agent-1');
+    const prompt = buildSystemPrompt(ctx);
 
     expect(prompt).toContain('#dev-team');
     expect(prompt).toContain('Development workspace');
@@ -223,33 +228,93 @@ describe('buildSystemPrompt', () => {
   });
 
   it('includes roster information', () => {
-    const channel: ChannelContext = { id: 'ch-1', name: 'test' };
-    const roster: RosterEntry[] = [
-      { callsign: 'alice', agentType: 'engineer', status: 'active' },
-      { callsign: 'bob', agentType: 'researcher', status: 'active' },
-    ];
+    const ctx: PromptContext = {
+      channel: { id: 'ch-1', name: 'test' },
+      roster: [
+        { callsign: 'alice', agentType: 'engineer', status: 'active' },
+        { callsign: 'bob', agentType: 'researcher', status: 'active' },
+      ],
+      callsign: 'agent-1',
+    };
 
-    const prompt = buildSystemPrompt(channel, roster, 'agent-1');
+    const prompt = buildSystemPrompt(ctx);
 
     expect(prompt).toContain('@alice (engineer)');
     expect(prompt).toContain('@bob (researcher)');
   });
 
   it('includes agent callsign in participation rules', () => {
-    const channel: ChannelContext = { id: 'ch-1', name: 'test' };
+    const ctx: PromptContext = {
+      channel: { id: 'ch-1', name: 'test' },
+      roster: [],
+      callsign: 'my-agent',
+    };
 
-    const prompt = buildSystemPrompt(channel, [], 'my-agent');
+    const prompt = buildSystemPrompt(ctx);
 
-    expect(prompt).toContain('Your callsign is "my-agent"');
+    expect(prompt).toContain('"my-agent"');
   });
 
   it('includes @mention instructions', () => {
-    const channel: ChannelContext = { id: 'ch-1', name: 'test' };
+    const ctx: PromptContext = {
+      channel: { id: 'ch-1', name: 'test' },
+      roster: [],
+      callsign: 'agent-1',
+    };
 
-    const prompt = buildSystemPrompt(channel, [], 'agent-1');
+    const prompt = buildSystemPrompt(ctx);
 
-    expect(prompt).toContain('@someone');
+    expect(prompt).toContain('@callsign');
     expect(prompt).toContain('@channel');
-    expect(prompt).toContain('CRITICAL INSTRUCTIONS');
+  });
+
+  it('includes agent definition content when provided', () => {
+    const ctx: PromptContext = {
+      channel: { id: 'ch-1', name: 'test' },
+      roster: [],
+      callsign: 'agent-1',
+      agentDefinition: {
+        slug: 'engineer',
+        title: 'Software Engineer',
+        content: 'You write production code. Features, fixes, refactors.',
+      },
+    };
+
+    const prompt = buildSystemPrompt(ctx);
+
+    expect(prompt).toContain('Your Role: Software Engineer');
+    expect(prompt).toContain('You write production code');
+  });
+
+  it('includes focus type instructions when provided', () => {
+    const ctx: PromptContext = {
+      channel: { id: 'ch-1', name: 'test' },
+      roster: [],
+      callsign: 'agent-1',
+      focusType: {
+        slug: 'open',
+        title: 'Open Workspace',
+        content: 'An open-ended focus area for freeform collaboration.',
+      },
+    };
+
+    const prompt = buildSystemPrompt(ctx);
+
+    expect(prompt).toContain('Special Instructions');
+    expect(prompt).toContain('open-ended focus area');
+  });
+
+  it('includes board collaboration instructions', () => {
+    const ctx: PromptContext = {
+      channel: { id: 'ch-1', name: 'test' },
+      roster: [],
+      callsign: 'agent-1',
+    };
+
+    const prompt = buildSystemPrompt(ctx);
+
+    expect(prompt).toContain('Collaboration Board');
+    expect(prompt).toContain('artifact_create');
+    expect(prompt).toContain('artifact_update');
   });
 });

@@ -1000,6 +1000,41 @@ export function createApp(options: AppOptions): Hono {
         return storage.getSecretMetadata(cid, slug, key);
       },
     },
+    // Get agent definition by slug from #root channel
+    getAgentDefinition: async (sid, agentSlug) => {
+      const rootChannel = await storage.getChannelByName(sid, 'root');
+      if (!rootChannel) return null;
+
+      const artifact = await storage.getArtifact(rootChannel.id, agentSlug);
+      if (!artifact || artifact.type !== 'system.agent') return null;
+
+      return {
+        slug: artifact.slug,
+        title: artifact.title,
+        tldr: artifact.tldr,
+        content: artifact.content,
+        props: artifact.props as { engine?: string; nameTheme?: string; mcp?: string[] } | undefined,
+      };
+    },
+    // Get focus type by slug from #root channel
+    getFocusType: async (sid, focusSlug) => {
+      const rootChannel = await storage.getChannelByName(sid, 'root');
+      if (!rootChannel) return null;
+
+      const artifact = await storage.getArtifact(rootChannel.id, focusSlug);
+      if (!artifact || artifact.type !== 'system.focus') return null;
+
+      return {
+        slug: artifact.slug,
+        title: artifact.title,
+        tldr: artifact.tldr,
+        content: artifact.content,
+        props: artifact.props as {
+          defaultAgents?: Array<{ slug: string; role?: string }>;
+          initialPrompt?: string;
+        } | undefined,
+      };
+    },
   });
 
   // ---------------------------------------------------------------------------
@@ -1320,6 +1355,8 @@ export function createApp(options: AppOptions): Hono {
     spaceId: '', // Placeholder - checkin extracts from body.spaceId
     orchestrator,
     connectionManager,
+    // Pass the centralized prompt builder from AgentManager
+    buildSystemPrompt: (sid, cid, callsign) => agentManager.buildPromptForAgent(sid, cid, callsign),
   });
   app.route('/agents', checkinRoutes);
 

@@ -12,6 +12,9 @@ export {
   type ManagedAgent,
   type ChannelContext,
   type RosterEntry,
+  type AgentDefinition,
+  type FocusType,
+  type PromptContext,
 } from './agent-manager.js';
 
 export {

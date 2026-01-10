@@ -34,6 +34,9 @@ export interface CheckinRequest {
   endpoint: string;
 }
 
+/** System prompt builder function type */
+export type SystemPromptBuilder = (spaceId: string, channelId: string, callsign: string) => Promise<string>;
+
 export interface CheckinHandlerOptions {
   /** Storage backend */
   storage: Storage;
@@ -43,6 +46,8 @@ export interface CheckinHandlerOptions {
   orchestrator?: ContainerOrchestrator;
   /** WebSocket connection manager for broadcasting state changes */
   connectionManager?: ConnectionManager;
+  /** Build system prompt for an agent (provided by AgentManager) */
+  buildSystemPrompt?: SystemPromptBuilder;
 }
 
 // =============================================================================
@@ -225,7 +230,7 @@ export async function broadcastAgentState(
 }
 
 export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
-  const { storage, spaceId: defaultSpaceId, orchestrator, connectionManager } = options;
+  const { storage, spaceId: defaultSpaceId, orchestrator, connectionManager, buildSystemPrompt } = options;
 
   const app = new Hono();
 
@@ -303,11 +308,16 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
 
         let success = false;
 
+        // Build system prompt if builder is provided
+        const systemPrompt = buildSystemPrompt
+          ? await buildSystemPrompt(spaceId, channelId, callsign)
+          : undefined;
+
         // For local Docker, use orchestrator's port mapping (bypasses host.docker.internal issue)
         if (orchestrator?.isRunning(threadId)) {
           console.log(`[Checkin] Using orchestrator for pending message delivery`);
           try {
-            await orchestrator.sendMessage(threadId, compiledContent);
+            await orchestrator.sendMessage(threadId, compiledContent, systemPrompt);
             success = true;
           } catch (error) {
             console.error(`[Checkin] Orchestrator push failed:`, error);
@@ -322,7 +332,8 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
             endpoint,
             compiledContent,
             threadId,
-            authToken
+            authToken,
+            systemPrompt
           );
         }
 
