@@ -566,7 +566,7 @@ export function MessageInput({
                         {dormantActionLoading === agent.callsign ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
                         ) : (
-                          <Bot className="w-3.5 h-3.5 text-muted-foreground" />
+                          <Coffee className="w-3.5 h-3.5 text-muted-foreground" />
                         )}
                       </button>
                     </span>
