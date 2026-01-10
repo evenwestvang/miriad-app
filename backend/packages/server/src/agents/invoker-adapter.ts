@@ -130,11 +130,15 @@ export function createAgentInvokerAdapter(
               });
 
               if (sent) {
-                // Update readmark after successful delivery (rosterEntry already fetched above)
+                // Update readmark and lastMessageRoutedAt after successful delivery (rosterEntry already fetched above)
                 if (rosterEntry) {
+                  const now = new Date().toISOString();
                   await storage.updateRosterEntry(channelId, rosterEntry.id, {
                     readmark: message.id,
+                    lastMessageRoutedAt: now,
                   });
+                  // Broadcast pending state - agent is now processing
+                  await broadcastAgentState(connectionManager, channelId, callsign, 'pending', now);
                 }
                 console.log(`[AgentInvoker] Successfully sent to local agent @${callsign}`);
                 return;
@@ -153,11 +157,15 @@ export function createAgentInvokerAdapter(
               const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
               await orchestrator.sendMessage(threadId, userMessage, systemPrompt);
 
-              // Update readmark after successful delivery (rosterEntry already fetched above)
+              // Update readmark and lastMessageRoutedAt after successful delivery (rosterEntry already fetched above)
               if (rosterEntry) {
+                const now = new Date().toISOString();
                 await storage.updateRosterEntry(channelId, rosterEntry.id, {
                   readmark: message.id,
+                  lastMessageRoutedAt: now,
                 });
+                // Broadcast pending state - agent is now processing
+                await broadcastAgentState(connectionManager, channelId, callsign, 'pending', now);
               }
               console.log(`[AgentInvoker] Successfully sent to @${callsign} via orchestrator`);
               return;
@@ -185,10 +193,14 @@ export function createAgentInvokerAdapter(
               );
 
               if (success) {
-                // Update readmark after successful delivery
+                // Update readmark and lastMessageRoutedAt after successful delivery
+                const now = new Date().toISOString();
                 await storage.updateRosterEntry(channelId, rosterEntry.id, {
                   readmark: message.id,
+                  lastMessageRoutedAt: now,
                 });
+                // Broadcast pending state - agent is now processing
+                await broadcastAgentState(connectionManager, channelId, callsign, 'pending', now);
                 console.log(`[AgentInvoker] Successfully pushed to @${callsign}, updated readmark to ${message.id}`);
               } else {
                 // Push failed - container may have died, clear callbackUrl and spawn new
@@ -212,6 +224,12 @@ export function createAgentInvokerAdapter(
               console.log(`[AgentInvoker] @${callsign} has no callbackUrl, spawning new container`);
               // Broadcast 'connecting' state before spawning
               await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
+              // Set lastMessageRoutedAt since we're routing a message (will become 'pending' after container starts)
+              if (rosterEntry) {
+                await storage.updateRosterEntry(channelId, rosterEntry.id, {
+                  lastMessageRoutedAt: new Date().toISOString(),
+                });
+              }
               await agentManager.sendMessage(
                 spaceId,
                 channelId,

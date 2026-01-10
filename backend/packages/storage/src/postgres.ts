@@ -113,6 +113,7 @@ interface RosterRow {
   tunnel_hash: string | null;
   last_heartbeat: Date | null;
   current: Record<string, unknown> | null;
+  last_message_routed_at: Date | null;
 }
 
 interface UserRow {
@@ -817,6 +818,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       // Merge current object - use JSONB merge to preserve other keys
       // For now, we replace the entire object. Can add merge logic later if needed.
       updateObj.current = sql.json(update.current as unknown as JSONValue);
+    }
+    if (update.lastMessageRoutedAt !== undefined) {
+      updateObj.last_message_routed_at = new Date(update.lastMessageRoutedAt);
     }
 
     if (Object.keys(updateObj).length === 0) return;
@@ -1983,7 +1987,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       ON roster(channel_id, created_at ASC)
     `;
 
-    // Add callback_url, readmark, tunnel_hash, last_heartbeat, and current columns to roster if they don't exist
+    // Add callback_url, readmark, tunnel_hash, last_heartbeat, current, and last_message_routed_at columns to roster if they don't exist
     // (These may be added in migrations for existing databases)
     await sql`
       DO $$ BEGIN
@@ -1992,6 +1996,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS tunnel_hash VARCHAR(64);
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS last_heartbeat TIMESTAMPTZ;
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS current JSONB;
+        ALTER TABLE roster ADD COLUMN IF NOT EXISTS last_message_routed_at TIMESTAMPTZ;
       EXCEPTION
         WHEN duplicate_column THEN NULL;
       END $$;
@@ -2490,6 +2495,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       tunnelHash: row.tunnel_hash ?? undefined,
       lastHeartbeat: row.last_heartbeat?.toISOString() ?? undefined,
       current: (row.current as RosterCurrent) ?? undefined,
+      lastMessageRoutedAt: row.last_message_routed_at?.toISOString() ?? undefined,
     };
   }
 

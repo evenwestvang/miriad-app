@@ -53,8 +53,9 @@ interface AgentBadgeProps {
  * 1. Offline: Gray dot, gray name
  * 2. Connecting: Yellow pulsing dot, normal name
  * 3. Online/Idle: Colored dot, black name
- * 4. Working: Colored dot, black name with animation
- * 5. Paused: Gray dot, strikethrough black name
+ * 4. Pending: Colored dot with subtle pulse, black name
+ * 5. Working: Colored dot, black name with animation
+ * 6. Paused: Gray dot, strikethrough black name
  *
  * Selected state adds underline indicator.
  */
@@ -71,7 +72,9 @@ function AgentBadge({ agent, isLeader, isSelected, channelId, rosterIndex, onCli
         ? 'offline'
         : agent.isWorking
           ? 'working'
-          : 'idle'
+          : agent.isPending
+            ? 'pending'
+            : 'idle'
 
   // Derive dot color: yellow for connecting, gray for offline, otherwise signature color
   // Muted state doesn't affect dot color - only adds strikethrough to name
@@ -91,11 +94,12 @@ function AgentBadge({ agent, isLeader, isSelected, channelId, rosterIndex, onCli
       )}
       title={`@${agent.callsign} - ${stateLabel}${isLeader ? ' (leader)' : ''}`}
     >
-      {/* Dot: gray for paused/offline, yellow+pulse for connecting, colored when online */}
+      {/* Dot: gray for paused/offline, yellow+pulse for connecting, subtle pulse for pending, colored when online */}
       <span
         className={cn(
           "w-1.5 h-1.5 rounded-full flex-shrink-0",
-          agent.isConnecting && "animate-pulse"
+          agent.isConnecting && "animate-pulse",
+          agent.isOnline && agent.isPending && !agent.isWorking && "animate-pending"
         )}
         style={{ backgroundColor: displayDotColor }}
       />

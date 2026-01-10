@@ -30,9 +30,11 @@ export interface RosterEvent {
 // Roster state event - agent lifecycle changes from backend
 export interface RosterStateEvent {
   callsign: string
-  state: 'connecting' | 'online' | 'offline' | 'paused' | 'dismissed'
+  state: 'connecting' | 'online' | 'offline' | 'paused' | 'pending' | 'dismissed'
   /** ISO timestamp of last heartbeat (for client-side offline timeout tracking) */
   lastHeartbeat?: string
+  /** ISO timestamp of when message was routed (for client-side pending timeout tracking) */
+  lastMessageRoutedAt?: string
 }
 
 // Tymbal protocol types
@@ -287,16 +289,20 @@ export function useTymbalConnection({
 
           // Handle roster lifecycle states (from backend heartbeat)
           // Client handles offline timeout locally using lastHeartbeat timestamp
-          const rosterStates = ['online', 'offline', 'connecting', 'paused', 'dismissed'] as const
+          const rosterStates = ['online', 'offline', 'connecting', 'paused', 'pending', 'dismissed'] as const
           const stateStr = value.state as string
           if (rosterStates.includes(stateStr as typeof rosterStates[number])) {
             const event: RosterStateEvent = {
               callsign: value.sender,
-              state: stateStr as 'connecting' | 'online' | 'offline' | 'paused' | 'dismissed',
+              state: stateStr as 'connecting' | 'online' | 'offline' | 'paused' | 'pending' | 'dismissed',
             }
             // Include lastHeartbeat for client-side timeout tracking
             if ('lastHeartbeat' in value && typeof value.lastHeartbeat === 'string') {
               event.lastHeartbeat = value.lastHeartbeat as string
+            }
+            // Include lastMessageRoutedAt for pending state timeout tracking
+            if ('lastMessageRoutedAt' in value && typeof value.lastMessageRoutedAt === 'string') {
+              event.lastMessageRoutedAt = value.lastMessageRoutedAt as string
             }
             onRosterStateEvent?.(event)
             return

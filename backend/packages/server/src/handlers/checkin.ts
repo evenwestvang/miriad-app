@@ -196,13 +196,14 @@ export function isHeartbeatStale(lastHeartbeat: string | null | undefined): bool
 /**
  * Broadcast an agent_state frame to all WebSocket clients in a channel.
  * For 'online' state, includes lastHeartbeat so clients can track offline timeout.
+ * For 'pending' state, includes lastMessageRoutedAt so clients can track pending timeout.
  */
 export async function broadcastAgentState(
   connectionManager: ConnectionManager | undefined,
   channelId: string,
   callsign: string,
-  state: 'connecting' | 'online' | 'offline' | 'paused' | 'dismissed',
-  lastHeartbeat?: string
+  state: 'connecting' | 'online' | 'offline' | 'paused' | 'pending' | 'dismissed',
+  timestamp?: string
 ): Promise<void> {
   if (!connectionManager) return;
 
@@ -212,9 +213,15 @@ export async function broadcastAgentState(
     state,
   };
 
-  // Include lastHeartbeat timestamp for client-side offline timeout tracking
-  if (lastHeartbeat) {
-    value.lastHeartbeat = lastHeartbeat;
+  // Include timestamp for client-side timeout tracking
+  // - 'online': lastHeartbeat for offline timeout
+  // - 'pending': lastMessageRoutedAt for pending timeout
+  if (timestamp) {
+    if (state === 'online') {
+      value.lastHeartbeat = timestamp;
+    } else if (state === 'pending') {
+      value.lastMessageRoutedAt = timestamp;
+    }
   }
 
   // Build frame with channel ID directly (avoid string manipulation bugs)

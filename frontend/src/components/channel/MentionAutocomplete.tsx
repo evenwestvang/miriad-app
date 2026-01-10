@@ -10,6 +10,8 @@ export interface RosterAgent {
   isConnecting?: boolean
   /** Whether agent is in an active turn (sent messages, no idle frame yet) */
   isWorking?: boolean
+  /** Whether agent is pending (message routed, awaiting first frame) */
+  isPending?: boolean
   /** Whether agent is paused (explicitly paused by user) */
   isPaused?: boolean
   /** Tunnel hash for HTTP exposure (32-char hex, generated on spawn) */
@@ -18,6 +20,8 @@ export interface RosterAgent {
   agentType?: string
   /** ISO timestamp of last heartbeat (for client-side offline timeout tracking) */
   lastHeartbeat?: string
+  /** ISO timestamp of when a message was last routed (for client-side pending timeout tracking) */
+  lastMessageRoutedAt?: string
   /** Session cost in USD (accumulated from cost frames) */
   sessionCost?: number
   /** Current agent state from set_status calls */

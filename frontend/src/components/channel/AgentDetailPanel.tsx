@@ -51,6 +51,9 @@ function getStateBadge(agent: RosterAgent): { label: string; colorClass: string 
   if (agent.isWorking) {
     return { label: 'Working', colorClass: 'bg-blue-500 text-white' }
   }
+  if (agent.isPending) {
+    return { label: 'Pending', colorClass: 'bg-cyan-500 text-white' }
+  }
   return { label: 'Online', colorClass: 'bg-green-500 text-white' }
 }
 
@@ -198,6 +201,7 @@ export function AgentDetailPanel({
     if (agent.isConnecting) return 'Starting container...'
     if (!agent.isOnline) return 'Suspended — container stopped'
     if (agent.isWorking) return 'Working on a task'
+    if (agent.isPending) return 'Pending — waiting for response'
     return 'Idle — ready for work'
   }
 

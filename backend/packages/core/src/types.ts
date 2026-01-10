@@ -234,6 +234,12 @@ export interface RosterEntry {
    * Includes status text, and will expand to include todo lists, role context, etc.
    */
   current?: RosterCurrent;
+
+  /**
+   * ISO timestamp of when last message was routed to this agent.
+   * Used to track "pending" state between message routing and first frame.
+   */
+  lastMessageRoutedAt?: string;
 }
 
 /**
@@ -262,6 +268,8 @@ export interface UpdateRosterInput {
   lastHeartbeat?: string;
   /** Ephemeral current state (status text, etc.) */
   current?: RosterCurrent;
+  /** Timestamp when a message was last routed to this agent (ISO 8601) */
+  lastMessageRoutedAt?: string;
 }
 
 // =============================================================================

@@ -476,3 +476,17 @@
 .animate-working {
     animation: working 2s ease-in-out infinite;
 }
+
+/* Agent pending animation - subtle opacity pulse for dot (slower than working) */
+@keyframes pending {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.4;
+    }
+}
+
+.animate-pending {
+    animation: pending 2.5s ease-in-out infinite;
+}

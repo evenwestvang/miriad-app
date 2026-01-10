@@ -259,13 +259,23 @@ export function App() {
       setIsStartingWorkspace(false);
     }
 
-    // Mark agent as "working" when they send a message (will clear on idle frame)
-    if (msg.senderType === "agent" && msg.sender) {
+    // Mark agent as "working" when they send actual content (will clear on idle frame)
+    // Also clears "pending" state since we got our first frame
+    // Only trigger on actual work output (text or tool calls), not on metadata like status updates
+    if (msg.senderType === "agent" && msg.sender && (msg.type === "agent" || msg.type === "tool_call")) {
       setWorkingAgents((prev) => {
         if (prev.has(msg.sender)) return prev;
         const next = new Set(prev);
         next.add(msg.sender);
         return next;
+      });
+      // Clear pending state - got first frame
+      setRoster((prev) => {
+        const idx = prev.findIndex((a) => a.callsign === msg.sender);
+        if (idx === -1 || !prev[idx].isPending) return prev;
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], isPending: false };
+        return updated;
       });
     }
 
@@ -444,6 +454,13 @@ export function App() {
           isPaused: false,
           lastHeartbeat: event.lastHeartbeat ?? updated[idx].lastHeartbeat,
         };
+      } else if (event.state === "pending") {
+        // Pending event - message routed, awaiting first frame
+        updated[idx] = {
+          ...updated[idx],
+          isPending: true,
+          lastMessageRoutedAt: event.lastMessageRoutedAt ?? new Date().toISOString(),
+        };
       } else {
         // Offline/connecting - update lifecycle state but preserve muted flag
         updated[idx] = {
@@ -466,29 +483,49 @@ export function App() {
   // Client-side offline timeout - check every 15s for stale heartbeats (60s threshold)
   // Server broadcasts heartbeat timestamps, client handles offline detection locally
   // (Required because Lambda can't run persistent timers)
+  // Also checks pending state timeout (10s) - clears pending if agent hasn't responded
   useEffect(() => {
     const HEARTBEAT_STALE_MS = 60_000; // 60 seconds
-    const CHECK_INTERVAL_MS = 15_000; // Check every 15 seconds
+    const PENDING_TIMEOUT_MS = 10_000; // 10 seconds
+    const CHECK_INTERVAL_MS = 2_000; // Check every 2 seconds (for faster pending timeout)
 
-    const checkHeartbeats = () => {
+    const checkTimeouts = () => {
       const now = Date.now();
       setRoster((prev) => {
         let changed = false;
         const updated = prev.map((agent) => {
-          // Skip agents that are already offline or connecting
-          if (!agent.isOnline || agent.isConnecting) return agent;
-          // Skip agents without a heartbeat timestamp
-          if (!agent.lastHeartbeat) return agent;
+          let agentChanged = false;
+          let updatedAgent = agent;
 
-          const lastTime = new Date(agent.lastHeartbeat).getTime();
-          const isStale = now - lastTime > HEARTBEAT_STALE_MS;
+          // Check heartbeat timeout (offline detection)
+          if (agent.isOnline && !agent.isConnecting && agent.lastHeartbeat) {
+            const lastTime = new Date(agent.lastHeartbeat).getTime();
+            const isStale = now - lastTime > HEARTBEAT_STALE_MS;
+            if (isStale) {
+              console.log(
+                `[HeartbeatTimeout] Agent ${agent.callsign} is stale (last heartbeat: ${agent.lastHeartbeat})`,
+              );
+              updatedAgent = { ...updatedAgent, isOnline: false, isConnecting: false };
+              agentChanged = true;
+            }
+          }
 
-          if (isStale) {
-            console.log(
-              `[HeartbeatTimeout] Agent ${agent.callsign} is stale (last heartbeat: ${agent.lastHeartbeat})`,
-            );
+          // Check pending timeout - clear pending if expired (agent didn't respond in time)
+          if (updatedAgent.isPending && updatedAgent.lastMessageRoutedAt) {
+            const routedTime = new Date(updatedAgent.lastMessageRoutedAt).getTime();
+            const isPendingStale = now - routedTime > PENDING_TIMEOUT_MS;
+            if (isPendingStale) {
+              console.log(
+                `[PendingTimeout] Agent ${agent.callsign} pending expired (routed at: ${agent.lastMessageRoutedAt})`,
+              );
+              updatedAgent = { ...updatedAgent, isPending: false };
+              agentChanged = true;
+            }
+          }
+
+          if (agentChanged) {
             changed = true;
-            return { ...agent, isOnline: false, isConnecting: false };
+            return updatedAgent;
           }
           return agent;
         });
@@ -496,7 +533,7 @@ export function App() {
       });
     };
 
-    const interval = setInterval(checkHeartbeats, CHECK_INTERVAL_MS);
+    const interval = setInterval(checkTimeouts, CHECK_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
 
