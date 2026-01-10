@@ -601,6 +601,70 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
   });
 
   /**
+   * POST /channels/:id/agents/:callsign/activate - Activate a suspended or paused agent
+   *
+   * Spawns a new container for an agent that is offline.
+   * Also clears paused status if set (activate overrides mute).
+   */
+  app.post('/:channelId/agents/:callsign/activate', async (c) => {
+    const channelId = c.req.param('channelId');
+    const callsign = c.req.param('callsign');
+
+    try {
+      // Find agent in roster
+      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+      if (!rosterEntry) {
+        return c.json({ error: 'Agent not found in roster' }, 404);
+      }
+
+      // Check if archived
+      if (rosterEntry.status === 'archived') {
+        return c.json({ error: 'Cannot activate archived agent' }, 400);
+      }
+
+      console.log(`[Agents] Activating ${callsign} in channel ${channelId}`);
+
+      // Clear stale callbackUrl if present (container may have died without cleanup)
+      if (rosterEntry.callbackUrl) {
+        console.log(`[Agents] Clearing stale callbackUrl for ${callsign}`);
+        await storage.updateRosterEntry(channelId, rosterEntry.id, {
+          callbackUrl: undefined,
+        });
+      }
+
+      const spaceId = getSpaceId(c);
+
+      // If paused, clear the paused status (activate overrides mute)
+      if (rosterEntry.status === 'paused') {
+        await storage.updateRosterEntry(channelId, rosterEntry.id, {
+          status: 'active',
+        });
+        console.log(`[Agents] Cleared paused status for ${callsign}`);
+      }
+
+      // Broadcast connecting state
+      await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
+
+      // Spawn new container
+      try {
+        await agentManager.spawn(spaceId, channelId, callsign);
+        console.log(`[Agents] Container spawned for ${callsign}`);
+      } catch (spawnError) {
+        console.error(`[Agents] Failed to spawn container for ${callsign}:`, spawnError);
+        // Broadcast offline state since spawn failed
+        await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
+        return c.json({ error: 'Failed to spawn container' }, 500);
+      }
+
+      console.log(`[Agents] ${callsign} activated successfully`);
+      return c.json({ success: true, callsign, status: 'active' });
+    } catch (error) {
+      console.error('[Agents] Error activating agent:', error);
+      return c.json({ error: 'Failed to activate agent' }, 500);
+    }
+  });
+
+  /**
    * DELETE /channels/:id/agents/:callsign - Dismiss an agent
    *
    * Archives the agent (hidden from roster but data preserved).
