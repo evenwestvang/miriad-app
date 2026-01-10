@@ -424,7 +424,7 @@ export function MessageInput({
         {/* Slash command menu */}
         {showSlashMenu && filteredCommands.length > 0 && (
           <div
-            className="absolute z-50 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[220px] max-h-[200px] overflow-y-auto"
+            className="absolute z-50 bg-white border border-[var(--cast-border-default)] shadow-sm py-1 min-w-[180px] max-h-[200px] overflow-y-auto"
             style={{ bottom: 8, left: 16 }}
           >
             {filteredCommands.map((cmd, index) => {
@@ -432,16 +432,17 @@ export function MessageInput({
               return (
                 <button
                   key={cmd.name}
+                  data-selected={index === slashSelectedIndex}
                   className={cn(
                     "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
-                    "hover:bg-secondary/50 transition-colors",
-                    index === slashSelectedIndex && "bg-secondary"
+                    "hover:bg-[#f5f5f5] transition-colors",
+                    index === slashSelectedIndex && "bg-[#f5f5f5]"
                   )}
                   onClick={() => executeSlashCommand(cmd.name)}
                 >
-                  <Icon className="w-4 h-4 text-muted-foreground" />
-                  <span className="font-medium">/{cmd.name}</span>
-                  <span className="text-muted-foreground text-xs ml-auto">{cmd.description}</span>
+                  <Icon className="w-4 h-4 text-[var(--cast-text-muted)]" />
+                  <span className="font-medium text-[var(--cast-text-primary)]">{cmd.name}</span>
+                  <span className="text-[var(--cast-text-muted)] text-xs ml-auto">{cmd.description}</span>
                 </button>
               )
             })}
