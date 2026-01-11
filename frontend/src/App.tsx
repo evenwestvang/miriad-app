@@ -4,7 +4,6 @@ import {
   Sun,
   Moon,
   Settings,
-  CloudLightning,
 } from "lucide-react";
 import {
   ThreadList,
@@ -41,6 +40,8 @@ import { AuthErrorPage } from "./components/AuthErrorPage";
 import { OAuthCallbackPage } from "./components/OAuthCallbackPage";
 import { OAuthErrorPage } from "./components/OAuthErrorPage";
 import { SettingsModal } from "./components/settings";
+import { MobileNav, type MobileTab } from "./components/MobileNav";
+import { MobileMenu } from "./components/MobileMenu";
 
 // Auth mode: 'dev' (show LoginPage) or 'workos' (redirect to /auth/login)
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || "dev";
@@ -134,6 +135,8 @@ export function App() {
   const [summonOpen, setSummonOpen] = useState(false);
   // Recently dismissed agents (for warning when mentioning them)
   const [dismissedAgents, setDismissedAgents] = useState<Set<string>>(new Set());
+  // Mobile navigation tab state
+  const [mobileTab, setMobileTab] = useState<MobileTab>("channels");
 
   // Check authentication on mount
   useEffect(() => {
@@ -660,7 +663,9 @@ export function App() {
     setSelectedAgent(null);
     // Clear dismissed agents tracking on channel switch
     setDismissedAgents(new Set());
+    // Auto-switch to thread tab on mobile when channel selected
     if (selectedThread) {
+      setMobileTab("thread");
       // Check cache at the time of switch (not reactive to cache changes)
       setMessageCache((cache) => {
         const hasCachedMessages =
@@ -1032,48 +1037,63 @@ export function App() {
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Unified header - spans full width */}
-      <header className="h-12 flex items-center gap-3 px-5 border-b border-border bg-card flex-shrink-0">
+      <header className="h-12 flex items-center gap-2 md:gap-3 px-3 md:px-5 border-b border-border bg-card flex-shrink-0">
         {/* Branding */}
-        <CloudLightning className="w-4 h-4 text-[#FF6600]" />
         <span className="font-semibold text-[#FF6600] text-sm tracking-[0.05em]">
           CAST
         </span>
 
-        {/* Channel name - only show when sidebar is collapsed */}
+        {/* Mobile: Channel name inline after CAST */}
+        {selectedThread && (
+          <span className="md:hidden font-medium text-foreground text-sm truncate max-w-[120px]">
+            #{currentThread?.agentName || "channel"}
+          </span>
+        )}
+
+        {/* Desktop-only: show when sidebar collapsed */}
         {selectedThread && !sidebarOpen && (
-          <>
-            <span className="text-[#ccc]">—</span>
-            <span className="font-medium text-foreground">
-              #{currentThread?.agentName || "channel"}
-            </span>
-          </>
+          <span className="hidden md:inline font-medium text-foreground">
+            <span className="text-[#ccc] mr-3">—</span>
+            #{currentThread?.agentName || "channel"}
+          </span>
         )}
 
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Connection status */}
+        {/* Mobile: Connection dot only */}
         {selectedThread && (
           <span
-            className={`text-xs ${connected ? "text-green-500" : "text-muted-foreground"}`}
+            className={cn(
+              "md:hidden w-2 h-2 rounded-full",
+              connected ? "bg-green-500" : "bg-muted-foreground"
+            )}
+            title={connected ? "Connected" : "Disconnected"}
+          />
+        )}
+
+        {/* Desktop: Full connection status */}
+        {selectedThread && (
+          <span
+            className={`hidden md:inline text-xs ${connected ? "text-green-500" : "text-muted-foreground"}`}
           >
             {connected ? "● Connected" : "○ Disconnected"}
           </span>
         )}
 
-        {/* Settings */}
+        {/* Desktop-only: Settings */}
         <button
           onClick={() => setSettingsOpen(true)}
-          className="p-1.5 hover:bg-[var(--cast-bg-hover)] transition-colors"
+          className="hidden md:block p-1.5 hover:bg-[var(--cast-bg-hover)] transition-colors"
           title="Settings"
         >
           <Settings className="w-4 h-4 text-[var(--cast-text-muted)]" />
         </button>
 
-        {/* Theme toggle */}
+        {/* Desktop-only: Theme toggle */}
         <button
           onClick={toggleTheme}
-          className="p-1.5 hover:bg-[var(--cast-bg-hover)] transition-colors"
+          className="hidden md:block p-1.5 hover:bg-[var(--cast-bg-hover)] transition-colors"
           title={
             theme === "light" ? "Switch to dark mode" : "Switch to light mode"
           }
@@ -1085,26 +1105,40 @@ export function App() {
           )}
         </button>
 
-        {/* User display */}
-        <span className="text-sm text-muted-foreground">@{currentUser}</span>
+        {/* Desktop-only: User display */}
+        <span className="hidden md:inline text-sm text-muted-foreground">@{currentUser}</span>
 
-        {/* Logout */}
+        {/* Desktop-only: Logout */}
         <button
           onClick={logout}
-          className="p-1.5 rounded hover:bg-secondary/50 transition-colors"
+          className="hidden md:block p-1.5 rounded hover:bg-secondary/50 transition-colors"
           title="Log out"
         >
           <LogOut className="w-4 h-4 text-muted-foreground" />
         </button>
+
+        {/* Mobile: Hamburger menu */}
+        <MobileMenu
+          currentUser={currentUser}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onLogout={logout}
+        />
       </header>
 
-      {/* Main content area */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Sidebar */}
+      {/* Main content area - add bottom padding on mobile for nav bar */}
+      <div className="flex flex-1 min-h-0 overflow-hidden pb-14 md:pb-0">
+        {/* Sidebar - hidden on mobile, shows as full-screen when channels tab active */}
         <aside
           className={cn(
-            "flex flex-col bg-card border-r border-border transition-all duration-200 overflow-hidden",
-            sidebarOpen ? "w-[220px]" : "w-0 border-r-0",
+            "flex flex-col bg-card transition-all duration-200 overflow-hidden",
+            // Desktop: always has border, toggle width based on sidebarOpen
+            "md:border-r md:border-border",
+            sidebarOpen ? "md:w-[220px]" : "md:w-0 md:border-r-0",
+            // Mobile: full-screen when channels tab, hidden otherwise (no border on mobile)
+            mobileTab === "channels" ? "w-full" : "w-0",
+            "md:relative" // Desktop: relative positioning
           )}
         >
           <div className="flex-1 overflow-y-auto">
@@ -1126,8 +1160,14 @@ export function App() {
           </div>
         </aside>
 
-        {/* Main chat area */}
-        <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-background overflow-hidden">
+        {/* Main chat area - hidden on mobile unless thread tab active */}
+        <main
+          className={cn(
+            "flex-1 flex flex-col min-w-0 min-h-0 bg-background overflow-hidden",
+            // Mobile: show only when thread tab active
+            mobileTab === "thread" ? "flex" : "hidden md:flex"
+          )}
+        >
           {isCreatingThread ? (
             <div className="flex-1 flex items-center justify-center">
               <p className="text-muted-foreground">Creating thread...</p>
@@ -1216,19 +1256,35 @@ export function App() {
           )}
         </main>
 
-        {/* Board panel */}
-        <BoardPanel
-          channelId={selectedThread}
-          isOpen={boardOpen}
-          onClose={closeBoard}
-          apiHost={API_HOST}
-          spaceId={authSession?.spaceId}
-          refreshTrigger={artifactEventTrigger}
-          selectedArtifact={urlState.artifactSlug}
-          onSelectArtifact={focusArtifact}
-          onClearSelection={clearArtifactFocus}
-        />
+        {/* Board panel - desktop: normal side panel, mobile: full-screen when board tab */}
+        <div
+          className={cn(
+            // Mobile: full-screen when board tab active, hidden otherwise
+            mobileTab === "board" ? "flex w-full" : "hidden md:flex",
+            // Desktop: show based on boardOpen
+            boardOpen ? "md:flex" : "md:hidden"
+          )}
+        >
+          <BoardPanel
+            channelId={selectedThread}
+            isOpen={boardOpen || mobileTab === "board"}
+            onClose={closeBoard}
+            apiHost={API_HOST}
+            spaceId={authSession?.spaceId}
+            refreshTrigger={artifactEventTrigger}
+            selectedArtifact={urlState.artifactSlug}
+            onSelectArtifact={focusArtifact}
+            onClearSelection={clearArtifactFocus}
+          />
+        </div>
       </div>
+
+      {/* Mobile bottom navigation - hidden on md+ */}
+      <MobileNav
+        activeTab={mobileTab}
+        onTabChange={setMobileTab}
+        hasChannel={!!selectedThread}
+      />
 
       {/* Settings modal */}
       <SettingsModal

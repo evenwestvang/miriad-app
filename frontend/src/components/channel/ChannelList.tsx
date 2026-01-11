@@ -7,6 +7,9 @@ interface ChannelListProps {
 }
 
 export function ChannelList({ channels, selected, onSelect }: ChannelListProps) {
+  // Don't render anything if no channels
+  if (channels.length === 0) return null
+
   return (
     <nav className="channel-list">
       <h3>Channels</h3>

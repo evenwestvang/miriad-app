@@ -48,11 +48,11 @@ export function ChatHeader({
   return (
     <div className="flex items-center justify-between h-10 px-3 border-b border-border">
       <div className="flex items-center gap-2">
-        {/* Sidebar toggle */}
+        {/* Sidebar toggle - desktop only */}
         {onToggleSidebar && (
           <button
             onClick={onToggleSidebar}
-            className="p-1.5 rounded hover:bg-secondary/50 transition-colors"
+            className="hidden md:block p-1.5 rounded hover:bg-secondary/50 transition-colors"
             title={sidebarOpen ? "Hide sidebar (⌘B)" : "Show sidebar (⌘B)"}
           >
             {sidebarOpen ? (

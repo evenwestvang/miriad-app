@@ -494,16 +494,27 @@ export function BoardPanel({
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, selectedArtifactData, setSelectedSlug])
 
+  // Track if we're on mobile for responsive width
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth < 768
+  )
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
   if (!isOpen) return null
 
   return (
     <aside
-      className="relative flex flex-col border-l border-[var(--cast-border-default)] bg-card"
-      style={{ width: `${width}px` }}
+      className="relative flex flex-col border-l border-[var(--cast-border-default)] bg-card flex-1 md:flex-none"
+      style={{ width: isMobile ? '100%' : `${width}px` }}
     >
-      {/* Resize handle - wider hit area with visible indicator */}
+      {/* Resize handle - wider hit area with visible indicator (desktop only) */}
       <div
-        className="absolute left-0 top-0 bottom-0 w-2 cursor-col-resize z-10 group"
+        className="absolute left-0 top-0 bottom-0 w-2 cursor-col-resize z-10 group hidden md:block"
         onMouseDown={handleResizeStart}
       >
         {/* Visible indicator line */}
