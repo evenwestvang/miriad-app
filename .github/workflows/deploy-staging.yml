@@ -1,0 +1,188 @@
+# Deploy to Staging - Runs on push to main
+name: Deploy Staging
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  backend:
+    name: Backend API
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: backend/pnpm-lock.yaml
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/setup-sam@v2
+      - name: Install and build
+        working-directory: backend
+        run: pnpm install --frozen-lockfile && pnpm build
+      - name: Build Lambda bundle
+        working-directory: backend/deploy
+        run: node build.mjs
+      - name: SAM Build and Deploy
+        working-directory: backend/deploy
+        run: |
+          sam build
+          sam deploy \
+            --stack-name cast-backend-stag \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --resolve-s3 \
+            --s3-prefix cast-backend \
+            --region ${{ env.AWS_REGION }} \
+            --parameter-overrides \
+              Stage=stag \
+              PlanetScaleUrl="${{ secrets.STAGING_PLANETSCALE_URL }}" \
+              AnthropicApiKey="${{ secrets.STAGING_ANTHROPIC_API_KEY }}" \
+              JwtSecret="${{ secrets.STAGING_JWT_SECRET }}" \
+              SecretKey="${{ secrets.STAGING_SECRET_KEY }}" \
+              AuthMode=workos \
+              WorkOsApiKey="${{ secrets.STAGING_WORKOS_API_KEY }}" \
+              WorkOsClientId="${{ secrets.STAGING_WORKOS_CLIENT_ID }}" \
+              WorkOsRedirectUri="https://api.staging.clanker.is/auth/callback" \
+              FrontendUrl="https://staging.clanker.is" \
+              CastApiUrl="https://api.staging.clanker.is" \
+              GitHubClientId="${{ secrets.STAGING_GITHUB_CLIENT_ID }}" \
+              GitHubClientSecret="${{ secrets.STAGING_GITHUB_CLIENT_SECRET }}" \
+              TunnelServerUrl="https://tunnel.staging.cast-stack.site" \
+              SubnetIds="${{ secrets.STAGING_SUBNET_IDS }}" \
+              SecurityGroupIds="${{ secrets.STAGING_SECURITY_GROUP_IDS }}" \
+              AgentImageUri="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/cast-agent:latest"
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: npm install -g vercel
+      - name: Pull Vercel Environment
+        working-directory: frontend
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Build and Deploy
+        working-directory: frontend
+        run: |
+          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VITE_BACKEND_URL: https://api.staging.clanker.is
+          VITE_WS_URL: wss://ws.staging.clanker.is
+          VITE_AUTH_MODE: workos
+
+  container:
+    name: Agent Container
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - name: Build TypeScript
+        working-directory: agents/sandbox
+        run: npm ci && npm run build
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v5
+        with:
+          context: agents/sandbox
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/cast-agent:latest
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/cast-agent:sha-${{ github.sha }}
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/cast-agent:stag-${{ github.run_number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  tunnel:
+    name: Tunnel Server
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v5
+        with:
+          context: backend/packages/tunnel-server
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/cast-tunnel-server:stag-latest
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/cast-tunnel-server:stag-${{ github.run_number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Deploy CloudFormation stack
+        run: |
+          aws cloudformation deploy \
+            --template-file backend/deploy/tunnel/template.yaml \
+            --stack-name cast-tunnel-stag \
+            --parameter-overrides \
+              Stage=stag \
+              VpcId="${{ secrets.STAGING_VPC_ID }}" \
+              SubnetIds="${{ secrets.STAGING_SUBNET_IDS }}" \
+              CertificateArn="${{ secrets.STAGING_CERT_ARN }}" \
+              HostedZoneId="${{ secrets.STAGING_HOSTED_ZONE_ID }}" \
+              TunnelDomain="staging.cast-stack.site" \
+              ContainerSecret="${{ secrets.STAGING_CONTAINER_SECRET }}" \
+              RatholeImage="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/cast-tunnel-server:stag-${{ github.run_number }}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset
+
+  summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, container, tunnel]
+    if: always()
+    steps:
+      - name: Check deployment status
+        run: |
+          echo "## Staging Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend API | ${{ needs.backend.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | ${{ needs.frontend.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Agent Container | ${{ needs.container.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tunnel Server | ${{ needs.tunnel.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Staging URL:** https://staging.clanker.is" >> $GITHUB_STEP_SUMMARY

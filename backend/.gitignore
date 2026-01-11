@@ -8,6 +8,9 @@ dist/
 # SAM build artifacts
 .aws-sam/
 
+# SAM config with secrets (use samconfig.toml.template)
+deploy/samconfig.toml
+
 # Environment files (keep .env.example)
 .env
 .env.local
