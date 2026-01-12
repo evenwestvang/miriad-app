@@ -1,4 +1,12 @@
 # Deploy to Staging - Runs on push to main
+#
+# Deploys all components:
+# - Backend API → AWS Lambda (SAM)
+# - Frontend → Vercel
+# - Agent Container → Fly.io Registry (amd64)
+#
+# Fly.io is now the container runtime (replacing ECS/Fargate).
+
 name: Deploy Staging
 
 on:
@@ -68,7 +76,7 @@ jobs:
               TunnelServerUrl="https://tunnel.staging.cast-stack.site" \
               SubnetIds="${{ secrets.STAGING_SUBNET_IDS }}" \
               SecurityGroupIds="${{ secrets.STAGING_SECURITY_GROUP_IDS }}" \
-              AgentImageUri="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/cast-agent:latest"
+              AgentImageUri="registry.fly.io/${{ secrets.STAGING_FLY_APP_NAME }}:latest"
 
   frontend:
     name: Frontend
@@ -99,7 +107,7 @@ jobs:
           VITE_AUTH_MODE: workos
 
   container:
-    name: Agent Container
+    name: Agent Container (Fly.io)
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -107,72 +115,38 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Install Fly CLI
+        run: curl -L https://fly.io/install.sh | sh && echo "$HOME/.fly/bin" >> $GITHUB_PATH
+
+      - name: Authenticate with Fly
+        run: ~/.fly/bin/fly auth docker
+        env:
+          FLY_API_TOKEN: ${{ secrets.STAGING_FLY_API_TOKEN }}
+
       - name: Build TypeScript
         working-directory: agents/sandbox
         run: npm ci && npm run build
+
       - uses: docker/setup-buildx-action@v3
+
+      # Build and push to Fly.io registry (MUST be linux/amd64 for Fly Machines)
       - uses: docker/build-push-action@v5
         with:
           context: agents/sandbox
-          platforms: linux/arm64
+          platforms: linux/amd64
           push: true
           tags: |
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/cast-agent:latest
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/cast-agent:sha-${{ github.sha }}
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/cast-agent:stag-${{ github.run_number }}
+            registry.fly.io/${{ secrets.STAGING_FLY_APP_NAME }}:latest
+            registry.fly.io/${{ secrets.STAGING_FLY_APP_NAME }}:sha-${{ github.sha }}
+            registry.fly.io/${{ secrets.STAGING_FLY_APP_NAME }}:stag-${{ github.run_number }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  tunnel:
-    name: Tunnel Server
-    runs-on: ubuntu-latest
-    environment: staging
-    steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-      - uses: aws-actions/amazon-ecr-login@v2
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v5
-        with:
-          context: backend/packages/tunnel-server
-          platforms: linux/arm64
-          push: true
-          tags: |
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/cast-tunnel-server:stag-latest
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/cast-tunnel-server:stag-${{ github.run_number }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Deploy CloudFormation stack
-        run: |
-          aws cloudformation deploy \
-            --template-file backend/deploy/tunnel/template.yaml \
-            --stack-name cast-tunnel-stag \
-            --parameter-overrides \
-              Stage=stag \
-              VpcId="${{ secrets.STAGING_VPC_ID }}" \
-              SubnetIds="${{ secrets.STAGING_SUBNET_IDS }}" \
-              CertificateArn="${{ secrets.STAGING_CERT_ARN }}" \
-              HostedZoneId="${{ secrets.STAGING_HOSTED_ZONE_ID }}" \
-              TunnelDomain="staging.cast-stack.site" \
-              ContainerSecret="${{ secrets.STAGING_CONTAINER_SECRET }}" \
-              RatholeImage="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/cast-tunnel-server:stag-${{ github.run_number }}" \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --no-fail-on-empty-changeset
 
   summary:
     name: Deployment Summary
     runs-on: ubuntu-latest
-    needs: [backend, frontend, container, tunnel]
+    needs: [backend, frontend, container]
     if: always()
     steps:
       - name: Check deployment status
@@ -182,7 +156,7 @@ jobs:
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Backend API | ${{ needs.backend.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Frontend | ${{ needs.frontend.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Agent Container | ${{ needs.container.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tunnel Server | ${{ needs.tunnel.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Agent Container (Fly.io) | ${{ needs.container.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Staging URL:** https://staging.clanker.is" >> $GITHUB_STEP_SUMMARY
+          echo "**Container:** registry.fly.io/${{ secrets.STAGING_FLY_APP_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
