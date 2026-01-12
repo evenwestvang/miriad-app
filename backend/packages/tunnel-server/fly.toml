@@ -1,0 +1,49 @@
+# Fly.io configuration for cast-tunnel-server
+# Migrated from AWS ECS + ALB + NLB setup
+
+app = "cast-tunnel-staging"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# HTTPS traffic (user requests to tunneled services)
+# Hono proxy receives these and routes to appropriate rathole port
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false  # Always running - tunnels need persistent availability
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 1000
+    soft_limit = 800
+
+# TCP traffic (rathole control connections from containers)
+# Containers connect here to establish tunnels
+[[services]]
+  internal_port = 2333
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 2333
+
+  [[services.tcp_checks]]
+    interval = "10s"
+    timeout = "2s"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  RATHOLE_CONTROL_PORT = "2333"
+  RATHOLE_CONFIG_DIR = "/etc/rathole"
+  BASE_SERVICE_PORT = "10000"
+
+# Fly.io VM sizing - minimal for this lightweight service
+# Can scale up if needed via `fly scale`
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
