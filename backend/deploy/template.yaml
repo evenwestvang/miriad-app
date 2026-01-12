@@ -156,8 +156,8 @@ Resources:
           - 'http://localhost:3000'
           - 'http://localhost:3232'
           - 'http://localhost:5173'
-          - 'https://staging.clanker.is'
-          - 'https://clanker.is'
+          - 'https://app.staging.caststack.ai'
+          - 'https://app.caststack.ai'
         AllowHeaders:
           - Content-Type
           - Authorization

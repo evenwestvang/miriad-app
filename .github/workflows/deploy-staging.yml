@@ -68,12 +68,12 @@ jobs:
               AuthMode=workos \
               WorkOsApiKey="${{ secrets.STAGING_WORKOS_API_KEY }}" \
               WorkOsClientId="${{ secrets.STAGING_WORKOS_CLIENT_ID }}" \
-              WorkOsRedirectUri="https://api.staging.clanker.is/auth/callback" \
-              FrontendUrl="https://staging.clanker.is" \
-              CastApiUrl="https://api.staging.clanker.is" \
+              WorkOsRedirectUri="https://api.staging.caststack.ai/auth/callback" \
+              FrontendUrl="https://app.staging.caststack.ai" \
+              CastApiUrl="https://api.staging.caststack.ai" \
               GitHubClientId="${{ secrets.STAGING_GITHUB_CLIENT_ID }}" \
               GitHubClientSecret="${{ secrets.STAGING_GITHUB_CLIENT_SECRET }}" \
-              TunnelServerUrl="https://tunnel.staging.cast-stack.site" \
+              TunnelServerUrl="https://tunnel.staging.caststack.site" \
               SubnetIds="${{ secrets.STAGING_SUBNET_IDS }}" \
               SecurityGroupIds="${{ secrets.STAGING_SECURITY_GROUP_IDS }}" \
               AgentImageUri="registry.fly.io/${{ secrets.STAGING_FLY_APP_NAME }}:latest"
@@ -102,8 +102,8 @@ jobs:
           vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
           vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
-          VITE_BACKEND_URL: https://api.staging.clanker.is
-          VITE_WS_URL: wss://ws.staging.clanker.is
+          VITE_BACKEND_URL: https://api.staging.caststack.ai
+          VITE_WS_URL: wss://ws.staging.caststack.ai
           VITE_AUTH_MODE: workos
 
   container:
@@ -158,5 +158,5 @@ jobs:
           echo "| Frontend | ${{ needs.frontend.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Agent Container (Fly.io) | ${{ needs.container.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Staging URL:** https://staging.clanker.is" >> $GITHUB_STEP_SUMMARY
+          echo "**Staging URL:** https://app.staging.caststack.ai" >> $GITHUB_STEP_SUMMARY
           echo "**Container:** registry.fly.io/${{ secrets.STAGING_FLY_APP_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
