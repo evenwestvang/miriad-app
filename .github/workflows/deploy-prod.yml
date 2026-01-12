@@ -60,7 +60,11 @@ jobs:
       - working-directory: backend
         run: pnpm install --frozen-lockfile && pnpm build
       - working-directory: backend/deploy
-        run: node build.mjs && sam build
+        run: node build.mjs
+      - name: Install esbuild for SAM
+        run: npm install -g esbuild
+      - working-directory: backend/deploy
+        run: sam build
       - working-directory: backend/deploy
         run: |
           sam deploy \
