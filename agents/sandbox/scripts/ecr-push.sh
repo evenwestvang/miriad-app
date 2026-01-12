@@ -3,7 +3,7 @@
 #
 # This script:
 # 1. Builds TypeScript code
-# 2. Builds Docker image (ARM64 for Fargate)
+# 2. Builds Docker image (ARM64 for ECR)
 # 3. Pushes to ECR
 #
 # Usage:
@@ -73,7 +73,7 @@ aws ecr get-login-password --region "${AWS_REGION}" | \
     docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 echo ""
 
-# Step 4: Build the image (ARM64 for Fargate Graviton)
+# Step 4: Build the image (ARM64 for Graviton)
 echo "=========================================="
 echo "  Step 4: Build Docker Image (ARM64)"
 echo "=========================================="

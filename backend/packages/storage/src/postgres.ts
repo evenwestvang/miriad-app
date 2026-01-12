@@ -113,6 +113,7 @@ interface RosterRow {
   readmark: string | null;
   tunnel_hash: string | null;
   last_heartbeat: Date | null;
+  route_hints: Record<string, string> | null;
   current: Record<string, unknown> | null;
   last_message_routed_at: Date | null;
 }
@@ -818,6 +819,10 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     }
     if (update.lastHeartbeat !== undefined) {
       updateObj.last_heartbeat = new Date(update.lastHeartbeat);
+    }
+    if (update.routeHints !== undefined) {
+      // routeHints can be null (to clear) or an object
+      updateObj.route_hints = update.routeHints ? sql.json(update.routeHints as JSONValue) : null;
     }
     if (update.current !== undefined) {
       // Merge current object - use JSONB merge to preserve other keys
@@ -2009,7 +2014,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       ON roster(channel_id, created_at ASC)
     `;
 
-    // Add callback_url, readmark, tunnel_hash, last_heartbeat, current, and last_message_routed_at columns to roster if they don't exist
+    // Add callback_url, readmark, tunnel_hash, last_heartbeat, current, last_message_routed_at, and route_hints columns to roster if they don't exist
     // (These may be added in migrations for existing databases)
     await sql`
       DO $$ BEGIN
@@ -2019,6 +2024,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS last_heartbeat TIMESTAMPTZ;
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS current JSONB;
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS last_message_routed_at TIMESTAMPTZ;
+        ALTER TABLE roster ADD COLUMN IF NOT EXISTS route_hints JSONB;
       EXCEPTION
         WHEN duplicate_column THEN NULL;
       END $$;
@@ -2517,6 +2523,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       readmark: row.readmark ?? undefined,
       tunnelHash: row.tunnel_hash ?? undefined,
       lastHeartbeat: row.last_heartbeat?.toISOString() ?? undefined,
+      routeHints: row.route_hints ?? undefined,
       current: (row.current as RosterCurrent) ?? undefined,
       lastMessageRoutedAt: row.last_message_routed_at?.toISOString() ?? undefined,
     };

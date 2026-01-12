@@ -235,6 +235,13 @@ export interface RosterEntry {
   lastHeartbeat?: string;
 
   /**
+   * Routing hints from container checkin (v3.0+).
+   * Opaque JSON object echoed as HTTP headers when pushing messages.
+   * Used for platform-specific routing (e.g., Fly-Replay for Fly.io).
+   */
+  routeHints?: Record<string, string> | null;
+
+  /**
    * Ephemeral state about what the agent is currently doing.
    * Includes status text, and will expand to include todo lists, role context, etc.
    */
@@ -271,6 +278,8 @@ export interface UpdateRosterInput {
   tunnelHash?: string;
   /** Last heartbeat timestamp (ISO 8601) */
   lastHeartbeat?: string;
+  /** Routing hints (v3.0+) - opaque object echoed as HTTP headers */
+  routeHints?: Record<string, string> | null;
   /** Ephemeral current state (status text, etc.) */
   current?: RosterCurrent;
   /** Timestamp when a message was last routed to this agent (ISO 8601) */

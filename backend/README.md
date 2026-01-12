@@ -27,7 +27,7 @@ packages/
 ├── core/       # Shared types, Tymbal protocol, @mention parser
 ├── server/     # Hono HTTP API, handlers, WebSocket
 ├── storage/    # PostgreSQL storage (PlanetScale)
-├── runtime/    # Container orchestration (Docker/Fargate)
+├── runtime/    # Container orchestration (Docker/Fly.io)
 └── deploy/     # SAM template, Lambda adapter
 ```
 
@@ -168,3 +168,146 @@ If an agent isn't responding, check:
 - Is the ECS task running? (`aws ecs list-tasks`)
 - Did checkin succeed? (Check container logs)
 - Is callbackUrl set in roster? (Check PlanetScale)
+
+## Fly.io Deployment
+
+The backend supports Fly.io Machines as an alternative to Docker/ECS for container orchestration. This is useful for development and smaller deployments.
+
+### Prerequisites
+
+- [Fly CLI](https://fly.io/docs/hands-on/install-flyctl/) installed
+- Fly.io account with an app created
+- Docker running (for building images)
+
+### Quick Start
+
+```bash
+# 1. Authenticate Docker with Fly registry
+fly auth docker
+
+# 2. Build and push container image (MUST be amd64)
+cd agents/sandbox
+docker buildx build --platform linux/amd64 -t registry.fly.io/YOUR_APP_NAME:latest --push .
+
+# 3. Configure environment
+# Add to backend/.env:
+AGENT_RUNTIME=fly
+FLY_API_TOKEN=your-fly-token
+FLY_APP_NAME=your-app-name
+FLY_REGION=iad
+FLY_IMAGE=registry.fly.io/YOUR_APP_NAME:latest
+CAST_API_URL=https://your-public-url.ngrok-free.app
+
+# 4. Start the backend
+pnpm dev
+```
+
+### Environment Variables (Fly.io)
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `AGENT_RUNTIME` | Set to `fly` to use Fly.io (default: `docker`) | Yes |
+| `FLY_API_TOKEN` | Fly.io API token (get from `fly tokens create deploy`) | Yes |
+| `FLY_APP_NAME` | Name of your Fly app | Yes |
+| `FLY_REGION` | Fly region (default: `iad`) | No |
+| `FLY_IMAGE` | Full image path in Fly registry | Yes |
+| `CAST_API_URL` | Public URL where containers can reach the backend | Yes |
+
+### Building the Container Image
+
+**Important:** Fly Machines run on `linux/amd64`. If you're on an ARM machine (M1/M2 Mac), you must cross-compile:
+
+```bash
+cd agents/sandbox
+
+# Build for amd64 platform (required even on ARM Macs)
+docker buildx build --platform linux/amd64 -t registry.fly.io/YOUR_APP_NAME:latest --push .
+
+# If buildx isn't set up, create a builder first:
+docker buildx create --use
+```
+
+### Getting a Fly API Token
+
+```bash
+# Create a deploy token (recommended for CI/automation)
+fly tokens create deploy -a YOUR_APP_NAME
+
+# Or create an org token for broader access
+fly tokens create org
+
+# The token starts with "FlyV1 fm2_..."
+```
+
+### Creating a Fly App
+
+```bash
+# Create a new app (if you don't have one)
+fly apps create YOUR_APP_NAME
+
+# The app doesn't need any initial deployment -
+# FlyRuntime creates Machines on demand
+```
+
+### Exposing Local Backend (for Development)
+
+Containers running on Fly need to reach your local backend for checkin and Tymbal streaming. Use ngrok or similar:
+
+```bash
+# Expose local backend
+ngrok http 3234
+
+# Copy the HTTPS URL to CAST_API_URL in .env
+# Example: https://abc123.ngrok-free.app
+```
+
+### How Fly.io Runtime Works
+
+1. **Activation**: When an agent is @mentioned, `FlyRuntime` creates a Fly Machine via the Machines API
+2. **Routing**: Each machine gets a unique ID stored in `routeHints['fly-force-instance-id']`
+3. **Checkin**: Container calls `/agents/checkin` with its callback URL
+4. **Message routing**: Messages are routed using the `fly-force-instance-id` header
+5. **Suspend**: Machine is stopped and deleted via the Machines API
+
+### Debugging Fly.io
+
+```bash
+# List machines in your app
+fly machines list -a YOUR_APP_NAME
+
+# View machine logs
+fly logs -a YOUR_APP_NAME
+
+# SSH into a running machine
+fly ssh console -a YOUR_APP_NAME -s
+
+# Force delete a stuck machine
+fly machines destroy MACHINE_ID -a YOUR_APP_NAME --force
+```
+
+### Common Issues
+
+**"machine not found" on suspend**
+- The machine ID in roster might be stale
+- Check if `routeHints['fly-force-instance-id']` is set correctly
+
+**Container starts but no checkin**
+- Verify `CAST_API_URL` is reachable from Fly
+- Check container logs: `fly logs -a YOUR_APP_NAME`
+- Ensure ngrok/tunnel is running if using local backend
+
+**Platform mismatch errors**
+- Always build with `--platform linux/amd64`
+- Fly Machines don't support ARM images
+
+**Rate limiting (429 errors)**
+- FlyRuntime has built-in exponential backoff
+- Avoid rapid activate/suspend cycles in testing
+
+### Architecture Notes
+
+The `FlyRuntime` class:
+- Uses Planetscale Postgres (roster table) as state store - fully stateless for Lambda compatibility
+- Stores real Fly machine IDs in `routeHints` for proper routing
+- Implements fire-and-forget activation (returns immediately, container calls checkin)
+- 180 second activation timeout with automatic machine cleanup

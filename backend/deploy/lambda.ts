@@ -5,7 +5,7 @@
  * Strips the API Gateway stage prefix from paths.
  *
  * Uses real PlanetScale storage and DynamoDB-backed connection manager.
- * Agent spawning uses FargateOrchestrator (when implemented).
+ * Agent runtime uses placeholder - Fly.io runtime will be added in Phase 2.
  * WebSocket broadcasts go through API Gateway Management API.
  */
 
@@ -14,7 +14,7 @@ import { Hono } from 'hono';
 import { handle } from 'hono/aws-lambda';
 import { createApp, createDynamoDBConnectionManager } from '@cast/server';
 import { createPostgresStorage } from '@cast/storage';
-import { FargateOrchestrator } from '@cast/runtime';
+import type { AgentRuntime, AgentRuntimeState } from '@cast/runtime';
 
 // =============================================================================
 // Configuration
@@ -23,12 +23,7 @@ import { FargateOrchestrator } from '@cast/runtime';
 const CONNECTIONS_TABLE = process.env.CONNECTIONS_TABLE!;
 const WEBSOCKET_ENDPOINT = process.env.WEBSOCKET_ENDPOINT ?? '';
 
-// ECS/Fargate config
-const ECS_CLUSTER_ARN = process.env.ECS_CLUSTER_ARN;
-const ECS_TASK_DEFINITION = process.env.ECS_TASK_DEFINITION;
-const CONTAINER_STATE_TABLE = process.env.CONTAINER_STATE_TABLE;
-const SUBNET_IDS = process.env.SUBNET_IDS;
-const SECURITY_GROUP_IDS = process.env.SECURITY_GROUP_IDS;
+// Agent runtime config (Fly.io will be added in Phase 2)
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const CAST_API_URL = process.env.CAST_API_URL;
 
@@ -74,29 +69,20 @@ const connectionManager = CONNECTIONS_TABLE && WEBSOCKET_ENDPOINT
       closeAll: () => {},
     };
 
-// Placeholder orchestrator - used when Fargate config not available
-const placeholderOrchestrator = {
-  spawn: async () => ({ threadId: '', containerId: '', port: 8080, status: 'running' as const, lastActivity: '', createdAt: '' }),
+// Placeholder runtime - Fly.io runtime will be added in Phase 2
+// For now, Lambda relies on roster callbackUrl for remote agents (they self-register on checkin)
+const placeholderRuntime: AgentRuntime = {
+  activate: async () => ({ agentId: '', containerId: '', port: 8080, status: 'offline' as const, lastActivity: '', createdAt: '' }),
   sendMessage: async () => {},
-  stop: async () => {},
+  suspend: async () => {},
   getStatus: () => null,
-  isRunning: () => false,
-  getAllRunning: () => [],
+  isOnline: () => false,
+  getAllOnline: () => [],
   shutdown: async () => {},
 };
 
-// Use FargateOrchestrator when all required env vars are present
-const orchestrator = ECS_CLUSTER_ARN && ECS_TASK_DEFINITION && CONTAINER_STATE_TABLE && SUBNET_IDS && SECURITY_GROUP_IDS && ANTHROPIC_API_KEY && CAST_API_URL
-  ? new FargateOrchestrator({
-      clusterArn: ECS_CLUSTER_ARN,
-      taskDefinitionArn: ECS_TASK_DEFINITION,
-      tableName: CONTAINER_STATE_TABLE,
-      subnetIds: SUBNET_IDS.split(','),
-      securityGroupIds: SECURITY_GROUP_IDS.split(','),
-      castApiUrl: CAST_API_URL,
-      anthropicApiKey: ANTHROPIC_API_KEY,
-    })
-  : placeholderOrchestrator;
+// Use placeholder for now - Fly.io runtime will be added in Phase 2
+const runtime = placeholderRuntime;
 
 // =============================================================================
 // Create App
@@ -104,9 +90,8 @@ const orchestrator = ECS_CLUSTER_ARN && ECS_TASK_DEFINITION && CONTAINER_STATE_T
 
 const app = createApp({
   storage,
-  orchestrator,
+  runtime,
   connectionManager,
-  spaceId: process.env.SPACE_ID ?? 'default-space',
 });
 
 // =============================================================================

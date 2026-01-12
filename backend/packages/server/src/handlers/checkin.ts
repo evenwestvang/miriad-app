@@ -1,37 +1,55 @@
 /**
- * Agent Checkin Handler
+ * Agent Checkin Handler (Protocol v3.0)
  *
  * POST /agents/checkin - Container registers its callback URL on startup
  *
  * Flow:
- * 1. Container POSTs { channelId, callsign, endpoint }
- * 2. API stores endpoint, marks container ready
- * 3. API queries pending messages (since readmark)
- * 4. API POSTs compiled messages to callback URL
- * 5. On success, updates readmark
+ * 1. Container POSTs { protocolVersion, agentId, endpoint, routeHints, capabilities }
+ * 2. API validates protocolVersion (must be "3.0")
+ * 3. API stores endpoint + routeHints, marks container ready
+ * 4. API queries pending messages (since readmark)
+ * 5. API POSTs compiled messages to callback URL
+ * 6. On success, updates readmark
  */
 
 import { Hono } from 'hono';
 import type { Storage } from '@cast/storage';
 import type { StoredMessage } from '@cast/core';
 import { tymbal, generateMessageId } from '@cast/core';
-import type { ContainerOrchestrator } from '@cast/runtime';
+import type { AgentRuntime, AgentMessage } from '@cast/runtime';
+import { parseAgentId } from '@cast/runtime';
 import { generateContainerToken } from '../auth/index.js';
 import type { ConnectionManager } from '../websocket/index.js';
 
 // =============================================================================
-// Types
+// Types (v3.0 Protocol)
 // =============================================================================
 
-export interface CheckinRequest {
-  /** Space ID */
-  spaceId?: string;
-  /** Channel ID */
-  channelId: string;
-  /** Agent callsign */
-  callsign: string;
-  /** Container callback URL (e.g., http://10.0.1.45:8080) */
+/**
+ * v3.0 Checkin request format.
+ * Container sends this on startup to register itself.
+ */
+export interface CheckinRequestV3 {
+  /** Protocol version - MUST be "3.0" */
+  protocolVersion: string;
+  /** Agent identity: {spaceId}:{channelId}:{callsign} */
+  agentId: string;
+  /** Container callback URL (from CAST_CALLBACK_URL env var) */
   endpoint: string;
+  /** Routing hints to echo as HTTP headers (e.g., { "fly-force-instance-id": "abc123" }) */
+  routeHints?: Record<string, string> | null;
+  /** Container capabilities (e.g., ["route-hints"]) */
+  capabilities?: string[];
+}
+
+/**
+ * v3.0 Heartbeat request format.
+ * Container sends this periodically (~30s) to signal it's alive.
+ * Note: endpoint is NOT allowed in heartbeat - routing is immutable after checkin.
+ */
+export interface HeartbeatRequestV3 {
+  /** Agent identity: {spaceId}:{channelId}:{callsign} */
+  agentId: string;
 }
 
 /** System prompt builder function type */
@@ -42,8 +60,8 @@ export interface CheckinHandlerOptions {
   storage: Storage;
   /** Default space ID */
   spaceId: string;
-  /** Container orchestrator for local Docker (uses port mapping instead of callbackUrl) */
-  orchestrator?: ContainerOrchestrator;
+  /** Agent runtime for local Docker (uses port mapping instead of callbackUrl) */
+  runtime?: AgentRuntime;
   /** WebSocket connection manager for broadcasting state changes */
   connectionManager?: ConnectionManager;
   /** Build system prompt for an agent (provided by AgentManager) */
@@ -124,22 +142,24 @@ export async function getPendingMessages(
  *
  * @param endpoint - Container callback URL (e.g., http://10.0.1.45:8080)
  * @param compiledContent - Compiled message content
- * @param threadId - Thread ID for the conversation
+ * @param agentId - Agent ID for the conversation
  * @param authToken - Auth token for the container (generated via generateContainerToken)
  * @param systemPrompt - Optional system prompt to include
+ * @param routeHints - Optional routing hints to echo as HTTP headers
  */
 export async function pushMessagesToContainer(
   endpoint: string,
   compiledContent: string,
-  threadId: string,
+  agentId: string,
   authToken?: string,
-  systemPrompt?: string
+  systemPrompt?: string,
+  routeHints?: Record<string, string> | null
 ): Promise<boolean> {
   try {
     const url = `${endpoint}/message`;
-    const body: { content: string; threadId: string; systemPrompt?: string } = {
+    const body: { content: string; agentId: string; systemPrompt?: string } = {
       content: compiledContent,
-      threadId,
+      agentId,
     };
     if (systemPrompt) {
       body.systemPrompt = systemPrompt;
@@ -154,6 +174,13 @@ export async function pushMessagesToContainer(
       headers['Authorization'] = `Bearer ${authToken}`;
     }
 
+    // Echo routeHints as HTTP headers (for Fly.io instance routing, etc.)
+    if (routeHints) {
+      for (const [key, value] of Object.entries(routeHints)) {
+        headers[key] = value;
+      }
+    }
+
     const response = await fetch(url, {
       method: 'POST',
       headers,
@@ -162,7 +189,10 @@ export async function pushMessagesToContainer(
 
     if (!response.ok) {
       const error = await response.text();
-      console.error(`[Checkin] Push failed: ${response.status} ${error}`);
+      console.error(`[Checkin] Push failed: ${response.status}`);
+      console.error(`[Checkin] Response body: ${error}`);
+      console.error(`[Checkin] Request URL: ${url}`);
+      console.error(`[Checkin] Request headers:`, JSON.stringify(headers, null, 2));
       return false;
     }
 
@@ -178,9 +208,6 @@ export async function pushMessagesToContainer(
 // Route Handler
 // =============================================================================
 
-/**
- * Create the /agents/checkin route.
- */
 // Heartbeat staleness threshold (60 seconds)
 export const HEARTBEAT_STALE_MS = 60_000;
 
@@ -236,49 +263,94 @@ export async function broadcastAgentState(
   console.log(`[AgentState] Broadcast ${state} for ${callsign} in ${channelId}`);
 }
 
+/**
+ * Create the /agents routes (v3.0 protocol).
+ */
 export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
-  const { storage, spaceId: defaultSpaceId, orchestrator, connectionManager, buildSystemPrompt } = options;
+  const { storage, spaceId: defaultSpaceId, runtime, connectionManager, buildSystemPrompt } = options;
 
   const app = new Hono();
 
   /**
-   * POST /agents/checkin
+   * POST /agents/checkin (v3.0 protocol)
    *
    * Container calls this on startup to register its callback URL.
-   * API stores the endpoint, then pushes pending messages.
+   * API validates protocol version, stores endpoint + routeHints, then pushes pending messages.
    */
   app.post('/checkin', async (c) => {
-    let body: CheckinRequest;
+    let body: CheckinRequestV3;
     try {
       body = await c.req.json();
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
 
-    const { channelId, callsign, endpoint } = body;
-    const spaceId = body.spaceId ?? defaultSpaceId;
+    // v3.0: Validate protocol version
+    if (body.protocolVersion !== '3.0') {
+      console.error(`[Checkin] Rejected - unsupported protocol version: ${body.protocolVersion}`);
+      return c.json({ error: 'Unsupported protocol version. Expected "3.0"' }, 400);
+    }
 
-    if (!channelId || !callsign || !endpoint) {
+    const { agentId, endpoint, routeHints, capabilities } = body;
+
+    if (!agentId || !endpoint) {
       return c.json(
-        { error: 'channelId, callsign, and endpoint are required' },
+        { error: 'agentId and endpoint are required' },
         400
       );
     }
 
-    console.log(`[Checkin] Agent ${callsign} checking in from ${endpoint}`);
+    // Parse agentId to get components
+    let spaceId: string;
+    let channelId: string;
+    let callsign: string;
+    try {
+      const parsed = parseAgentId(agentId);
+      spaceId = parsed.spaceId;
+      channelId = parsed.channelId;
+      callsign = parsed.callsign;
+    } catch (err) {
+      console.error(`[Checkin] Invalid agentId format: ${agentId}`);
+      return c.json({ error: 'Invalid agentId format. Expected {spaceId}:{channelId}:{callsign}' }, 400);
+    }
 
-    // Store callback URL in roster table
+    console.log(`[Checkin] Agent ${callsign} checking in (protocol v3.0)`);
+    console.log(`[Checkin]   agentId: ${agentId}`);
+    console.log(`[Checkin]   endpoint: ${endpoint}`);
+    console.log(`[Checkin]   routeHints: ${routeHints ? JSON.stringify(routeHints) : '(none)'}`);
+    console.log(`[Checkin]   capabilities: ${capabilities?.join(', ') || '(none)'}`);
+
+    // Store callback URL and routeHints in roster table
     const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
     if (!rosterEntry) {
       console.error(`[Checkin] Agent ${callsign} not found in roster for channel ${channelId}`);
       return c.json({ error: 'Agent not found in roster' }, 404);
     }
 
-    // Persist callbackUrl to roster
-    await storage.updateRosterEntry(channelId, rosterEntry.id, {
+    // Persist callbackUrl and routeHints to roster
+    //
+    // TECH DEBT: Current approach is brittle - we conditionally skip routeHints update
+    // if container sends null, to preserve FlyRuntime's pre-populated real machine ID.
+    //
+    // Better architecture would be:
+    // - rosterEntry.runtimeRouteHints: set by runtime (FlyRuntime stores real Fly machine ID)
+    // - rosterEntry.containerRouteHints: set by container during checkin
+    // - Message routing merges both, with runtime hints taking precedence for platform-specific routing
+    //
+    // This would cleanly separate concerns and avoid the implicit "don't overwrite if null" behavior.
+    const now = new Date().toISOString();
+    const updatePayload: { callbackUrl: string; lastHeartbeat: string; routeHints?: Record<string, string> | null } = {
       callbackUrl: endpoint,
-    });
-    console.log(`[Checkin] Stored callbackUrl for ${callsign} in roster`);
+      lastHeartbeat: now,
+    };
+    if (routeHints) {
+      updatePayload.routeHints = routeHints;
+    }
+    await storage.updateRosterEntry(channelId, rosterEntry.id, updatePayload);
+    console.log(`[Checkin] Stored callbackUrl for ${callsign} in roster (routeHints: ${routeHints ? 'from container' : 'preserved'})`);
+
+    // Broadcast online state
+    await broadcastAgentState(connectionManager, channelId, callsign, 'online', now);
 
     // Get readmark from roster entry (persisted in DB)
     const readmark = rosterEntry.readmark ?? null;
@@ -310,9 +382,6 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
         // Compile messages
         const compiledContent = compileMessages(pendingMessages, channelName);
 
-        // Build thread ID
-        const threadId = `${spaceId}:${channelId}:${callsign}`;
-
         let success = false;
 
         // Build system prompt if builder is provided
@@ -320,27 +389,29 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
           ? await buildSystemPrompt(spaceId, channelId, callsign)
           : undefined;
 
-        // For local Docker, use orchestrator's port mapping (bypasses host.docker.internal issue)
-        if (orchestrator?.isRunning(threadId)) {
-          console.log(`[Checkin] Using orchestrator for pending message delivery`);
+        // For local Docker, use runtime's port mapping (bypasses host.docker.internal issue)
+        if (runtime?.isOnline(agentId)) {
+          console.log(`[Checkin] Using runtime for pending message delivery`);
           try {
-            await orchestrator.sendMessage(threadId, compiledContent, systemPrompt);
+            const message: AgentMessage = { content: compiledContent, systemPrompt };
+            await runtime.sendMessage(agentId, message);
             success = true;
           } catch (error) {
-            console.error(`[Checkin] Orchestrator push failed:`, error);
+            console.error(`[Checkin] Runtime push failed:`, error);
           }
         } else {
-          // Fargate path: use container's reported endpoint
-          // Generate auth token for this agent (deterministic - same as container received at spawn)
+          // Remote path: use container's reported endpoint
+          // Generate auth token for this agent (deterministic - same as container received at activate)
           const authToken = generateContainerToken({ spaceId, channelId, callsign });
 
-          // Push to container (blocking)
+          // Push to container (blocking), include routeHints as headers
           success = await pushMessagesToContainer(
             endpoint,
             compiledContent,
-            threadId,
+            agentId,
             authToken,
-            systemPrompt
+            systemPrompt,
+            routeHints
           );
         }
 
@@ -358,31 +429,50 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
       console.error(`[Checkin] Error pushing messages:`, error);
     }
 
-    return c.json({ ok: true, delivered });
+    return c.json({ ok: true, agentId, delivered });
   });
 
   /**
-   * POST /agents/heartbeat
+   * POST /agents/heartbeat (v3.0 protocol)
    *
    * Container calls this periodically (~30s) to signal it's alive.
-   * Updates lastHeartbeat timestamp in roster (and optionally callbackUrl).
-   * Lightweight - no message delivery, just timestamp update.
+   * Updates lastHeartbeat timestamp in roster.
+   * Note: endpoint is NOT allowed in heartbeat - routing is immutable after checkin.
    */
   app.post('/heartbeat', async (c) => {
-    let body: CheckinRequest;
+    let body: Record<string, unknown>;
     try {
       body = await c.req.json();
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
 
-    const { channelId, callsign, endpoint } = body;
+    // v3.0: Reject heartbeats that include endpoint field
+    // (Callback URL is immutable after checkin - prevents accidental routing corruption)
+    if ('endpoint' in body) {
+      console.error(`[Heartbeat] Rejected - endpoint field not allowed in heartbeat`);
+      return c.json({ error: 'endpoint not allowed in heartbeat' }, 400);
+    }
 
-    if (!channelId || !callsign) {
+    const { agentId } = body as unknown as HeartbeatRequestV3;
+
+    if (!agentId || typeof agentId !== 'string') {
       return c.json(
-        { error: 'channelId and callsign are required' },
+        { error: 'agentId is required' },
         400
       );
+    }
+
+    // Parse agentId to get channelId and callsign
+    let channelId: string;
+    let callsign: string;
+    try {
+      const parsed = parseAgentId(agentId);
+      channelId = parsed.channelId;
+      callsign = parsed.callsign;
+    } catch (err) {
+      console.error(`[Heartbeat] Invalid agentId format: ${agentId}`);
+      return c.json({ error: 'Invalid agentId format' }, 400);
     }
 
     // Find roster entry
@@ -395,45 +485,50 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
     // Check if agent was offline (stale heartbeat) before this heartbeat
     const wasOffline = isHeartbeatStale(rosterEntry.lastHeartbeat);
 
-    // Update lastHeartbeat (and optionally callbackUrl if provided)
+    // Update lastHeartbeat only (no callbackUrl update in v3.0)
     const now = new Date().toISOString();
-    const update: { lastHeartbeat: string; callbackUrl?: string } = {
+    await storage.updateRosterEntry(channelId, rosterEntry.id, {
       lastHeartbeat: now,
-    };
-
-    // Update callbackUrl if provided (for robustness if IP changes)
-    if (endpoint) {
-      update.callbackUrl = endpoint;
-    }
-
-    await storage.updateRosterEntry(channelId, rosterEntry.id, update);
+    });
 
     // Always broadcast heartbeat with timestamp so clients can track offline timeout locally
     // (Server can't run timers in Lambda - clients handle their own 60s timeout)
     await broadcastAgentState(connectionManager, channelId, callsign, 'online', now);
 
-    console.log(`[Heartbeat] Agent ${callsign} in channel ${channelId} - heartbeat at ${now}${wasOffline ? ' (now online)' : ''}`);
+    console.log(`[Heartbeat] Agent ${callsign} (${agentId}) - heartbeat at ${now}${wasOffline ? ' (now online)' : ''}`);
 
     return c.json({ ok: true, timestamp: now });
   });
 
   /**
-   * GET /agents/status/:channelId/:callsign
+   * GET /agents/status/:agentId
    *
-   * Check if an agent has a registered callback (is "online").
+   * Check agent status. agentId is URL-encoded (colons become %3A).
    */
-  app.get('/status/:channelId/:callsign', async (c) => {
-    const channelId = c.req.param('channelId');
-    const callsign = c.req.param('callsign');
+  app.get('/status/:agentId', async (c) => {
+    const agentIdParam = c.req.param('agentId');
+    const agentId = decodeURIComponent(agentIdParam);
+
+    // Parse agentId
+    let channelId: string;
+    let callsign: string;
+    try {
+      const parsed = parseAgentId(agentId);
+      channelId = parsed.channelId;
+      callsign = parsed.callsign;
+    } catch (err) {
+      return c.json({ error: 'Invalid agentId format' }, 400);
+    }
 
     const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
     const endpoint = rosterEntry?.callbackUrl ?? null;
+    const isOnline = !!endpoint && !isHeartbeatStale(rosterEntry?.lastHeartbeat);
 
     return c.json({
-      channelId,
-      callsign,
-      online: !!endpoint,
-      endpoint,
+      agentId,
+      status: isOnline ? 'online' : 'offline',
+      endpoint: isOnline ? endpoint : null,
+      lastActivity: rosterEntry?.lastHeartbeat ?? null,
     });
   });
 

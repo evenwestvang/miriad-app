@@ -7,88 +7,14 @@ import {
   type RosterEntry,
   type PromptContext,
 } from './agent-manager.js';
-import type { ContainerOrchestrator, ContainerState } from '@cast/runtime';
-
-// =============================================================================
-// Mock Container Orchestrator
-// =============================================================================
-
-function createMockOrchestrator(): ContainerOrchestrator & {
-  spawnCalls: Array<{ spaceId: string; channelId: string; callsign: string }>;
-  sendCalls: Array<{ threadId: string; content: string }>;
-  stopCalls: Array<{ threadId: string; reason?: string }>;
-  runningContainers: Set<string>;
-} {
-  const spawnCalls: Array<{ spaceId: string; channelId: string; callsign: string }> = [];
-  const sendCalls: Array<{ threadId: string; content: string }> = [];
-  const stopCalls: Array<{ threadId: string; reason?: string }> = [];
-  const runningContainers = new Set<string>();
-
-  return {
-    spawnCalls,
-    sendCalls,
-    stopCalls,
-    runningContainers,
-
-    spawn: vi.fn(async (options) => {
-      spawnCalls.push({
-        spaceId: options.spaceId,
-        channelId: options.channelId,
-        callsign: options.callsign,
-      });
-      const threadId = `${options.spaceId}:${options.channelId}:${options.callsign}`;
-      runningContainers.add(threadId);
-      const state: ContainerState = {
-        threadId,
-        containerId: `container-${options.callsign}`,
-        port: 8081,
-        status: 'running',
-        lastActivity: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-      };
-      return state;
-    }),
-
-    sendMessage: vi.fn(async (threadId, content) => {
-      sendCalls.push({ threadId, content });
-      if (!runningContainers.has(threadId)) {
-        throw new Error(`Container not running: ${threadId}`);
-      }
-    }),
-
-    stop: vi.fn(async (threadId, reason) => {
-      stopCalls.push({ threadId, reason });
-      runningContainers.delete(threadId);
-    }),
-
-    getStatus: vi.fn((threadId) => {
-      if (!runningContainers.has(threadId)) return null;
-      return {
-        threadId,
-        containerId: 'mock-container',
-        port: 8081,
-        status: 'running' as const,
-        lastActivity: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-      };
-    }),
-
-    isRunning: vi.fn((threadId) => runningContainers.has(threadId)),
-
-    getAllRunning: vi.fn(() => []),
-
-    shutdown: vi.fn(async () => {
-      runningContainers.clear();
-    }),
-  };
-}
+import { createMockRuntime, type MockAgentRuntime } from '@cast/runtime';
 
 // =============================================================================
 // Tests
 // =============================================================================
 
 describe('AgentManager', () => {
-  let orchestrator: ReturnType<typeof createMockOrchestrator>;
+  let runtime: MockAgentRuntime;
   let broadcast: ReturnType<typeof vi.fn>;
   let getChannel: ReturnType<typeof vi.fn>;
   let getRoster: ReturnType<typeof vi.fn>;
@@ -102,18 +28,18 @@ describe('AgentManager', () => {
   };
 
   const testRoster: RosterEntry[] = [
-    { callsign: 'agent-1', agentType: 'engineer', status: 'active' },
-    { callsign: 'agent-2', agentType: 'researcher', status: 'active' },
+    { id: 'r1', callsign: 'agent-1', agentType: 'engineer', status: 'active' },
+    { id: 'r2', callsign: 'agent-2', agentType: 'researcher', status: 'active' },
   ];
 
   beforeEach(() => {
-    orchestrator = createMockOrchestrator();
+    runtime = createMockRuntime();
     broadcast = vi.fn();
     getChannel = vi.fn(async () => testChannel);
     getRoster = vi.fn(async () => testRoster);
 
     const config: AgentManagerConfig = {
-      orchestrator,
+      runtime,
       broadcast,
       getChannel,
       getRoster,
@@ -122,87 +48,87 @@ describe('AgentManager', () => {
     manager = new AgentManager(config);
   });
 
-  describe('spawn', () => {
-    it('spawns a new agent', async () => {
-      const agent = await manager.spawn('space-1', 'channel-1', 'agent-1');
+  describe('activate', () => {
+    it('activates a new agent', async () => {
+      const agent = await manager.activate('space-1', 'channel-1', 'agent-1');
 
       expect(agent.callsign).toBe('agent-1');
       expect(agent.channelId).toBe('channel-1');
       expect(agent.spaceId).toBe('space-1');
       expect(agent.state).toBe('idle');
-      expect(orchestrator.spawnCalls).toHaveLength(1);
-      expect(orchestrator.spawnCalls[0]).toEqual({
-        spaceId: 'space-1',
-        channelId: 'channel-1',
-        callsign: 'agent-1',
-      });
+
+      const calls = runtime.getActivateCalls();
+      expect(calls).toHaveLength(1);
+      expect(calls[0].options.agentId).toBe('space-1:channel-1:agent-1');
     });
 
-    it('always spawns (no in-memory caching)', async () => {
-      // NOTE: Unlike old getOrSpawn, spawn() always spawns a new container
+    it('always activates (no in-memory caching)', async () => {
+      // NOTE: Unlike old getOrSpawn, activate() always activates a new container
       // Roster callbackUrl is the source of truth - checked in invoker-adapter
-      await manager.spawn('space-1', 'channel-1', 'agent-1');
-      await manager.spawn('space-1', 'channel-1', 'agent-1');
+      await manager.activate('space-1', 'channel-1', 'agent-1');
+      await manager.activate('space-1', 'channel-1', 'agent-1');
 
-      expect(orchestrator.spawnCalls).toHaveLength(2);
+      const calls = runtime.getActivateCalls();
+      expect(calls).toHaveLength(2);
     });
 
-    it('passes system prompt to orchestrator', async () => {
-      await manager.spawn('space-1', 'channel-1', 'agent-1');
+    it('passes system prompt to runtime', async () => {
+      await manager.activate('space-1', 'channel-1', 'agent-1');
 
-      expect(orchestrator.spawn).toHaveBeenCalledWith(
-        expect.objectContaining({
-          systemPrompt: expect.stringContaining('#test-channel'),
-        })
-      );
+      const calls = runtime.getActivateCalls();
+      expect(calls[0].options.systemPrompt).toContain('#test-channel');
     });
 
-    it('passes auth token to orchestrator', async () => {
-      await manager.spawn('space-1', 'channel-1', 'agent-1');
+    it('passes auth token to runtime', async () => {
+      await manager.activate('space-1', 'channel-1', 'agent-1');
 
-      expect(orchestrator.spawn).toHaveBeenCalledWith(
-        expect.objectContaining({
-          authToken: expect.stringMatching(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/),
-        })
-      );
+      const calls = runtime.getActivateCalls();
+      expect(calls[0].options.authToken).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
     });
   });
 
   describe('sendMessage', () => {
-    it('spawns container for agent', async () => {
+    it('activates container for agent', async () => {
       await manager.sendMessage('space-1', 'channel-1', 'agent-1', 'user', 'Hello!');
 
-      // sendMessage now just spawns - the message is delivered via checkin pending queue
-      expect(orchestrator.spawnCalls).toHaveLength(1);
-      expect(orchestrator.spawnCalls[0]).toEqual({
-        spaceId: 'space-1',
-        channelId: 'channel-1',
-        callsign: 'agent-1',
-      });
+      // sendMessage now just activates - the message is delivered via checkin pending queue
+      const calls = runtime.getActivateCalls();
+      expect(calls).toHaveLength(1);
+      expect(calls[0].options.agentId).toBe('space-1:channel-1:agent-1');
     });
 
     it('does not push message directly (message goes via pending queue)', async () => {
       await manager.sendMessage('space-1', 'channel-1', 'agent-1', 'bob', 'Test message');
 
-      // No direct sendMessage to orchestrator - container will get message via checkin
-      expect(orchestrator.sendCalls).toHaveLength(0);
+      // No direct sendMessage to runtime - container will get message via checkin
+      const sendCalls = runtime.getSendMessageCalls();
+      expect(sendCalls).toHaveLength(0);
     });
   });
 
-  describe('stop', () => {
-    it('stops a container via orchestrator', async () => {
-      await manager.stop('space-1', 'channel-1', 'agent-1');
+  describe('suspend', () => {
+    it('suspends an agent via runtime', async () => {
+      // First activate
+      await manager.activate('space-1', 'channel-1', 'agent-1');
 
-      expect(orchestrator.stopCalls).toHaveLength(1);
-      expect(orchestrator.stopCalls[0].threadId).toBe('space-1:channel-1:agent-1');
+      // Then suspend
+      await manager.suspend('space-1', 'channel-1', 'agent-1');
+
+      const state = runtime.getState('space-1:channel-1:agent-1');
+      expect(state?.status).toBe('offline');
     });
   });
 
   describe('shutdown', () => {
-    it('shuts down orchestrator', async () => {
+    it('shuts down runtime', async () => {
+      // Activate some agents
+      await manager.activate('space-1', 'channel-1', 'agent-1');
+      await manager.activate('space-1', 'channel-1', 'agent-2');
+
       await manager.shutdown();
 
-      expect(orchestrator.shutdown).toHaveBeenCalled();
+      // All agents should be offline
+      expect(runtime.getAllOnline()).toHaveLength(0);
     });
   });
 });
@@ -231,8 +157,8 @@ describe('buildSystemPrompt', () => {
     const ctx: PromptContext = {
       channel: { id: 'ch-1', name: 'test' },
       roster: [
-        { callsign: 'alice', agentType: 'engineer', status: 'active' },
-        { callsign: 'bob', agentType: 'researcher', status: 'active' },
+        { id: 'r1', callsign: 'alice', agentType: 'engineer', status: 'active' },
+        { id: 'r2', callsign: 'bob', agentType: 'researcher', status: 'active' },
       ],
       callsign: 'agent-1',
     };

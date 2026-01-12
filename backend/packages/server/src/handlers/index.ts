@@ -21,7 +21,7 @@ export {
   broadcastAgentState,
   isHeartbeatStale,
   HEARTBEAT_STALE_MS,
-  type CheckinRequest,
+  type CheckinRequestV3,
   type CheckinHandlerOptions,
   type SystemPromptBuilder,
 } from './checkin.js';

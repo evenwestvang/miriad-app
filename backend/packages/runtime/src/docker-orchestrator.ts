@@ -1,8 +1,8 @@
 /**
- * Docker Orchestrator for Local Development
+ * Docker Runtime for Local Development
  *
  * Manages Docker containers for claude-code agents:
- * - Spawns containers on demand
+ * - Activates containers on demand
  * - Routes messages to running containers
  * - Handles idle timeout
  * - Tracks state in-memory (production uses SQLite/DynamoDB)
@@ -14,19 +14,20 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type {
-  ContainerOrchestrator,
-  ContainerSpawnOptions,
-  ContainerState,
-  ContainerStatus,
-  McpServerConfig,
-  OrchestratorEventHandler,
+  AgentRuntime,
+  ActivateOptions,
+  AgentRuntimeState,
+  AgentStatus,
+  AgentMessage,
+  RuntimeEventHandler,
 } from './types.js';
+import { parseAgentId } from './types.js';
 
 // =============================================================================
 // Configuration
 // =============================================================================
 
-export interface DockerOrchestratorConfig {
+export interface DockerRuntimeConfig {
   /** Base directory for workspaces (default: ~/.cast/workspaces) */
   workspaceBase?: string;
   /** Docker image to use (default: claude-code:local) */
@@ -38,23 +39,23 @@ export interface DockerOrchestratorConfig {
   /** Anthropic API key */
   anthropicApiKey: string;
   /** Event handler for status updates */
-  onEvent?: OrchestratorEventHandler;
+  onEvent?: RuntimeEventHandler;
 }
 
 // =============================================================================
-// Docker Orchestrator
+// Docker Runtime
 // =============================================================================
 
-export class DockerOrchestrator implements ContainerOrchestrator {
-  private readonly config: Required<Omit<DockerOrchestratorConfig, 'onEvent'>> & {
-    onEvent?: OrchestratorEventHandler;
+export class DockerRuntime implements AgentRuntime {
+  private readonly config: Required<Omit<DockerRuntimeConfig, 'onEvent'>> & {
+    onEvent?: RuntimeEventHandler;
   };
 
   // In-memory state (production uses SQLite/DynamoDB)
-  private state: Map<string, ContainerState> = new Map();
+  private state: Map<string, AgentRuntimeState> = new Map();
   private idleTimers: Map<string, NodeJS.Timeout> = new Map();
 
-  constructor(config: DockerOrchestratorConfig) {
+  constructor(config: DockerRuntimeConfig) {
     this.config = {
       workspaceBase: config.workspaceBase ?? join(homedir(), '.cast', 'workspaces'),
       imageName: config.imageName ?? 'claude-code:local',
@@ -69,38 +70,41 @@ export class DockerOrchestrator implements ContainerOrchestrator {
       mkdirSync(this.config.workspaceBase, { recursive: true });
     }
 
-    console.log(`[DockerOrchestrator] Initialized`);
-    console.log(`[DockerOrchestrator] Workspace: ${this.config.workspaceBase}`);
-    console.log(`[DockerOrchestrator] Image: ${this.config.imageName}`);
+    console.log(`[DockerRuntime] Initialized`);
+    console.log(`[DockerRuntime] Workspace: ${this.config.workspaceBase}`);
+    console.log(`[DockerRuntime] Image: ${this.config.imageName}`);
   }
 
   // ---------------------------------------------------------------------------
-  // ContainerOrchestrator Implementation
+  // AgentRuntime Implementation
   // ---------------------------------------------------------------------------
 
-  async spawn(options: ContainerSpawnOptions): Promise<ContainerState> {
-    const threadId = this.buildThreadId(options);
-    console.log(`[DockerOrchestrator] Spawning container for ${threadId}`);
+  async activate(options: ActivateOptions): Promise<AgentRuntimeState> {
+    const { agentId } = options;
+    console.log(`[DockerRuntime] Activating container for ${agentId}`);
 
-    // Check if already running
-    const existing = this.state.get(threadId);
-    if (existing && existing.status === 'running') {
-      if (this.isContainerActuallyRunning(existing.containerId)) {
-        console.log(`[DockerOrchestrator] Container already running`);
+    // Check if already running (idempotent)
+    const existing = this.state.get(agentId);
+    if (existing && (existing.status === 'online' || existing.status === 'activating')) {
+      if (existing.container && this.isContainerActuallyRunning(existing.container.containerId)) {
+        console.log(`[DockerRuntime] Container already running`);
         return existing;
       }
       // Container died, clean up
-      this.state.delete(threadId);
+      this.state.delete(agentId);
     }
 
-    // Emit starting event
-    await this.emit({ type: 'container_starting', threadId });
+    // Parse agentId to get components for workspace path
+    const { spaceId, channelId, callsign } = parseAgentId(agentId);
+
+    // Emit activating event
+    await this.emit({ type: 'agent_activating', agentId });
 
     // Create workspace directory
     const workspacePath = join(
       this.config.workspaceBase,
-      options.spaceId,
-      `${options.channelId}-${options.callsign}`
+      spaceId,
+      `${channelId}-${callsign}`
     );
     if (!existsSync(workspacePath)) {
       mkdirSync(workspacePath, { recursive: true });
@@ -115,8 +119,11 @@ export class DockerOrchestrator implements ContainerOrchestrator {
       'host.docker.internal'
     );
 
-    // Build docker run command
-    const containerName = `cast-agent-${this.hashThreadId(threadId)}`;
+    // Compute callback URL for this container
+    const callbackUrl = `http://host.docker.internal:${port}`;
+
+    // Build docker run command with v3.0 env vars
+    const containerName = `cast-agent-${this.hashAgentId(agentId)}`;
     const args = [
       'run',
       '-d',
@@ -126,12 +133,11 @@ export class DockerOrchestrator implements ContainerOrchestrator {
       '-v', `${workspacePath}:/workspace`,
       '-e', `ANTHROPIC_API_KEY=${this.config.anthropicApiKey}`,
       '-e', `CAST_API_URL=${containerApiUrl}`,
-      '-e', `CAST_SPACE_ID=${options.spaceId}`,
-      '-e', `CAST_CHANNEL_ID=${options.channelId}`,
-      '-e', `CAST_CALLSIGN=${options.callsign}`,
+      '-e', `CAST_AGENT_ID=${agentId}`,
       '-e', `CAST_AUTH_TOKEN=${options.authToken}`,
-      '-e', `CAST_CALLBACK_HOST=host.docker.internal`,
-      '-e', `THREAD_ID=${threadId}`,
+      '-e', `CAST_CALLBACK_URL=${callbackUrl}`,
+      // Docker doesn't need route hints - containers are directly addressable
+      '-e', `CAST_ROUTE_HINTS=`,
       '-e', `IDLE_TIMEOUT_MS=${this.config.idleTimeoutMs}`,
     ];
 
@@ -139,14 +145,14 @@ export class DockerOrchestrator implements ContainerOrchestrator {
     if (options.mcpServers && options.mcpServers.length > 0) {
       const mcpServersJson = JSON.stringify(options.mcpServers);
       args.push('-e', `MCP_SERVERS=${mcpServersJson}`);
-      console.log(`[DockerOrchestrator] Passing ${options.mcpServers.length} MCP server(s) to container`);
+      console.log(`[DockerRuntime] Passing ${options.mcpServers.length} MCP server(s) to container`);
 
       // Extract GITHUB_TOKEN from MCP server env vars for git shim
       // The git credential helper needs it as a direct env var
       for (const server of options.mcpServers) {
         if (server.env?.GITHUB_TOKEN) {
           args.push('-e', `GITHUB_TOKEN=${server.env.GITHUB_TOKEN}`);
-          console.log(`[DockerOrchestrator] Passing GITHUB_TOKEN to container for git auth`);
+          console.log(`[DockerRuntime] Passing GITHUB_TOKEN to container for git auth`);
           break; // Only need one token
         }
       }
@@ -162,7 +168,7 @@ export class DockerOrchestrator implements ContainerOrchestrator {
 
     args.push(this.config.imageName);
 
-    console.log(`[DockerOrchestrator] Starting container on port ${port}`);
+    console.log(`[DockerRuntime] Starting container on port ${port}`);
 
     // Run docker using execFileSync to avoid shell escaping issues with JSON env vars
     const result = execFileSync('docker', args, {
@@ -171,57 +177,62 @@ export class DockerOrchestrator implements ContainerOrchestrator {
     }).trim();
 
     const containerId = result.substring(0, 12);
-    console.log(`[DockerOrchestrator] Container started: ${containerId}`);
+    console.log(`[DockerRuntime] Container started: ${containerId}`);
 
     // Wait for container to be healthy
     await this.waitForHealthy(port);
 
     // Create state
     const now = new Date().toISOString();
-    const containerState: ContainerState = {
-      threadId,
-      containerId,
+    const runtimeState: AgentRuntimeState = {
+      agentId,
+      container: {
+        containerId,
+        runtime: 'docker',
+      },
       port,
-      status: 'running',
+      status: 'online',
+      endpoint: `http://localhost:${port}`,
+      routeHints: null, // Docker doesn't use route hints
+      activatedAt: now,
       lastActivity: now,
-      createdAt: now,
     };
 
-    this.state.set(threadId, containerState);
+    this.state.set(agentId, runtimeState);
 
     // Start idle timer
-    this.resetIdleTimer(threadId, containerId);
+    this.resetIdleTimer(agentId, containerId);
 
-    // Emit ready event
-    await this.emit({ type: 'container_ready', threadId, port });
+    // Emit online event
+    await this.emit({ type: 'agent_online', agentId, endpoint: runtimeState.endpoint! });
 
-    return containerState;
+    return runtimeState;
   }
 
-  async sendMessage(threadId: string, content: string, systemPrompt?: string): Promise<void> {
-    const state = this.state.get(threadId);
-    if (!state || state.status !== 'running') {
-      throw new Error(`No running container for thread ${threadId}`);
+  async sendMessage(agentId: string, message: AgentMessage): Promise<void> {
+    const state = this.state.get(agentId);
+    if (!state || state.status !== 'online') {
+      throw new Error(`No online container for agent ${agentId}`);
     }
 
     // Verify container is still running
-    if (!this.isContainerActuallyRunning(state.containerId)) {
-      this.updateStatus(threadId, 'stopped');
-      throw new Error(`Container ${state.containerId} is no longer running`);
+    if (!state.container || !this.isContainerActuallyRunning(state.container.containerId)) {
+      this.updateStatus(agentId, 'offline');
+      throw new Error(`Container ${state.container?.containerId} is no longer running`);
     }
 
     // Forward message
     const url = `http://localhost:${state.port}/message`;
-    const body: { content: string; threadId: string; systemPrompt?: string } = {
-      content,
-      threadId,
+    const body: { content: string; agentId: string; systemPrompt?: string } = {
+      content: message.content,
+      agentId,
     };
-    if (systemPrompt) {
-      body.systemPrompt = systemPrompt;
+    if (message.systemPrompt) {
+      body.systemPrompt = message.systemPrompt;
     }
 
-    // Generate auth token from threadId (deterministic - same as container received at spawn)
-    const authToken = this.generateAuthToken(threadId);
+    // Generate auth token from agentId (deterministic - same as container received at activate)
+    const authToken = this.generateAuthToken(agentId);
 
     const response = await fetch(url, {
       method: 'POST',
@@ -238,74 +249,79 @@ export class DockerOrchestrator implements ContainerOrchestrator {
     }
 
     // Update activity and reset idle timer
-    this.touchActivity(threadId);
-    this.resetIdleTimer(threadId, state.containerId);
+    this.touchActivity(agentId);
+    this.resetIdleTimer(agentId, state.container.containerId);
 
-    console.log(`[DockerOrchestrator] Message forwarded to container`);
+    console.log(`[DockerRuntime] Message forwarded to container`);
   }
 
-  async stop(threadId: string, reason = 'manual'): Promise<void> {
-    const state = this.state.get(threadId);
+  async suspend(agentId: string, reason = 'manual'): Promise<void> {
+    const state = this.state.get(agentId);
     if (!state) {
-      console.log(`[DockerOrchestrator] No container for thread ${threadId}`);
+      console.log(`[DockerRuntime] No container for agent ${agentId}`);
       return;
     }
 
-    console.log(`[DockerOrchestrator] Stopping ${threadId}: ${reason}`);
+    // Idempotent: no-op if already offline/suspending
+    if (state.status === 'offline' || state.status === 'suspending') {
+      console.log(`[DockerRuntime] Agent ${agentId} already ${state.status}`);
+      return;
+    }
+
+    console.log(`[DockerRuntime] Suspending ${agentId}: ${reason}`);
 
     // Clear idle timer
-    this.clearIdleTimer(threadId);
+    this.clearIdleTimer(agentId);
+
+    // Update status to suspending
+    this.updateStatus(agentId, 'suspending');
 
     // Stop container
-    this.stopContainer(state.containerId);
+    if (state.container) {
+      this.stopContainer(state.container.containerId);
+    }
 
-    // Update state
-    this.updateStatus(threadId, 'stopped');
+    // Update state to offline
+    this.updateStatus(agentId, 'offline');
 
     // Emit event
-    await this.emit({ type: 'container_stopped', threadId, reason });
+    await this.emit({ type: 'agent_offline', agentId, reason });
   }
 
-  getStatus(threadId: string): ContainerState | null {
-    return this.state.get(threadId) ?? null;
+  getState(agentId: string): AgentRuntimeState | null {
+    return this.state.get(agentId) ?? null;
   }
 
-  isRunning(threadId: string): boolean {
-    const state = this.state.get(threadId);
-    if (!state || state.status !== 'running') {
+  isOnline(agentId: string): boolean {
+    const state = this.state.get(agentId);
+    if (!state || state.status !== 'online') {
       return false;
     }
-    return this.isContainerActuallyRunning(state.containerId);
+    return state.container ? this.isContainerActuallyRunning(state.container.containerId) : false;
   }
 
-  getAllRunning(): ContainerState[] {
-    return Array.from(this.state.values()).filter((s) => s.status === 'running');
+  getAllOnline(): AgentRuntimeState[] {
+    return Array.from(this.state.values()).filter((s) => s.status === 'online');
   }
 
   async shutdown(): Promise<void> {
-    console.log(`[DockerOrchestrator] Shutting down...`);
+    console.log(`[DockerRuntime] Shutting down...`);
 
     // Clear all idle timers
-    for (const [threadId] of this.idleTimers) {
-      this.clearIdleTimer(threadId);
+    for (const [agentId] of this.idleTimers) {
+      this.clearIdleTimer(agentId);
     }
 
-    // Stop all running containers
-    const running = this.getAllRunning();
-    for (const state of running) {
-      this.stopContainer(state.containerId);
-      this.updateStatus(state.threadId, 'stopped');
+    // Suspend all online agents
+    const online = this.getAllOnline();
+    for (const state of online) {
+      if (state.container) {
+        this.stopContainer(state.container.containerId);
+      }
+      this.updateStatus(state.agentId, 'offline');
     }
 
-    console.log(`[DockerOrchestrator] Shutdown complete`);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Helper: Build thread ID
-  // ---------------------------------------------------------------------------
-
-  private buildThreadId(options: ContainerSpawnOptions): string {
-    return `${options.spaceId}:${options.channelId}:${options.callsign}`;
+    console.log(`[DockerRuntime] Shutdown complete`);
   }
 
   // ---------------------------------------------------------------------------
@@ -318,9 +334,9 @@ export class DockerOrchestrator implements ContainerOrchestrator {
         timeout: 10000,
         stdio: 'ignore',
       });
-      console.log(`[DockerOrchestrator] Container stopped: ${containerId}`);
+      console.log(`[DockerRuntime] Container stopped: ${containerId}`);
     } catch {
-      console.log(`[DockerOrchestrator] Container stop failed (may be already stopped)`);
+      console.log(`[DockerRuntime] Container stop failed (may be already stopped)`);
     }
   }
 
@@ -341,13 +357,13 @@ export class DockerOrchestrator implements ContainerOrchestrator {
     const startTime = Date.now();
     const healthUrl = `http://localhost:${port}/health`;
 
-    console.log(`[DockerOrchestrator] Waiting for health at ${healthUrl}`);
+    console.log(`[DockerRuntime] Waiting for health at ${healthUrl}`);
 
     while (Date.now() - startTime < timeoutMs) {
       try {
         const response = await fetch(healthUrl, { method: 'GET' });
         if (response.ok) {
-          console.log(`[DockerOrchestrator] Healthy after ${Date.now() - startTime}ms`);
+          console.log(`[DockerRuntime] Healthy after ${Date.now() - startTime}ms`);
           return;
         }
       } catch {
@@ -363,16 +379,22 @@ export class DockerOrchestrator implements ContainerOrchestrator {
   // State Management
   // ---------------------------------------------------------------------------
 
-  private updateStatus(threadId: string, status: ContainerStatus): void {
-    const state = this.state.get(threadId);
+  private updateStatus(agentId: string, status: AgentStatus): void {
+    const state = this.state.get(agentId);
     if (state) {
       state.status = status;
       state.lastActivity = new Date().toISOString();
+      // Clear routing info when going offline
+      if (status === 'offline') {
+        state.endpoint = null;
+        state.routeHints = null;
+        state.container = null;
+      }
     }
   }
 
-  private touchActivity(threadId: string): void {
-    const state = this.state.get(threadId);
+  private touchActivity(agentId: string): void {
+    const state = this.state.get(agentId);
     if (state) {
       state.lastActivity = new Date().toISOString();
     }
@@ -382,22 +404,22 @@ export class DockerOrchestrator implements ContainerOrchestrator {
   // Idle Timer Management
   // ---------------------------------------------------------------------------
 
-  private resetIdleTimer(threadId: string, containerId: string): void {
-    this.clearIdleTimer(threadId);
+  private resetIdleTimer(agentId: string, containerId: string): void {
+    this.clearIdleTimer(agentId);
 
     const timer = setTimeout(() => {
-      console.log(`[DockerOrchestrator] Idle timeout for ${threadId}`);
-      this.stop(threadId, 'idle timeout');
+      console.log(`[DockerRuntime] Idle timeout for ${agentId}`);
+      this.suspend(agentId, 'idle timeout');
     }, this.config.idleTimeoutMs);
 
-    this.idleTimers.set(threadId, timer);
+    this.idleTimers.set(agentId, timer);
   }
 
-  private clearIdleTimer(threadId: string): void {
-    const timer = this.idleTimers.get(threadId);
+  private clearIdleTimer(agentId: string): void {
+    const timer = this.idleTimers.get(agentId);
     if (timer) {
       clearTimeout(timer);
-      this.idleTimers.delete(threadId);
+      this.idleTimers.delete(agentId);
     }
   }
 
@@ -405,7 +427,7 @@ export class DockerOrchestrator implements ContainerOrchestrator {
   // Events
   // ---------------------------------------------------------------------------
 
-  private async emit(event: Parameters<OrchestratorEventHandler>[0]): Promise<void> {
+  private async emit(event: Parameters<RuntimeEventHandler>[0]): Promise<void> {
     if (this.config.onEvent) {
       await this.config.onEvent(event);
     }
@@ -437,19 +459,19 @@ export class DockerOrchestrator implements ContainerOrchestrator {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  private hashThreadId(threadId: string): string {
-    return createHash('sha256').update(threadId).digest('hex').substring(0, 12);
+  private hashAgentId(agentId: string): string {
+    return createHash('sha256').update(agentId).digest('hex').substring(0, 12);
   }
 
   /**
-   * Generate a container auth token from threadId.
+   * Generate a container auth token from agentId.
    * Duplicates logic from @cast/server/auth/container-token.ts for package isolation.
    * Token format: base64url(spaceId:channelId:callsign).hmac
    */
-  private generateAuthToken(threadId: string): string {
+  private generateAuthToken(agentId: string): string {
     const secret = process.env.CAST_CONTAINER_SECRET ?? 'cast-dev-container-secret-do-not-use-in-production';
-    const encodedData = Buffer.from(threadId).toString('base64url');
-    const hmac = createHmac('sha256', secret).update(threadId).digest('base64url');
+    const encodedData = Buffer.from(agentId).toString('base64url');
+    const hmac = createHmac('sha256', secret).update(agentId).digest('base64url');
     return `${encodedData}.${hmac}`;
   }
 }

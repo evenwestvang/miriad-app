@@ -6,9 +6,9 @@
  */
 
 import type {
-  ContainerOrchestrator,
-  ContainerSpawnOptions,
-  ContainerState,
+  AgentRuntime,
+  ActivateOptions,
+  AgentRuntimeState,
   McpServerConfig,
 } from '@cast/runtime';
 import type { ArtifactSummary } from '@cast/core';
@@ -30,8 +30,8 @@ export interface ManagedAgent {
   spaceId: string;
   /** Current lifecycle state */
   state: AgentState;
-  /** Container state (if running) */
-  containerState?: ContainerState;
+  /** Runtime state (if running) */
+  runtimeState?: AgentRuntimeState;
 }
 
 export interface ChannelContext {
@@ -90,8 +90,8 @@ export interface FocusType {
 }
 
 export interface AgentManagerConfig {
-  /** Container orchestrator (Docker for local, Fargate for prod) */
-  orchestrator: ContainerOrchestrator;
+  /** Agent runtime (Docker for local, Fly.io for prod) */
+  runtime: AgentRuntime;
   /** Broadcast function for WebSocket frames */
   broadcast: (channelId: string, frame: string) => Promise<void>;
   /** Get channel context for system prompt */
@@ -282,9 +282,9 @@ export class AgentManager {
   }
 
   /**
-   * Build a thread ID from space, channel, and callsign.
+   * Build an agent ID from space, channel, and callsign.
    */
-  private buildThreadId(spaceId: string, channelId: string, callsign: string): string {
+  private buildAgentId(spaceId: string, channelId: string, callsign: string): string {
     return `${spaceId}:${channelId}:${callsign}`;
   }
 
@@ -453,22 +453,25 @@ export class AgentManager {
   }
 
   /**
-   * Spawn a new container for an agent.
+   * Activate a container for an agent.
    * NOTE: No longer checks in-memory state - roster callbackUrl check happens in invoker-adapter.
-   * This method just spawns unconditionally.
+   * This method just activates unconditionally.
    */
-  async spawn(
+  async activate(
     spaceId: string,
     channelId: string,
     callsign: string
   ): Promise<ManagedAgent> {
-    console.log(`[AgentManager] Spawning agent ${callsign} in ${channelId}`);
+    console.log(`[AgentManager] Activating agent ${callsign} in ${channelId}`);
 
     // Verify channel exists (needed for error handling)
     const channel = await this.config.getChannel(spaceId, channelId);
     if (!channel) {
       throw new Error(`Channel not found: ${channelId}`);
     }
+
+    // Build agent ID for v3.0 protocol
+    const agentId = this.buildAgentId(spaceId, channelId, callsign);
 
     // Build system prompt using centralized method
     const systemPrompt = await this.buildPromptForAgent(spaceId, channelId, callsign);
@@ -492,11 +495,9 @@ export class AgentManager {
       }
     }
 
-    // Spawn container
-    const spawnOptions: ContainerSpawnOptions = {
-      spaceId,
-      channelId,
-      callsign,
+    // Activate container with v3.0 options
+    const activateOptions: ActivateOptions = {
+      agentId,
       authToken,
       systemPrompt,
       mcpServers: appMcpConfigs.length > 0 ? appMcpConfigs : undefined,
@@ -504,24 +505,24 @@ export class AgentManager {
       tunnelServerUrl: this.config.tunnelServerUrl,
     };
 
-    const containerState = await this.config.orchestrator.spawn(spawnOptions);
+    const runtimeState = await this.config.runtime.activate(activateOptions);
 
     const agent: ManagedAgent = {
       callsign,
       channelId,
       spaceId,
       state: 'idle',
-      containerState,
+      runtimeState,
     };
 
-    console.log(`[AgentManager] Agent ${callsign} spawned, port ${containerState.port}`);
+    console.log(`[AgentManager] Agent ${callsign} activated, port ${runtimeState.port}`);
 
     return agent;
   }
 
   /**
-   * Spawn a container and send a message to it.
-   * NOTE: This always spawns - the invoker-adapter handles the "check roster first" logic.
+   * Activate a container and send a message to it.
+   * NOTE: This always activates - the invoker-adapter handles the "check roster first" logic.
    * The message is NOT pushed directly here - it's saved to storage, and the container
    * will receive it via the pending message queue when it checks in.
    */
@@ -532,31 +533,31 @@ export class AgentManager {
     sender: string,
     content: string
   ): Promise<void> {
-    // Spawn container - it will checkin and receive pending messages
-    await this.spawn(spaceId, channelId, callsign);
+    // Activate container - it will checkin and receive pending messages
+    await this.activate(spaceId, channelId, callsign);
 
     // Note: We don't push the message here. The message is already saved to storage
     // by the message handler. The container will receive it via getPendingMessages
     // when it calls /agents/checkin.
-    console.log(`[AgentManager] Container spawned for ${callsign}, will receive message via checkin`);
+    console.log(`[AgentManager] Container activated for ${callsign}, will receive message via checkin`);
   }
 
   /**
-   * Stop an agent's container.
+   * Suspend an agent's container.
    * NOTE: With roster as source of truth, you should also clear callbackUrl in roster.
    */
-  async stop(spaceId: string, channelId: string, callsign: string): Promise<void> {
-    const threadId = this.buildThreadId(spaceId, channelId, callsign);
-    await this.config.orchestrator.stop(threadId, 'manual');
-    console.log(`[AgentManager] Agent ${callsign} stopped`);
+  async suspend(spaceId: string, channelId: string, callsign: string): Promise<void> {
+    const agentId = this.buildAgentId(spaceId, channelId, callsign);
+    await this.config.runtime.suspend(agentId, 'manual');
+    console.log(`[AgentManager] Agent ${callsign} suspended`);
     // Note: Caller should also clear callbackUrl in roster via storage.updateRosterEntry()
   }
 
   /**
-   * Shutdown all containers managed by the orchestrator.
+   * Shutdown all containers managed by the runtime.
    */
   async shutdown(): Promise<void> {
     console.log('[AgentManager] Shutting down all agents...');
-    await this.config.orchestrator.shutdown();
+    await this.config.runtime.shutdown();
   }
 }
