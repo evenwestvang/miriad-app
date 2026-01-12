@@ -74,14 +74,15 @@ jobs:
               GitHubClientId="${{ secrets.STAGING_GITHUB_CLIENT_ID }}" \
               GitHubClientSecret="${{ secrets.STAGING_GITHUB_CLIENT_SECRET }}" \
               TunnelServerUrl="https://tunnel.staging.caststack.site" \
-              SubnetIds="${{ secrets.STAGING_SUBNET_IDS }}" \
-              SecurityGroupIds="${{ secrets.STAGING_SECURITY_GROUP_IDS }}" \
               AgentImageUri="registry.fly.io/${{ secrets.STAGING_FLY_APP_NAME }}:latest"
 
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
     environment: staging
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v2
@@ -105,6 +106,7 @@ jobs:
           VITE_BACKEND_URL: https://api.staging.caststack.ai
           VITE_WS_URL: wss://ws.staging.caststack.ai
           VITE_AUTH_MODE: workos
+          VITE_TUNNEL_DOMAIN: staging.caststack.site
 
   container:
     name: Agent Container (Fly.io)

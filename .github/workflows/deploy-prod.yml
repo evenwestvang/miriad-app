@@ -86,8 +86,6 @@ jobs:
               GitHubClientId="${{ secrets.PROD_GITHUB_CLIENT_ID }}" \
               GitHubClientSecret="${{ secrets.PROD_GITHUB_CLIENT_SECRET }}" \
               TunnelServerUrl="${{ secrets.PROD_TUNNEL_SERVER_URL }}" \
-              SubnetIds="${{ secrets.PROD_SUBNET_IDS }}" \
-              SecurityGroupIds="${{ secrets.PROD_SECURITY_GROUP_IDS }}" \
               AgentImageUri="registry.fly.io/${{ secrets.PROD_FLY_APP_NAME }}:latest"
 
   frontend:
