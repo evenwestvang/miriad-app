@@ -27,7 +27,7 @@ packages/
 ├── core/       # Shared types, Tymbal protocol, @mention parser
 ├── server/     # Hono HTTP API, handlers, WebSocket
 ├── storage/    # PostgreSQL storage (PlanetScale)
-├── runtime/    # Container orchestration (Docker/Fargate)
+├── runtime/    # Container orchestration (Docker/Fly.io)
 └── deploy/     # SAM template, Lambda adapter
 ```
 

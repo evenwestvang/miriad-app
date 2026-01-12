@@ -129,7 +129,7 @@ deploy_container() {
     aws ecr describe-repositories --repository-names "${ECR_REPO_NAME}" --region "${AWS_REGION}" >/dev/null 2>&1 || \
         aws ecr create-repository --repository-name "${ECR_REPO_NAME}" --region "${AWS_REGION}"
 
-    # Build the image (ARM64 for Fargate Graviton)
+    # Build the image (ARM64 for Graviton)
     echo "Building Docker image (ARM64)..."
     docker build --platform linux/arm64 \
         -t "${ECR_REPO_NAME}:${image_tag}" \

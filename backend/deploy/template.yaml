@@ -47,10 +47,10 @@ Parameters:
     Default: ''
   SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
-    Description: Subnet IDs for Fargate tasks (must have internet access)
+    Description: Subnet IDs for ECS tasks (must have internet access)
   SecurityGroupIds:
     Type: List<AWS::EC2::SecurityGroup::Id>
-    Description: Security group IDs for Fargate tasks (allow outbound HTTPS)
+    Description: Security group IDs for ECS tasks (allow outbound HTTPS)
   CastApiUrl:
     Type: String
     Description: HTTP API URL for agent containers to call back (e.g., https://api.staging.clanker.is)
@@ -174,7 +174,7 @@ Resources:
   # DynamoDB Tables
   # =============================================================================
 
-  # Container state table - tracks Fargate task state for each agent thread
+  # Container state table - tracks container state for each agent thread
   ContainerStateTable:
     Type: AWS::DynamoDB::Table
     Properties:
