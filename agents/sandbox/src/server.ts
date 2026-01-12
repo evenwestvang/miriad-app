@@ -9,7 +9,7 @@
  * - GET /health - Health check for ECS
  * - POST /shutdown - Graceful shutdown
  *
- * Phase 2: SDK integration (replaces CLI subprocess)
+ * Protocol Version: 3.0
  */
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
@@ -58,15 +58,61 @@ function convertToSdkMcpConfig(resolved: ResolvedMcpConfig): McpServerConfig {
   }
 }
 
-// Configuration from environment
+// =============================================================================
+// Identity Utilities (v3.0 protocol)
+// =============================================================================
+
+interface AgentIdComponents {
+  spaceId: string;
+  channelId: string;
+  callsign: string;
+}
+
+/**
+ * Parse agentId format (spaceId:channelId:callsign) into components.
+ */
+function parseAgentId(agentId: string): AgentIdComponents {
+  const [spaceId, channelId, callsign] = agentId.split(":");
+  if (!spaceId || !channelId || !callsign) {
+    throw new Error(`Invalid agentId format: ${agentId}`);
+  }
+  return { spaceId, channelId, callsign };
+}
+
+// =============================================================================
+// Configuration from Environment (v3.0 protocol)
+// =============================================================================
+
 const PORT = parseInt(process.env.PORT ?? "8080", 10);
-const THREAD_ID = process.env.THREAD_ID ?? "";
+
+// v3.0: Single CAST_AGENT_ID replaces THREAD_ID, CAST_SPACE_ID, CAST_CHANNEL_ID, CAST_CALLSIGN
+const CAST_AGENT_ID = process.env.CAST_AGENT_ID ?? "";
+
+// v3.0: Runtime-computed callback URL (replaces dynamic host detection)
+const CAST_CALLBACK_URL = process.env.CAST_CALLBACK_URL ?? "";
+
+// v3.0: Routing hints as JSON (for Fly.io instance routing, null for Docker)
+const CAST_ROUTE_HINTS: Record<string, string> | null = process.env.CAST_ROUTE_HINTS
+  ? JSON.parse(process.env.CAST_ROUTE_HINTS)
+  : null;
+
 const CAST_API_URL = process.env.CAST_API_URL ?? "";
-const CAST_CHANNEL_ID = process.env.CAST_CHANNEL_ID ?? "";
-const CAST_CALLSIGN = process.env.CAST_CALLSIGN ?? "";
 const CAST_AUTH_TOKEN = process.env.CAST_AUTH_TOKEN ?? "";
 const WORKSPACE_BASE = process.env.WORKSPACE_DIR ?? "/workspace";
 const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS ?? String(10 * 60 * 1000), 10);
+
+// Derived values from agentId
+let AGENT_CHANNEL_ID = "";
+let AGENT_CALLSIGN = "";
+if (CAST_AGENT_ID) {
+  try {
+    const { channelId, callsign } = parseAgentId(CAST_AGENT_ID);
+    AGENT_CHANNEL_ID = channelId;
+    AGENT_CALLSIGN = callsign;
+  } catch (err) {
+    console.error("[Server] Failed to parse CAST_AGENT_ID:", err);
+  }
+}
 
 // Model configuration
 const DEFAULT_MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-4-5-20251101";
@@ -82,60 +128,18 @@ if (process.env.MCP_SERVERS) {
   }
 }
 
-/**
- * Get the container's local IP address for callback URL.
- * Returns the first non-internal IPv4 address found.
- */
-function getLocalIp(): string {
-  const nets = networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    const netList = nets[name];
-    if (!netList) continue;
-    for (const net of netList) {
-      // Skip internal (loopback) and non-IPv4 addresses
-      if (net.family === "IPv4" && !net.internal) {
-        return net.address;
-      }
-    }
-  }
-  // Fallback to localhost if no external IP found
-  return "127.0.0.1";
-}
-
-/**
- * Get the container's callback host for registration with Cast API.
- */
-async function getCallbackHost(): Promise<string> {
-  // Allow explicit override for local Docker development
-  const callbackHost = process.env.CAST_CALLBACK_HOST;
-  if (callbackHost) {
-    return callbackHost;
-  }
-
-  // In AWS, fetch public IP
-  try {
-    const response = await fetch("https://checkip.amazonaws.com");
-    if (response.ok) {
-      return (await response.text()).trim();
-    }
-  } catch {
-    // Fall through to local IP
-  }
-  return getLocalIp();
-}
-
 // Get dirname for relative paths
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Per-thread directory structure
-function getThreadWorkspace(threadId: string): {
+// Per-agent directory structure
+function getAgentWorkspace(agentId: string): {
   root: string;
   project: string;
   claudeConfig: string;
   mcpConfig: string;
 } {
-  const root = join(WORKSPACE_BASE, "threads", threadId);
+  const root = join(WORKSPACE_BASE, "agents", agentId);
   return {
     root,
     project: join(root, "project"),
@@ -145,14 +149,14 @@ function getThreadWorkspace(threadId: string): {
 }
 
 /**
- * Ensure thread workspace directories exist.
+ * Ensure agent workspace directories exist.
  */
-function ensureThreadWorkspace(threadId: string): ReturnType<typeof getThreadWorkspace> {
-  const workspace = getThreadWorkspace(threadId);
+function ensureAgentWorkspace(agentId: string): ReturnType<typeof getAgentWorkspace> {
+  const workspace = getAgentWorkspace(agentId);
 
   // Create directories if they don't exist
   if (!existsSync(workspace.project)) {
-    console.log(`[Server] Creating workspace directories for thread ${threadId}`);
+    console.log(`[Server] Creating workspace directories for agent ${agentId}`);
     mkdirSync(workspace.project, { recursive: true });
   }
 
@@ -160,10 +164,10 @@ function ensureThreadWorkspace(threadId: string): ReturnType<typeof getThreadWor
 }
 
 /**
- * Check if a previous Claude session exists for this thread.
+ * Check if a previous Claude session exists for this agent.
  */
-function hasExistingSession(threadId: string): boolean {
-  const workspace = getThreadWorkspace(threadId);
+function hasExistingSession(agentId: string): boolean {
+  const workspace = getAgentWorkspace(agentId);
   return existsSync(workspace.claudeConfig);
 }
 
@@ -174,10 +178,10 @@ function buildMcpServers(resolvedMcps?: ResolvedMcpConfig[]): Record<string, Mcp
   const mcpServers: Record<string, McpServerConfig> = {};
 
   // Add built-in cast-artifacts MCP via HTTP transport
-  if (CAST_API_URL && CAST_CHANNEL_ID && CAST_AUTH_TOKEN) {
+  if (CAST_API_URL && AGENT_CHANNEL_ID && CAST_AUTH_TOKEN) {
     mcpServers["cast-artifacts"] = {
       type: "http",
-      url: `${CAST_API_URL}/mcp/${CAST_CHANNEL_ID}`,
+      url: `${CAST_API_URL}/mcp/${AGENT_CHANNEL_ID}`,
       headers: {
         Authorization: `Container ${CAST_AUTH_TOKEN}`,
       },
@@ -212,7 +216,7 @@ let currentInput: Pushable<SDKUserMessage> | null = null;
 // Message queue for handling messages while busy
 interface QueuedMessage {
   content: string;
-  threadId: string;
+  agentId: string;
   resolvedMcps?: ResolvedMcpConfig[];
   systemPrompt?: string;
 }
@@ -234,12 +238,12 @@ async function runClaudeQuery(
   prompt: string,
   tymbalBridge: TymbalBridge,
   shouldContinue: boolean,
-  threadId: string,
+  agentId: string,
   resolvedMcps?: ResolvedMcpConfig[],
   systemPrompt?: string
 ): Promise<void> {
   // Ensure workspace directories exist
-  const workspace = ensureThreadWorkspace(threadId);
+  const workspace = ensureAgentWorkspace(agentId);
 
   // Build MCP servers
   const mcpServers = buildMcpServers(resolvedMcps);
@@ -295,7 +299,7 @@ async function runClaudeQuery(
     abortController,
   };
 
-  console.log(`[Server] Starting SDK query for thread ${threadId}`);
+  console.log(`[Server] Starting SDK query for agent ${agentId}`);
   console.log(`[Server] Model: ${DEFAULT_MODEL}`);
   console.log(`[Server] Working directory: ${workspace.project}`);
   console.log(`[Server] Continue session: ${shouldContinue}`);
@@ -315,7 +319,7 @@ async function runClaudeQuery(
     // Finalize any pending messages
     await tymbalBridge.finalize();
 
-    console.log(`[Server] Query completed for thread ${threadId}`);
+    console.log(`[Server] Query completed for agent ${agentId}`);
   } catch (error) {
     console.error(`[Server] SDK query error:`, error);
 
@@ -357,48 +361,41 @@ function sendJson(res: ServerResponse, status: number, data: unknown): void {
 }
 
 /**
- * Parse threadId format (spaceId:channelId:callsign) to extract channelId.
- * Falls back to full threadId if not in expected format.
- */
-function parseChannelId(threadId: string): string {
-  const parts = threadId.split(":");
-  // Format: spaceId:channelId:callsign
-  if (parts.length >= 2) {
-    return parts[1];
-  }
-  return threadId;
-}
-
-/**
  * Process a single message through Claude SDK.
  */
 async function processMessage(message: QueuedMessage): Promise<void> {
-  const { content, threadId, resolvedMcps, systemPrompt } = message;
+  const { content, agentId, resolvedMcps, systemPrompt } = message;
 
-  // Extract channelId from threadId (format: spaceId:channelId:callsign)
-  const channelId = parseChannelId(threadId);
+  // Extract channelId from agentId
+  let channelId: string;
+  try {
+    const parsed = parseAgentId(agentId);
+    channelId = parsed.channelId;
+  } catch {
+    channelId = agentId; // Fallback for backwards compatibility
+  }
 
   // Create Tymbal bridge for this conversation
   const tymbalBridge = new TymbalBridge({
     serverUrl: CAST_API_URL,
     channelId,
-    callsign: CAST_CALLSIGN || undefined,
+    callsign: AGENT_CALLSIGN || undefined,
     authToken: CAST_AUTH_TOKEN || undefined,
   });
 
   // Check if we should use --continue
-  const shouldContinue = continueSession || hasExistingSession(threadId);
+  const shouldContinue = continueSession || hasExistingSession(agentId);
 
-  console.log(`[Server] Processing message for thread ${threadId}`);
+  console.log(`[Server] Processing message for agent ${agentId}`);
   console.log(`[Server] Continue session: ${shouldContinue}`);
 
   try {
-    await runClaudeQuery(content, tymbalBridge, shouldContinue, threadId, resolvedMcps, systemPrompt);
+    await runClaudeQuery(content, tymbalBridge, shouldContinue, agentId, resolvedMcps, systemPrompt);
 
     // Mark that we should continue for subsequent messages
     continueSession = true;
 
-    console.log(`[Server] Completed processing for thread ${threadId}`);
+    console.log(`[Server] Completed processing for agent ${agentId}`);
   } catch (error) {
     console.error(`[Server] Error processing message:`, error);
     // Error handling is done in the bridge
@@ -446,7 +443,7 @@ async function handleMessage(req: IncomingMessage, res: ServerResponse): Promise
   // Parse request body
   interface MessageRequest {
     content: string;
-    threadId?: string;
+    agentId?: string;
     resolvedMcps?: ResolvedMcpConfig[];
     systemPrompt?: string;
   }
@@ -464,9 +461,9 @@ async function handleMessage(req: IncomingMessage, res: ServerResponse): Promise
     return;
   }
 
-  const threadId = body.threadId ?? THREAD_ID;
-  if (!threadId) {
-    sendJson(res, 400, { error: "Missing threadId" });
+  const agentId = body.agentId ?? CAST_AGENT_ID;
+  if (!agentId) {
+    sendJson(res, 400, { error: "Missing agentId" });
     return;
   }
 
@@ -475,7 +472,7 @@ async function handleMessage(req: IncomingMessage, res: ServerResponse): Promise
 
   const queuedMessage: QueuedMessage = {
     content: body.content,
-    threadId,
+    agentId,
     resolvedMcps: body.resolvedMcps,
     systemPrompt: body.systemPrompt,
   };
@@ -483,14 +480,14 @@ async function handleMessage(req: IncomingMessage, res: ServerResponse): Promise
   // If already processing, queue the message
   if (isProcessing) {
     messageQueue.push(queuedMessage);
-    console.log(`[Server] Queued message for thread ${threadId} (queue size: ${messageQueue.length})`);
-    sendJson(res, 202, { status: "queued", threadId, queuePosition: messageQueue.length });
+    console.log(`[Server] Queued message for agent ${agentId} (queue size: ${messageQueue.length})`);
+    sendJson(res, 202, { status: "queued", agentId, queuePosition: messageQueue.length });
     return;
   }
 
   // Start processing immediately
   isProcessing = true;
-  sendJson(res, 202, { status: "processing", threadId });
+  sendJson(res, 202, { status: "processing", agentId });
 
   // Process this message then drain the queue
   await processMessage(queuedMessage);
@@ -498,15 +495,15 @@ async function handleMessage(req: IncomingMessage, res: ServerResponse): Promise
 }
 
 /**
- * Handle GET /health - Health check for ECS.
+ * Handle GET /health - Health check.
  */
 function handleHealth(_req: IncomingMessage, res: ServerResponse): void {
-  const workspace = THREAD_ID ? getThreadWorkspace(THREAD_ID) : null;
-  const hasSession = THREAD_ID ? hasExistingSession(THREAD_ID) : false;
+  const workspace = CAST_AGENT_ID ? getAgentWorkspace(CAST_AGENT_ID) : null;
+  const hasSession = CAST_AGENT_ID ? hasExistingSession(CAST_AGENT_ID) : false;
 
   const status = {
     status: isShuttingDown ? "shutting_down" : isProcessing ? "processing" : "healthy",
-    threadId: THREAD_ID,
+    agentId: CAST_AGENT_ID,
     idleMs: idleMonitor.getIdleMs(),
     continueSession,
     hasEfsSession: hasSession,
@@ -514,7 +511,7 @@ function handleHealth(_req: IncomingMessage, res: ServerResponse): void {
     uptime: process.uptime(),
     queueLength: messageQueue.length,
     model: DEFAULT_MODEL,
-    sdkVersion: "phase-2",
+    protocolVersion: "3.0",
   };
 
   const statusCode = isShuttingDown ? 503 : 200;
@@ -530,23 +527,28 @@ async function handleShutdown(_req: IncomingMessage, res: ServerResponse): Promi
 }
 
 /**
- * Register this container with the Cast API.
+ * Register this container with the Cast API (v3.0 protocol).
  */
 async function checkin(): Promise<void> {
-  if (!CAST_API_URL || !CAST_CHANNEL_ID || !CAST_CALLSIGN) {
-    console.log("[Server] Checkin skipped - missing CAST_API_URL, CAST_CHANNEL_ID, or CAST_CALLSIGN");
+  if (!CAST_API_URL || !CAST_AGENT_ID) {
+    console.log("[Server] Checkin skipped - missing CAST_API_URL or CAST_AGENT_ID");
     return;
   }
 
-  const host = await getCallbackHost();
-  const endpoint = `http://${host}:${PORT}`;
+  // v3.0: Use CAST_CALLBACK_URL from environment (runtime-computed)
+  const endpoint = CAST_CALLBACK_URL;
+  if (!endpoint) {
+    console.log("[Server] Checkin skipped - missing CAST_CALLBACK_URL");
+    return;
+  }
 
   console.log(`[Server] Checking in with Cast API at ${CAST_API_URL}`);
-  console.log(`[Server]   Channel: ${CAST_CHANNEL_ID}`);
-  console.log(`[Server]   Callsign: ${CAST_CALLSIGN}`);
+  console.log(`[Server]   Agent ID: ${CAST_AGENT_ID}`);
   console.log(`[Server]   Endpoint: ${endpoint}`);
+  console.log(`[Server]   Route hints: ${CAST_ROUTE_HINTS ? JSON.stringify(CAST_ROUTE_HINTS) : "(none)"}`);
 
   try {
+    // v3.0 checkin format
     const response = await fetch(`${CAST_API_URL}/agents/checkin`, {
       method: "POST",
       headers: {
@@ -554,9 +556,11 @@ async function checkin(): Promise<void> {
         ...(CAST_AUTH_TOKEN ? { Authorization: `Bearer ${CAST_AUTH_TOKEN}` } : {}),
       },
       body: JSON.stringify({
-        channelId: CAST_CHANNEL_ID,
-        callsign: CAST_CALLSIGN,
+        protocolVersion: "3.0",
+        agentId: CAST_AGENT_ID,
         endpoint,
+        routeHints: CAST_ROUTE_HINTS,
+        capabilities: ["route-hints"],
       }),
     });
 
@@ -566,7 +570,7 @@ async function checkin(): Promise<void> {
       return;
     }
 
-    console.log("[Server] Checkin successful, waiting for messages...");
+    console.log("[Server] Checkin successful (protocol v3.0), waiting for messages...");
 
     // Start heartbeat after successful checkin
     startHeartbeat();
@@ -582,10 +586,12 @@ let heartbeatInterval: NodeJS.Timeout | null = null;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
 /**
- * Send a single heartbeat to the server.
+ * Send a single heartbeat to the server (v3.0 protocol).
+ * Note: v3.0 heartbeat does NOT include endpoint - only agentId.
  */
-async function sendHeartbeat(endpoint: string): Promise<void> {
+async function sendHeartbeat(): Promise<void> {
   try {
+    // v3.0 heartbeat format - NO endpoint field
     const response = await fetch(`${CAST_API_URL}/agents/heartbeat`, {
       method: "POST",
       headers: {
@@ -593,9 +599,7 @@ async function sendHeartbeat(endpoint: string): Promise<void> {
         ...(CAST_AUTH_TOKEN ? { Authorization: `Bearer ${CAST_AUTH_TOKEN}` } : {}),
       },
       body: JSON.stringify({
-        channelId: CAST_CHANNEL_ID,
-        callsign: CAST_CALLSIGN,
-        endpoint,
+        agentId: CAST_AGENT_ID,
       }),
     });
 
@@ -613,8 +617,8 @@ async function sendHeartbeat(endpoint: string): Promise<void> {
  * Sends POST /agents/heartbeat immediately, then every 30s.
  */
 async function startHeartbeat(): Promise<void> {
-  if (!CAST_API_URL || !CAST_CHANNEL_ID || !CAST_CALLSIGN) {
-    console.log("[Server] Heartbeat skipped - missing CAST_API_URL, CAST_CHANNEL_ID, or CAST_CALLSIGN");
+  if (!CAST_API_URL || !CAST_AGENT_ID) {
+    console.log("[Server] Heartbeat skipped - missing CAST_API_URL or CAST_AGENT_ID");
     return;
   }
 
@@ -623,13 +627,10 @@ async function startHeartbeat(): Promise<void> {
     clearInterval(heartbeatInterval);
   }
 
-  const host = await getCallbackHost();
-  const endpoint = `http://${host}:${PORT}`;
-
   console.log(`[Server] Starting heartbeat (every ${HEARTBEAT_INTERVAL_MS / 1000}s)`);
 
   // Send first heartbeat immediately so agent shows online right away
-  await sendHeartbeat(endpoint);
+  await sendHeartbeat();
 
   // Then start the periodic interval
   heartbeatInterval = setInterval(async () => {
@@ -640,7 +641,7 @@ async function startHeartbeat(): Promise<void> {
       }
       return;
     }
-    await sendHeartbeat(endpoint);
+    await sendHeartbeat();
   }, HEARTBEAT_INTERVAL_MS);
 }
 
@@ -746,25 +747,27 @@ if (!CAST_API_URL) {
 // Start server
 server.listen(PORT, () => {
   console.log(`[Server] Claude Agent SDK server listening on port ${PORT}`);
-  console.log(`[Server] SDK Version: Phase 2`);
+  console.log(`[Server] Protocol Version: 3.0`);
   console.log(`[Server] Model: ${DEFAULT_MODEL}`);
-  console.log(`[Server] Thread ID: ${THREAD_ID || "(not set)"}`);
+  console.log(`[Server] Agent ID: ${CAST_AGENT_ID || "(not set)"}`);
+  console.log(`[Server] Callback URL: ${CAST_CALLBACK_URL || "(not set)"}`);
+  console.log(`[Server] Route hints: ${CAST_ROUTE_HINTS ? JSON.stringify(CAST_ROUTE_HINTS) : "(none)"}`);
   console.log(`[Server] Workspace base: ${WORKSPACE_BASE}`);
   console.log(`[Server] Idle timeout: ${IDLE_TIMEOUT_MS / 1000}s`);
 
   // MCP artifact tools status
-  const mcpEnabled = CAST_API_URL && CAST_CHANNEL_ID && CAST_AUTH_TOKEN;
+  const mcpEnabled = CAST_API_URL && AGENT_CHANNEL_ID && CAST_AUTH_TOKEN;
   console.log(`[Server] MCP artifact tools: ${mcpEnabled ? "enabled (HTTP)" : "disabled"}`);
   if (mcpEnabled) {
-    console.log(`[Server]   URL: ${CAST_API_URL}/mcp/${CAST_CHANNEL_ID}`);
+    console.log(`[Server]   URL: ${CAST_API_URL}/mcp/${AGENT_CHANNEL_ID}`);
   }
 
-  // Check for existing session on EFS
-  if (THREAD_ID) {
-    const workspace = getThreadWorkspace(THREAD_ID);
-    const hasSession = hasExistingSession(THREAD_ID);
-    console.log(`[Server] Thread workspace: ${workspace.project}`);
-    console.log(`[Server] Existing EFS session: ${hasSession}`);
+  // Check for existing session
+  if (CAST_AGENT_ID) {
+    const workspace = getAgentWorkspace(CAST_AGENT_ID);
+    const hasSession = hasExistingSession(CAST_AGENT_ID);
+    console.log(`[Server] Agent workspace: ${workspace.project}`);
+    console.log(`[Server] Existing session: ${hasSession}`);
     if (hasSession) {
       console.log(`[Server] Will use continue: true for session resume`);
     }

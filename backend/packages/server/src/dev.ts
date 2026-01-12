@@ -24,7 +24,7 @@ import { createApp } from './app.js';
 import { createConnectionManager, type ConnectionInfo } from './websocket/index.js';
 import { createLocalAgentManager, type LocalAgentManager } from './handlers/local-agents.js';
 import { createPostgresStorage, type Storage } from '@cast/storage';
-import { DockerOrchestrator } from '@cast/runtime';
+import { DockerRuntime } from '@cast/runtime';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Duplex } from 'stream';
 import { parseSessionCookie, verifySessionToken } from './auth/index.js';
@@ -228,15 +228,15 @@ async function main() {
   console.log('✅ Local agent manager initialized');
 
   // ---------------------------------------------------------------------------
-  // Initialize Container Orchestrator (Docker for local dev)
+  // Initialize Agent Runtime (Docker for local dev)
   // ---------------------------------------------------------------------------
 
-  const orchestrator = new DockerOrchestrator({
+  const runtime = new DockerRuntime({
     imageName: process.env.AGENT_IMAGE ?? 'claude-code:local',
     castApiUrl: process.env.CAST_API_URL ?? `http://host.docker.internal:${port}`,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
   });
-  console.log('✅ Docker orchestrator initialized');
+  console.log('✅ Docker runtime initialized');
 
   // ---------------------------------------------------------------------------
   // Create App
@@ -244,7 +244,7 @@ async function main() {
 
   const app = createApp({
     storage,
-    orchestrator,
+    runtime,
     connectionManager,
     localAgentRouter: localAgentManager,
   });

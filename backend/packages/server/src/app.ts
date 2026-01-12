@@ -9,7 +9,7 @@ import { Hono } from 'hono';
 import { logger } from 'hono/logger';
 import { cors } from 'hono/cors';
 import type { Storage } from '@cast/storage';
-import type { ContainerOrchestrator } from '@cast/runtime';
+import type { AgentRuntime } from '@cast/runtime';
 import type { ChannelRoster, StoredMessage, RosterEntry, StoredMessageType, SetFrame } from '@cast/core';
 import { parseFrame, isSetFrame, isResetFrame, tymbal, generateMessageId, getMimeType } from '@cast/core';
 import { createTymbalRoutes } from './handlers/tymbal.js';
@@ -31,8 +31,8 @@ import { createLocalAgentAuthRoutes } from './handlers/local-agent-auth.js';
 export interface AppOptions {
   /** Storage backend for messages, channels, roster */
   storage: Storage;
-  /** Container orchestrator (Docker for local, Fargate for prod) */
-  orchestrator: ContainerOrchestrator;
+  /** Agent runtime (Docker for local, Fly.io for prod) */
+  runtime: AgentRuntime;
   /** WebSocket connection manager */
   connectionManager: ConnectionManager;
   /** Optional: Local agent router for local-agent-engine connections */
@@ -393,7 +393,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
 
       // Step 4: Spawn container
       try {
-        await agentManager.spawn(spaceId, channelId, callsign);
+        await agentManager.activate(spaceId, channelId, callsign);
         console.log(`[Agents] Container spawned for ${callsign}`);
       } catch (spawnError) {
         console.error(`[Agents] Failed to spawn container for ${callsign}:`, spawnError);
@@ -527,7 +527,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
       // Stop container if running
       const spaceId = getSpaceId(c);
       try {
-        await agentManager.stop(spaceId, channelId, callsign);
+        await agentManager.suspend(spaceId, channelId, callsign);
       } catch (stopError) {
         console.warn(`[Agents] Error stopping container for ${callsign}:`, stopError);
         // Continue anyway - container may already be stopped
@@ -585,7 +585,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
 
       // Spawn new container
       try {
-        await agentManager.spawn(spaceId, channelId, callsign);
+        await agentManager.activate(spaceId, channelId, callsign);
         console.log(`[Agents] Container spawned for ${callsign}`);
       } catch (spawnError) {
         console.error(`[Agents] Failed to spawn container for ${callsign}:`, spawnError);
@@ -647,7 +647,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
 
       // Spawn new container
       try {
-        await agentManager.spawn(spaceId, channelId, callsign);
+        await agentManager.activate(spaceId, channelId, callsign);
         console.log(`[Agents] Container spawned for ${callsign}`);
       } catch (spawnError) {
         console.error(`[Agents] Failed to spawn container for ${callsign}:`, spawnError);
@@ -691,7 +691,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
       // Stop container if running
       const spaceId = getSpaceId(c);
       try {
-        await agentManager.stop(spaceId, channelId, callsign);
+        await agentManager.suspend(spaceId, channelId, callsign);
       } catch (stopError) {
         console.warn(`[Agents] Error stopping container for ${callsign}:`, stopError);
         // Continue anyway - container may already be stopped
@@ -794,7 +794,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
       // Spawn new container
       const spaceId = getSpaceId(c);
       try {
-        await agentManager.spawn(spaceId, channelId, callsign);
+        await agentManager.activate(spaceId, channelId, callsign);
         console.log(`[Agents] ${callsign} unarchived and container spawned`);
       } catch (spawnError) {
         console.warn(`[Agents] Error spawning container for ${callsign}:`, spawnError);
@@ -820,7 +820,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
  * Create a fully configured Cast backend Hono app.
  */
 export function createApp(options: AppOptions): Hono {
-  const { storage, orchestrator, connectionManager, localAgentRouter } = options;
+  const { storage, runtime, connectionManager, localAgentRouter } = options;
 
   const app = new Hono();
 
@@ -1005,7 +1005,7 @@ export function createApp(options: AppOptions): Hono {
   // ---------------------------------------------------------------------------
 
   const agentManager = new AgentManager({
-    orchestrator,
+    runtime,
     broadcast: (channelId, frame) => connectionManager.broadcast(channelId, frame),
     getChannel: async (sid, cid) => {
       const channel = await storage.getChannel(sid, cid);
@@ -1366,7 +1366,7 @@ export function createApp(options: AppOptions): Hono {
               agentManager,
               storage,
               spaceId,
-              orchestrator,
+              runtime,
               localAgentRouter,
               connectionManager,
             });
@@ -1423,7 +1423,7 @@ export function createApp(options: AppOptions): Hono {
     storage,
     // No default spaceId - extracted from body
     spaceId: '', // Placeholder - checkin extracts from body.spaceId
-    orchestrator,
+    runtime,
     connectionManager,
     // Pass the centralized prompt builder from AgentManager
     buildSystemPrompt: (sid, cid, callsign) => agentManager.buildPromptForAgent(sid, cid, callsign),
@@ -1513,7 +1513,7 @@ export function createApp(options: AppOptions): Hono {
           agentManager,
           storage,
           spaceId: channel.spaceId,
-          orchestrator,
+          runtime,
           localAgentRouter,
           connectionManager,
         });

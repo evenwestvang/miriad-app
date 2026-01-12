@@ -1,32 +1,36 @@
 /**
- * @cast/runtime - Container orchestration for agents
+ * @cast/runtime - Agent runtime for containers
  *
  * Provides container lifecycle management for running claude-code agents.
- * Local development uses Docker, production uses AWS Fargate.
+ * Local development uses Docker, production uses Fly.io.
  */
 
 // Types
 export type {
-  ContainerOrchestrator,
-  ContainerSpawnOptions,
-  ContainerState,
-  ContainerStatus,
+  AgentRuntime,
+  ActivateOptions,
+  AgentRuntimeState,
+  AgentStatus,
+  AgentMessage,
+  ContainerInfo,
+  RuntimeType,
   McpServerConfig,
-  OrchestratorEvent,
-  OrchestratorEventHandler,
+  RuntimeEvent,
+  RuntimeEventHandler,
+  AgentId,
 } from './types.js';
 
-// Docker implementation (local development)
-export { DockerOrchestrator, type DockerOrchestratorConfig } from './docker-orchestrator.js';
+// Identity utilities
+export { formatAgentId, parseAgentId, validateAgentId } from './types.js';
 
-// Fargate implementation (AWS production)
-export { FargateOrchestrator, type FargateOrchestratorConfig } from './fargate-orchestrator.js';
+// Docker implementation (local development)
+export { DockerRuntime, type DockerRuntimeConfig } from './docker-orchestrator.js';
 
 // Mock implementation (testing)
 export {
-  MockContainerOrchestrator,
-  createMockOrchestrator,
-  type MockOrchestratorOptions,
-  type SpawnCall,
+  MockAgentRuntime,
+  createMockRuntime,
+  type MockRuntimeOptions,
+  type ActivateCall,
   type SendMessageCall,
 } from './mock-orchestrator.js';

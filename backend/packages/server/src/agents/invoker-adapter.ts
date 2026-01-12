@@ -10,7 +10,7 @@
 
 import type { AgentManager } from './agent-manager.js';
 import type { Storage } from '@cast/storage';
-import type { ContainerOrchestrator } from '@cast/runtime';
+import type { AgentRuntime } from '@cast/runtime';
 import type { ConnectionManager } from '../websocket/index.js';
 import type { AgentInvoker, Message } from '../handlers/messages.js';
 import { pushMessagesToContainer, compileMessages, broadcastAgentState } from '../handlers/checkin.js';
@@ -51,8 +51,8 @@ export interface AgentInvokerAdapterOptions {
   storage: Storage;
   /** The space ID (all agents in this invoker belong to same space) */
   spaceId: string;
-  /** Container orchestrator for direct message routing (local Docker) */
-  orchestrator?: ContainerOrchestrator;
+  /** Agent runtime for direct message routing (local Docker) */
+  runtime?: AgentRuntime;
   /** Local agent manager for routing to local-agent-engine connections */
   localAgentRouter?: LocalAgentRouter;
   /** WebSocket connection manager for broadcasting agent state */
@@ -77,7 +77,7 @@ export interface AgentInvokerAdapterOptions {
 export function createAgentInvokerAdapter(
   options: AgentInvokerAdapterOptions
 ): AgentInvoker {
-  const { agentManager, storage, spaceId, orchestrator, localAgentRouter, connectionManager } = options;
+  const { agentManager, storage, spaceId, runtime, localAgentRouter, connectionManager } = options;
 
   return {
     invokeAgents: async (
@@ -109,7 +109,7 @@ export function createAgentInvokerAdapter(
               return;
             }
 
-            const threadId = `${spaceId}:${channelId}:${callsign}`;
+            const agentId = `${spaceId}:${channelId}:${callsign}`;
             const userMessage = `Message from @${message.sender}: ${message.content}`;
 
             // Step 0b: Check if local agent is connected (local-agent-engine)
@@ -148,14 +148,14 @@ export function createAgentInvokerAdapter(
               }
             }
 
-            // Step 1: For local Docker, check if orchestrator has container running
+            // Step 1: For local Docker, check if runtime has container running
             // This bypasses the roster callbackUrl which has host.docker.internal issues
-            if (orchestrator?.isRunning(threadId)) {
-              console.log(`[AgentInvoker] @${callsign} container running (via orchestrator), sending directly`);
+            if (runtime?.isOnline(agentId)) {
+              console.log(`[AgentInvoker] @${callsign} container running (via runtime), sending directly`);
 
               // Build system prompt using centralized method from AgentManager
               const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
-              await orchestrator.sendMessage(threadId, userMessage, systemPrompt);
+              await runtime.sendMessage(agentId, { content: userMessage, systemPrompt });
 
               // Update readmark and lastMessageRoutedAt after successful delivery (rosterEntry already fetched above)
               if (rosterEntry) {
@@ -167,29 +167,31 @@ export function createAgentInvokerAdapter(
                 // Broadcast pending state - agent is now processing
                 await broadcastAgentState(connectionManager, channelId, callsign, 'pending', now);
               }
-              console.log(`[AgentInvoker] Successfully sent to @${callsign} via orchestrator`);
+              console.log(`[AgentInvoker] Successfully sent to @${callsign} via runtime`);
               return;
             }
 
-            // Step 2: Check roster for existing callbackUrl (Fargate path)
+            // Step 2: Check roster for existing callbackUrl (remote container)
             // Note: rosterEntry already fetched at start of loop for status check
 
             if (rosterEntry?.callbackUrl) {
               // Step 2a: Container is running - push directly
               console.log(`[AgentInvoker] @${callsign} has callbackUrl, pushing directly to ${rosterEntry.callbackUrl}`);
 
-              // Generate auth token for this agent (deterministic - same as container received at spawn)
+              // Generate auth token for this agent (deterministic - same as container received at activate)
               const authToken = generateContainerToken({ spaceId, channelId, callsign });
 
               // Build system prompt using centralized method from AgentManager
               const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
 
+              // v3.0: Pass routeHints to be echoed as HTTP headers (for Fly.io routing, etc.)
               const success = await pushMessagesToContainer(
                 rosterEntry.callbackUrl,
                 userMessage,
-                threadId,
+                agentId,
                 authToken,
-                systemPrompt
+                systemPrompt,
+                rosterEntry.routeHints as Record<string, string> | null
               );
 
               if (success) {

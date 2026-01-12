@@ -1,109 +1,115 @@
 /**
- * Mock Container Orchestrator
+ * Mock Agent Runtime
  *
- * Test-only implementation of ContainerOrchestrator that:
- * - Records all spawn/sendMessage calls
+ * Test-only implementation of AgentRuntime that:
+ * - Records all activate/sendMessage calls
  * - Provides callbacks to simulate container responses
  * - No Docker dependency - purely in-memory
  */
 
 import type {
-  ContainerOrchestrator,
-  ContainerSpawnOptions,
-  ContainerState,
-  OrchestratorEvent,
-  OrchestratorEventHandler,
+  AgentRuntime,
+  ActivateOptions,
+  AgentRuntimeState,
+  AgentMessage,
+  RuntimeEvent,
+  RuntimeEventHandler,
 } from './types.js';
 
 // =============================================================================
 // Types
 // =============================================================================
 
-export interface SpawnCall {
-  options: ContainerSpawnOptions;
+export interface ActivateCall {
+  options: ActivateOptions;
   timestamp: string;
 }
 
 export interface SendMessageCall {
-  threadId: string;
-  content: string;
-  systemPrompt?: string;
+  agentId: string;
+  message: AgentMessage;
   timestamp: string;
 }
 
-export interface MockOrchestratorOptions {
+export interface MockRuntimeOptions {
   /** Base URL for simulating Tymbal callbacks (e.g., "http://localhost:3000") */
   serverBaseUrl?: string;
-  /** Event handler for orchestrator events */
-  onEvent?: OrchestratorEventHandler;
+  /** Event handler for runtime events */
+  onEvent?: RuntimeEventHandler;
 }
 
 // =============================================================================
-// Mock Orchestrator
+// Mock Runtime
 // =============================================================================
 
-export class MockContainerOrchestrator implements ContainerOrchestrator {
-  private containers = new Map<string, ContainerState>();
-  private spawnCalls: SpawnCall[] = [];
+export class MockAgentRuntime implements AgentRuntime {
+  private agents = new Map<string, AgentRuntimeState>();
+  private activateCalls: ActivateCall[] = [];
   private sendMessageCalls: SendMessageCall[] = [];
-  private options: MockOrchestratorOptions;
+  private options: MockRuntimeOptions;
   private nextPort = 10000;
 
-  constructor(options: MockOrchestratorOptions = {}) {
+  constructor(options: MockRuntimeOptions = {}) {
     this.options = options;
   }
 
   // ---------------------------------------------------------------------------
-  // ContainerOrchestrator Implementation
+  // AgentRuntime Implementation
   // ---------------------------------------------------------------------------
 
-  async spawn(options: ContainerSpawnOptions): Promise<ContainerState> {
-    const threadId = `${options.spaceId}:${options.channelId}:${options.callsign}`;
+  async activate(options: ActivateOptions): Promise<AgentRuntimeState> {
+    const { agentId } = options;
     const now = new Date().toISOString();
 
     // Record the call
-    this.spawnCalls.push({
+    this.activateCalls.push({
       options,
       timestamp: now,
     });
 
-    // Emit starting event
-    await this.emit({ type: 'container_starting', threadId });
+    // Check if already online (idempotent)
+    const existing = this.agents.get(agentId);
+    if (existing && (existing.status === 'online' || existing.status === 'activating')) {
+      return existing;
+    }
 
-    // Create container state
+    // Emit activating event
+    await this.emit({ type: 'agent_activating', agentId });
+
+    // Create agent state
     const port = this.nextPort++;
-    const state: ContainerState = {
-      threadId,
-      containerId: `mock-container-${threadId}`,
+    const state: AgentRuntimeState = {
+      agentId,
+      container: {
+        containerId: `mock-container-${agentId}`,
+        runtime: 'mock',
+      },
       port,
-      status: 'running',
+      status: 'online',
+      endpoint: `http://localhost:${port}`,
+      routeHints: null,
+      activatedAt: now,
       lastActivity: now,
-      createdAt: now,
     };
 
-    this.containers.set(threadId, state);
+    this.agents.set(agentId, state);
 
-    // Emit ready event
-    await this.emit({ type: 'container_ready', threadId, port });
+    // Emit online event
+    await this.emit({ type: 'agent_online', agentId, endpoint: state.endpoint! });
 
     return state;
   }
 
-  async sendMessage(
-    threadId: string,
-    content: string,
-    systemPrompt?: string
-  ): Promise<void> {
-    const state = this.containers.get(threadId);
-    if (!state || state.status !== 'running') {
-      throw new Error(`Container ${threadId} is not running`);
+  async sendMessage(agentId: string, message: AgentMessage): Promise<void> {
+    const state = this.agents.get(agentId);
+    if (!state || state.status !== 'online') {
+      throw new Error(`Agent ${agentId} is not online`);
     }
 
     // Record the call
     this.sendMessageCalls.push({
-      threadId,
-      content,
-      systemPrompt,
+      agentId,
+      message,
       timestamp: new Date().toISOString(),
     });
 
@@ -111,34 +117,42 @@ export class MockContainerOrchestrator implements ContainerOrchestrator {
     state.lastActivity = new Date().toISOString();
   }
 
-  async stop(threadId: string, reason = 'stopped'): Promise<void> {
-    const state = this.containers.get(threadId);
+  async suspend(agentId: string, reason = 'manual'): Promise<void> {
+    const state = this.agents.get(agentId);
     if (!state) {
       return;
     }
 
-    state.status = 'stopped';
-    await this.emit({ type: 'container_stopped', threadId, reason });
+    // Idempotent
+    if (state.status === 'offline' || state.status === 'suspending') {
+      return;
+    }
+
+    state.status = 'offline';
+    state.endpoint = null;
+    state.routeHints = null;
+    state.container = null;
+    await this.emit({ type: 'agent_offline', agentId, reason });
   }
 
-  getStatus(threadId: string): ContainerState | null {
-    return this.containers.get(threadId) || null;
+  getState(agentId: string): AgentRuntimeState | null {
+    return this.agents.get(agentId) || null;
   }
 
-  isRunning(threadId: string): boolean {
-    const state = this.containers.get(threadId);
-    return state?.status === 'running';
+  isOnline(agentId: string): boolean {
+    const state = this.agents.get(agentId);
+    return state?.status === 'online';
   }
 
-  getAllRunning(): ContainerState[] {
-    return Array.from(this.containers.values()).filter(
-      (s) => s.status === 'running'
+  getAllOnline(): AgentRuntimeState[] {
+    return Array.from(this.agents.values()).filter(
+      (s) => s.status === 'online'
     );
   }
 
   async shutdown(): Promise<void> {
-    for (const threadId of this.containers.keys()) {
-      await this.stop(threadId, 'shutdown');
+    for (const agentId of this.agents.keys()) {
+      await this.suspend(agentId, 'shutdown');
     }
   }
 
@@ -147,10 +161,10 @@ export class MockContainerOrchestrator implements ContainerOrchestrator {
   // ---------------------------------------------------------------------------
 
   /**
-   * Get all recorded spawn calls.
+   * Get all recorded activate calls.
    */
-  getSpawnCalls(): SpawnCall[] {
-    return [...this.spawnCalls];
+  getActivateCalls(): ActivateCall[] {
+    return [...this.activateCalls];
   }
 
   /**
@@ -161,25 +175,25 @@ export class MockContainerOrchestrator implements ContainerOrchestrator {
   }
 
   /**
-   * Get sendMessage calls for a specific thread.
+   * Get sendMessage calls for a specific agent.
    */
-  getMessagesForThread(threadId: string): SendMessageCall[] {
-    return this.sendMessageCalls.filter((c) => c.threadId === threadId);
+  getMessagesForAgent(agentId: string): SendMessageCall[] {
+    return this.sendMessageCalls.filter((c) => c.agentId === agentId);
   }
 
   /**
    * Clear all recorded calls (useful between tests).
    */
   clearHistory(): void {
-    this.spawnCalls = [];
+    this.activateCalls = [];
     this.sendMessageCalls = [];
   }
 
   /**
-   * Reset all state (containers + history).
+   * Reset all state (agents + history).
    */
   reset(): void {
-    this.containers.clear();
+    this.agents.clear();
     this.clearHistory();
     this.nextPort = 10000;
   }
@@ -216,7 +230,7 @@ export class MockContainerOrchestrator implements ContainerOrchestrator {
   // Private
   // ---------------------------------------------------------------------------
 
-  private async emit(event: OrchestratorEvent): Promise<void> {
+  private async emit(event: RuntimeEvent): Promise<void> {
     if (this.options.onEvent) {
       await this.options.onEvent(event);
     }
@@ -224,10 +238,10 @@ export class MockContainerOrchestrator implements ContainerOrchestrator {
 }
 
 /**
- * Create a mock orchestrator for testing.
+ * Create a mock runtime for testing.
  */
-export function createMockOrchestrator(
-  options: MockOrchestratorOptions = {}
-): MockContainerOrchestrator {
-  return new MockContainerOrchestrator(options);
+export function createMockRuntime(
+  options: MockRuntimeOptions = {}
+): MockAgentRuntime {
+  return new MockAgentRuntime(options);
 }
