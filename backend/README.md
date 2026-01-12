@@ -31,6 +31,18 @@ packages/
 └── deploy/     # SAM template, Lambda adapter
 ```
 
+### Container Protocol
+
+Agent containers communicate with the backend via the **Container Protocol v3.0**. If you're implementing a new runtime (beyond Docker/Fly.io), see the full specification:
+
+📄 **[Container Protocol Spec v3.0](../design-notes/agent-server/container-protocol-spec-v3.md)**
+
+Key concepts:
+- `agentId` format: `{spaceId}:{channelId}:{callsign}`
+- Fire-and-forget activation with `/agents/checkin` callback
+- `routeHints` for platform-specific routing (e.g., Fly.io instance headers)
+- 60s heartbeat staleness, 180s activation timeout
+
 ## Environment Variables
 
 See `.env.example` for all available options:

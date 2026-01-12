@@ -49,3 +49,11 @@ export {
   type ActivateCall,
   type SendMessageCall,
 } from './mock-orchestrator.js';
+
+// Local implementation (user's machine via WebSocket)
+export {
+  LocalRuntime,
+  createLocalRuntime,
+  type LocalRuntimeConfig,
+  type RuntimeConnectionManager,
+} from './local-runtime.js';

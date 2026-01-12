@@ -13,6 +13,7 @@ import type { Storage } from '@cast/storage';
 import type { AgentRuntime } from '@cast/runtime';
 import type { ConnectionManager } from '../websocket/index.js';
 import type { AgentInvoker, Message } from '../handlers/messages.js';
+import type { RuntimeRegistry } from './runtime-registry.js';
 import { pushMessagesToContainer, compileMessages, broadcastAgentState } from '../handlers/checkin.js';
 import { generateContainerToken } from '../auth/index.js';
 
@@ -57,6 +58,8 @@ export interface AgentInvokerAdapterOptions {
   localAgentRouter?: LocalAgentRouter;
   /** WebSocket connection manager for broadcasting agent state */
   connectionManager?: ConnectionManager;
+  /** Runtime registry for routing to LocalRuntimes based on roster.runtime_id */
+  runtimeRegistry?: RuntimeRegistry;
 }
 
 // =============================================================================
@@ -77,7 +80,7 @@ export interface AgentInvokerAdapterOptions {
 export function createAgentInvokerAdapter(
   options: AgentInvokerAdapterOptions
 ): AgentInvoker {
-  const { agentManager, storage, spaceId, runtime, localAgentRouter, connectionManager } = options;
+  const { agentManager, storage, spaceId, runtime, localAgentRouter, connectionManager, runtimeRegistry } = options;
 
   return {
     invokeAgents: async (
@@ -148,7 +151,64 @@ export function createAgentInvokerAdapter(
               }
             }
 
-            // Step 1: For local Docker, check if runtime has container running
+            // Step 1: Check RuntimeRegistry for agents bound to a LocalRuntime (via roster.runtime_id)
+            // This is the primary routing path for local agents running via local-runtime
+            if (runtimeRegistry && rosterEntry?.runtimeId) {
+              const localRuntime = await runtimeRegistry.getRuntimeForAgent(agentId);
+
+              if (localRuntime === null) {
+                // Runtime is offline - broadcast error to channel, message stays in DB for later
+                console.warn(`[AgentInvoker] @${callsign}'s runtime (${rosterEntry.runtimeId}) is offline`);
+                // Broadcast offline state so UI shows agent is unreachable
+                await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
+                // Don't throw - message stays in DB, will be delivered when runtime reconnects
+                return;
+              }
+
+              // Runtime is online - route message through it
+              console.log(`[AgentInvoker] @${callsign} bound to LocalRuntime ${rosterEntry.runtimeId}, routing via registry`);
+
+              // Check if agent is online on this runtime
+              if (localRuntime.isOnline(agentId)) {
+                // Agent is already active - send message directly
+                const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
+                await localRuntime.sendMessage(agentId, { content: userMessage, systemPrompt });
+
+                // Update readmark and lastMessageRoutedAt
+                const now = new Date().toISOString();
+                await storage.updateRosterEntry(channelId, rosterEntry.id, {
+                  readmark: message.id,
+                  lastMessageRoutedAt: now,
+                });
+                await broadcastAgentState(connectionManager, channelId, callsign, 'pending', now);
+                console.log(`[AgentInvoker] Successfully sent to @${callsign} via LocalRuntime`);
+                return;
+              } else {
+                // Agent not active yet - activate it
+                console.log(`[AgentInvoker] @${callsign} not active, activating on LocalRuntime ${rosterEntry.runtimeId}`);
+                await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
+
+                const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
+                const authToken = generateContainerToken({ spaceId, channelId, callsign });
+
+                await localRuntime.activate({
+                  agentId,
+                  authToken,
+                  systemPrompt,
+                  // mcpServers could be added here from roster config in the future
+                });
+
+                // Update lastMessageRoutedAt - message will be delivered when agent checks in
+                const now = new Date().toISOString();
+                await storage.updateRosterEntry(channelId, rosterEntry.id, {
+                  lastMessageRoutedAt: now,
+                });
+                console.log(`[AgentInvoker] Activated @${callsign} on LocalRuntime (will get message on checkin)`);
+                return;
+              }
+            }
+
+            // Step 2: For local Docker, check if runtime has container running
             // This bypasses the roster callbackUrl which has host.docker.internal issues
             if (runtime?.isOnline(agentId)) {
               console.log(`[AgentInvoker] @${callsign} container running (via runtime), sending directly`);
@@ -171,11 +231,11 @@ export function createAgentInvokerAdapter(
               return;
             }
 
-            // Step 2: Check roster for existing callbackUrl (remote container)
+            // Step 3: Check roster for existing callbackUrl (remote container)
             // Note: rosterEntry already fetched at start of loop for status check
 
             if (rosterEntry?.callbackUrl) {
-              // Step 2a: Container is running - push directly
+              // Step 3a: Container is running - push directly
               console.log(`[AgentInvoker] @${callsign} has callbackUrl, pushing directly to ${rosterEntry.callbackUrl}`);
 
               // Generate auth token for this agent (deterministic - same as container received at activate)
@@ -222,7 +282,7 @@ export function createAgentInvokerAdapter(
                 );
               }
             } else {
-              // Step 2b: No container running - spawn new one
+              // Step 3b: No container running - spawn new one
               console.log(`[AgentInvoker] @${callsign} has no callbackUrl, spawning new container`);
               // Broadcast 'connecting' state before spawning
               await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
