@@ -3,16 +3,16 @@
  *
  * Tests the full message flow:
  * 1. POST message with @mention
- * 2. AgentManager spawns container and sends message
+ * 2. AgentManager activates container and sends message
  * 3. Container POSTs Tymbal frame to /tymbal/:channelId
  * 4. WebSocket broadcasts frame to clients
  *
- * Uses MockContainerOrchestrator - no Docker dependency.
+ * Uses MockAgentRuntime - no Docker dependency.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Hono } from 'hono';
-import { createMockOrchestrator, type MockContainerOrchestrator } from '@cast/runtime';
+import { createMockRuntime, type MockAgentRuntime } from '@cast/runtime';
 import { tymbal, type ChannelRoster } from '@cast/core';
 import {
   createMessageRoutes,
@@ -46,8 +46,8 @@ const testChannel: ChannelContext = {
 };
 
 const testRoster: RosterEntry[] = [
-  { callsign: 'fox', agentType: 'engineer', status: 'active' },
-  { callsign: 'bear', agentType: 'reviewer', status: 'active' },
+  { id: 'r1', callsign: 'fox', agentType: 'engineer', status: 'active' },
+  { id: 'r2', callsign: 'bear', agentType: 'reviewer', status: 'active' },
 ];
 
 const testChannelRoster: ChannelRoster = {
@@ -95,7 +95,7 @@ function createMockRosterProvider(): RosterProvider {
 // Mock Storage for AgentInvokerAdapter (only implements what invoker-adapter needs)
 function createMockStorage() {
   return {
-    getRosterByCallsign: vi.fn(async () => null), // No callback URL - always spawn
+    getRosterByCallsign: vi.fn(async () => null), // No callback URL - always activate
     updateRosterEntry: vi.fn(async () => {}),
     // Other methods can be stubs
     getChannel: vi.fn(async () => null),
@@ -200,7 +200,7 @@ function createTestTymbalRoutes(connectionManager: ConnectionManager): Hono {
 
 describe('End-to-End Integration', () => {
   let app: Hono;
-  let mockOrchestrator: MockContainerOrchestrator;
+  let mockRuntime: MockAgentRuntime;
   let connectionManager: ConnectionManager;
   let agentManager: AgentManager;
   let messageStorage: ReturnType<typeof createMockMessageStorage>;
@@ -210,8 +210,8 @@ describe('End-to-End Integration', () => {
     // Reset state
     broadcastedFrames = [];
 
-    // Create mock orchestrator
-    mockOrchestrator = createMockOrchestrator();
+    // Create mock runtime
+    mockRuntime = createMockRuntime();
 
     // Create connection manager
     connectionManager = createConnectionManager();
@@ -223,9 +223,9 @@ describe('End-to-End Integration', () => {
       return originalBroadcast(channelId, frame);
     });
 
-    // Create AgentManager
+    // Create AgentManager with new API
     agentManager = new AgentManager({
-      orchestrator: mockOrchestrator,
+      runtime: mockRuntime,
       broadcast: connectionManager.broadcast,
       getChannel: vi.fn(async () => testChannel),
       getRoster: vi.fn(async () => testRoster),
@@ -260,11 +260,11 @@ describe('End-to-End Integration', () => {
   afterEach(async () => {
     await agentManager.shutdown();
     connectionManager.closeAll();
-    mockOrchestrator.reset();
+    mockRuntime.reset();
   });
 
   describe('Message Flow', () => {
-    it('spawns agent and sends message on @mention', async () => {
+    it('activates agent and sends message on @mention', async () => {
       // POST message with @mention
       const res = await app.request(`/channels/${TEST_CHANNEL_ID}/messages`, {
         method: 'POST',
@@ -284,14 +284,13 @@ describe('End-to-End Integration', () => {
       expect(storedMessages![0].content).toBe('@fox help me with this task');
       expect(storedMessages![0].addressedAgents).toEqual(['fox']);
 
-      // Verify orchestrator spawned container
-      const spawnCalls = mockOrchestrator.getSpawnCalls();
-      expect(spawnCalls).toHaveLength(1);
-      expect(spawnCalls[0].options.callsign).toBe('fox');
-      expect(spawnCalls[0].options.channelId).toBe(TEST_CHANNEL_ID);
+      // Verify runtime activated container
+      const activateCalls = mockRuntime.getActivateCalls();
+      expect(activateCalls).toHaveLength(1);
+      expect(activateCalls[0].options.agentId).toBe(`${TEST_SPACE_ID}:${TEST_CHANNEL_ID}:fox`);
 
       // Note: Messages are delivered via pending queue when container checks in,
-      // not via orchestrator.sendMessage(). This is the correct behavior.
+      // not via runtime.sendMessage(). This is the correct behavior.
     });
 
     it('broadcasts @channel to all roster agents', async () => {
@@ -309,12 +308,15 @@ describe('End-to-End Integration', () => {
       const json = await res.json();
       expect(json.message.addressedAgents).toEqual(['fox', 'bear']);
 
-      // Both agents should be spawned
-      const spawnCalls = mockOrchestrator.getSpawnCalls();
-      expect(spawnCalls).toHaveLength(2);
-      expect(spawnCalls.map((c) => c.options.callsign).sort()).toEqual(['bear', 'fox']);
+      // Both agents should be activated
+      const activateCalls = mockRuntime.getActivateCalls();
+      expect(activateCalls).toHaveLength(2);
+      expect(activateCalls.map((c) => c.options.agentId).sort()).toEqual([
+        `${TEST_SPACE_ID}:${TEST_CHANNEL_ID}:bear`,
+        `${TEST_SPACE_ID}:${TEST_CHANNEL_ID}:fox`,
+      ]);
 
-      // Note: Messages delivered via pending queue on checkin, not orchestrator.sendMessage()
+      // Note: Messages delivered via pending queue on checkin, not runtime.sendMessage()
     });
 
     it('routes unaddressed human message to leader', async () => {
@@ -331,9 +333,9 @@ describe('End-to-End Integration', () => {
       expect(res.status).toBe(201);
 
       // Should route to leader (fox)
-      const spawnCalls = mockOrchestrator.getSpawnCalls();
-      expect(spawnCalls).toHaveLength(1);
-      expect(spawnCalls[0].options.callsign).toBe('fox');
+      const activateCalls = mockRuntime.getActivateCalls();
+      expect(activateCalls).toHaveLength(1);
+      expect(activateCalls[0].options.agentId).toBe(`${TEST_SPACE_ID}:${TEST_CHANNEL_ID}:fox`);
     });
   });
 
@@ -404,10 +406,10 @@ describe('End-to-End Integration', () => {
 
       expect(postRes.status).toBe(201);
 
-      // Step 2: Verify container was spawned for agent
-      const spawnCalls = mockOrchestrator.getSpawnCalls();
-      expect(spawnCalls).toHaveLength(1);
-      expect(spawnCalls[0].options.callsign).toBe('fox');
+      // Step 2: Verify container was activated for agent
+      const activateCalls = mockRuntime.getActivateCalls();
+      expect(activateCalls).toHaveLength(1);
+      expect(activateCalls[0].options.agentId).toBe(`${TEST_SPACE_ID}:${TEST_CHANNEL_ID}:fox`);
 
       // Step 3: Simulate agent response via Tymbal
       const responseFrame = tymbal.set('01JRESP01', {
@@ -438,10 +440,10 @@ describe('End-to-End Integration', () => {
   });
 
   describe('Agent State Management', () => {
-    it('spawns container for each message when no callbackUrl in roster', async () => {
+    it('activates container for each message when no callbackUrl in roster', async () => {
       // Note: This test reflects the new architecture where storage.callbackUrl
       // determines if a container is running. With mock storage returning null,
-      // each message causes a new spawn. In production, the container registers
+      // each message causes a new activation. In production, the container registers
       // its callbackUrl on checkin, enabling direct message push.
 
       // First message
@@ -464,12 +466,12 @@ describe('End-to-End Integration', () => {
         }),
       });
 
-      // Without callbackUrl in roster, each message spawns a new container
+      // Without callbackUrl in roster, each message activates a new container
       // In production, container would register callbackUrl on checkin
-      expect(mockOrchestrator.getSpawnCalls()).toHaveLength(2);
+      expect(mockRuntime.getActivateCalls()).toHaveLength(2);
     });
 
-    it('spawns multiple agents when mentioned together', async () => {
+    it('activates multiple agents when mentioned together', async () => {
       await app.request(`/channels/${TEST_CHANNEL_ID}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -479,12 +481,15 @@ describe('End-to-End Integration', () => {
         }),
       });
 
-      // Both agents should be spawned
-      const spawnCalls = mockOrchestrator.getSpawnCalls();
-      expect(spawnCalls).toHaveLength(2);
+      // Both agents should be activated
+      const activateCalls = mockRuntime.getActivateCalls();
+      expect(activateCalls).toHaveLength(2);
 
-      const callsigns = spawnCalls.map((c) => c.options.callsign).sort();
-      expect(callsigns).toEqual(['bear', 'fox']);
+      const agentIds = activateCalls.map((c) => c.options.agentId).sort();
+      expect(agentIds).toEqual([
+        `${TEST_SPACE_ID}:${TEST_CHANNEL_ID}:bear`,
+        `${TEST_SPACE_ID}:${TEST_CHANNEL_ID}:fox`,
+      ]);
     });
   });
 });
