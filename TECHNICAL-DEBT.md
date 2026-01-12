@@ -36,6 +36,21 @@ This document tracks known technical debt and issues that should be addressed.
 
 ## Medium Priority
 
+### caststack.site Route53 Hosted Zone in Wrong Account
+
+**Issue**: The `caststack.site` Route53 hosted zone is in account `724629565941` (personal), but the staging infrastructure is deployed to account `455626925815` (cikada-stag).
+
+**Why it matters**:
+- Split infrastructure across accounts complicates management
+- Tunnel server DNS records need to be managed in a different account than the main infrastructure
+
+**Fix required**:
+1. Create hosted zone for `caststack.site` in account `455626925815`
+2. Update NS records at registrar (Domeneshop) to point to the new hosted zone's nameservers
+3. Migrate any existing DNS records
+
+---
+
 ### ESLint Configuration
 
 **Issue**: Frontend had no eslint configuration. We added one (`frontend/eslint.config.js`) but it's not enforced in CI due to the hooks violations above.
