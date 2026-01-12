@@ -27,11 +27,11 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: backend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       # TODO: Re-enable after setting up TypeScript project references
       # - run: pnpm typecheck
       # - run: pnpm lint
       - run: pnpm test
-      - run: pnpm build
 
   frontend:
     name: Frontend
