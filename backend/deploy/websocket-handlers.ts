@@ -2,61 +2,40 @@
  * AWS Lambda WebSocket Handlers
  *
  * Handles API Gateway WebSocket events for real-time streaming.
- * Uses DynamoDB to persist connection state across Lambda invocations.
+ * Uses PostgresConnectionManager for unified connection state management.
  *
  * Routes:
- * - $connect: Store connection in DynamoDB, send initial sync
- * - $disconnect: Remove connection from DynamoDB
- * - $default: Handle Tymbal frames (sync requests, etc.)
+ * - $connect: Store connection with '__pending__' channelId
+ * - $disconnect: Remove connection from Postgres
+ * - $default: Handle Tymbal frames (sync requests trigger channel assignment)
  */
 
 import type {
   APIGatewayProxyResultV2,
   APIGatewayProxyWebsocketEventV2,
 } from 'aws-lambda';
-import {
-  DynamoDBClient,
-  PutItemCommand,
-  DeleteItemCommand,
-  GetItemCommand,
-  QueryCommand,
-} from '@aws-sdk/client-dynamodb';
-import {
-  ApiGatewayManagementApiClient,
-  PostToConnectionCommand,
-  GoneException,
-} from '@aws-sdk/client-apigatewaymanagementapi';
 import { createPostgresStorage } from '@cast/storage';
 import { parseFrame, isSyncRequest } from '@cast/core';
+import {
+  createPostgresConnectionManager,
+  ApiGatewaySender,
+  type PostgresConnectionManager,
+} from '@cast/server/websocket';
 
 // =============================================================================
 // Configuration
 // =============================================================================
 
-const CONNECTIONS_TABLE = process.env.CONNECTIONS_TABLE!;
 const WEBSOCKET_ENDPOINT = process.env.WEBSOCKET_ENDPOINT!;
 const PLANETSCALE_URL = process.env.PLANETSCALE_URL!;
 const REGION = process.env.AWS_REGION ?? 'us-east-1';
 
 // Cache for channel -> spaceId lookups (survives across Lambda invocations in warm container)
 const channelSpaceCache = new Map<string, string>();
-const TTL_SECONDS = 24 * 60 * 60; // 24 hours
 
 // =============================================================================
-// Clients (reused across invocations)
+// Shared Instances (reused across invocations in warm Lambda)
 // =============================================================================
-
-const dynamodb = new DynamoDBClient({ region: REGION });
-
-// API Gateway Management client - endpoint URL without wss:// prefix
-function getApiGatewayClient(endpoint: string) {
-  // Convert wss://abc.execute-api.region.amazonaws.com/stage to https://abc.execute-api.region.amazonaws.com/stage
-  const httpsEndpoint = endpoint.replace('wss://', 'https://');
-  return new ApiGatewayManagementApiClient({
-    region: REGION,
-    endpoint: httpsEndpoint,
-  });
-}
 
 // Storage (lazy init)
 let storage: ReturnType<typeof createPostgresStorage> | null = null;
@@ -73,111 +52,27 @@ async function getStorage() {
   return storage;
 }
 
-// =============================================================================
-// DynamoDB Helpers
-// =============================================================================
+// Connection Manager (lazy init)
+let connectionManager: PostgresConnectionManager | null = null;
 
-interface ConnectionRecord {
-  connectionId: string;
-  channelId: string;
-  connectedAt: string;
-  ttl: number;
-}
+async function getConnectionManager(): Promise<PostgresConnectionManager> {
+  if (!connectionManager) {
+    // Convert wss:// to https:// for API Gateway Management API
+    const httpsEndpoint = WEBSOCKET_ENDPOINT.replace('wss://', 'https://');
 
-async function saveConnection(record: ConnectionRecord): Promise<void> {
-  await dynamodb.send(
-    new PutItemCommand({
-      TableName: CONNECTIONS_TABLE,
-      Item: {
-        connectionId: { S: record.connectionId },
-        channelId: { S: record.channelId },
-        connectedAt: { S: record.connectedAt },
-        ttl: { N: record.ttl.toString() },
-      },
-    })
-  );
-}
+    const sender = new ApiGatewaySender({
+      endpoint: httpsEndpoint,
+      region: REGION,
+    });
 
-async function deleteConnection(connectionId: string): Promise<void> {
-  await dynamodb.send(
-    new DeleteItemCommand({
-      TableName: CONNECTIONS_TABLE,
-      Key: {
-        connectionId: { S: connectionId },
-      },
-    })
-  );
-}
+    const storageInstance = await getStorage();
 
-async function getConnection(connectionId: string): Promise<ConnectionRecord | null> {
-  const result = await dynamodb.send(
-    new GetItemCommand({
-      TableName: CONNECTIONS_TABLE,
-      Key: {
-        connectionId: { S: connectionId },
-      },
-    })
-  );
-
-  if (!result.Item) return null;
-
-  return {
-    connectionId: result.Item.connectionId?.S ?? connectionId,
-    channelId: result.Item.channelId?.S ?? '',
-    connectedAt: result.Item.connectedAt?.S ?? new Date().toISOString(),
-    ttl: parseInt(result.Item.ttl?.N ?? '0', 10),
-  };
-}
-
-async function getChannelConnections(channelId: string): Promise<ConnectionRecord[]> {
-  const result = await dynamodb.send(
-    new QueryCommand({
-      TableName: CONNECTIONS_TABLE,
-      IndexName: 'ChannelIndex',
-      KeyConditionExpression: 'channelId = :channelId',
-      ExpressionAttributeValues: {
-        ':channelId': { S: channelId },
-      },
-    })
-  );
-
-  if (!result.Items) return [];
-
-  return result.Items.map((item) => ({
-    connectionId: item.connectionId?.S ?? '',
-    channelId: item.channelId?.S ?? channelId,
-    connectedAt: item.connectedAt?.S ?? new Date().toISOString(),
-    ttl: parseInt(item.ttl?.N ?? '0', 10),
-  }));
-}
-
-// =============================================================================
-// WebSocket Helpers
-// =============================================================================
-
-async function sendToConnection(
-  apiGateway: ApiGatewayManagementApiClient,
-  connectionId: string,
-  data: string
-): Promise<boolean> {
-  try {
-    await apiGateway.send(
-      new PostToConnectionCommand({
-        ConnectionId: connectionId,
-        Data: new TextEncoder().encode(data),
-      })
-    );
-    return true;
-  } catch (error) {
-    if (error instanceof GoneException) {
-      // Connection is stale, clean it up
-      console.log(`[WebSocket] Connection ${connectionId} is gone, removing`);
-      await deleteConnection(connectionId);
-      return false;
-    }
-    console.error(`[WebSocket] Error sending to ${connectionId}:`, error);
-    throw error;
+    connectionManager = createPostgresConnectionManager({
+      storage: storageInstance,
+      sender,
+    });
   }
+  return connectionManager;
 }
 
 // =============================================================================
@@ -188,30 +83,18 @@ export async function connectHandler(
   event: APIGatewayProxyWebsocketEventV2
 ): Promise<APIGatewayProxyResultV2> {
   const connectionId = event.requestContext.connectionId;
-  const channelId = event.queryStringParameters?.channelId;
+
+  // Channel will be set later via sync request
+  // This matches local dev flow: connect first, auth/channel later
+  const channelId = event.queryStringParameters?.channelId ?? '__pending__';
 
   console.log(`[WebSocket] $connect: ${connectionId}, channelId: ${channelId}`);
 
-  if (!channelId) {
-    console.error('[WebSocket] Missing channelId query parameter');
-    return {
-      statusCode: 400,
-      body: 'Missing channelId query parameter',
-    };
-  }
-
   try {
-    // Save connection to DynamoDB
-    const now = new Date();
-    await saveConnection({
-      connectionId,
-      channelId,
-      connectedAt: now.toISOString(),
-      ttl: Math.floor(now.getTime() / 1000) + TTL_SECONDS,
-    });
+    const manager = await getConnectionManager();
+    await manager.addConnection(connectionId, channelId);
 
-    console.log(`[WebSocket] Connection ${connectionId} saved for channel ${channelId}`);
-
+    console.log(`[WebSocket] Connection ${connectionId} saved (channel: ${channelId})`);
     return { statusCode: 200, body: 'Connected' };
   } catch (error) {
     console.error('[WebSocket] Error in $connect:', error);
@@ -234,7 +117,8 @@ export async function disconnectHandler(
   console.log(`[WebSocket] $disconnect: ${connectionId}`);
 
   try {
-    await deleteConnection(connectionId);
+    const manager = await getConnectionManager();
+    await manager.removeConnection(connectionId);
     console.log(`[WebSocket] Connection ${connectionId} removed`);
 
     return { statusCode: 200, body: 'Disconnected' };
@@ -258,8 +142,10 @@ export async function defaultHandler(
   console.log(`[WebSocket] $default from ${connectionId}: ${body.substring(0, 100)}...`);
 
   try {
+    const manager = await getConnectionManager();
+
     // Get connection info
-    const connection = await getConnection(connectionId);
+    const connection = await manager.getConnection(connectionId);
     if (!connection) {
       console.error(`[WebSocket] Connection ${connectionId} not found`);
       return { statusCode: 400, body: 'Connection not found' };
@@ -274,49 +160,117 @@ export async function defaultHandler(
 
     // Handle sync requests
     if (isSyncRequest(frame)) {
-      console.log(`[WebSocket] Sync request from ${connectionId}, since: ${frame.since}`);
+      // Sync request may include channelId for channel switch
+      const requestedChannelId = frame.channelId || connection.channelId;
+
+      console.log(`[WebSocket] Sync request from ${connectionId}, channel: ${requestedChannelId}, since: ${frame.since}`);
+
+      // Validate that channelId is not pending
+      if (requestedChannelId === '__pending__') {
+        console.error(`[WebSocket] No channelId in sync request from ${connectionId}`);
+        await manager.send(connectionId, JSON.stringify({
+          error: 'missing_channel',
+          message: 'Sync request must include channelId'
+        }));
+        return { statusCode: 400, body: 'Missing channelId' };
+      }
 
       const storage = await getStorage();
 
-      // Look up spaceId from channel (with caching)
-      let spaceId = channelSpaceCache.get(connection.channelId);
+      // Look up channel and validate it exists
+      let spaceId = channelSpaceCache.get(requestedChannelId);
       if (!spaceId) {
-        const channel = await storage.getChannelById(connection.channelId);
+        const channel = await storage.getChannelById(requestedChannelId);
         if (!channel) {
-          console.error(`[WebSocket] Channel ${connection.channelId} not found`);
+          console.error(`[WebSocket] Channel ${requestedChannelId} not found`);
+          await manager.send(connectionId, JSON.stringify({
+            error: 'channel_not_found',
+            message: 'Channel not found'
+          }));
           return { statusCode: 404, body: 'Channel not found' };
         }
         spaceId = channel.spaceId;
-        channelSpaceCache.set(connection.channelId, spaceId);
-        console.log(`[WebSocket] Cached spaceId ${spaceId} for channel ${connection.channelId}`);
+        channelSpaceCache.set(requestedChannelId, spaceId);
+        console.log(`[WebSocket] Cached spaceId ${spaceId} for channel ${requestedChannelId}`);
       }
 
-      const messages = await storage.getMessages(spaceId, connection.channelId, {
+      // Switch channel if different from current
+      if (requestedChannelId !== connection.channelId) {
+        await manager.switchChannel(connectionId, requestedChannelId);
+        console.log(`[WebSocket] Switched ${connectionId} from ${connection.channelId} to ${requestedChannelId}`);
+      }
+
+      // Fetch messages
+      const effectiveLimit = frame.limit ?? 25;
+      const messages = await storage.getMessagesByChannelId(requestedChannelId, {
         since: frame.since,
-        limit: 100,
+        before: frame.before,
+        limit: effectiveLimit,
+        newestFirst: !frame.since && !frame.before,
       });
 
-      // Build NDJSON payload with all messages + sync response in one send
-      // This avoids N sequential API Gateway calls (major latency improvement)
-      const frames = messages.map(msg => JSON.stringify({
-        i: msg.id,
-        t: msg.timestamp,
-        v: {
+      // Build NDJSON payload with all messages + sync response
+      const frames = messages.map(msg => {
+        const metadata = msg.metadata as { method?: string } | undefined;
+        let frameValue: Record<string, unknown> = {
           type: msg.type,
+          content: msg.content,
           sender: msg.sender,
           senderType: msg.senderType,
-          content: msg.content,
-        },
-      }));
+          ...(metadata?.method && { method: metadata.method }),
+        };
+
+        // Parse tool_call and tool_result content
+        if (msg.type === 'tool_call' || msg.type === 'tool_result') {
+          try {
+            const parsed = typeof msg.content === 'string'
+              ? JSON.parse(msg.content)
+              : msg.content;
+
+            if (msg.type === 'tool_call') {
+              frameValue = {
+                type: 'tool_call',
+                sender: parsed.sender || msg.sender,
+                senderType: parsed.senderType || msg.senderType,
+                toolCallId: parsed.toolCallId,
+                name: parsed.name,
+                args: parsed.args,
+              };
+            } else if (msg.type === 'tool_result') {
+              frameValue = {
+                type: 'tool_result',
+                sender: parsed.sender || msg.sender,
+                senderType: parsed.senderType || msg.senderType,
+                toolCallId: parsed.toolCallId,
+                content: parsed.content,
+                isError: parsed.isError,
+              };
+            }
+          } catch {
+            console.warn(`[WebSocket] Failed to parse ${msg.type} content:`, msg.id);
+          }
+        }
+
+        return JSON.stringify({
+          i: msg.id,
+          t: msg.timestamp,
+          v: frameValue,
+          c: requestedChannelId,
+        });
+      });
 
       // Add sync response at the end
-      frames.push(JSON.stringify({ sync: new Date().toISOString() }));
+      const hasMore = messages.length >= effectiveLimit;
+      frames.push(JSON.stringify({
+        sync: new Date().toISOString(),
+        hasMore,
+        oldestId: messages.length > 0 ? messages[0].id : undefined,
+      }));
 
       // Send all frames as single NDJSON payload
-      const apiGateway = getApiGatewayClient(WEBSOCKET_ENDPOINT);
-      await sendToConnection(apiGateway, connectionId, frames.join('\n'));
+      await manager.send(connectionId, frames.join('\n'));
 
-      console.log(`[WebSocket] Sent ${messages.length} messages + sync response to ${connectionId}`);
+      console.log(`[WebSocket] Sent ${messages.length} messages + sync to ${connectionId}`);
       return { statusCode: 200, body: 'Synced' };
     }
 
@@ -339,20 +293,8 @@ export async function defaultHandler(
  */
 export async function broadcastToChannel(
   channelId: string,
-  frame: string,
-  endpoint: string = WEBSOCKET_ENDPOINT
+  frame: string
 ): Promise<void> {
-  const connections = await getChannelConnections(channelId);
-  if (connections.length === 0) {
-    console.log(`[Broadcast] No connections for channel ${channelId}`);
-    return;
-  }
-
-  const apiGateway = getApiGatewayClient(endpoint);
-  const results = await Promise.allSettled(
-    connections.map((conn) => sendToConnection(apiGateway, conn.connectionId, frame))
-  );
-
-  const succeeded = results.filter((r) => r.status === 'fulfilled' && r.value).length;
-  console.log(`[Broadcast] Sent to ${succeeded}/${connections.length} connections in ${channelId}`);
+  const manager = await getConnectionManager();
+  await manager.broadcast(channelId, frame);
 }

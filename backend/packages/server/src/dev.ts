@@ -21,7 +21,7 @@ if (result.error) {
 
 import { createServer, type IncomingMessage } from 'http';
 import { createApp } from './app.js';
-import { createConnectionManager, type ConnectionInfo } from './websocket/index.js';
+import { createLocalConnectionManager, type LocalConnectionInfo } from './websocket/index.js';
 import { createLocalAgentManager, type LocalAgentManager } from './handlers/local-agents.js';
 import { createPostgresStorage, type Storage } from '@cast/storage';
 import { DockerRuntime, FlyRuntime } from '@cast/runtime';
@@ -79,13 +79,14 @@ async function main() {
   // ---------------------------------------------------------------------------
 
   // Track authorized channels per connection to avoid repeated auth checks
-  type ExtendedConnection = ConnectionInfo & {
+  type ExtendedConnection = LocalConnectionInfo & {
     session?: { userId: string; spaceId: string };
     authorizedChannels?: Set<string>;
   };
 
-  const connectionManager = createConnectionManager({
-    onSyncRequest: async (connection: ConnectionInfo, channelId: string, since?: string, before?: string, limit?: number) => {
+  const connectionManager = createLocalConnectionManager({
+    storage,
+    onSyncRequest: async (connection: LocalConnectionInfo, channelId: string, since?: string, before?: string, limit?: number) => {
       console.log(`[Sync] Received sync request for channel: ${channelId}, since: ${since}, before: ${before}, limit: ${limit}`);
       const t0 = performance.now();
       try {
@@ -121,7 +122,7 @@ async function main() {
 
         // Switch channel if different from current
         if (channelId !== connection.channelId) {
-          connectionManager.switchChannel(connection.id, channelId);
+          connectionManager.switchChannel(connection.connectionId, channelId);
         }
 
         // Fetch message history and send to client
@@ -215,6 +216,9 @@ async function main() {
       }
     },
   });
+
+  // Initialize the connection manager (creates ws_connections table)
+  await connectionManager.initialize();
   console.log('✅ Connection manager initialized');
 
   // ---------------------------------------------------------------------------
@@ -371,7 +375,7 @@ async function main() {
       // Use placeholder channel - will be set by first sync request
       const connInfo = connectionManager.addConnection(ws, '__pending__');
       // Attach session to connection for channel auth during sync
-      (connInfo as ConnectionInfo & { session: typeof session }).session = session;
+      (connInfo as LocalConnectionInfo & { session: typeof session }).session = session;
     });
   });
 

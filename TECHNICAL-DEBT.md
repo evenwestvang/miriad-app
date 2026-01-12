@@ -59,6 +59,37 @@ This document tracks known technical debt and issues that should be addressed.
 
 ---
 
+### API Gateway Custom Domains Not in CloudFormation
+
+**Issue**: The staging custom domains (`api.staging.caststack.ai`, `ws.staging.caststack.ai`) were created manually via AWS CLI, not managed by CloudFormation/SAM.
+
+**Why it matters**:
+- Manual infrastructure is harder to reproduce and audit
+- No drift detection
+- Easy to forget configuration details
+
+**Current state** (cikada-stag account 455626925815):
+- `api.staging.caststack.ai` → HTTP API `9xq1buuixd`
+- `ws.staging.caststack.ai` → WebSocket API `cdzg9zn9wg`
+- ACM certs created manually in the same account
+
+**Fix required**: Add `AWS::ApiGatewayV2::DomainName` and `AWS::ApiGatewayV2::ApiMapping` resources to `backend/deploy/template.yaml` for both HTTP and WebSocket APIs.
+
+---
+
+### PlanetScale Connection String Format
+
+**Issue**: PlanetScale's Postgres interface requires `sslmode=require`, not `sslmode=verify-full&sslrootcert=system`. The latter causes connection failures.
+
+**Why it matters**: Easy to copy wrong format from PlanetScale dashboard examples.
+
+**Fix required**: Document the correct format in README or env example:
+```
+postgresql://USER.BRANCH:PASSWORD@REGION.pg.psdb.cloud:5432/postgres?sslmode=require
+```
+
+---
+
 ## Notes
 
 - Deploy workflows (`deploy-staging.yml`, `deploy-prod.yml`) run `pnpm build` which catches compilation errors, so deployments are still validated.

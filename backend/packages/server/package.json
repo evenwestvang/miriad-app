@@ -8,6 +8,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./websocket": {
+      "import": "./dist/websocket/index.js",
+      "types": "./dist/websocket/index.d.ts"
     }
   },
   "scripts": {
@@ -26,6 +30,7 @@
     "dotenv": "^17.2.3",
     "hono": "^4.0.0",
     "jsonwebtoken": "^9.0.3",
+    "postgres": "^3.4.7",
     "ulid": "^3.0.2",
     "ws": "^8.18.3",
     "zod": "^3.23.0"

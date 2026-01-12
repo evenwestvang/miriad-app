@@ -119,6 +119,9 @@ importers:
       jsonwebtoken:
         specifier: ^9.0.3
         version: 9.0.3
+      postgres:
+        specifier: ^3.4.7
+        version: 3.4.7
       ulid:
         specifier: ^3.0.2
         version: 3.0.2

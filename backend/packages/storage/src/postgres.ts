@@ -56,6 +56,8 @@ import type {
   CostTally,
   TokenUsage,
   ModelUsage,
+  // WebSocket connection types
+  StoredConnection,
 } from '@cast/core';
 // Import functions separately (not as types)
 import {
@@ -73,6 +75,27 @@ export interface PostgresStorageOptions {
   /** PostgreSQL connection string */
   connectionString: string;
 }
+
+/**
+ * Standard postgres client configuration.
+ * Single source of truth for all postgres connections in the system.
+ */
+export const POSTGRES_CONFIG = {
+  ssl: 'require' as const,
+  max: 10,
+  prepare: false,
+} as const;
+
+/**
+ * Create a postgres client with standard configuration.
+ * Use this for any postgres connection to ensure consistent settings.
+ */
+export function createPostgresClient(connectionString: string) {
+  return postgres(connectionString, POSTGRES_CONFIG);
+}
+
+/** Type of the postgres client returned by createPostgresClient */
+export type PostgresClient = ReturnType<typeof createPostgresClient>;
 
 // Row type from database
 interface MessageRow {
@@ -196,11 +219,7 @@ interface BootstrapTokenRow {
 // =============================================================================
 
 export function createPostgresStorage(options: PostgresStorageOptions): Storage {
-  const sql = postgres(options.connectionString, {
-    ssl: 'require',
-    max: 10, // connection pool size
-    prepare: false, // Use simple query protocol - single round trip instead of prepare+execute
-  });
+  const sql = createPostgresClient(options.connectionString);
 
   // ---------------------------------------------------------------------------
   // Message Operations
@@ -2244,6 +2263,25 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       CREATE INDEX IF NOT EXISTS idx_cost_records_space
       ON cost_records(space_id, created_at DESC)
     `;
+
+    // ---------------------------------------------------------------------------
+    // WebSocket Connections Table
+    // ---------------------------------------------------------------------------
+    await sql`
+      CREATE TABLE IF NOT EXISTS ws_connections (
+        connection_id VARCHAR(255) PRIMARY KEY,
+        channel_id VARCHAR(255) NOT NULL DEFAULT '__pending__',
+        connected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        agent_callsign VARCHAR(255),
+        container_id VARCHAR(255)
+      )
+    `;
+
+    // Index on channel_id for efficient broadcasts
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_ws_connections_channel_id
+      ON ws_connections(channel_id)
+    `;
   }
 
   async function close(): Promise<void> {
@@ -2786,6 +2824,94 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     }));
   }
 
+  // ---------------------------------------------------------------------------
+  // WebSocket Connection Operations
+  // ---------------------------------------------------------------------------
+
+  interface ConnectionRow {
+    connection_id: string;
+    channel_id: string;
+    connected_at: Date;
+    agent_callsign: string | null;
+    container_id: string | null;
+  }
+
+  function rowToConnection(row: ConnectionRow): StoredConnection {
+    return {
+      connectionId: row.connection_id,
+      channelId: row.channel_id,
+      connectedAt: row.connected_at.toISOString(),
+      agentCallsign: row.agent_callsign ?? undefined,
+      containerId: row.container_id ?? undefined,
+    };
+  }
+
+  async function saveConnection(
+    connectionId: string,
+    channelId: string,
+    options?: { agentCallsign?: string; containerId?: string }
+  ): Promise<void> {
+    const now = new Date();
+
+    await sql`
+      INSERT INTO ws_connections (
+        connection_id,
+        channel_id,
+        connected_at,
+        agent_callsign,
+        container_id
+      ) VALUES (
+        ${connectionId},
+        ${channelId},
+        ${now},
+        ${options?.agentCallsign ?? null},
+        ${options?.containerId ?? null}
+      )
+      ON CONFLICT (connection_id) DO UPDATE SET
+        channel_id = EXCLUDED.channel_id,
+        connected_at = EXCLUDED.connected_at,
+        agent_callsign = EXCLUDED.agent_callsign,
+        container_id = EXCLUDED.container_id
+    `;
+  }
+
+  async function getConnection(connectionId: string): Promise<StoredConnection | null> {
+    const result = await sql<ConnectionRow[]>`
+      SELECT * FROM ws_connections
+      WHERE connection_id = ${connectionId}
+    `;
+
+    if (result.length === 0) return null;
+    return rowToConnection(result[0]);
+  }
+
+  async function updateConnectionChannel(
+    connectionId: string,
+    channelId: string
+  ): Promise<void> {
+    await sql`
+      UPDATE ws_connections
+      SET channel_id = ${channelId}
+      WHERE connection_id = ${connectionId}
+    `;
+  }
+
+  async function deleteConnection(connectionId: string): Promise<void> {
+    await sql`
+      DELETE FROM ws_connections
+      WHERE connection_id = ${connectionId}
+    `;
+  }
+
+  async function getConnectionsByChannel(channelId: string): Promise<StoredConnection[]> {
+    const result = await sql<ConnectionRow[]>`
+      SELECT * FROM ws_connections
+      WHERE channel_id = ${channelId}
+    `;
+
+    return result.map(rowToConnection);
+  }
+
   return {
     // Message operations
     saveMessage,
@@ -2854,6 +2980,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     // Cost tracking operations
     saveCostRecord,
     getChannelCostTally,
+    // WebSocket connection operations
+    saveConnection,
+    getConnection,
+    updateConnectionChannel,
+    deleteConnection,
+    getConnectionsByChannel,
     // Lifecycle
     initialize,
     close,

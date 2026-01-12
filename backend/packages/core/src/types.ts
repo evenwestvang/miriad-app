@@ -1181,3 +1181,28 @@ export interface CostTally {
   /** Total duration in ms */
   totalDurationMs: number;
 }
+
+// =============================================================================
+// WebSocket Connection Types
+// =============================================================================
+
+/**
+ * A WebSocket connection record as stored in the database.
+ * Used for message broadcasting to connected clients.
+ */
+export interface StoredConnection {
+  /** Unique connection identifier */
+  connectionId: string;
+
+  /** Channel ID this connection is subscribed to ('__pending__' for unauth'd) */
+  channelId: string;
+
+  /** ISO timestamp when connection was established */
+  connectedAt: string;
+
+  /** Agent callsign if this is an agent connection */
+  agentCallsign?: string;
+
+  /** Container ID if this is a containerized agent */
+  containerId?: string;
+}

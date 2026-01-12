@@ -47,6 +47,8 @@ import type {
   StoredCostRecord,
   CreateCostRecordInput,
   CostTally,
+  // WebSocket connection types
+  StoredConnection,
 } from '@cast/core';
 
 // =============================================================================
@@ -592,6 +594,57 @@ export interface Storage {
    * @returns Array of cost tallies per agent
    */
   getChannelCostTally(channelId: string): Promise<CostTally[]>;
+
+  // ---------------------------------------------------------------------------
+  // WebSocket Connection Operations
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Save a WebSocket connection record.
+   * Called when a client connects to the WebSocket server.
+   *
+   * @param connectionId - Unique connection identifier
+   * @param channelId - Channel ID (use '__pending__' for connect-first-auth-later)
+   * @param options - Optional agent/container info
+   */
+  saveConnection(
+    connectionId: string,
+    channelId: string,
+    options?: { agentCallsign?: string; containerId?: string }
+  ): Promise<void>;
+
+  /**
+   * Get a connection record by ID.
+   *
+   * @param connectionId - Connection ID
+   * @returns Connection record or null if not found
+   */
+  getConnection(connectionId: string): Promise<StoredConnection | null>;
+
+  /**
+   * Update a connection's channel (for channel switching).
+   *
+   * @param connectionId - Connection ID
+   * @param channelId - New channel ID
+   */
+  updateConnectionChannel(connectionId: string, channelId: string): Promise<void>;
+
+  /**
+   * Delete a connection record.
+   * Called when a client disconnects.
+   *
+   * @param connectionId - Connection ID to remove
+   */
+  deleteConnection(connectionId: string): Promise<void>;
+
+  /**
+   * Get all connections for a channel.
+   * Used for broadcasting messages to channel subscribers.
+   *
+   * @param channelId - Channel ID
+   * @returns Array of connection records
+   */
+  getConnectionsByChannel(channelId: string): Promise<StoredConnection[]>;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
