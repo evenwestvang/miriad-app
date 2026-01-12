@@ -94,20 +94,31 @@ const runtime = placeholderRuntime;
 // Lambda Handler
 // =============================================================================
 
-const honoHandler = handle(createApp({
-  storage,
-  runtime,
-  // Note: Lambda WebSocket broadcasts go through websocket-handlers.ts, not through this app.
-  // The connectionManager here is a placeholder - HTTP routes don't need it for Lambda.
-  connectionManager: null as any,
-}));
+// App and handler are lazily initialized on first request
+// This allows async initialization of storage and connection manager
+let honoHandler: ReturnType<typeof handle> | null = null;
+
+async function getHandler() {
+  if (!honoHandler) {
+    // Ensure storage and connection manager are initialized
+    await ensureStorageInitialized();
+    const manager = await getConnectionManager();
+
+    // Create the app with real connection manager for broadcasting
+    const app = createApp({
+      storage,
+      runtime,
+      connectionManager: manager,
+    });
+
+    honoHandler = handle(app);
+  }
+  return honoHandler;
+}
 
 export const handler = async (event: APIGatewayProxyEventV2, context: Context) => {
-  // Ensure storage is initialized on first request
-  await ensureStorageInitialized();
-
-  // Ensure connection manager is initialized
-  const manager = await getConnectionManager();
+  // Get or create the handler (initializes storage and connection manager)
+  const h = await getHandler();
 
   // Strip the stage prefix from the path if present
   // API Gateway sends /stag/health but Hono expects /health
@@ -116,5 +127,5 @@ export const handler = async (event: APIGatewayProxyEventV2, context: Context) =
     event.rawPath = event.rawPath.slice(stage.length + 1) || '/';
   }
 
-  return honoHandler(event, context);
+  return h(event, context);
 };
