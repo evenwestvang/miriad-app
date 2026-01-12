@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Monitor } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { getRosterColor } from '../../utils/senderColors'
 import { AgentSummonPicker } from './AgentSummonPicker'
@@ -19,6 +20,8 @@ interface AgentRosterProps {
   agentTypes?: AgentType[]
   /** Channel ID for API calls */
   channelId?: string
+  /** Space ID for runtime fetching */
+  spaceId?: string
   /** API host */
   apiHost?: string
   /** @deprecated No longer used - roster updates via WebSocket */
@@ -76,6 +79,11 @@ function AgentBadge({ agent, isLeader, isSelected, channelId, rosterIndex, onCli
             ? 'pending'
             : 'idle'
 
+  // Runtime info for tooltip
+  const runtimeLabel = agent.runtimeId
+    ? agent.runtimeName || 'local'
+    : 'cloud'
+
   // Derive dot color: yellow for connecting, gray for offline, otherwise signature color
   // Muted state doesn't affect dot color - only adds strikethrough to name
   const displayDotColor = agent.isConnecting
@@ -92,7 +100,7 @@ function AgentBadge({ agent, isLeader, isSelected, channelId, rosterIndex, onCli
         "hover:bg-[#f5f5f5]",
         isSelected && "bg-[#f5f5f5]"
       )}
-      title={`@${agent.callsign} - ${stateLabel}${isLeader ? ' (leader)' : ''}`}
+      title={`@${agent.callsign} - ${stateLabel}${isLeader ? ' (leader)' : ''} • ${runtimeLabel}`}
     >
       {/* Dot: gray for paused/offline, yellow+pulse for connecting, subtle pulse for pending, colored when online */}
       <span
@@ -119,6 +127,9 @@ function AgentBadge({ agent, isLeader, isSelected, channelId, rosterIndex, onCli
       {isLeader && (
         <span className="text-amber-500 text-[10px]">★</span>
       )}
+      {agent.runtimeId && (
+        <Monitor className="w-2.5 h-2.5 text-muted-foreground" />
+      )}
     </button>
   )
 }
@@ -133,6 +144,7 @@ export function AgentRoster({
   leader,
   agentTypes: _agentTypes = [],
   channelId,
+  spaceId,
   apiHost = '',
   onAgentAdded: _onAgentAdded,
   onAgentDismiss,
@@ -186,6 +198,7 @@ export function AgentRoster({
         <AgentSummonPicker
           roster={roster}
           channelId={channelId}
+          spaceId={spaceId}
           apiHost={apiHost}
           onClose={() => onSummonClose?.()}
           isOpen={summonOpen}

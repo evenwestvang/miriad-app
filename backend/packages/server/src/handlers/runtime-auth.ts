@@ -1,19 +1,19 @@
 /**
- * Local Agent Server Auth Handlers
+ * Runtime Server Auth Handlers
  *
- * REST API routes for local agent server authentication.
+ * REST API routes for LocalRuntime server authentication.
  *
  * Endpoints:
- * - POST /api/local-agents/bootstrap-token    - Generate bootstrap token (UI)
- * - POST /api/local-agents/bootstrap          - Exchange bootstrap for server credentials (CLI)
- * - POST /api/local-agents/agent-token        - Issue agent token (server requests)
+ * - POST /api/runtimes/bootstrap-token    - Generate bootstrap token (UI)
+ * - POST /api/runtimes/bootstrap          - Exchange bootstrap for server credentials (CLI)
+ * - POST /api/runtimes/agent-token        - Issue agent token (server requests)
  *
  * Flow:
- * 1. User clicks "Connect Local Agent" in CAST UI
+ * 1. User clicks "Connect Local Runtime" in CAST UI
  * 2. UI calls /bootstrap-token → gets connection string
- * 3. User runs `init "cast://..."` command
+ * 3. User runs `npx @caststack/local-runtime init "cast://..."` command
  * 4. CLI calls /bootstrap → exchanges token for server credentials
- * 5. Server uses credentials to request agent tokens via /agent-token
+ * 5. Runtime uses credentials to request agent tokens via /agent-token
  */
 
 import { Hono } from 'hono';
@@ -43,7 +43,7 @@ const SERVER_SECRET = ENV_SECRET ?? DEV_SECRET;
 
 // Log once at startup (dev mode only)
 if (!ENV_SECRET) {
-  console.log('[LocalAgentAuth] Using dev secret (set CAST_SERVER_SECRET in production)');
+  console.log('[RuntimeAuth] Using dev secret (set CAST_SERVER_SECRET in production)');
 }
 
 // Bootstrap token expiry (10 minutes)
@@ -53,7 +53,7 @@ const BOOTSTRAP_TOKEN_TTL_MS = 10 * 60 * 1000;
 // Types
 // =============================================================================
 
-export interface LocalAgentAuthOptions {
+export interface RuntimeAuthOptions {
   /** Storage backend */
   storage: Storage;
   /** API host for connection string (e.g., api.cast.dev) */
@@ -112,7 +112,7 @@ function formatZodError(error: z.ZodError): { error: string; details: Array<{ pa
 // Route Factory
 // =============================================================================
 
-export function createLocalAgentAuthRoutes(options: LocalAgentAuthOptions): Hono {
+export function createRuntimeAuthRoutes(options: RuntimeAuthOptions): Hono {
   const { storage, apiHost, wsHost } = options;
   const app = new Hono();
 
@@ -143,7 +143,7 @@ export function createLocalAgentAuthRoutes(options: LocalAgentAuthOptions): Hono
 
     // Build connection string and command
     const connectionString = `cast://${token}@${apiHost}/${spaceId}`;
-    const command = `npx @anthropic/cast-local-agent init "${connectionString}"`;
+    const command = `npx @caststack/local-runtime init "${connectionString}"`;
 
     return c.json({
       bootstrapToken: token,
@@ -196,7 +196,7 @@ export function createLocalAgentAuthRoutes(options: LocalAgentAuthOptions): Hono
       secret,
     });
 
-    console.log(`[LocalAgentAuth] Issued server credentials ${serverId} for space ${tokenData.spaceId}`);
+    console.log(`[RuntimeAuth] Issued server credentials ${serverId} for space ${tokenData.spaceId}`);
 
     return c.json({
       serverId,
@@ -254,7 +254,7 @@ export function createLocalAgentAuthRoutes(options: LocalAgentAuthOptions): Hono
       callsign,
     });
 
-    console.log(`[LocalAgentAuth] Issued agent token for ${callsign} in channel ${channelId}`);
+    console.log(`[RuntimeAuth] Issued agent token for ${callsign} in channel ${channelId}`);
 
     return c.json({ token });
   });
@@ -313,7 +313,7 @@ export function createLocalAgentAuthRoutes(options: LocalAgentAuthOptions): Hono
       return c.json({ error: 'Failed to revoke server' }, 500);
     }
 
-    console.log(`[LocalAgentAuth] Revoked server credentials ${serverId}`);
+    console.log(`[RuntimeAuth] Revoked server credentials ${serverId}`);
 
     return c.json({ success: true });
   });
@@ -364,7 +364,7 @@ export function createServerAuthVerifier(storage: Storage) {
  * This synchronous version is kept for backward compatibility but will always return null.
  */
 export function verifyServerAuth(authHeader: string | undefined): ServerAuthResult | null {
-  console.warn('[LocalAgentAuth] verifyServerAuth is deprecated - use createServerAuthVerifier(storage) for async DB lookup');
+  console.warn('[RuntimeAuth] verifyServerAuth is deprecated - use createServerAuthVerifier(storage) for async DB lookup');
   // Return null - caller should migrate to async version
   return null;
 }
@@ -378,7 +378,7 @@ export function getServerCredentialsByUser(userId: string): Array<{
   spaceId: string;
   createdAt: Date;
 }> {
-  console.warn('[LocalAgentAuth] getServerCredentialsByUser is deprecated - use storage.getLocalAgentServersByUser() directly');
+  console.warn('[RuntimeAuth] getServerCredentialsByUser is deprecated - use storage.getLocalAgentServersByUser() directly');
   return [];
 }
 
@@ -387,6 +387,6 @@ export function getServerCredentialsByUser(userId: string): Array<{
  * This function is kept for backward compatibility but will always return false.
  */
 export function revokeServerCredentials(serverId: string): boolean {
-  console.warn('[LocalAgentAuth] revokeServerCredentials is deprecated - use storage.revokeLocalAgentServer() directly');
+  console.warn('[RuntimeAuth] revokeServerCredentials is deprecated - use storage.revokeLocalAgentServer() directly');
   return false;
 }

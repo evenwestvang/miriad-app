@@ -26,7 +26,7 @@ import type { Storage } from '@cast/storage';
 import type { StoredRuntime, LocalRuntimeConfig } from '@cast/core';
 import { AgentStateManager, parseAgentId } from '@cast/runtime';
 import type { ConnectionManager } from '../websocket/index.js';
-import { createServerAuthVerifier, type ServerAuthResult } from '../handlers/local-agent-auth.js';
+import { createServerAuthVerifier, type ServerAuthResult } from '../handlers/runtime-auth.js';
 
 // =============================================================================
 // Protocol Message Types (from spec section 2.2)
@@ -364,7 +364,7 @@ export function createRuntimeConnectionManager(
   }
 
   // ==========================================================================
-  // Frame Persistence (extracted from local-agents.ts)
+  // Frame Persistence
   // ==========================================================================
 
   async function persistSetFrame(

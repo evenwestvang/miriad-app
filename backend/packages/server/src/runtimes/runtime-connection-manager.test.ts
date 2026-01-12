@@ -100,7 +100,7 @@ function createMockConnectionManager() {
 // Mock Server Auth Verifier
 // =============================================================================
 
-vi.mock('../handlers/local-agent-auth.js', () => ({
+vi.mock('../handlers/runtime-auth.js', () => ({
   createServerAuthVerifier: () => async (header: string) => {
     if (header === 'Server valid_secret') {
       return { serverId: 'srv_123', spaceId: 'space_123' };

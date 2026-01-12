@@ -20,7 +20,6 @@ export {
 export {
   createAgentInvokerAdapter,
   type AgentInvokerAdapterOptions,
-  type LocalAgentRouter,
 } from './invoker-adapter.js';
 
 // Runtime registry

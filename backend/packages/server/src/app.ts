@@ -19,10 +19,11 @@ import { createMcpRoutes } from './handlers/mcp-http.js';
 import { createArtifactRoutes } from './handlers/artifacts.js';
 import { createFilesystemAssetStorage } from './assets/index.js';
 import type { ConnectionManager } from './websocket/index.js';
-import { AgentManager, createAgentInvokerAdapter, type LocalAgentRouter } from './agents/index.js';
+import { AgentManager, createAgentInvokerAdapter } from './agents/index.js';
 import { createDevAuthRoutes, createWorkOSAuthRoutes, requireAuth, getSpaceId } from './auth/index.js';
 import { createAppRoutes } from './handlers/apps.js';
-import { createLocalAgentAuthRoutes } from './handlers/local-agent-auth.js';
+import { createRuntimeAuthRoutes } from './handlers/runtime-auth.js';
+import { createRuntimeRoutes } from './handlers/runtimes.js';
 
 // =============================================================================
 // Types
@@ -35,8 +36,6 @@ export interface AppOptions {
   runtime: AgentRuntime;
   /** WebSocket connection manager */
   connectionManager: ConnectionManager;
-  /** Optional: Local agent router for local-agent-engine connections */
-  localAgentRouter?: LocalAgentRouter;
 }
 
 // =============================================================================
@@ -244,9 +243,10 @@ function createRosterRoutes(storage: Storage): Hono {
 
   // POST /channels/:id/roster - Add to roster
   app.post('/:channelId/roster', async (c) => {
+    const spaceId = getSpaceId(c);
     const channelId = c.req.param('channelId');
 
-    let body: { callsign?: string; agentType?: string; status?: string };
+    let body: { callsign?: string; agentType?: string; status?: string; runtimeId?: string | null };
     try {
       body = await c.req.json();
     } catch {
@@ -258,11 +258,23 @@ function createRosterRoutes(storage: Storage): Hono {
     }
 
     try {
+      // Validate runtimeId if provided
+      if (body.runtimeId) {
+        const runtime = await storage.getRuntime(body.runtimeId);
+        if (!runtime) {
+          return c.json({ error: 'Runtime not found' }, 404);
+        }
+        if (runtime.spaceId !== spaceId) {
+          return c.json({ error: 'Runtime does not belong to this space' }, 403);
+        }
+      }
+
       const entry = await storage.addToRoster({
         channelId,
         callsign: body.callsign,
         agentType: body.agentType,
         status: (body.status as 'active' | 'idle' | 'busy' | 'offline') ?? 'active',
+        runtimeId: body.runtimeId ?? null,
       });
       return c.json({ entry }, 201);
     } catch (error) {
@@ -316,14 +328,14 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
     const spaceId = getSpaceId(c);
     const channelId = c.req.param('channelId');
 
-    let body: { callsign?: string; agentType?: string };
+    let body: { callsign?: string; agentType?: string; runtimeId?: string | null };
     try {
       body = await c.req.json();
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
 
-    const { callsign, agentType } = body;
+    const { callsign, agentType, runtimeId } = body;
 
     if (!callsign || !agentType) {
       return c.json({ error: 'callsign and agentType are required' }, 400);
@@ -336,13 +348,24 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
         return c.json({ error: 'Channel not found' }, 404);
       }
 
+      // Validate runtimeId if provided
+      if (runtimeId) {
+        const runtime = await storage.getRuntime(runtimeId);
+        if (!runtime) {
+          return c.json({ error: 'Runtime not found' }, 404);
+        }
+        if (runtime.spaceId !== spaceId) {
+          return c.json({ error: 'Runtime does not belong to this space' }, 403);
+        }
+      }
+
       // Check if agent already exists in roster
       const existingEntry = await storage.getRosterByCallsign(channelId, callsign);
       if (existingEntry) {
         return c.json({ error: 'Agent already in roster' }, 409);
       }
 
-      console.log(`[Agents] Adding ${callsign} (${agentType}) to channel ${channelId}`);
+      console.log(`[Agents] Adding ${callsign} (${agentType}) to channel ${channelId}${runtimeId ? ` on runtime ${runtimeId}` : ''}`);
 
       // Step 1: Add to roster
       const rosterEntry = await storage.addToRoster({
@@ -350,6 +373,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
         callsign,
         agentType,
         status: 'active',
+        runtimeId: runtimeId ?? null,
       });
       console.log(`[Agents] Added ${callsign} to roster, entry ID: ${rosterEntry.id}`);
 
@@ -820,7 +844,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
  * Create a fully configured Cast backend Hono app.
  */
 export function createApp(options: AppOptions): Hono {
-  const { storage, runtime, connectionManager, localAgentRouter } = options;
+  const { storage, runtime, connectionManager } = options;
 
   const app = new Hono();
 
@@ -934,14 +958,20 @@ export function createApp(options: AppOptions): Hono {
   app.route('/auth/apps', appRoutes);
 
   // ---------------------------------------------------------------------------
-  // Local Agent Server Auth Routes
+  // Runtime Auth Routes (bootstrap token, server credentials)
   // ---------------------------------------------------------------------------
-  const localAgentAuthRoutes = createLocalAgentAuthRoutes({
+  const runtimeAuthRoutes = createRuntimeAuthRoutes({
     storage,
     apiHost: new URL(apiUrl).host,
     wsHost: new URL(apiUrl).host.replace('api.', 'ws.'),
   });
-  app.route('/api/local-agents', localAgentAuthRoutes);
+  app.route('/api/runtimes/auth', runtimeAuthRoutes);
+
+  // ---------------------------------------------------------------------------
+  // Runtime Management Routes
+  // ---------------------------------------------------------------------------
+  const runtimeRoutes = createRuntimeRoutes({ storage });
+  app.route('/api/spaces', runtimeRoutes);
 
   // ---------------------------------------------------------------------------
   // Focus Types & Agent Types (stubs for frontend)
@@ -1367,7 +1397,6 @@ export function createApp(options: AppOptions): Hono {
               storage,
               spaceId,
               runtime,
-              localAgentRouter,
               connectionManager,
             });
             return invoker.invokeAgents(cid, targets, message);
@@ -1514,7 +1543,6 @@ export function createApp(options: AppOptions): Hono {
           storage,
           spaceId: channel.spaceId,
           runtime,
-          localAgentRouter,
           connectionManager,
         });
         return invoker.invokeAgents(channelId, targets, message);

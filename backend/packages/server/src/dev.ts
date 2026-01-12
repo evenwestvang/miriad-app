@@ -22,7 +22,6 @@ if (result.error) {
 import { createServer, type IncomingMessage } from 'http';
 import { createApp } from './app.js';
 import { createLocalConnectionManager, type LocalConnectionInfo } from './websocket/index.js';
-import { createLocalAgentManager, type LocalAgentManager } from './handlers/local-agents.js';
 import { createPostgresStorage, type Storage } from '@cast/storage';
 import { DockerRuntime, FlyRuntime, AgentStateManager } from '@cast/runtime';
 import { createRuntimeConnectionManager } from './runtimes/index.js';
@@ -223,16 +222,6 @@ async function main() {
   console.log('✅ Connection manager initialized');
 
   // ---------------------------------------------------------------------------
-  // Initialize Local Agent Manager (for local-agent-engine connections)
-  // ---------------------------------------------------------------------------
-
-  const localAgentManager = createLocalAgentManager({
-    storage,
-    connectionManager,
-  });
-  console.log('✅ Local agent manager initialized');
-
-  // ---------------------------------------------------------------------------
   // Initialize Runtime Connection Manager (for LocalRuntime WS connections)
   // ---------------------------------------------------------------------------
 
@@ -291,7 +280,6 @@ async function main() {
     storage,
     runtime,
     connectionManager,
-    localAgentRouter: localAgentManager,
   });
 
   // ---------------------------------------------------------------------------
@@ -343,9 +331,8 @@ async function main() {
     }
   });
 
-  // WebSocket server for /channels/:channelId/stream, /local-agents/connect, and /runtimes/connect
+  // WebSocket server for /stream and /runtimes/connect
   const wss = new WebSocketServer({ noServer: true });
-  const localAgentWss = new WebSocketServer({ noServer: true });
   const runtimeWss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', async (request: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -361,18 +348,6 @@ async function main() {
         console.log('[Runtimes] New WebSocket connection');
         const authHeader = request.headers.authorization;
         runtimeConnectionManager.handleConnection(ws as unknown as WebSocket, authHeader);
-      });
-      return;
-    }
-
-    // ---------------------------------------------------------------------------
-    // Local Agent WebSocket: /local-agents/connect
-    // Stage 1: No auth - trusts localhost
-    // ---------------------------------------------------------------------------
-    if (pathname === '/local-agents/connect') {
-      localAgentWss.handleUpgrade(request, socket, head, (ws) => {
-        console.log('[LocalAgents] New WebSocket connection');
-        localAgentManager.handleConnection(ws);
       });
       return;
     }
@@ -412,7 +387,6 @@ async function main() {
     console.log(`✅ Server running at http://localhost:${port}`);
     console.log(`   Health check: http://localhost:${port}/health`);
     console.log(`   WebSocket: ws://localhost:${port}/stream`);
-    console.log(`   Local Agents: ws://localhost:${port}/local-agents/connect`);
     console.log(`   Runtimes: ws://localhost:${port}/runtimes/connect`);
     console.log(`   Space ID: ${spaceId}`);
   });
@@ -423,7 +397,6 @@ async function main() {
 
   const shutdown = async () => {
     console.log('\n🛑 Shutting down...');
-    localAgentManager.closeAll();
     connectionManager.closeAll();
     server.close();
     await storage.close();

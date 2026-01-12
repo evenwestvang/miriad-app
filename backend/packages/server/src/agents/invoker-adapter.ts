@@ -29,22 +29,6 @@ function contentToString(content: string | Record<string, unknown>): string {
 // Types
 // =============================================================================
 
-/** Interface for local agent manager */
-export interface LocalAgentRouter {
-  /** Check if a local agent is connected */
-  isAgentConnected: (channelId: string, callsign: string) => boolean;
-  /** Send a message to a local agent */
-  sendToAgent: (channelId: string, callsign: string, message: {
-    type: 'message';
-    id: string;
-    channelId: string;
-    callsign: string;
-    content: string;
-    sender: string;
-    systemPrompt: string;
-  }) => boolean;
-}
-
 export interface AgentInvokerAdapterOptions {
   /** The AgentManager instance to delegate to (for spawning new containers and building prompts) */
   agentManager: AgentManager;
@@ -54,8 +38,6 @@ export interface AgentInvokerAdapterOptions {
   spaceId: string;
   /** Agent runtime for direct message routing (local Docker) */
   runtime?: AgentRuntime;
-  /** Local agent manager for routing to local-agent-engine connections */
-  localAgentRouter?: LocalAgentRouter;
   /** WebSocket connection manager for broadcasting agent state */
   connectionManager?: ConnectionManager;
   /** Runtime registry for routing to LocalRuntimes based on roster.runtime_id */
@@ -80,7 +62,7 @@ export interface AgentInvokerAdapterOptions {
 export function createAgentInvokerAdapter(
   options: AgentInvokerAdapterOptions
 ): AgentInvoker {
-  const { agentManager, storage, spaceId, runtime, localAgentRouter, connectionManager, runtimeRegistry } = options;
+  const { agentManager, storage, spaceId, runtime, connectionManager, runtimeRegistry } = options;
 
   return {
     invokeAgents: async (
@@ -114,42 +96,6 @@ export function createAgentInvokerAdapter(
 
             const agentId = `${spaceId}:${channelId}:${callsign}`;
             const userMessage = `Message from @${message.sender}: ${message.content}`;
-
-            // Step 0b: Check if local agent is connected (local-agent-engine)
-            if (localAgentRouter?.isAgentConnected(channelId, callsign)) {
-              console.log(`[AgentInvoker] @${callsign} is a local agent, sending via WebSocket`);
-
-              // Build system prompt using centralized method from AgentManager
-              const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
-
-              const sent = localAgentRouter.sendToAgent(channelId, callsign, {
-                type: 'message',
-                id: message.id,
-                channelId,
-                callsign,
-                content: contentToString(message.content),
-                sender: message.sender,
-                systemPrompt,
-              });
-
-              if (sent) {
-                // Update readmark and lastMessageRoutedAt after successful delivery (rosterEntry already fetched above)
-                if (rosterEntry) {
-                  const now = new Date().toISOString();
-                  await storage.updateRosterEntry(channelId, rosterEntry.id, {
-                    readmark: message.id,
-                    lastMessageRoutedAt: now,
-                  });
-                  // Broadcast pending state - agent is now processing
-                  await broadcastAgentState(connectionManager, channelId, callsign, 'pending', now);
-                }
-                console.log(`[AgentInvoker] Successfully sent to local agent @${callsign}`);
-                return;
-              } else {
-                console.warn(`[AgentInvoker] Failed to send to local agent @${callsign}, falling back`);
-                // Fall through to other methods
-              }
-            }
 
             // Step 1: Check RuntimeRegistry for agents bound to a LocalRuntime (via roster.runtime_id)
             // This is the primary routing path for local agents running via local-runtime
