@@ -42,8 +42,11 @@ primary_region = "iad"
   BASE_SERVICE_PORT = "10000"
 
 # Fly.io VM sizing - minimal for this lightweight service
-# Can scale up if needed via `fly scale`
+# IMPORTANT: Single instance only - rathole state is in-memory and not shared.
+# Multi-instance would require shared state (Redis/Postgres) for HA.
+# See migration plan "Open Questions > Scaling" for details.
 [[vm]]
   memory = "256mb"
   cpu_kind = "shared"
   cpus = 1
+  count = 1
