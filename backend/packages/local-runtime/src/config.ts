@@ -193,7 +193,7 @@ export async function exchangeBootstrapToken(
   bootstrapToken: string
 ): Promise<BootstrapResponse> {
   const protocol = getApiProtocol(host);
-  const url = `${protocol}://${host}/api/local-agents/bootstrap`;
+  const url = `${protocol}://${host}/api/runtimes/auth/bootstrap`;
 
   const response = await fetch(url, {
     method: 'POST',
