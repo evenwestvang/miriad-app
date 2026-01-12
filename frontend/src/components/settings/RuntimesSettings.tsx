@@ -66,7 +66,7 @@ export function RuntimesSettings({ apiHost, spaceId }: RuntimesSettingsProps) {
     setGeneratedCommand(null)
     try {
       const data = await apiPost<BootstrapTokenResponse>(
-        `${apiHost}/api/local-agents/bootstrap-token`,
+        `${apiHost}/api/runtimes/auth/bootstrap-token`,
         {}
       )
       // Update command to use new package name
