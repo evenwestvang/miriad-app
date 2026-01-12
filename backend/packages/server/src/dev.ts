@@ -24,7 +24,7 @@ import { createApp } from './app.js';
 import { createConnectionManager, type ConnectionInfo } from './websocket/index.js';
 import { createLocalAgentManager, type LocalAgentManager } from './handlers/local-agents.js';
 import { createPostgresStorage, type Storage } from '@cast/storage';
-import { DockerRuntime } from '@cast/runtime';
+import { DockerRuntime, FlyRuntime } from '@cast/runtime';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Duplex } from 'stream';
 import { parseSessionCookie, verifySessionToken } from './auth/index.js';
@@ -228,15 +228,41 @@ async function main() {
   console.log('✅ Local agent manager initialized');
 
   // ---------------------------------------------------------------------------
-  // Initialize Agent Runtime (Docker for local dev)
+  // Initialize Agent Runtime (AGENT_RUNTIME=fly for Fly.io, default=docker)
   // ---------------------------------------------------------------------------
 
-  const runtime = new DockerRuntime({
-    imageName: process.env.AGENT_IMAGE ?? 'claude-code:local',
-    castApiUrl: process.env.CAST_API_URL ?? `http://host.docker.internal:${port}`,
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
-  });
-  console.log('✅ Docker runtime initialized');
+  const agentRuntime = process.env.AGENT_RUNTIME ?? 'docker';
+
+  let runtime;
+  if (agentRuntime === 'fly') {
+    const flyApiToken = process.env.FLY_API_TOKEN;
+    const flyAppName = process.env.FLY_APP_NAME;
+    if (!flyApiToken || !flyAppName) {
+      console.error('❌ AGENT_RUNTIME=fly requires FLY_API_TOKEN and FLY_APP_NAME');
+      process.exit(1);
+    }
+    runtime = new FlyRuntime({
+      flyAppName,
+      flyApiToken,
+      flyRegion: process.env.FLY_REGION ?? 'iad',
+      imageName: process.env.FLY_IMAGE ?? 'registry.fly.io/cast-agent-spike:latest',
+      castApiUrl: process.env.CAST_API_URL ?? `http://host.docker.internal:${port}`,
+      anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
+      storage,
+      spaceId,
+    });
+    console.log('✅ Fly.io runtime initialized');
+  } else if (agentRuntime === 'docker') {
+    runtime = new DockerRuntime({
+      imageName: process.env.AGENT_IMAGE ?? 'claude-code:local',
+      castApiUrl: process.env.CAST_API_URL ?? `http://host.docker.internal:${port}`,
+      anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
+    });
+    console.log('✅ Docker runtime initialized');
+  } else {
+    console.error(`❌ Unknown AGENT_RUNTIME: ${agentRuntime}. Use 'fly' or 'docker'.`);
+    process.exit(1);
+  }
 
   // ---------------------------------------------------------------------------
   // Create App

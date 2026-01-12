@@ -88,6 +88,9 @@ importers:
       '@cast/core':
         specifier: workspace:*
         version: link:../core
+      '@cast/storage':
+        specifier: workspace:*
+        version: link:../storage
     devDependencies:
       typescript:
         specifier: ^5.3.0

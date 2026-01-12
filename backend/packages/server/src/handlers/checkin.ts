@@ -189,7 +189,10 @@ export async function pushMessagesToContainer(
 
     if (!response.ok) {
       const error = await response.text();
-      console.error(`[Checkin] Push failed: ${response.status} ${error}`);
+      console.error(`[Checkin] Push failed: ${response.status}`);
+      console.error(`[Checkin] Response body: ${error}`);
+      console.error(`[Checkin] Request URL: ${url}`);
+      console.error(`[Checkin] Request headers:`, JSON.stringify(headers, null, 2));
       return false;
     }
 
@@ -325,13 +328,26 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
     }
 
     // Persist callbackUrl and routeHints to roster
+    //
+    // TECH DEBT: Current approach is brittle - we conditionally skip routeHints update
+    // if container sends null, to preserve FlyRuntime's pre-populated real machine ID.
+    //
+    // Better architecture would be:
+    // - rosterEntry.runtimeRouteHints: set by runtime (FlyRuntime stores real Fly machine ID)
+    // - rosterEntry.containerRouteHints: set by container during checkin
+    // - Message routing merges both, with runtime hints taking precedence for platform-specific routing
+    //
+    // This would cleanly separate concerns and avoid the implicit "don't overwrite if null" behavior.
     const now = new Date().toISOString();
-    await storage.updateRosterEntry(channelId, rosterEntry.id, {
+    const updatePayload: { callbackUrl: string; lastHeartbeat: string; routeHints?: Record<string, string> | null } = {
       callbackUrl: endpoint,
-      routeHints: routeHints ?? null,
       lastHeartbeat: now,
-    });
-    console.log(`[Checkin] Stored callbackUrl and routeHints for ${callsign} in roster`);
+    };
+    if (routeHints) {
+      updatePayload.routeHints = routeHints;
+    }
+    await storage.updateRosterEntry(channelId, rosterEntry.id, updatePayload);
+    console.log(`[Checkin] Stored callbackUrl for ${callsign} in roster (routeHints: ${routeHints ? 'from container' : 'preserved'})`);
 
     // Broadcast online state
     await broadcastAgentState(connectionManager, channelId, callsign, 'online', now);

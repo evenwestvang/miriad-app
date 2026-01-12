@@ -26,6 +26,9 @@ export { formatAgentId, parseAgentId, validateAgentId } from './types.js';
 // Docker implementation (local development)
 export { DockerRuntime, type DockerRuntimeConfig } from './docker-orchestrator.js';
 
+// Fly.io implementation (production)
+export { FlyRuntime, type FlyRuntimeConfig } from './fly-runtime.js';
+
 // Mock implementation (testing)
 export {
   MockAgentRuntime,
