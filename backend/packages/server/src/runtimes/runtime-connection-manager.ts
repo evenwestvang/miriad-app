@@ -570,7 +570,44 @@ export function createRuntimeConnectionManager(
 
   return {
     async handleConnection(ws: WebSocket, authHeader?: string): Promise<void> {
-      // Parse server auth from Authorization header
+      // Create connection object immediately (serverAuth will be set after async check)
+      const connection: RuntimeConnection = {
+        ws,
+        runtimeId: null,
+        spaceId: null,
+        serverAuth: null,
+        connectedAt: new Date(),
+        lastPong: new Date(),
+      };
+
+      // Queue to hold messages received before auth completes
+      const messageQueue: string[] = [];
+      let authComplete = false;
+
+      // Register message handler IMMEDIATELY to capture early messages
+      ws.on('message', async (data) => {
+        const dataStr = data.toString();
+        if (!authComplete) {
+          // Queue messages until auth is complete
+          messageQueue.push(dataStr);
+          console.log('[RuntimeConnectionManager] Message queued (auth pending):', dataStr.slice(0, 100));
+          return;
+        }
+        await processMessage(dataStr);
+      });
+
+      // Handle disconnection
+      ws.on('close', () => {
+        handleDisconnect(connection);
+      });
+
+      // Handle errors
+      ws.on('error', (error) => {
+        console.error('[RuntimeConnectionManager] WebSocket error:', error);
+        handleDisconnect(connection);
+      });
+
+      // Now do async auth check
       const serverAuth = authHeader ? await verifyServerAuth(authHeader) : null;
 
       // If auth required but no valid server auth, reject
@@ -581,25 +618,27 @@ export function createRuntimeConnectionManager(
         return;
       }
 
-      const connection: RuntimeConnection = {
-        ws,
-        runtimeId: null,
-        spaceId: null,
-        serverAuth,
-        connectedAt: new Date(),
-        lastPong: new Date(),
-      };
-
+      // Update connection with auth result
+      connection.serverAuth = serverAuth;
       pendingConnections.add(connection);
 
       console.log(
         `[RuntimeConnectionManager] New connection${serverAuth ? ` (server: ${serverAuth.serverId})` : ' (dev mode)'}`
       );
 
-      // Handle incoming messages
-      ws.on('message', async (data) => {
+      // Mark auth as complete and process queued messages
+      authComplete = true;
+      for (const queuedData of messageQueue) {
+        console.log('[RuntimeConnectionManager] Processing queued message:', queuedData.slice(0, 100));
+        await processMessage(queuedData);
+      }
+
+      // Message processor function
+      async function processMessage(dataStr: string): Promise<void> {
+        console.log('[RuntimeConnectionManager] Received message:', dataStr.slice(0, 200));
         try {
-          const message = JSON.parse(data.toString()) as RuntimeToBackendMessage;
+          const message = JSON.parse(dataStr) as RuntimeToBackendMessage;
+          console.log('[RuntimeConnectionManager] Parsed message type:', message.type);
 
           switch (message.type) {
             case 'runtime_ready':
@@ -625,18 +664,7 @@ export function createRuntimeConnectionManager(
           console.error('[RuntimeConnectionManager] Message handling error:', error);
           sendError(ws, 'INVALID_MESSAGE', 'Failed to parse message');
         }
-      });
-
-      // Handle disconnection
-      ws.on('close', () => {
-        handleDisconnect(connection);
-      });
-
-      // Handle errors
-      ws.on('error', (error) => {
-        console.error('[RuntimeConnectionManager] WebSocket error:', error);
-        handleDisconnect(connection);
-      });
+      }
     },
 
     sendCommand(runtimeId: string, command: BackendToRuntimeMessage): boolean {
