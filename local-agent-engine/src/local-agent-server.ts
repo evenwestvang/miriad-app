@@ -112,8 +112,8 @@ Environment Variables:
 
 Environment Detection:
   The server auto-detects the environment from the connection string host:
-    *.staging.clanker.is  →  staging (wss://, https://)
-    Everything else       →  local (ws://, http://)
+    *.staging.caststack.ai  →  staging (wss://, https://)
+    Everything else         →  local (ws://, http://)
 
   Use --profile or --ws-host to override auto-detection.
 

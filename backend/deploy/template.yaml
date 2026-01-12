@@ -43,21 +43,15 @@ Parameters:
     NoEcho: true
   AgentImageUri:
     Type: String
-    Description: ECR URI for the agent container image
+    Description: Fly.io registry URI for the agent container image
     Default: ''
-  SubnetIds:
-    Type: List<AWS::EC2::Subnet::Id>
-    Description: Subnet IDs for ECS tasks (must have internet access)
-  SecurityGroupIds:
-    Type: List<AWS::EC2::SecurityGroup::Id>
-    Description: Security group IDs for ECS tasks (allow outbound HTTPS)
   CastApiUrl:
     Type: String
-    Description: HTTP API URL for agent containers to call back (e.g., https://api.staging.clanker.is)
+    Description: HTTP API URL for agent containers to call back (e.g., https://api.staging.caststack.ai)
     Default: ''
   FrontendUrl:
     Type: String
-    Description: Frontend URL for OAuth redirects (e.g., https://staging.clanker.is)
+    Description: Frontend URL for OAuth redirects (e.g., https://app.staging.caststack.ai)
     Default: 'http://localhost:5173'
   SecretKey:
     Type: String
@@ -74,7 +68,7 @@ Parameters:
     Default: ''
   TunnelServerUrl:
     Type: String
-    Description: Tunnel server URL for container HTTP access (e.g., https://tunnel.staging.cast-stack.site)
+    Description: Tunnel server URL for container HTTP access (e.g., https://tunnel.staging.caststack.site)
     Default: ''
 
 Globals:
@@ -110,8 +104,6 @@ Resources:
           CONNECTIONS_TABLE: !Ref ConnectionsTable
           WEBSOCKET_ENDPOINT: !Sub https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
           ANTHROPIC_API_KEY: !Ref AnthropicApiKey
-          SUBNET_IDS: !Join [',', !Ref SubnetIds]
-          SECURITY_GROUP_IDS: !Join [',', !Ref SecurityGroupIds]
           CAST_API_URL: !Ref CastApiUrl
           WORKOS_API_KEY: !Ref WorkOsApiKey
           WORKOS_CLIENT_ID: !Ref WorkOsClientId
@@ -156,8 +148,8 @@ Resources:
           - 'http://localhost:3000'
           - 'http://localhost:3232'
           - 'http://localhost:5173'
-          - 'https://staging.clanker.is'
-          - 'https://clanker.is'
+          - 'https://app.staging.caststack.ai'
+          - 'https://app.caststack.ai'
         AllowHeaders:
           - Content-Type
           - Authorization
@@ -319,7 +311,7 @@ Resources:
               Value: '8080'
             - Name: STAGE
               Value: !Ref Stage
-            - Name: CIKADA_API_URL
+            - Name: CAST_API_URL
               Value: !Ref CastApiUrl
             - Name: ANTHROPIC_API_KEY
               Value: !Ref AnthropicApiKey

@@ -27,8 +27,8 @@ Parameters:
 
   TunnelDomain:
     Type: String
-    Description: Wildcard domain for tunnel access (e.g., staging.cast-stack.site)
-    Default: staging.cast-stack.site
+    Description: Wildcard domain for tunnel access (e.g., staging.caststack.site)
+    Default: staging.caststack.site
 
   ContainerSecret:
     Type: String

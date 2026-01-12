@@ -162,7 +162,7 @@ export interface LocalAgentConfig {
   callsign: string;
   /** Local workspace directory */
   workspace: string;
-  /** WebSocket host (e.g., localhost:3234 or ws.staging.clanker.is) */
+  /** WebSocket host (e.g., localhost:3234 or ws.staging.caststack.ai) */
   wsHost: string;
   /** Use secure WebSocket (wss://) */
   secure?: boolean;

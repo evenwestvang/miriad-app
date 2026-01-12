@@ -121,10 +121,10 @@ export async function parseSession(c: Context): Promise<SessionData | null> {
 /**
  * Set the session cookie on the response.
  *
- * Cookie is scoped to .clanker.is so it's shared between:
- * - api.staging.clanker.is (backend)
- * - staging.clanker.is (frontend)
- * - api.clanker.is / clanker.is (production)
+ * Cookie is scoped to .caststack.ai so it's shared between:
+ * - api.staging.caststack.ai (backend)
+ * - app.staging.caststack.ai (frontend)
+ * - api.caststack.ai / app.caststack.ai (production)
  *
  * In dev (localhost), we omit the domain so cookie is scoped to localhost.
  */
@@ -138,7 +138,7 @@ export function setSessionCookie(c: Context, token: string): void {
     secure: isProduction,
     sameSite: 'Lax',
     path: '/',
-    domain: isProduction ? '.clanker.is' : undefined,
+    domain: isProduction ? '.caststack.ai' : undefined,
     maxAge: Math.floor(SESSION_DURATION_MS / 1000),
   });
 }
@@ -153,7 +153,7 @@ export function clearSessionCookie(c: Context): void {
 
   deleteCookie(c, COOKIE_NAME, {
     path: '/',
-    domain: isProduction ? '.clanker.is' : undefined,
+    domain: isProduction ? '.caststack.ai' : undefined,
   });
 }
 

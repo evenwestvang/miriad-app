@@ -1,0 +1,41 @@
+# SAM CLI Configuration Template
+# Copy to samconfig.toml and fill in your values for local development.
+# DO NOT commit secrets to version control.
+# CI/CD deployments use GitHub Secrets instead.
+
+version = 0.1
+
+[default.global.parameters]
+stack_name = "cast-backend"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+# Local development configuration
+[local.global.parameters]
+stack_name = "cast-backend-local"
+
+[local.deploy.parameters]
+profile = "your-aws-profile"
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
+confirm_changeset = true
+resolve_s3 = true
+s3_prefix = "cast-backend"
+region = "us-east-1"
+parameter_overrides = [
+    "Stage=local",
+    "PlanetScaleUrl=postgres://user:password@host:port/database",
+    "SubnetIds=subnet-xxx,subnet-yyy",
+    "SecurityGroupIds=sg-xxx",
+    "AgentImageUri=cast-agent:local",
+    "CastApiUrl=http://localhost:3234",
+    "AnthropicApiKey=sk-ant-xxx",
+    "AuthMode=dev",
+    "JwtSecret=generate-with-openssl-rand-base64-32",
+    "SecretKey=generate-with-openssl-rand-base64-32",
+    "FrontendUrl=http://localhost:5173"
+]
+
+# NOTE: Staging/Production configs managed via GitHub Actions
+# See .github/workflows/deploy-staging.yml and deploy-prod.yml

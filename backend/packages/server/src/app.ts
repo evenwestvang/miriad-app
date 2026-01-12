@@ -836,7 +836,7 @@ export function createApp(options: AppOptions): Hono {
         return origin;
       }
       // Allow staging and production frontend domains
-      if (origin === 'https://staging.clanker.is' || origin === 'https://clanker.is') {
+      if (origin === 'https://app.staging.caststack.ai' || origin === 'https://app.caststack.ai') {
         return origin;
       }
       // Allow FRONTEND_URL if set (for flexible deployment configurations)

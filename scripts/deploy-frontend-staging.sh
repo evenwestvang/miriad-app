@@ -18,8 +18,8 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 FRONTEND_DIR="$REPO_ROOT/frontend"
 
 # Staging environment configuration
-VITE_BACKEND_URL="https://api.staging.clanker.is"
-VITE_WS_URL="wss://ws.staging.clanker.is"
+VITE_BACKEND_URL="https://api.staging.caststack.ai"
+VITE_WS_URL="wss://ws.staging.caststack.ai"
 VITE_AUTH_MODE="workos"
 
 # Parse arguments
@@ -66,5 +66,5 @@ echo "==================================="
 echo "Frontend deployment complete!"
 echo "==================================="
 echo ""
-echo "Staging: https://staging.clanker.is"
+echo "Staging: https://app.staging.caststack.ai"
 echo ""

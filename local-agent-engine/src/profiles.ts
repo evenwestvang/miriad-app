@@ -50,8 +50,8 @@ const DEFAULT_PROFILES: ProfilesConfig = {
     },
     staging: {
       name: "staging",
-      apiHost: "staging.clanker.is",
-      wsHost: "ws.staging.clanker.is",
+      apiHost: "api.staging.caststack.ai",
+      wsHost: "ws.staging.caststack.ai",
       environment: "staging",
     },
   },
@@ -66,13 +66,13 @@ const DEFAULT_PROFILES: ProfilesConfig = {
  * Auto-detect environment from host string.
  *
  * Rules:
- *   *.staging.clanker.is → staging
- *   Everything else      → local
+ *   *.staging.caststack.ai → staging
+ *   Everything else        → local
  */
 export function detectEnvironment(host: string): Environment {
   const hostname = host.split(":")[0].toLowerCase();
 
-  if (hostname.endsWith(".staging.clanker.is") || hostname === "staging.clanker.is") {
+  if (hostname.endsWith(".staging.caststack.ai") || hostname === "staging.caststack.ai") {
     return "staging";
   }
 
