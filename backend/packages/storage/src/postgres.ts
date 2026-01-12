@@ -58,6 +58,13 @@ import type {
   ModelUsage,
   // WebSocket connection types
   StoredConnection,
+  // Runtime types
+  StoredRuntime,
+  CreateRuntimeInput,
+  UpdateRuntimeInput,
+  RuntimeType,
+  RuntimeStatus,
+  LocalRuntimeConfig,
 } from '@cast/core';
 // Import functions separately (not as types)
 import {
@@ -139,6 +146,7 @@ interface RosterRow {
   route_hints: Record<string, string> | null;
   current: Record<string, unknown> | null;
   last_message_routed_at: Date | null;
+  runtime_id: string | null;
 }
 
 interface UserRow {
@@ -212,6 +220,18 @@ interface BootstrapTokenRow {
   expires_at: Date;
   consumed: boolean;
   created_at: Date;
+}
+
+interface RuntimeRow {
+  id: string;
+  space_id: string;
+  server_id: string | null;
+  name: string;
+  type: string;
+  status: string;
+  config: Record<string, unknown> | null;
+  created_at: Date;
+  last_seen_at: Date | null;
 }
 
 // =============================================================================
@@ -745,13 +765,14 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const id = input.id ?? ulid();
     const now = new Date();
     const status = input.status ?? 'active';
+    const runtimeId = input.runtimeId ?? null;
     // Generate tunnel hash: 32 char hex string (16 bytes)
     // Used as subdomain for HTTP tunnel access: {tunnelHash}.containers.domain.com
     const tunnelHash = crypto.randomBytes(16).toString('hex');
 
     const result = await sql<RosterRow[]>`
       INSERT INTO roster (
-        id, channel_id, callsign, agent_type, status, created_at, tunnel_hash
+        id, channel_id, callsign, agent_type, status, created_at, tunnel_hash, runtime_id
       )
       VALUES (
         ${id},
@@ -760,7 +781,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ${input.agentType},
         ${status},
         ${now},
-        ${tunnelHash}
+        ${tunnelHash},
+        ${runtimeId}
       )
       RETURNING *
     `;
@@ -850,6 +872,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     }
     if (update.lastMessageRoutedAt !== undefined) {
       updateObj.last_message_routed_at = new Date(update.lastMessageRoutedAt);
+    }
+    if (update.runtimeId !== undefined) {
+      updateObj.runtime_id = update.runtimeId;
     }
 
     if (Object.keys(updateObj).length === 0) return;
@@ -2033,7 +2058,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       ON roster(channel_id, created_at ASC)
     `;
 
-    // Add callback_url, readmark, tunnel_hash, last_heartbeat, current, last_message_routed_at, and route_hints columns to roster if they don't exist
+    // Add callback_url, readmark, tunnel_hash, last_heartbeat, current, last_message_routed_at, route_hints, and runtime_id columns to roster if they don't exist
     // (These may be added in migrations for existing databases)
     await sql`
       DO $$ BEGIN
@@ -2044,6 +2069,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS current JSONB;
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS last_message_routed_at TIMESTAMPTZ;
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS route_hints JSONB;
+        ALTER TABLE roster ADD COLUMN IF NOT EXISTS runtime_id VARCHAR(26);
       EXCEPTION
         WHEN duplicate_column THEN NULL;
       END $$;
@@ -2232,6 +2258,49 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     await sql`
       CREATE INDEX IF NOT EXISTS idx_bootstrap_tokens_expires
       ON bootstrap_tokens(expires_at) WHERE consumed = FALSE
+    `;
+
+    // ---------------------------------------------------------------------------
+    // Runtimes Table (LocalRuntime support)
+    // ---------------------------------------------------------------------------
+    await sql`
+      CREATE TABLE IF NOT EXISTS runtimes (
+        id VARCHAR(26) PRIMARY KEY,
+        space_id VARCHAR(26) NOT NULL,
+        server_id VARCHAR(255) REFERENCES local_agent_servers(server_id),
+        name VARCHAR(255) NOT NULL,
+        type VARCHAR(50) NOT NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'offline',
+        config JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_seen_at TIMESTAMPTZ,
+        CONSTRAINT runtimes_space_name_unique UNIQUE(space_id, name)
+      )
+    `;
+
+    // Index for space-scoped queries
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_runtimes_space
+      ON runtimes(space_id)
+    `;
+
+    // Index for server credential lookup (revocation cascade)
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_runtimes_server
+      ON runtimes(server_id) WHERE server_id IS NOT NULL
+    `;
+
+    // Add FK constraint to roster.runtime_id (after runtimes table exists)
+    // Note: We can't add FK in the DO block above because runtimes table may not exist yet
+    // This is safe to run multiple times - PostgreSQL will ignore if constraint exists
+    await sql`
+      DO $$ BEGIN
+        ALTER TABLE roster
+        ADD CONSTRAINT fk_roster_runtime
+        FOREIGN KEY (runtime_id) REFERENCES runtimes(id);
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$;
     `;
 
     // ---------------------------------------------------------------------------
@@ -2564,6 +2633,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       routeHints: row.route_hints ?? undefined,
       current: (row.current as RosterCurrent) ?? undefined,
       lastMessageRoutedAt: row.last_message_routed_at?.toISOString() ?? undefined,
+      runtimeId: row.runtime_id ?? undefined,
     };
   }
 
@@ -2912,6 +2982,102 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     return result.map(rowToConnection);
   }
 
+  // ---------------------------------------------------------------------------
+  // Runtime Operations
+  // ---------------------------------------------------------------------------
+
+  function rowToRuntime(row: RuntimeRow): StoredRuntime {
+    return {
+      id: row.id,
+      spaceId: row.space_id,
+      serverId: row.server_id,
+      name: row.name,
+      type: row.type as RuntimeType,
+      status: row.status as RuntimeStatus,
+      config: row.config as LocalRuntimeConfig | null,
+      createdAt: row.created_at.toISOString(),
+      lastSeenAt: row.last_seen_at?.toISOString() ?? null,
+    };
+  }
+
+  async function createRuntime(input: CreateRuntimeInput): Promise<StoredRuntime> {
+    const id = input.id ?? ulid();
+    const status = input.status ?? 'offline';
+    const config = input.config ?? null;
+    const serverId = input.serverId ?? null;
+
+    const [row] = await sql<RuntimeRow[]>`
+      INSERT INTO runtimes (id, space_id, server_id, name, type, status, config)
+      VALUES (${id}, ${input.spaceId}, ${serverId}, ${input.name}, ${input.type}, ${status}, ${config ? sql.json(config as unknown as JSONValue) : null})
+      RETURNING *
+    `;
+
+    return rowToRuntime(row);
+  }
+
+  async function getRuntime(runtimeId: string): Promise<StoredRuntime | null> {
+    const [row] = await sql<RuntimeRow[]>`
+      SELECT * FROM runtimes WHERE id = ${runtimeId}
+    `;
+    return row ? rowToRuntime(row) : null;
+  }
+
+  async function getRuntimeByName(spaceId: string, name: string): Promise<StoredRuntime | null> {
+    const [row] = await sql<RuntimeRow[]>`
+      SELECT * FROM runtimes WHERE space_id = ${spaceId} AND name = ${name}
+    `;
+    return row ? rowToRuntime(row) : null;
+  }
+
+  async function getRuntimesBySpace(spaceId: string): Promise<StoredRuntime[]> {
+    const rows = await sql<RuntimeRow[]>`
+      SELECT * FROM runtimes
+      WHERE space_id = ${spaceId}
+      ORDER BY
+        CASE WHEN status = 'online' THEN 0 ELSE 1 END,
+        name ASC
+    `;
+    return rows.map(rowToRuntime);
+  }
+
+  async function updateRuntime(runtimeId: string, update: UpdateRuntimeInput): Promise<void> {
+    // Build update object for postgres.js dynamic columns (same pattern as updateChannel, updateRosterEntry)
+    const updateObj: Record<string, unknown> = {};
+
+    if (update.name !== undefined) {
+      updateObj.name = update.name;
+    }
+    if (update.status !== undefined) {
+      updateObj.status = update.status;
+    }
+    if (update.config !== undefined) {
+      updateObj.config = update.config ? sql.json(update.config as unknown as JSONValue) : null;
+    }
+    if (update.lastSeenAt !== undefined) {
+      updateObj.last_seen_at = update.lastSeenAt ? new Date(update.lastSeenAt) : null;
+    }
+
+    if (Object.keys(updateObj).length === 0) return;
+
+    // Use postgres.js safe dynamic column updates
+    await sql`
+      UPDATE runtimes
+      SET ${sql(updateObj, ...Object.keys(updateObj))}
+      WHERE id = ${runtimeId}
+    `;
+  }
+
+  async function deleteRuntime(runtimeId: string): Promise<void> {
+    // Clear runtime_id from any roster entries first
+    await sql`
+      UPDATE roster SET runtime_id = NULL WHERE runtime_id = ${runtimeId}
+    `;
+
+    await sql`
+      DELETE FROM runtimes WHERE id = ${runtimeId}
+    `;
+  }
+
   return {
     // Message operations
     saveMessage,
@@ -2986,6 +3152,13 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     updateConnectionChannel,
     deleteConnection,
     getConnectionsByChannel,
+    // Runtime operations
+    createRuntime,
+    getRuntime,
+    getRuntimeByName,
+    getRuntimesBySpace,
+    updateRuntime,
+    deleteRuntime,
     // Lifecycle
     initialize,
     close,

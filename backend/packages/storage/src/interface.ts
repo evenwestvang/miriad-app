@@ -49,6 +49,10 @@ import type {
   CostTally,
   // WebSocket connection types
   StoredConnection,
+  // Runtime types
+  StoredRuntime,
+  CreateRuntimeInput,
+  UpdateRuntimeInput,
 } from '@cast/core';
 
 // =============================================================================
@@ -645,6 +649,60 @@ export interface Storage {
    * @returns Array of connection records
    */
   getConnectionsByChannel(channelId: string): Promise<StoredConnection[]>;
+
+  // ---------------------------------------------------------------------------
+  // Runtime Operations
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Create a new runtime.
+   * Generates ULID for id if not provided.
+   *
+   * @param input - Runtime data
+   * @returns The stored runtime
+   */
+  createRuntime(input: CreateRuntimeInput): Promise<StoredRuntime>;
+
+  /**
+   * Get a runtime by ID.
+   *
+   * @param runtimeId - Runtime ID (ULID)
+   * @returns Runtime or null if not found
+   */
+  getRuntime(runtimeId: string): Promise<StoredRuntime | null>;
+
+  /**
+   * Get a runtime by name within a space.
+   *
+   * @param spaceId - Space ID
+   * @param name - Runtime name
+   * @returns Runtime or null if not found
+   */
+  getRuntimeByName(spaceId: string, name: string): Promise<StoredRuntime | null>;
+
+  /**
+   * Get all runtimes for a space.
+   *
+   * @param spaceId - Space ID
+   * @returns Array of runtimes (online first, then by name)
+   */
+  getRuntimesBySpace(spaceId: string): Promise<StoredRuntime[]>;
+
+  /**
+   * Update a runtime.
+   *
+   * @param runtimeId - Runtime ID
+   * @param update - Fields to update
+   */
+  updateRuntime(runtimeId: string, update: UpdateRuntimeInput): Promise<void>;
+
+  /**
+   * Delete a runtime.
+   * Also clears runtime_id from any roster entries bound to it.
+   *
+   * @param runtimeId - Runtime ID
+   */
+  deleteRuntime(runtimeId: string): Promise<void>;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
