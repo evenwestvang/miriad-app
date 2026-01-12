@@ -25,6 +25,7 @@ import { createLocalConnectionManager, type LocalConnectionInfo } from './websoc
 import { createPostgresStorage, type Storage } from '@cast/storage';
 import { DockerRuntime, FlyRuntime, AgentStateManager } from '@cast/runtime';
 import { createRuntimeConnectionManager } from './runtimes/index.js';
+import { createRuntimeRegistry } from './agents/index.js';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Duplex } from 'stream';
 import { parseSessionCookie, verifySessionToken } from './auth/index.js';
@@ -222,20 +223,6 @@ async function main() {
   console.log('✅ Connection manager initialized');
 
   // ---------------------------------------------------------------------------
-  // Initialize Runtime Connection Manager (for LocalRuntime WS connections)
-  // ---------------------------------------------------------------------------
-
-  const agentStateManager = new AgentStateManager();
-  const runtimeConnectionManager = createRuntimeConnectionManager({
-    storage,
-    connectionManager,
-    agentStateManager,
-    requireAuth: false, // Dev mode - no auth required
-    pingIntervalMs: 60000,
-  });
-  console.log('✅ Runtime connection manager initialized');
-
-  // ---------------------------------------------------------------------------
   // Initialize Agent Runtime (AGENT_RUNTIME=fly for Fly.io, default=docker)
   // ---------------------------------------------------------------------------
 
@@ -271,6 +258,31 @@ async function main() {
     console.error(`❌ Unknown AGENT_RUNTIME: ${agentRuntime}. Use 'fly' or 'docker'.`);
     process.exit(1);
   }
+
+  // ---------------------------------------------------------------------------
+  // Initialize Runtime Registry (routes agents to LocalRuntime or default)
+  // ---------------------------------------------------------------------------
+
+  const runtimeRegistry = createRuntimeRegistry({
+    storage,
+    defaultRuntime: runtime,
+  });
+  console.log('✅ Runtime registry initialized');
+
+  // ---------------------------------------------------------------------------
+  // Initialize Runtime Connection Manager (for LocalRuntime WS connections)
+  // ---------------------------------------------------------------------------
+
+  const agentStateManager = new AgentStateManager();
+  const runtimeConnectionManager = createRuntimeConnectionManager({
+    storage,
+    connectionManager,
+    agentStateManager,
+    runtimeRegistry,
+    requireAuth: false, // Dev mode - no auth required
+    pingIntervalMs: 60000,
+  });
+  console.log('✅ Runtime connection manager initialized');
 
   // ---------------------------------------------------------------------------
   // Create App

@@ -24,9 +24,10 @@ import {
 } from '@cast/core';
 import type { Storage } from '@cast/storage';
 import type { StoredRuntime, LocalRuntimeConfig } from '@cast/core';
-import { AgentStateManager, parseAgentId } from '@cast/runtime';
+import { AgentStateManager, parseAgentId, LocalRuntime, createLocalRuntime } from '@cast/runtime';
 import type { ConnectionManager } from '../websocket/index.js';
 import { createServerAuthVerifier, type ServerAuthResult } from '../handlers/runtime-auth.js';
+import type { RuntimeRegistry } from '../agents/runtime-registry.js';
 
 // =============================================================================
 // Protocol Message Types (from spec section 2.2)
@@ -147,6 +148,7 @@ export interface RuntimeConnectionManagerOptions {
   storage: Storage;
   connectionManager: ConnectionManager;
   agentStateManager: AgentStateManager;
+  runtimeRegistry?: RuntimeRegistry;
   requireAuth?: boolean;
   pingIntervalMs?: number;
 }
@@ -182,6 +184,7 @@ export function createRuntimeConnectionManager(
     storage,
     connectionManager,
     agentStateManager,
+    runtimeRegistry,
     requireAuth = false,
     pingIntervalMs = 30000,
   } = options;
@@ -197,6 +200,19 @@ export function createRuntimeConnectionManager(
 
   // Ping interval handle
   let pingInterval: ReturnType<typeof setInterval> | null = null;
+
+  // Self-reference for LocalRuntime's connectionManager requirement
+  // These are defined before the object is returned, allowing LocalRuntime to call them
+  const selfRef = {
+    sendCommand: (runtimeId: string, command: BackendToRuntimeMessage): boolean => {
+      const connection = runtimeConnections.get(runtimeId);
+      if (!connection) return false;
+      return send(connection.ws, command);
+    },
+    isRuntimeOnline: (runtimeId: string): boolean => {
+      return runtimeConnections.has(runtimeId);
+    },
+  };
 
   // ==========================================================================
   // Helper Functions
@@ -280,6 +296,17 @@ export function createRuntimeConnectionManager(
       // Move from pending to active
       pendingConnections.delete(connection);
       runtimeConnections.set(runtimeId, connection);
+
+      // Create and register LocalRuntime instance if registry provided
+      if (runtimeRegistry) {
+        const localRuntime = createLocalRuntime({
+          runtimeId,
+          spaceId,
+          connectionManager: selfRef,
+          stateManager: agentStateManager,
+        });
+        runtimeRegistry.registerLocalRuntime(runtimeId, localRuntime);
+      }
 
       // Send confirmation
       send(connection.ws, {
@@ -460,6 +487,11 @@ export function createRuntimeConnectionManager(
 
     const runtimeId = connection.runtimeId;
     runtimeConnections.delete(runtimeId);
+
+    // Unregister LocalRuntime from registry
+    if (runtimeRegistry) {
+      runtimeRegistry.unregisterLocalRuntime(runtimeId);
+    }
 
     try {
       // Mark runtime as offline
