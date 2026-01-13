@@ -38,12 +38,25 @@ export interface SaveAssetResult {
   fileSize: number;
 }
 
+/** Result from reading an asset as a stream */
+export interface ReadAssetStreamResult {
+  /** Readable stream of the asset content */
+  stream: ReadableStream<Uint8Array>;
+  /** Content length in bytes (if known) */
+  contentLength?: number;
+  /** Content type (if known) */
+  contentType?: string;
+}
+
 export interface AssetStorage {
   /** Save a binary asset to storage */
   saveAsset(input: SaveAssetInput): Promise<SaveAssetResult>;
 
-  /** Read an asset from storage */
+  /** Read an asset from storage (buffers entire file - use readAssetStream for large files) */
   readAsset(channelId: string, slug: string): Promise<Buffer>;
+
+  /** Read an asset as a stream (for large files - avoids memory pressure) */
+  readAssetStream?(channelId: string, slug: string): Promise<ReadAssetStreamResult>;
 
   /** Check if an asset exists */
   assetExists(channelId: string, slug: string): Promise<boolean>;

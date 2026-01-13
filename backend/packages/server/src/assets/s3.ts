@@ -16,7 +16,7 @@ import {
 } from '@aws-sdk/client-s3';
 import * as fs from 'node:fs/promises';
 import { getMimeType } from '@cast/core';
-import type { AssetStorage, SaveAssetInput, SaveAssetResult } from './index.js';
+import type { AssetStorage, SaveAssetInput, SaveAssetResult, ReadAssetStreamResult } from './index.js';
 
 // =============================================================================
 // Types
@@ -192,9 +192,59 @@ export function createS3AssetStorage(
     }
   }
 
+  /**
+   * Read an asset from S3 as a stream (for large files)
+   * This avoids buffering the entire file in memory
+   */
+  async function readAssetStream(channelId: string, slug: string): Promise<ReadAssetStreamResult> {
+    const key = getAssetPath(channelId, slug);
+
+    try {
+      const response = await client.send(
+        new GetObjectCommand({
+          Bucket: bucketName,
+          Key: key,
+        })
+      );
+
+      if (!response.Body) {
+        throw new Error(`Asset not found: ${slug}`);
+      }
+
+      // The S3 SDK returns a Readable stream (Node.js) or ReadableStream (browser)
+      // We need to convert it to a web ReadableStream for Response compatibility
+      const nodeStream = response.Body as AsyncIterable<Uint8Array>;
+
+      const webStream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          try {
+            for await (const chunk of nodeStream) {
+              controller.enqueue(chunk);
+            }
+            controller.close();
+          } catch (err) {
+            controller.error(err);
+          }
+        },
+      });
+
+      return {
+        stream: webStream,
+        contentLength: response.ContentLength,
+        contentType: response.ContentType,
+      };
+    } catch (err) {
+      if ((err as { name?: string }).name === 'NoSuchKey') {
+        throw new Error(`Asset not found: ${slug}`);
+      }
+      throw err;
+    }
+  }
+
   return {
     saveAsset,
     readAsset,
+    readAssetStream,
     assetExists,
     deleteAsset,
     getAssetPath,

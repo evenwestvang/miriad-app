@@ -1007,6 +1007,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
 
   // ---------------------------------------------------------------------------
   // GET /channels/:channelId/assets/:slug - Serve asset file
+  // Uses streaming when available to handle large files without memory pressure
   // ---------------------------------------------------------------------------
   app.get('/:channelId/assets/:slug', async (c) => {
     if (!assetStorage) {
@@ -1034,9 +1035,26 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
         return c.json({ error: `Not an asset artifact: ${slug}` }, 400);
       }
 
-      // Read and serve the file
-      const data = await assetStorage.readAsset(channel.id, slug);
       const mimeType = artifact.contentType || getMimeType(slug);
+
+      // Use streaming if available (S3 backend) to handle large files
+      if (assetStorage.readAssetStream) {
+        const { stream, contentLength, contentType } = await assetStorage.readAssetStream(channel.id, slug);
+
+        const headers: Record<string, string> = {
+          'Content-Type': contentType || mimeType,
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        };
+
+        if (contentLength !== undefined) {
+          headers['Content-Length'] = contentLength.toString();
+        }
+
+        return new Response(stream, { headers });
+      }
+
+      // Fallback to buffered read for filesystem backend
+      const data = await assetStorage.readAsset(channel.id, slug);
 
       return new Response(data, {
         headers: {
