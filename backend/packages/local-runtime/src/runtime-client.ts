@@ -132,7 +132,13 @@ export class RuntimeClient {
       });
 
       this.ws.on('error', (error) => {
-        console.error('[RuntimeClient] WebSocket error:', error);
+        // Log connection errors cleanly without full stack traces
+        const errorMsg = this.formatConnectionError(error);
+        if (errorMsg) {
+          console.error(`[RuntimeClient] ${errorMsg}`);
+        } else {
+          console.error('[RuntimeClient] WebSocket error:', error);
+        }
         this.onError?.(error);
         if (this.status === 'connecting') {
           reject(error);
@@ -347,6 +353,57 @@ export class RuntimeClient {
   }
 
   // ===========================================================================
+  // Error Formatting
+  // ===========================================================================
+
+  /**
+   * Format common connection errors into clean single-line messages.
+   * Returns null for unexpected errors that should show full stack trace.
+   */
+  private formatConnectionError(error: Error): string | null {
+    const message = error.message || '';
+    const code = (error as NodeJS.ErrnoException).code;
+
+    // Handle AggregateError (multiple connection attempts failed)
+    if (error.name === 'AggregateError' && 'errors' in error) {
+      const aggError = error as AggregateError;
+      if (aggError.errors.length > 0) {
+        const firstError = aggError.errors[0] as NodeJS.ErrnoException;
+        if (firstError.code === 'ECONNREFUSED') {
+          return 'Connection refused - server unavailable';
+        }
+        if (firstError.code === 'ETIMEDOUT') {
+          return 'Connection timed out';
+        }
+      }
+    }
+
+    // Handle direct error codes
+    if (code === 'ECONNREFUSED') {
+      return 'Connection refused - server unavailable';
+    }
+    if (code === 'ETIMEDOUT') {
+      return 'Connection timed out';
+    }
+    if (code === 'ENOTFOUND') {
+      return 'Server not found - check URL';
+    }
+    if (code === 'ECONNRESET') {
+      return 'Connection reset by server';
+    }
+
+    // Check message patterns
+    if (message.includes('ECONNREFUSED')) {
+      return 'Connection refused - server unavailable';
+    }
+    if (message.includes('ETIMEDOUT')) {
+      return 'Connection timed out';
+    }
+
+    return null;
+  }
+
+  // ===========================================================================
   // Reconnection
   // ===========================================================================
 
@@ -363,8 +420,8 @@ export class RuntimeClient {
       this.reconnectTimeout = null;
       try {
         await this.connect();
-      } catch (error) {
-        console.error('[RuntimeClient] Reconnection failed:', error);
+      } catch {
+        // Error already logged by WebSocket error handler
         // Will be scheduled again by close handler
       }
     }, delay);

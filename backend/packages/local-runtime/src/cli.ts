@@ -120,8 +120,8 @@ async function cmdStart(args: string[]): Promise<void> {
     onDisconnected: (code, reason) => {
       console.log(`Disconnected: ${code} ${reason}`);
     },
-    onError: (error) => {
-      console.error('Runtime error:', error);
+    onError: () => {
+      // Error already logged by RuntimeClient with clean formatting
     },
   });
 
@@ -139,9 +139,9 @@ async function cmdStart(args: string[]): Promise<void> {
     await client.connect();
     // Keep process alive
     console.log('Press Ctrl+C to stop.');
-  } catch (error) {
-    console.error('Failed to connect:', (error as Error).message);
-    process.exit(1);
+  } catch {
+    // Error already logged by RuntimeClient
+    // Don't exit - let reconnection handle it
   }
 }
 
