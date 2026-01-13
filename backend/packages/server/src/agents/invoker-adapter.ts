@@ -15,7 +15,8 @@ import type { LocalRuntimeConfig } from '@cast/core';
 import type { ConnectionManager } from '../websocket/index.js';
 import type { AgentInvoker, Message } from '../handlers/messages.js';
 import type { RuntimeRegistry } from './runtime-registry.js';
-import type { ActivateAgentMessage } from '../runtimes/runtime-protocol-handlers.js';
+import type { ActivateAgentMessage, DeliverMessageMessage } from '../runtimes/runtime-protocol-handlers.js';
+import { generateMessageId } from '@cast/core';
 import { pushMessagesToContainer, compileMessages, broadcastAgentState } from '../handlers/checkin.js';
 import { generateContainerToken } from '../auth/index.js';
 
@@ -25,6 +26,19 @@ import { generateContainerToken } from '../auth/index.js';
  */
 function contentToString(content: string | Record<string, unknown>): string {
   return typeof content === 'string' ? content : JSON.stringify(content);
+}
+
+/**
+ * Check if an agent is online based on lastHeartbeat timestamp.
+ * Agents send heartbeats every 30s, so we consider them online if
+ * the last heartbeat was within 60s (allowing for some latency).
+ */
+function isAgentOnline(lastHeartbeat: string | null | undefined): boolean {
+  if (!lastHeartbeat) return false;
+  const heartbeatTime = new Date(lastHeartbeat).getTime();
+  const now = Date.now();
+  const ONLINE_THRESHOLD_MS = 60000; // 60 seconds
+  return now - heartbeatTime < ONLINE_THRESHOLD_MS;
 }
 
 // =============================================================================
@@ -173,11 +187,60 @@ export function createAgentInvokerAdapter(
                 return;
               }
 
-              // Runtime is online - send activate message via WebSocket
-              console.log(`[AgentInvoker] @${callsign} bound to runtime ${rosterEntry.runtimeId}, sending activate via WebSocket ${wsConnectionId}`);
-              await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
+              // Runtime is online - check if agent is already active
+              if (!connectionManager) {
+                console.error(`[AgentInvoker] No connectionManager available to send message`);
+                await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
+                return;
+              }
 
               const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
+
+              // Check if agent is online based on lastHeartbeat
+              if (isAgentOnline(rosterEntry.lastHeartbeat)) {
+                // Agent is already active - send message directly
+                console.log(`[AgentInvoker] @${callsign} is online (lastHeartbeat: ${rosterEntry.lastHeartbeat}), sending message via WebSocket ${wsConnectionId}`);
+
+                const deliverMessage: DeliverMessageMessage = {
+                  type: 'message',
+                  agentId,
+                  messageId: message.id,
+                  content: userMessage,
+                  sender: message.sender,
+                  systemPrompt,
+                };
+
+                try {
+                  const result = (await connectionManager.send(
+                    wsConnectionId,
+                    JSON.stringify(deliverMessage)
+                  )) as unknown as boolean | undefined;
+                  if (result === false) {
+                    console.warn(`[AgentInvoker] Failed to send message to @${callsign} (connection stale)`);
+                    await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
+                    return;
+                  }
+                } catch (error) {
+                  console.warn(`[AgentInvoker] Failed to send message to @${callsign}:`, error);
+                  await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
+                  return;
+                }
+
+                // Update readmark and lastMessageRoutedAt after successful delivery
+                const now = new Date().toISOString();
+                await storage.updateRosterEntry(channelId, rosterEntry.id, {
+                  readmark: message.id,
+                  lastMessageRoutedAt: now,
+                });
+                await broadcastAgentState(connectionManager, channelId, callsign, 'pending', now);
+                console.log(`[AgentInvoker] Successfully sent message to @${callsign} via WebSocket`);
+                return;
+              }
+
+              // Agent not active yet - send activate message
+              console.log(`[AgentInvoker] @${callsign} not active (lastHeartbeat: ${rosterEntry.lastHeartbeat ?? 'none'}), sending activate via WebSocket ${wsConnectionId}`);
+              await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
+
               const authToken = generateContainerToken({ spaceId, channelId, callsign });
               const mcpServers = await agentManager.getMcpConfigsForAgent(spaceId, channelId, authToken);
 
@@ -191,12 +254,6 @@ export function createAgentInvokerAdapter(
                 mcpServers,
                 workspacePath,
               };
-
-              if (!connectionManager) {
-                console.error(`[AgentInvoker] No connectionManager available to send activate message`);
-                await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
-                return;
-              }
 
               try {
                 // connectionManager.send() may return Promise<boolean> (Postgres) or Promise<void> (local)
