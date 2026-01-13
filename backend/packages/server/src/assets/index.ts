@@ -195,19 +195,7 @@ export function createFilesystemAssetStorage(
 }
 
 // =============================================================================
-// S3 Asset Storage Stub
+// S3 Asset Storage
 // =============================================================================
 
-export function createS3AssetStorage(): AssetStorage {
-  const notImplemented = (): never => {
-    throw new Error('S3 asset storage is not implemented. Use filesystem storage instead.');
-  };
-
-  return {
-    saveAsset: notImplemented,
-    readAsset: notImplemented,
-    assetExists: notImplemented,
-    deleteAsset: notImplemented,
-    getAssetPath: notImplemented,
-  };
-}
+export { createS3AssetStorage } from './s3.js';
