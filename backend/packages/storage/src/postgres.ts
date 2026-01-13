@@ -147,6 +147,7 @@ interface RosterRow {
   current: Record<string, unknown> | null;
   last_message_routed_at: Date | null;
   runtime_id: string | null;
+  runtime_name?: string | null;
 }
 
 interface UserRow {
@@ -818,10 +819,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
   async function listRoster(channelId: string): Promise<RosterEntry[]> {
     const result = await sql<RosterRow[]>`
-      SELECT * FROM roster
-      WHERE channel_id = ${channelId}
-        AND status != 'archived'
-      ORDER BY created_at ASC
+      SELECT r.*, rt.name as runtime_name
+      FROM roster r
+      LEFT JOIN runtimes rt ON r.runtime_id = rt.id
+      WHERE r.channel_id = ${channelId}
+        AND r.status != 'archived'
+      ORDER BY r.created_at ASC
     `;
 
     return result.map(rowToRosterEntry);
@@ -829,10 +832,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
   async function listArchivedRoster(channelId: string): Promise<RosterEntry[]> {
     const result = await sql<RosterRow[]>`
-      SELECT * FROM roster
-      WHERE channel_id = ${channelId}
-        AND status = 'archived'
-      ORDER BY created_at ASC
+      SELECT r.*, rt.name as runtime_name
+      FROM roster r
+      LEFT JOIN runtimes rt ON r.runtime_id = rt.id
+      WHERE r.channel_id = ${channelId}
+        AND r.status = 'archived'
+      ORDER BY r.created_at ASC
     `;
 
     return result.map(rowToRosterEntry);
@@ -2634,6 +2639,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       current: (row.current as RosterCurrent) ?? undefined,
       lastMessageRoutedAt: row.last_message_routed_at?.toISOString() ?? undefined,
       runtimeId: row.runtime_id ?? undefined,
+      runtimeName: row.runtime_name ?? undefined,
     };
   }
 

@@ -5,6 +5,7 @@ import {
   BotOff,
   Bed,
   Cloud,
+  Laptop,
   ExternalLink,
   Copy,
   Check,
@@ -447,8 +448,17 @@ export function AgentDetailPanel({
           )}
           <span>·</span>
           <span className="flex items-center gap-1">
-            <Cloud className="w-3.5 h-3.5" />
-            Container
+            {agent.runtimeId ? (
+              <>
+                <Laptop className="w-3.5 h-3.5" />
+                {agent.runtimeName || 'Local'}
+              </>
+            ) : (
+              <>
+                <Cloud className="w-3.5 h-3.5" />
+                CAST Cloud
+              </>
+            )}
           </span>
         </div>
       </div>

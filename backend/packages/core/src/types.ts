@@ -333,6 +333,12 @@ export interface RosterEntry {
    * Non-null = user-registered runtime (LocalRuntime)
    */
   runtimeId?: string | null;
+
+  /**
+   * Runtime name for display (populated from runtime record via JOIN).
+   * Only present when runtimeId is set.
+   */
+  runtimeName?: string;
 }
 
 /**

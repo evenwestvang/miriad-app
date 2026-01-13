@@ -1,9 +1,8 @@
 import { useState } from 'react'
-import { X, Settings, Server, Monitor } from 'lucide-react'
-import { LocalAgentServersSettings } from './LocalAgentServersSettings'
+import { X, Settings, Monitor } from 'lucide-react'
 import { RuntimesSettings } from './RuntimesSettings'
 
-type SettingsSection = 'runtimes' | 'local-agents'
+type SettingsSection = 'runtimes'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -17,9 +16,8 @@ export function SettingsModal({ isOpen, onClose, apiHost, spaceId }: SettingsMod
 
   if (!isOpen) return null
 
-  const sections: { id: SettingsSection; label: string; icon: typeof Server }[] = [
+  const sections: { id: SettingsSection; label: string; icon: typeof Monitor }[] = [
     { id: 'runtimes', label: 'Local Runtimes', icon: Monitor },
-    { id: 'local-agents', label: 'Legacy Servers', icon: Server },
   ]
 
   return (
@@ -75,9 +73,6 @@ export function SettingsModal({ isOpen, onClose, apiHost, spaceId }: SettingsMod
           <div className="flex-1 overflow-y-auto p-6">
             {activeSection === 'runtimes' && spaceId && (
               <RuntimesSettings apiHost={apiHost} spaceId={spaceId} />
-            )}
-            {activeSection === 'local-agents' && (
-              <LocalAgentServersSettings apiHost={apiHost} spaceId={spaceId} />
             )}
           </div>
         </div>
