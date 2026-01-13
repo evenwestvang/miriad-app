@@ -104,6 +104,21 @@ Globals:
         JWT_SECRET: !Ref JwtSecret
 
 Resources:
+  # =============================================================================
+  # S3 Buckets
+  # =============================================================================
+
+  # Asset storage bucket - private, accessed via Lambda proxy
+  AssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub cast-assets-${Stage}
+      # Bucket is private by default (no public access)
+      # All access goes through Lambda proxy with auth
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+
   # Main API Lambda
   ApiFunction:
     Type: AWS::Serverless::Function
@@ -135,6 +150,9 @@ Resources:
           FLY_REGION: !Ref FlyRegion
           FLY_IMAGE: !Ref AgentImageUri
           SPACE_ID: !Ref SpaceId
+          ASSET_STORAGE_BACKEND: s3
+          ASSETS_BUCKET_NAME: !Ref AssetsBucket
+          ASSETS_BUCKET_REGION: !Ref AWS::Region
       Events:
         RootPath:
           Type: HttpApi
@@ -614,6 +632,13 @@ Resources:
             Action:
               - execute-api:ManageConnections
             Resource: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/${Stage}/*
+          # S3 permissions for asset storage
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:DeleteObject
+            Resource: !Sub ${AssetsBucket.Arn}/*
 
   # Lambda execution role (referenced by policy above)
   ApiFunctionRole:
@@ -678,3 +703,11 @@ Outputs:
   WebSocketEndpoint:
     Description: WebSocket API endpoint URL
     Value: !Sub wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+
+  # S3 Outputs
+  AssetsBucketName:
+    Description: S3 bucket for asset storage
+    Value: !Ref AssetsBucket
+  AssetsBucketArn:
+    Description: S3 bucket ARN for asset storage
+    Value: !GetAtt AssetsBucket.Arn
