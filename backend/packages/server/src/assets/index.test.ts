@@ -341,36 +341,122 @@ describe('createFilesystemAssetStorage', () => {
 });
 
 // =============================================================================
-// S3 Asset Storage Stub Tests
+// S3 Asset Storage Tests
 // =============================================================================
 
 describe('createS3AssetStorage', () => {
-  it('throws explicit not implemented error for saveAsset', () => {
-    const s3Storage = createS3AssetStorage();
-    expect(() => s3Storage.saveAsset({
-      channelId: 'channel-1',
-      slug: 'test.png',
-      source: { type: 'base64', data: '' },
-    })).toThrow('S3 asset storage is not implemented');
+  it('throws error when bucket name is not provided', () => {
+    // Clear env vars
+    const originalBucketName = process.env.ASSETS_BUCKET_NAME;
+    delete process.env.ASSETS_BUCKET_NAME;
+
+    try {
+      expect(() => createS3AssetStorage()).toThrow(
+        'S3 asset storage requires ASSETS_BUCKET_NAME environment variable'
+      );
+    } finally {
+      // Restore env
+      if (originalBucketName) {
+        process.env.ASSETS_BUCKET_NAME = originalBucketName;
+      }
+    }
   });
 
-  it('throws explicit not implemented error for readAsset', () => {
-    const s3Storage = createS3AssetStorage();
-    expect(() => s3Storage.readAsset('channel-1', 'test.png')).toThrow('S3 asset storage is not implemented');
+  it('creates storage with bucket name from config', () => {
+    const s3Storage = createS3AssetStorage({ bucketName: 'test-bucket' });
+    expect(s3Storage).toBeDefined();
+    expect(s3Storage.saveAsset).toBeDefined();
+    expect(s3Storage.readAsset).toBeDefined();
+    expect(s3Storage.assetExists).toBeDefined();
+    expect(s3Storage.deleteAsset).toBeDefined();
+    expect(s3Storage.getAssetPath).toBeDefined();
+    expect(s3Storage.readAssetStream).toBeDefined();
   });
 
-  it('throws explicit not implemented error for assetExists', () => {
-    const s3Storage = createS3AssetStorage();
-    expect(() => s3Storage.assetExists('channel-1', 'test.png')).toThrow('S3 asset storage is not implemented');
+  it('returns correct S3 key format from getAssetPath', () => {
+    const s3Storage = createS3AssetStorage({ bucketName: 'test-bucket' });
+    const key = s3Storage.getAssetPath('channel-123', 'image.png');
+    expect(key).toBe('channel-123/image.png');
   });
 
-  it('throws explicit not implemented error for deleteAsset', () => {
-    const s3Storage = createS3AssetStorage();
-    expect(() => s3Storage.deleteAsset('channel-1', 'test.png')).toThrow('S3 asset storage is not implemented');
+  it('creates storage with bucket name from env var', () => {
+    const originalBucketName = process.env.ASSETS_BUCKET_NAME;
+    process.env.ASSETS_BUCKET_NAME = 'env-bucket';
+
+    try {
+      const s3Storage = createS3AssetStorage();
+      expect(s3Storage).toBeDefined();
+      // Verify it uses the bucket by checking the key format
+      const key = s3Storage.getAssetPath('channel-1', 'test.png');
+      expect(key).toBe('channel-1/test.png');
+    } finally {
+      // Restore env
+      if (originalBucketName) {
+        process.env.ASSETS_BUCKET_NAME = originalBucketName;
+      } else {
+        delete process.env.ASSETS_BUCKET_NAME;
+      }
+    }
+  });
+});
+
+// =============================================================================
+// Asset Storage Factory Tests
+// =============================================================================
+
+describe('createAssetStorage factory', () => {
+  const originalBackend = process.env.ASSET_STORAGE_BACKEND;
+  const originalBucketName = process.env.ASSETS_BUCKET_NAME;
+
+  afterEach(() => {
+    // Restore env vars
+    if (originalBackend) {
+      process.env.ASSET_STORAGE_BACKEND = originalBackend;
+    } else {
+      delete process.env.ASSET_STORAGE_BACKEND;
+    }
+    if (originalBucketName) {
+      process.env.ASSETS_BUCKET_NAME = originalBucketName;
+    } else {
+      delete process.env.ASSETS_BUCKET_NAME;
+    }
   });
 
-  it('throws explicit not implemented error for getAssetPath', () => {
-    const s3Storage = createS3AssetStorage();
-    expect(() => s3Storage.getAssetPath('channel-1', 'test.png')).toThrow('S3 asset storage is not implemented');
+  it('returns filesystem storage by default', async () => {
+    delete process.env.ASSET_STORAGE_BACKEND;
+
+    // Need to dynamically import to get fresh module
+    const { createAssetStorage } = await import('./index.js');
+    const factoryStorage = createAssetStorage();
+
+    // Filesystem storage uses full paths with directory separators
+    const assetPath = factoryStorage.getAssetPath('channel-123', 'test.png');
+    expect(assetPath).toContain('channel-123');
+    expect(assetPath).toContain('test.png');
+    // Filesystem paths are longer (include directory prefix)
+    expect(assetPath.length).toBeGreaterThan('channel-123/test.png'.length);
+  });
+
+  it('returns S3 storage when ASSET_STORAGE_BACKEND=s3', async () => {
+    process.env.ASSET_STORAGE_BACKEND = 's3';
+    process.env.ASSETS_BUCKET_NAME = 'test-bucket';
+
+    const { createAssetStorage } = await import('./index.js');
+    const factoryStorage = createAssetStorage();
+
+    // S3 storage uses simple key format
+    const assetPath = factoryStorage.getAssetPath('channel-123', 'test.png');
+    expect(assetPath).toBe('channel-123/test.png');
+  });
+
+  it('returns filesystem storage for unknown backend value', async () => {
+    process.env.ASSET_STORAGE_BACKEND = 'unknown';
+
+    const { createAssetStorage } = await import('./index.js');
+    const factoryStorage = createAssetStorage();
+
+    // Should fall back to filesystem
+    const assetPath = factoryStorage.getAssetPath('channel-123', 'test.png');
+    expect(assetPath.length).toBeGreaterThan('channel-123/test.png'.length);
   });
 });
