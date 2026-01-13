@@ -515,11 +515,8 @@ export class AgentManager {
     // Generate auth token
     const authToken = generateContainerToken({ spaceId, channelId, callsign });
 
-    // Derive MCP configs from connected apps
-    const appMcpConfigs = await this.deriveMcpConfigsFromApps(spaceId, channelId);
-    if (appMcpConfigs.length > 0) {
-      console.log(`[AgentManager] Derived ${appMcpConfigs.length} MCP configs from connected apps`);
-    }
+    // Get all MCP configs (platform + app MCPs)
+    const mcpConfigs = await this.getMcpConfigsForAgent(spaceId, channelId, authToken);
 
     // Get tunnel hash from roster entry (if available)
     let tunnelHash: string | undefined;
@@ -536,7 +533,7 @@ export class AgentManager {
       agentId,
       authToken,
       systemPrompt,
-      mcpServers: appMcpConfigs.length > 0 ? appMcpConfigs : undefined,
+      mcpServers: mcpConfigs.length > 0 ? mcpConfigs : undefined,
       tunnelHash,
       tunnelServerUrl: this.config.tunnelServerUrl,
     };
