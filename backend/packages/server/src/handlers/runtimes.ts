@@ -55,8 +55,8 @@ export function createRuntimeRoutes(options: RuntimeRoutesOptions): Hono {
       const enriched = await Promise.all(
         runtimes.map(async (runtime) => {
           // Count agents bound to this runtime
-          // Note: This is a simple approach - for high scale, we'd add a dedicated query
-          const agentCount = 0; // TODO: Add storage.countAgentsByRuntime(runtimeId)
+          const agents = await storage.getAgentsByRuntime(runtime.id);
+          const agentCount = agents.length;
 
           return {
             id: runtime.id,
@@ -121,6 +121,55 @@ export function createRuntimeRoutes(options: RuntimeRoutesOptions): Hono {
     } catch (error) {
       console.error('[Runtimes] Error getting runtime:', error);
       return c.json({ error: 'Failed to get runtime' }, 500);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // GET /api/spaces/:spaceId/runtimes/:id/agents - List agents on runtime
+  // ---------------------------------------------------------------------------
+  app.get('/:spaceId/runtimes/:id/agents', async (c) => {
+    const session = await parseSession(c);
+    if (!session) {
+      return c.json({ error: 'Authentication required' }, 401);
+    }
+
+    const spaceId = c.req.param('spaceId');
+    const runtimeId = c.req.param('id');
+
+    // Verify user has access to this space
+    if (session.spaceId !== spaceId) {
+      return c.json({ error: 'Access denied to this space' }, 403);
+    }
+
+    try {
+      // Verify runtime exists and belongs to space
+      const runtime = await storage.getRuntime(runtimeId);
+
+      if (!runtime) {
+        return c.json({ error: 'Runtime not found' }, 404);
+      }
+
+      if (runtime.spaceId !== spaceId) {
+        return c.json({ error: 'Runtime not found' }, 404);
+      }
+
+      // Get agents bound to this runtime
+      const agents = await storage.getAgentsByRuntime(runtimeId);
+
+      return c.json({
+        agents: agents.map((agent) => ({
+          id: agent.id,
+          callsign: agent.callsign,
+          agentType: agent.agentType,
+          status: agent.status,
+          channelId: agent.channelId,
+          channelName: agent.channelName,
+          lastHeartbeat: agent.lastHeartbeat ?? null,
+        })),
+      });
+    } catch (error) {
+      console.error('[Runtimes] Error listing runtime agents:', error);
+      return c.json({ error: 'Failed to list runtime agents' }, 500);
     }
   });
 

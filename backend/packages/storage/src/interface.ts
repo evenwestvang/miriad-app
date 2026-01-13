@@ -269,6 +269,15 @@ export interface Storage {
   listArchivedRoster(channelId: string): Promise<RosterEntry[]>;
 
   /**
+   * Get all agents bound to a specific runtime.
+   * Returns roster entries with channel info for display.
+   *
+   * @param runtimeId - Runtime ID
+   * @returns Array of roster entries with channel name
+   */
+  getAgentsByRuntime(runtimeId: string): Promise<Array<RosterEntry & { channelName: string }>>;
+
+  /**
    * Update a roster entry (e.g., change status).
    */
   updateRosterEntry(

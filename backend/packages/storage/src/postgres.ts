@@ -843,6 +843,25 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     return result.map(rowToRosterEntry);
   }
 
+  async function getAgentsByRuntime(
+    runtimeId: string
+  ): Promise<Array<RosterEntry & { channelName: string }>> {
+    const result = await sql<(RosterRow & { channel_name: string })[]>`
+      SELECT r.*, rt.name as runtime_name, c.name as channel_name
+      FROM roster r
+      LEFT JOIN runtimes rt ON r.runtime_id = rt.id
+      JOIN channels c ON r.channel_id = c.id
+      WHERE r.runtime_id = ${runtimeId}
+        AND r.status != 'archived'
+      ORDER BY c.name ASC, r.callsign ASC
+    `;
+
+    return result.map((row) => ({
+      ...rowToRosterEntry(row),
+      channelName: row.channel_name,
+    }));
+  }
+
   async function updateRosterEntry(
     channelId: string,
     entryId: string,
@@ -3118,6 +3137,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     getRosterByCallsign,
     listRoster,
     listArchivedRoster,
+    getAgentsByRuntime,
     updateRosterEntry,
     removeFromRoster,
     // Artifact operations (Phase A)

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Copy, Check, Trash2, Monitor, Plus, RefreshCw } from 'lucide-react'
+import { Copy, Check, Trash2, Monitor, Plus, RefreshCw, ChevronDown, ChevronRight, Bot } from 'lucide-react'
 import { apiFetch, apiPost, apiDelete } from '../../lib/api'
 
 interface BootstrapTokenResponse {
@@ -23,6 +23,16 @@ export interface Runtime {
   agentCount: number
 }
 
+interface RuntimeAgent {
+  id: string
+  callsign: string
+  agentType: string
+  status: string
+  channelId: string
+  channelName: string
+  lastHeartbeat: string | null
+}
+
 interface RuntimesSettingsProps {
   apiHost: string
   spaceId: string
@@ -36,6 +46,9 @@ export function RuntimesSettings({ apiHost, spaceId }: RuntimesSettingsProps) {
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [expandedRuntimes, setExpandedRuntimes] = useState<Set<string>>(new Set())
+  const [runtimeAgents, setRuntimeAgents] = useState<Record<string, RuntimeAgent[]>>({})
+  const [loadingAgents, setLoadingAgents] = useState<Set<string>>(new Set())
 
   // Fetch runtimes on mount
   useEffect(() => {
@@ -89,6 +102,42 @@ export function RuntimesSettings({ apiHost, spaceId }: RuntimesSettingsProps) {
       setRuntimes(prev => prev.filter(r => r.id !== runtimeId))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete runtime')
+    }
+  }
+
+  async function toggleRuntimeExpanded(runtimeId: string) {
+    const newExpanded = new Set(expandedRuntimes)
+    if (newExpanded.has(runtimeId)) {
+      newExpanded.delete(runtimeId)
+      setExpandedRuntimes(newExpanded)
+    } else {
+      newExpanded.add(runtimeId)
+      setExpandedRuntimes(newExpanded)
+      // Fetch agents if not already loaded
+      if (!runtimeAgents[runtimeId]) {
+        await fetchRuntimeAgents(runtimeId)
+      }
+    }
+  }
+
+  async function fetchRuntimeAgents(runtimeId: string) {
+    setLoadingAgents(prev => new Set(prev).add(runtimeId))
+    try {
+      const response = await apiFetch(`${apiHost}/api/spaces/${spaceId}/runtimes/${runtimeId}/agents`)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch agents: ${response.status}`)
+      }
+      const data = await response.json()
+      setRuntimeAgents(prev => ({ ...prev, [runtimeId]: data.agents || [] }))
+    } catch (err) {
+      console.error('Failed to fetch runtime agents:', err)
+      setRuntimeAgents(prev => ({ ...prev, [runtimeId]: [] }))
+    } finally {
+      setLoadingAgents(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(runtimeId)
+        return newSet
+      })
     }
   }
 
@@ -218,43 +267,96 @@ export function RuntimesSettings({ apiHost, spaceId }: RuntimesSettingsProps) {
           </div>
         ) : (
           <div className="space-y-2">
-            {runtimes.map(runtime => (
-              <div
-                key={runtime.id}
-                className="flex items-center justify-between p-3 bg-secondary/30 border border-border rounded-md"
-              >
-                <div className="flex items-center gap-3">
-                  <Monitor className="w-5 h-5 text-muted-foreground" />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm">
-                        {runtime.name}
-                      </span>
-                      <span className={`w-2 h-2 rounded-full ${
-                        runtime.status === 'online' ? 'bg-green-500' : 'bg-gray-400'
-                      }`} />
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {runtime.machineInfo?.os || 'unknown'}
-                      {' • '}
-                      {runtime.agentCount} agent{runtime.agentCount !== 1 ? 's' : ''}
-                      {' • '}
-                      {runtime.status === 'online'
-                        ? `Last seen ${formatRelativeTime(runtime.lastSeenAt)}`
-                        : 'Offline'
-                      }
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => deleteRuntime(runtime.id)}
-                  className="p-2 hover:bg-destructive/10 rounded-md transition-colors group"
-                  title="Delete runtime"
+            {runtimes.map(runtime => {
+              const isExpanded = expandedRuntimes.has(runtime.id)
+              const agents = runtimeAgents[runtime.id] || []
+              const isLoadingAgents = loadingAgents.has(runtime.id)
+
+              return (
+                <div
+                  key={runtime.id}
+                  className="bg-secondary/30 border border-border rounded-md overflow-hidden"
                 >
-                  <Trash2 className="w-4 h-4 text-muted-foreground group-hover:text-destructive" />
-                </button>
-              </div>
-            ))}
+                  <div className="flex items-center justify-between p-3">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => toggleRuntimeExpanded(runtime.id)}
+                        className="p-1 hover:bg-secondary rounded transition-colors"
+                        disabled={runtime.agentCount === 0}
+                      >
+                        {runtime.agentCount === 0 ? (
+                          <div className="w-4 h-4" />
+                        ) : isExpanded ? (
+                          <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        )}
+                      </button>
+                      <Monitor className="w-5 h-5 text-muted-foreground" />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm">
+                            {runtime.name}
+                          </span>
+                          <span className={`w-2 h-2 rounded-full ${
+                            runtime.status === 'online' ? 'bg-green-500' : 'bg-gray-400'
+                          }`} />
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {runtime.machineInfo?.os || 'unknown'}
+                          {' • '}
+                          <button
+                            onClick={() => runtime.agentCount > 0 && toggleRuntimeExpanded(runtime.id)}
+                            className={runtime.agentCount > 0 ? 'hover:underline cursor-pointer' : ''}
+                          >
+                            {runtime.agentCount} agent{runtime.agentCount !== 1 ? 's' : ''}
+                          </button>
+                          {' • '}
+                          {runtime.status === 'online'
+                            ? `Last seen ${formatRelativeTime(runtime.lastSeenAt)}`
+                            : 'Offline'
+                          }
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => deleteRuntime(runtime.id)}
+                      className="p-2 hover:bg-destructive/10 rounded-md transition-colors group"
+                      title="Delete runtime"
+                    >
+                      <Trash2 className="w-4 h-4 text-muted-foreground group-hover:text-destructive" />
+                    </button>
+                  </div>
+
+                  {/* Expanded agent list */}
+                  {isExpanded && (
+                    <div className="border-t border-border bg-secondary/20 px-3 py-2">
+                      {isLoadingAgents ? (
+                        <div className="text-xs text-muted-foreground py-2">Loading agents...</div>
+                      ) : agents.length === 0 ? (
+                        <div className="text-xs text-muted-foreground py-2">No agents found</div>
+                      ) : (
+                        <div className="space-y-1">
+                          {agents.map(agent => (
+                            <div
+                              key={agent.id}
+                              className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-secondary/50"
+                            >
+                              <Bot className="w-3.5 h-3.5 text-muted-foreground" />
+                              <span className="text-sm font-medium">@{agent.callsign}</span>
+                              <span className="text-xs text-muted-foreground">in #{agent.channelName}</span>
+                              <span className={`ml-auto w-1.5 h-1.5 rounded-full ${
+                                agent.status === 'online' || agent.status === 'active' ? 'bg-green-500' : 'bg-gray-400'
+                              }`} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
