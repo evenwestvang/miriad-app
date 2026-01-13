@@ -2373,6 +2373,16 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       )
     `;
 
+    // Migration: Add protocol and runtime_id columns for existing tables
+    await sql`
+      DO $$ BEGIN
+        ALTER TABLE ws_connections ADD COLUMN IF NOT EXISTS protocol VARCHAR(20) NOT NULL DEFAULT 'browser';
+        ALTER TABLE ws_connections ADD COLUMN IF NOT EXISTS runtime_id VARCHAR(255);
+      EXCEPTION
+        WHEN duplicate_column THEN NULL;
+      END $$
+    `;
+
     // Index on channel_id for efficient broadcasts
     await sql`
       CREATE INDEX IF NOT EXISTS idx_ws_connections_channel_id
