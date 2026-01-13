@@ -28,6 +28,10 @@ export interface RosterAgent {
   current?: {
     status?: string
   }
+  /** Runtime ID if agent is bound to a local runtime (null = cloud) */
+  runtimeId?: string | null
+  /** Runtime name for display (populated from runtime record) */
+  runtimeName?: string
 }
 
 interface MentionAutocompleteProps {

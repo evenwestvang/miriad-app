@@ -17,7 +17,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/dev.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:local-runtime": "tsx test/local-runtime-e2e.ts"
   },
   "dependencies": {
     "@aws-sdk/client-apigatewaymanagementapi": "^3.0.0",

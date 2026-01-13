@@ -1,8 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Loader2, Search, ChevronLeft, CircleDashed } from 'lucide-react'
+import { X, Loader2, Search, ChevronLeft, CircleDashed, ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { apiFetch } from '../../lib/api'
 import type { RosterAgent } from './MentionAutocomplete'
+
+/**
+ * Runtime available for running agents.
+ */
+interface RuntimeOption {
+  id: string
+  name: string
+  status: 'online' | 'offline'
+}
 
 /**
  * Available agent definition from the API.
@@ -22,6 +31,8 @@ interface AgentSummonPickerProps {
   roster: RosterAgent[]
   /** Channel ID for API calls */
   channelId: string
+  /** Space ID for fetching runtimes */
+  spaceId?: string
   /** API host */
   apiHost: string
   /** Called when picker is closed */
@@ -55,6 +66,7 @@ function getSuggestedCallsign(agent: AvailableAgent, roster: RosterAgent[]): str
 export function AgentSummonPicker({
   roster,
   channelId,
+  spaceId,
   apiHost,
   onClose,
   isOpen,
@@ -74,6 +86,11 @@ export function AgentSummonPicker({
   const [callsign, setCallsign] = useState('')
   const [callsignError, setCallsignError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Runtime state
+  const [runtimes, setRuntimes] = useState<RuntimeOption[]>([])
+  const [selectedRuntimeId, setSelectedRuntimeId] = useState<string>('cloud')
+  const [isLoadingRuntimes, setIsLoadingRuntimes] = useState(false)
 
   // Refs
   const popoverRef = useRef<HTMLDivElement>(null)
@@ -100,7 +117,9 @@ export function AgentSummonPicker({
       setSelectedAgent(null)
       setCallsign('')
       setCallsignError(null)
+      setSelectedRuntimeId('cloud')
       fetchAvailableAgents()
+      fetchRuntimes()
     }
   }, [isOpen])
 
@@ -169,6 +188,38 @@ export function AgentSummonPicker({
     }
   }, [apiHost, channelId])
 
+  // Fetch available runtimes from API
+  const fetchRuntimes = useCallback(async () => {
+    if (!spaceId) {
+      setRuntimes([])
+      return
+    }
+
+    setIsLoadingRuntimes(true)
+
+    try {
+      const response = await apiFetch(`${apiHost}/api/spaces/${spaceId}/runtimes`)
+
+      if (!response.ok) {
+        console.warn('Failed to load runtimes')
+        setRuntimes([])
+        return
+      }
+
+      const data = await response.json()
+      // Only include online runtimes as options
+      const onlineRuntimes = (data.runtimes || []).filter(
+        (r: RuntimeOption) => r.status === 'online'
+      )
+      setRuntimes(onlineRuntimes)
+    } catch (err) {
+      console.warn('Failed to load runtimes:', err)
+      setRuntimes([])
+    } finally {
+      setIsLoadingRuntimes(false)
+    }
+  }, [apiHost, spaceId])
+
   // Validate callsign
   const validateCallsign = (value: string): string | null => {
     if (!value.trim()) {
@@ -220,13 +271,19 @@ export function AgentSummonPicker({
     setCallsignError(null)
 
     try {
+      // Build request body - only include runtimeId if not using cloud
+      const requestBody: Record<string, string> = {
+        agentType: selectedAgent.slug,
+        callsign,
+      }
+      if (selectedRuntimeId !== 'cloud') {
+        requestBody.runtimeId = selectedRuntimeId
+      }
+
       const response = await apiFetch(`${apiHost}/channels/${channelId}/agents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agentType: selectedAgent.slug,
-          callsign,
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       if (!response.ok) {
@@ -398,6 +455,34 @@ export function AgentSummonPicker({
               />
               {callsignError && (
                 <p className="text-xs text-destructive mt-1">{callsignError}</p>
+              )}
+            </div>
+
+            {/* Runtime selector */}
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">
+                Runtime
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedRuntimeId}
+                  onChange={(e) => setSelectedRuntimeId(e.target.value)}
+                  disabled={isSubmitting || isLoadingRuntimes}
+                  className="w-full px-2 py-1.5 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary appearance-none pr-8"
+                >
+                  <option value="cloud">CAST Cloud</option>
+                  {runtimes.map((runtime) => (
+                    <option key={runtime.id} value={runtime.id}>
+                      {runtime.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              </div>
+              {runtimes.length === 0 && !isLoadingRuntimes && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  No local runtimes connected
+                </p>
               )}
             </div>
 

@@ -15,7 +15,7 @@ export type AgentStatus = 'offline' | 'activating' | 'online' | 'busy' | 'suspen
 // Runtime Type
 // =============================================================================
 
-export type RuntimeType = 'docker' | 'fly' | 'mock';
+export type RuntimeType = 'docker' | 'fly' | 'local' | 'mock';
 
 // =============================================================================
 // Container Info

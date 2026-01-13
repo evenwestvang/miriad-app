@@ -110,6 +110,8 @@ export interface AgentManagerConfig {
   getAgentDefinition?: (spaceId: string, agentSlug: string) => Promise<AgentDefinition | null>;
   /** Get focus type by slug from #root */
   getFocusType?: (spaceId: string, focusSlug: string) => Promise<FocusType | null>;
+  /** Platform MCP URL for built-in powpow tools (e.g., "http://localhost:8080" or "https://api.cast.dev") */
+  platformMcpUrl?: string;
 }
 
 // =============================================================================
@@ -453,6 +455,40 @@ export class AgentManager {
   }
 
   /**
+   * Get MCP server configurations for an agent.
+   * Returns both the built-in platform MCP (powpow) and user-configured app MCPs.
+   *
+   * @param spaceId - Space ID
+   * @param channelId - Channel ID
+   * @param authToken - Container auth token for powpow MCP authentication (optional)
+   */
+  async getMcpConfigsForAgent(
+    spaceId: string,
+    channelId: string,
+    authToken?: string
+  ): Promise<McpServerConfig[]> {
+    const configs: McpServerConfig[] = [];
+
+    // Add built-in platform MCP (cast) if configured
+    if (this.config.platformMcpUrl && authToken) {
+      configs.push({
+        name: 'cast',
+        transport: 'http',
+        url: `${this.config.platformMcpUrl}/mcp/${channelId}`,
+        headers: {
+          Authorization: `Container ${authToken}`,
+        },
+      });
+    }
+
+    // Add user-configured app MCPs
+    const appConfigs = await this.deriveMcpConfigsFromApps(spaceId, channelId);
+    configs.push(...appConfigs);
+
+    return configs;
+  }
+
+  /**
    * Activate a container for an agent.
    * NOTE: No longer checks in-memory state - roster callbackUrl check happens in invoker-adapter.
    * This method just activates unconditionally.
@@ -479,11 +515,8 @@ export class AgentManager {
     // Generate auth token
     const authToken = generateContainerToken({ spaceId, channelId, callsign });
 
-    // Derive MCP configs from connected apps
-    const appMcpConfigs = await this.deriveMcpConfigsFromApps(spaceId, channelId);
-    if (appMcpConfigs.length > 0) {
-      console.log(`[AgentManager] Derived ${appMcpConfigs.length} MCP configs from connected apps`);
-    }
+    // Get all MCP configs (platform + app MCPs)
+    const mcpConfigs = await this.getMcpConfigsForAgent(spaceId, channelId, authToken);
 
     // Get tunnel hash from roster entry (if available)
     let tunnelHash: string | undefined;
@@ -500,7 +533,7 @@ export class AgentManager {
       agentId,
       authToken,
       systemPrompt,
-      mcpServers: appMcpConfigs.length > 0 ? appMcpConfigs : undefined,
+      mcpServers: mcpConfigs.length > 0 ? mcpConfigs : undefined,
       tunnelHash,
       tunnelServerUrl: this.config.tunnelServerUrl,
     };

@@ -752,6 +752,8 @@ export function App() {
                 tunnelHash?: string;
                 lastHeartbeat?: string;
                 current?: { status?: string };
+                runtimeId?: string | null;
+                runtimeName?: string;
               }) => ({
                 callsign: r.callsign,
                 // isOnline: requires fresh heartbeat (within 60s)
@@ -770,6 +772,9 @@ export function App() {
                 sessionCost: costsByCallsign.get(r.callsign) ?? 0,
                 // Current agent state from set_status calls
                 current: r.current,
+                // Runtime binding (null = cloud)
+                runtimeId: r.runtimeId,
+                runtimeName: r.runtimeName,
               }),
             );
             setRoster(rosterAgents);
@@ -1217,6 +1222,7 @@ export function App() {
                     leader={leader}
                     agentTypes={agentTypes}
                     channelId={selectedThread || undefined}
+                    spaceId={authSession?.spaceId}
                     apiHost={API_HOST}
                     onAgentAdded={handleAgentAdded}
                     onAgentDismiss={handleAgentDismiss}

@@ -184,6 +184,80 @@ export interface ListChannelsParams {
 
 export type RosterStatus = 'active' | 'idle' | 'busy' | 'offline' | 'paused' | 'archived';
 
+// =============================================================================
+// Runtime Types
+// =============================================================================
+
+/**
+ * Runtime type identifier.
+ */
+export type RuntimeType = 'local' | 'docker' | 'fly';
+
+/**
+ * Runtime connection status.
+ */
+export type RuntimeStatus = 'online' | 'offline';
+
+/**
+ * Configuration for local runtimes.
+ */
+export interface LocalRuntimeConfig {
+  /** Current WebSocket connection ID (null if offline) */
+  wsConnectionId: string | null;
+  /** Machine metadata */
+  machineInfo?: {
+    os: string;
+    hostname: string;
+  };
+}
+
+/**
+ * A runtime record as stored in the database.
+ */
+export interface StoredRuntime {
+  /** Unique runtime identifier (ULID) */
+  id: string;
+  /** Space this runtime belongs to */
+  spaceId: string;
+  /** Server credential ID (FK to local_agent_servers) */
+  serverId: string | null;
+  /** Display name (e.g., "simen-macbook") */
+  name: string;
+  /** Runtime type */
+  type: RuntimeType;
+  /** Connection status */
+  status: RuntimeStatus;
+  /** Type-specific configuration */
+  config: LocalRuntimeConfig | null;
+  /** ISO timestamp of creation */
+  createdAt: string;
+  /** ISO timestamp of last activity */
+  lastSeenAt: string | null;
+}
+
+/**
+ * Input for creating a runtime.
+ */
+export interface CreateRuntimeInput {
+  id?: string;
+  spaceId: string;
+  serverId?: string;
+  name: string;
+  type: RuntimeType;
+  status?: RuntimeStatus;
+  config?: LocalRuntimeConfig;
+}
+
+/**
+ * Input for updating a runtime.
+ */
+export interface UpdateRuntimeInput {
+  name?: string;
+  status?: RuntimeStatus;
+  config?: LocalRuntimeConfig;
+  lastSeenAt?: string;
+}
+
 /**
  * Ephemeral state tracked on roster entries.
  * Contains real-time info about what the agent is doing right now.
@@ -252,6 +326,19 @@ export interface RosterEntry {
    * Used to track "pending" state between message routing and first frame.
    */
   lastMessageRoutedAt?: string;
+
+  /**
+   * Runtime ID this agent is bound to.
+   * NULL = CAST Cloud (FlyRuntime)
+   * Non-null = user-registered runtime (LocalRuntime)
+   */
+  runtimeId?: string | null;
+
+  /**
+   * Runtime name for display (populated from runtime record via JOIN).
+   * Only present when runtimeId is set.
+   */
+  runtimeName?: string;
 }
 
 /**
@@ -263,6 +350,8 @@ export interface AddToRosterInput {
   callsign: string;
   agentType: string;
   status?: RosterStatus;
+  /** Runtime ID to bind agent to (null = CAST Cloud) */
+  runtimeId?: string | null;
 }
 
 /**
@@ -284,6 +373,8 @@ export interface UpdateRosterInput {
   current?: RosterCurrent;
   /** Timestamp when a message was last routed to this agent (ISO 8601) */
   lastMessageRoutedAt?: string;
+  /** Runtime ID to bind agent to (null = CAST Cloud) */
+  runtimeId?: string | null;
 }
 
 // =============================================================================

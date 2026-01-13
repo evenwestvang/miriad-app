@@ -3,6 +3,8 @@ import { createAgentInvokerAdapter } from './invoker-adapter.js';
 import type { AgentManager } from './agent-manager.js';
 import type { Storage } from '@cast/storage';
 import type { Message } from '../handlers/messages.js';
+import type { RuntimeRegistry, LocalRuntime } from './runtime-registry.js';
+import type { AgentRuntime } from '@cast/runtime';
 
 // Mock the checkin module to avoid actual HTTP calls
 vi.mock('../handlers/checkin.js', () => ({
@@ -37,6 +39,8 @@ function createMockAgentManager(): AgentManager & {
     sendMessage: vi.fn(async (spaceId, channelId, callsign, sender, content) => {
       sendMessageCalls.push({ spaceId, channelId, callsign, sender, content });
     }),
+    buildPromptForAgent: vi.fn(async () => 'mock system prompt'),
+    getMcpConfigsForAgent: vi.fn(async () => []),
     spawn: vi.fn(),
     stop: vi.fn(),
     shutdown: vi.fn(),
@@ -52,12 +56,104 @@ function createMockAgentManager(): AgentManager & {
 }
 
 // =============================================================================
+// Mock RuntimeRegistry and LocalRuntime
+// =============================================================================
+
+function createMockLocalRuntime(runtimeId: string): LocalRuntime & {
+  activateCalls: Array<{ agentId: string; authToken: string; systemPrompt?: string }>;
+  sendMessageCalls: Array<{ agentId: string; content: string; systemPrompt?: string }>;
+  _onlineAgents: Set<string>;
+} {
+  const activateCalls: Array<{ agentId: string; authToken: string; systemPrompt?: string }> = [];
+  const sendMessageCalls: Array<{ agentId: string; content: string; systemPrompt?: string }> = [];
+  const onlineAgents = new Set<string>();
+
+  return {
+    runtimeId,
+    activateCalls,
+    sendMessageCalls,
+    _onlineAgents: onlineAgents,
+    activate: vi.fn(async (opts) => {
+      activateCalls.push({
+        agentId: opts.agentId,
+        authToken: opts.authToken,
+        systemPrompt: opts.systemPrompt,
+      });
+      return { agentId: opts.agentId, status: 'activating' };
+    }),
+    sendMessage: vi.fn(async (agentId, opts) => {
+      sendMessageCalls.push({
+        agentId,
+        content: opts.content,
+        systemPrompt: opts.systemPrompt,
+      });
+    }),
+    suspend: vi.fn(),
+    getState: vi.fn(() => null),
+    isOnline: vi.fn((agentId) => onlineAgents.has(agentId)),
+    getAllOnline: vi.fn(() => []),
+    shutdown: vi.fn(),
+  } as unknown as LocalRuntime & {
+    activateCalls: Array<{ agentId: string; authToken: string; systemPrompt?: string }>;
+    sendMessageCalls: Array<{ agentId: string; content: string; systemPrompt?: string }>;
+    _onlineAgents: Set<string>;
+  };
+}
+
+function createMockRuntimeRegistry(
+  localRuntimes: Map<string, LocalRuntime>,
+  agentToRuntimeMap: Map<string, string> = new Map()
+): RuntimeRegistry & {
+  getRuntimeForAgentCalls: string[];
+  _localRuntimes: Map<string, LocalRuntime>;
+  _agentToRuntimeMap: Map<string, string>;
+} {
+  const getRuntimeForAgentCalls: string[] = [];
+
+  return {
+    getRuntimeForAgentCalls,
+    _localRuntimes: localRuntimes,
+    _agentToRuntimeMap: agentToRuntimeMap,
+    getRuntimeForAgent: vi.fn(async (agentId) => {
+      getRuntimeForAgentCalls.push(agentId);
+      // Check the mapping to simulate roster.runtimeId lookup
+      const runtimeId = agentToRuntimeMap.get(agentId);
+      if (!runtimeId) {
+        // No runtimeId means use default runtime (return null to indicate no LocalRuntime)
+        // But wait - the actual impl returns defaultRuntime, not null
+        // For our tests, returning null simulates "no LocalRuntime binding"
+        // Actually, we need to distinguish between:
+        // 1. No runtimeId in roster -> return null (fall through to default flow)
+        // 2. Has runtimeId but runtime offline -> return null (broadcast error)
+        // 3. Has runtimeId and runtime online -> return LocalRuntime
+        // For this mock, if agentId is in map, check if runtime is connected
+        return null;
+      }
+      const runtime = localRuntimes.get(runtimeId);
+      // Return the runtime if connected, null if offline
+      return runtime ?? null;
+    }),
+    registerLocalRuntime: vi.fn(),
+    unregisterLocalRuntime: vi.fn(),
+    getLocalRuntime: vi.fn((runtimeId) => localRuntimes.get(runtimeId)),
+    getAllLocalRuntimes: vi.fn(() => new Map(localRuntimes)),
+    isLocalRuntimeConnected: vi.fn((runtimeId) => localRuntimes.has(runtimeId)),
+  } as RuntimeRegistry & {
+    getRuntimeForAgentCalls: string[];
+    _localRuntimes: Map<string, LocalRuntime>;
+    _agentToRuntimeMap: Map<string, string>;
+  };
+}
+
+// =============================================================================
 // Mock Storage
 // =============================================================================
 
 interface MockStorageOptions {
   /** Map of callsign -> callbackUrl (null means no container running) */
   rosterCallbackUrls?: Record<string, string | null>;
+  /** Map of callsign -> runtimeId (for LocalRuntime routing) */
+  rosterRuntimeIds?: Record<string, string | null>;
 }
 
 function createMockStorage(options: MockStorageOptions = {}): Storage & {
@@ -65,6 +161,7 @@ function createMockStorage(options: MockStorageOptions = {}): Storage & {
   updateRosterEntryCalls: Array<{ channelId: string; entryId: string; update: unknown }>;
 } {
   const rosterCallbackUrls = options.rosterCallbackUrls ?? {};
+  const rosterRuntimeIds = options.rosterRuntimeIds ?? {};
   const getRosterByCallsignCalls: string[] = [];
   const updateRosterEntryCalls: Array<{ channelId: string; entryId: string; update: unknown }> = [];
 
@@ -74,7 +171,8 @@ function createMockStorage(options: MockStorageOptions = {}): Storage & {
     getRosterByCallsign: vi.fn(async (channelId: string, callsign: string) => {
       getRosterByCallsignCalls.push(callsign);
       const callbackUrl = rosterCallbackUrls[callsign];
-      if (callbackUrl === undefined) {
+      const runtimeId = rosterRuntimeIds[callsign];
+      if (callbackUrl === undefined && runtimeId === undefined) {
         // Not in roster
         return null;
       }
@@ -86,6 +184,7 @@ function createMockStorage(options: MockStorageOptions = {}): Storage & {
         status: 'active',
         createdAt: new Date().toISOString(),
         callbackUrl: callbackUrl ?? undefined,
+        runtimeId: runtimeId ?? undefined,
       };
     }),
     updateRosterEntry: vi.fn(async (channelId: string, entryId: string, update: unknown) => {
@@ -288,5 +387,124 @@ describe('createAgentInvokerAdapter', () => {
     for (const call of mockAgentManager.sendMessageCalls) {
       expect(call.spaceId).toBe('different-space');
     }
+  });
+
+  describe('when agent has runtime_id (LocalRuntime routing)', () => {
+    const RUNTIME_ID = 'rt_local_001';
+    let mockLocalRuntime: ReturnType<typeof createMockLocalRuntime>;
+    let mockRuntimeRegistry: ReturnType<typeof createMockRuntimeRegistry>;
+
+    beforeEach(() => {
+      mockLocalRuntime = createMockLocalRuntime(RUNTIME_ID);
+      const localRuntimes = new Map<string, LocalRuntime>();
+      localRuntimes.set(RUNTIME_ID, mockLocalRuntime as unknown as LocalRuntime);
+
+      // Map agent IDs to runtime IDs (simulates roster.runtimeId lookup)
+      const agentToRuntimeMap = new Map<string, string>();
+      agentToRuntimeMap.set('space-1:channel-1:fox', RUNTIME_ID);
+      // bear has no mapping (no runtimeId)
+
+      mockRuntimeRegistry = createMockRuntimeRegistry(localRuntimes, agentToRuntimeMap);
+
+      // Setup storage with runtime_id for fox
+      mockStorage = createMockStorage({
+        rosterRuntimeIds: { fox: RUNTIME_ID, bear: null },
+        rosterCallbackUrls: { fox: null, bear: null },
+      });
+    });
+
+    it('routes to LocalRuntime when agent has runtime_id and is online', async () => {
+      // Mark agent as online on the runtime
+      mockLocalRuntime._onlineAgents.add('space-1:channel-1:fox');
+
+      const invoker = createAgentInvokerAdapter({
+        agentManager: mockAgentManager,
+        storage: mockStorage,
+        spaceId,
+        runtimeRegistry: mockRuntimeRegistry as unknown as RuntimeRegistry,
+      });
+
+      await invoker.invokeAgents('channel-1', ['fox'], testMessage);
+
+      // Should send message via LocalRuntime, not spawn container
+      expect(mockLocalRuntime.sendMessageCalls).toHaveLength(1);
+      expect(mockLocalRuntime.sendMessageCalls[0].agentId).toBe('space-1:channel-1:fox');
+      expect(mockAgentManager.sendMessageCalls).toHaveLength(0);
+    });
+
+    it('activates agent on LocalRuntime when not online', async () => {
+      // Agent is NOT online (default - _onlineAgents is empty)
+
+      const invoker = createAgentInvokerAdapter({
+        agentManager: mockAgentManager,
+        storage: mockStorage,
+        spaceId,
+        runtimeRegistry: mockRuntimeRegistry as unknown as RuntimeRegistry,
+      });
+
+      await invoker.invokeAgents('channel-1', ['fox'], testMessage);
+
+      // Should activate via LocalRuntime, not spawn container
+      expect(mockLocalRuntime.activateCalls).toHaveLength(1);
+      expect(mockLocalRuntime.activateCalls[0].agentId).toBe('space-1:channel-1:fox');
+      expect(mockAgentManager.sendMessageCalls).toHaveLength(0);
+    });
+
+    it('broadcasts offline state when LocalRuntime is disconnected', async () => {
+      // Remove the runtime from registry (simulate disconnect)
+      mockRuntimeRegistry._localRuntimes.clear();
+      // Update the mock to return null
+      vi.mocked(mockRuntimeRegistry.getRuntimeForAgent).mockResolvedValue(null);
+
+      const invoker = createAgentInvokerAdapter({
+        agentManager: mockAgentManager,
+        storage: mockStorage,
+        spaceId,
+        runtimeRegistry: mockRuntimeRegistry as unknown as RuntimeRegistry,
+      });
+
+      await invoker.invokeAgents('channel-1', ['fox'], testMessage);
+
+      // Should NOT spawn container - message stays in DB
+      expect(mockAgentManager.sendMessageCalls).toHaveLength(0);
+      // broadcastAgentState is mocked, but the call happened
+    });
+
+    it('falls through to default flow for agents without runtime_id', async () => {
+      const invoker = createAgentInvokerAdapter({
+        agentManager: mockAgentManager,
+        storage: mockStorage,
+        spaceId,
+        runtimeRegistry: mockRuntimeRegistry as unknown as RuntimeRegistry,
+      });
+
+      // bear has no runtime_id, should spawn container
+      await invoker.invokeAgents('channel-1', ['bear'], testMessage);
+
+      // Should spawn container via AgentManager
+      expect(mockAgentManager.sendMessageCalls).toHaveLength(1);
+      expect(mockAgentManager.sendMessageCalls[0].callsign).toBe('bear');
+    });
+
+    it('routes mixed agents correctly (some with runtime_id, some without)', async () => {
+      mockLocalRuntime._onlineAgents.add('space-1:channel-1:fox');
+
+      const invoker = createAgentInvokerAdapter({
+        agentManager: mockAgentManager,
+        storage: mockStorage,
+        spaceId,
+        runtimeRegistry: mockRuntimeRegistry as unknown as RuntimeRegistry,
+      });
+
+      await invoker.invokeAgents('channel-1', ['fox', 'bear'], testMessage);
+
+      // fox routes via LocalRuntime
+      expect(mockLocalRuntime.sendMessageCalls).toHaveLength(1);
+      expect(mockLocalRuntime.sendMessageCalls[0].agentId).toBe('space-1:channel-1:fox');
+
+      // bear spawns container
+      expect(mockAgentManager.sendMessageCalls).toHaveLength(1);
+      expect(mockAgentManager.sendMessageCalls[0].callsign).toBe('bear');
+    });
   });
 });

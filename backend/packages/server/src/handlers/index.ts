@@ -35,17 +35,12 @@ export {
   type AppHandlerOptions,
 } from './apps.js';
 export {
-  createLocalAgentManager,
-  type LocalAgentManager,
-  type LocalAgentManagerOptions,
-} from './local-agents.js';
+  createRuntimeRoutes,
+  type RuntimeRoutesOptions,
+} from './runtimes.js';
 export {
-  createLocalAgentAuthRoutes,
+  createRuntimeAuthRoutes,
   createServerAuthVerifier,
-  // Deprecated - use createServerAuthVerifier(storage) or storage methods directly
-  verifyServerAuth,
-  getServerCredentialsByUser,
-  revokeServerCredentials,
-  type LocalAgentAuthOptions,
+  type RuntimeAuthOptions,
   type ServerAuthResult,
-} from './local-agent-auth.js';
+} from './runtime-auth.js';
