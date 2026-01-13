@@ -5,7 +5,7 @@
  * Strips the API Gateway stage prefix from paths.
  *
  * Uses real PlanetScale storage and PostgresConnectionManager.
- * Agent runtime uses placeholder - Fly.io runtime will be added in Phase 2.
+ * Agent runtime uses Fly.io for container orchestration.
  * WebSocket broadcasts go through API Gateway Management API.
  */
 
@@ -18,7 +18,7 @@ import {
   type PostgresConnectionManager,
 } from '@cast/server/websocket';
 import { createPostgresStorage } from '@cast/storage';
-import type { AgentRuntime } from '@cast/runtime';
+import { FlyRuntime, type AgentRuntime } from '@cast/runtime';
 
 // =============================================================================
 // Configuration
@@ -27,6 +27,15 @@ import type { AgentRuntime } from '@cast/runtime';
 const WEBSOCKET_ENDPOINT = process.env.WEBSOCKET_ENDPOINT ?? '';
 const PLANETSCALE_URL = process.env.PLANETSCALE_URL!;
 const REGION = process.env.AWS_REGION ?? 'us-east-1';
+
+// Fly.io configuration
+const FLY_API_TOKEN = process.env.FLY_API_TOKEN ?? '';
+const FLY_APP_NAME = process.env.FLY_APP_NAME ?? 'cast-containers-staging';
+const FLY_REGION = process.env.FLY_REGION ?? 'iad';
+const FLY_IMAGE = process.env.FLY_IMAGE ?? '';
+const CAST_API_URL = process.env.CAST_API_URL ?? '';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? '';
+const SPACE_ID = process.env.SPACE_ID ?? 'default';
 
 // =============================================================================
 // Real Storage
@@ -75,20 +84,40 @@ async function getConnectionManager(): Promise<PostgresConnectionManager> {
   return connectionManager;
 }
 
-// Placeholder runtime - Fly.io runtime will be added in Phase 2
-// For now, Lambda relies on roster callbackUrl for remote agents (they self-register on checkin)
-const placeholderRuntime: AgentRuntime = {
-  activate: async () => ({ agentId: '', containerId: '', port: 8080, status: 'offline' as const, lastActivity: '', createdAt: '' }),
-  sendMessage: async () => {},
-  suspend: async () => {},
-  getStatus: () => null,
-  isOnline: () => false,
-  getAllOnline: () => [],
-  shutdown: async () => {},
-};
+// =============================================================================
+// Fly.io Runtime
+// =============================================================================
 
-// Use placeholder for now - Fly.io runtime will be added in Phase 2
-const runtime = placeholderRuntime;
+// Fly.io runtime for container orchestration
+// Falls back to placeholder if Fly env vars are not configured
+let runtime: AgentRuntime;
+
+if (FLY_API_TOKEN && FLY_IMAGE && CAST_API_URL && ANTHROPIC_API_KEY) {
+  runtime = new FlyRuntime({
+    flyAppName: FLY_APP_NAME,
+    flyApiToken: FLY_API_TOKEN,
+    flyRegion: FLY_REGION,
+    imageName: FLY_IMAGE,
+    castApiUrl: CAST_API_URL,
+    anthropicApiKey: ANTHROPIC_API_KEY,
+    storage,
+    spaceId: SPACE_ID,
+  });
+  console.log(`[Lambda] FlyRuntime initialized: app=${FLY_APP_NAME}, region=${FLY_REGION}`);
+} else {
+  // Placeholder runtime when Fly.io is not configured
+  console.warn('[Lambda] FlyRuntime not configured - missing env vars. Using placeholder.');
+  console.warn('[Lambda] Required: FLY_API_TOKEN, FLY_IMAGE, CAST_API_URL, ANTHROPIC_API_KEY');
+  runtime = {
+    activate: async () => ({ agentId: '', containerId: '', port: 8080, status: 'offline' as const, lastActivity: '', createdAt: '' }),
+    sendMessage: async () => {},
+    suspend: async () => {},
+    getStatus: () => null,
+    isOnline: () => false,
+    getAllOnline: () => [],
+    shutdown: async () => {},
+  } as AgentRuntime;
+}
 
 // =============================================================================
 // Lambda Handler

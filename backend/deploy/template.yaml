@@ -70,6 +70,23 @@ Parameters:
     Type: String
     Description: Tunnel server URL for container HTTP access (e.g., https://tunnel.staging.caststack.site)
     Default: ''
+  FlyApiToken:
+    Type: String
+    Description: Fly.io API token for container orchestration
+    NoEcho: true
+    Default: ''
+  FlyAppName:
+    Type: String
+    Description: Fly.io app name (e.g., cast-containers-staging)
+    Default: ''
+  FlyRegion:
+    Type: String
+    Description: Fly.io region (e.g., iad, fra)
+    Default: 'iad'
+  SpaceId:
+    Type: String
+    Description: Default space ID for agents
+    Default: 'default'
 
 Globals:
   Function:
@@ -113,6 +130,11 @@ Resources:
           GITHUB_CLIENT_ID: !Ref GitHubClientId
           GITHUB_CLIENT_SECRET: !Ref GitHubClientSecret
           TUNNEL_SERVER_URL: !Ref TunnelServerUrl
+          FLY_API_TOKEN: !Ref FlyApiToken
+          FLY_APP_NAME: !Ref FlyAppName
+          FLY_REGION: !Ref FlyRegion
+          FLY_IMAGE: !Ref AgentImageUri
+          SPACE_ID: !Ref SpaceId
       Events:
         RootPath:
           Type: HttpApi
