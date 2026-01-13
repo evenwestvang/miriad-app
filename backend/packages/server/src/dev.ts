@@ -351,14 +351,16 @@ async function main() {
   server.on('upgrade', async (request: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(request.url ?? '/', `http://localhost:${port}`);
     const pathname = url.pathname;
+    const protocol = url.searchParams.get('protocol');
 
     // ---------------------------------------------------------------------------
-    // Runtime WebSocket: /runtimes/connect (LocalRuntime connections)
+    // Runtime WebSocket: /runtimes/connect OR ?protocol=runtime
     // Phase 2a: Dev mode - no auth required
+    // Both paths supported for backwards compatibility with existing clients
     // ---------------------------------------------------------------------------
-    if (pathname === '/runtimes/connect') {
+    if (pathname === '/runtimes/connect' || protocol === 'runtime') {
       runtimeWss.handleUpgrade(request, socket, head, (ws) => {
-        console.log('[Runtimes] New WebSocket connection');
+        console.log(`[Runtimes] New WebSocket connection (${pathname === '/runtimes/connect' ? 'path' : 'query param'})`);
         const authHeader = request.headers.authorization;
         runtimeConnectionManager.handleConnection(ws as unknown as WebSocket, authHeader);
       });
