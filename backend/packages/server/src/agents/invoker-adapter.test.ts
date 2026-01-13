@@ -40,6 +40,7 @@ function createMockAgentManager(): AgentManager & {
       sendMessageCalls.push({ spaceId, channelId, callsign, sender, content });
     }),
     buildPromptForAgent: vi.fn(async () => 'mock system prompt'),
+    getMcpConfigsForAgent: vi.fn(async () => []),
     spawn: vi.fn(),
     stop: vi.fn(),
     shutdown: vi.fn(),
