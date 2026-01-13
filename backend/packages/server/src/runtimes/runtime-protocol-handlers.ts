@@ -358,16 +358,17 @@ export function createRuntimeProtocolHandlers(
       // This would need to be done at a higher level where we have auth context
 
       try {
-        // Check if runtime already exists
-        let runtime = await storage.getRuntime(runtimeId);
-
         const config: LocalRuntimeConfig = {
           wsConnectionId: state.connectionId,
           machineInfo,
         };
 
+        // Check if runtime already exists by ID first
+        let runtime = await storage.getRuntime(runtimeId);
+        let effectiveRuntimeId = runtimeId;
+
         if (runtime) {
-          // Update existing runtime
+          // Update existing runtime (same ID reconnecting)
           await storage.updateRuntime(runtimeId, {
             name,
             status: 'online',
@@ -376,31 +377,47 @@ export function createRuntimeProtocolHandlers(
           });
           console.log(`[RuntimeProtocolHandlers] Runtime reconnected: ${runtimeId} (${name})`);
         } else {
-          // Create new runtime
-          runtime = await storage.createRuntime({
-            id: runtimeId,
-            spaceId,
-            serverId: state.serverId,
-            name,
-            type: 'local',
-            status: 'online',
-            config,
-          });
-          console.log(`[RuntimeProtocolHandlers] New runtime registered: ${runtimeId} (${name})`);
+          // Check if runtime exists by (spaceId, name) - handles case where
+          // client generates new runtimeId but same machine name
+          const existingByName = await storage.getRuntimeByName(spaceId, name);
+
+          if (existingByName) {
+            // Update existing runtime record, use its ID
+            effectiveRuntimeId = existingByName.id;
+            await storage.updateRuntime(effectiveRuntimeId, {
+              status: 'online',
+              config,
+              lastSeenAt: new Date().toISOString(),
+            });
+            runtime = existingByName;
+            console.log(`[RuntimeProtocolHandlers] Runtime reconnected (by name): ${effectiveRuntimeId} (${name})`);
+          } else {
+            // Create new runtime
+            runtime = await storage.createRuntime({
+              id: runtimeId,
+              spaceId,
+              serverId: state.serverId,
+              name,
+              type: 'local',
+              status: 'online',
+              config,
+            });
+            console.log(`[RuntimeProtocolHandlers] New runtime registered: ${runtimeId} (${name})`);
+          }
         }
 
-        // Update connection with runtimeId
-        await storage.updateConnectionRuntime(state.connectionId, runtimeId);
+        // Update connection with runtimeId (use effective ID in case we reused existing)
+        await storage.updateConnectionRuntime(state.connectionId, effectiveRuntimeId);
 
-        // Send confirmation
+        // Send confirmation (use effective ID so client knows which ID to use)
         const response = JSON.stringify({
           type: 'runtime_connected',
-          runtimeId,
+          runtimeId: effectiveRuntimeId,
           protocolVersion: PROTOCOL_VERSION,
         });
         await send(state.connectionId, response);
 
-        return { success: true, runtimeId };
+        return { success: true, runtimeId: effectiveRuntimeId };
       } catch (error) {
         console.error('[RuntimeProtocolHandlers] Error handling runtime_ready:', error);
         await sendError(state.connectionId, 'REGISTRATION_FAILED', 'Failed to register runtime');
