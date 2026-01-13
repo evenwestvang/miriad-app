@@ -663,6 +663,9 @@ export interface StoredArtifact {
   /** File size in bytes for binary assets */
   fileSize?: number;
 
+  /** If set, this asset is attached to a message and hidden from the board */
+  attachedToMessageId?: string;
+
   /** Optimistic concurrency version (auto-incremented on update) */
   version: number;
 
@@ -721,6 +724,9 @@ export interface CreateArtifactInput {
 
   /** File size in bytes for binary assets */
   fileSize?: number;
+
+  /** If set, this asset is attached to a message and hidden from the board */
+  attachedToMessageId?: string;
 
   /** Who is creating this artifact */
   createdBy: string;
