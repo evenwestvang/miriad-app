@@ -1278,6 +1278,13 @@ export interface CostTally {
 // =============================================================================
 
 /**
+ * Connection protocol type.
+ * - 'browser': Standard browser WebSocket connection
+ * - 'runtime': LocalRuntime WebSocket connection
+ */
+export type ConnectionProtocol = 'browser' | 'runtime';
+
+/**
  * A WebSocket connection record as stored in the database.
  * Used for message broadcasting to connected clients.
  */
@@ -1296,4 +1303,10 @@ export interface StoredConnection {
 
   /** Container ID if this is a containerized agent */
   containerId?: string;
+
+  /** Connection protocol type (defaults to 'browser') */
+  protocol: ConnectionProtocol;
+
+  /** Runtime ID for runtime connections (null until runtime_ready) */
+  runtimeId?: string;
 }

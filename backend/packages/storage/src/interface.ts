@@ -49,6 +49,7 @@ import type {
   CostTally,
   // WebSocket connection types
   StoredConnection,
+  ConnectionProtocol,
   // Runtime types
   StoredRuntime,
   CreateRuntimeInput,
@@ -618,12 +619,17 @@ export interface Storage {
    *
    * @param connectionId - Unique connection identifier
    * @param channelId - Channel ID (use '__pending__' for connect-first-auth-later)
-   * @param options - Optional agent/container info
+   * @param options - Optional connection metadata (agent, container, protocol, runtime)
    */
   saveConnection(
     connectionId: string,
     channelId: string,
-    options?: { agentCallsign?: string; containerId?: string }
+    options?: {
+      agentCallsign?: string;
+      containerId?: string;
+      protocol?: ConnectionProtocol;
+      runtimeId?: string;
+    }
   ): Promise<void>;
 
   /**
@@ -641,6 +647,15 @@ export interface Storage {
    * @param channelId - New channel ID
    */
   updateConnectionChannel(connectionId: string, channelId: string): Promise<void>;
+
+  /**
+   * Update a runtime connection's runtimeId (for runtime_ready handshake).
+   * Called when a runtime connection sends runtime_ready message.
+   *
+   * @param connectionId - Connection ID
+   * @param runtimeId - Runtime ID to associate with this connection
+   */
+  updateConnectionRuntime(connectionId: string, runtimeId: string): Promise<void>;
 
   /**
    * Delete a connection record.
