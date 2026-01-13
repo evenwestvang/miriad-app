@@ -2240,6 +2240,15 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       END $$;
     `;
 
+    // Add attached_to_message_id column if it doesn't exist (migration for message attachments)
+    await sql`
+      DO $$ BEGIN
+        ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS attached_to_message_id VARCHAR(26);
+      EXCEPTION
+        WHEN duplicate_column THEN NULL;
+      END $$;
+    `;
+
     // ---------------------------------------------------------------------------
     // Local Agent Servers Table (Stage 3)
     // ---------------------------------------------------------------------------
