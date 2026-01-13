@@ -11,9 +11,11 @@
 import type { AgentManager } from './agent-manager.js';
 import type { Storage } from '@cast/storage';
 import type { AgentRuntime } from '@cast/runtime';
+import type { LocalRuntimeConfig } from '@cast/core';
 import type { ConnectionManager } from '../websocket/index.js';
 import type { AgentInvoker, Message } from '../handlers/messages.js';
 import type { RuntimeRegistry } from './runtime-registry.js';
+import type { ActivateAgentMessage } from '../runtimes/runtime-protocol-handlers.js';
 import { pushMessagesToContainer, compileMessages, broadcastAgentState } from '../handlers/checkin.js';
 import { generateContainerToken } from '../auth/index.js';
 
@@ -99,60 +101,131 @@ export function createAgentInvokerAdapter(
 
             // Step 1: Check RuntimeRegistry for agents bound to a LocalRuntime (via roster.runtime_id)
             // This is the primary routing path for local agents running via local-runtime
-            if (runtimeRegistry && rosterEntry?.runtimeId) {
-              const localRuntime = await runtimeRegistry.getRuntimeForAgent(agentId);
+            if (rosterEntry?.runtimeId) {
+              // First try in-memory registry (works in local dev)
+              const localRuntime = runtimeRegistry
+                ? await runtimeRegistry.getRuntimeForAgent(agentId)
+                : null;
 
-              if (localRuntime === null) {
-                // Runtime is offline - broadcast error to channel, message stays in DB for later
-                console.warn(`[AgentInvoker] @${callsign}'s runtime (${rosterEntry.runtimeId}) is offline`);
-                // Broadcast offline state so UI shows agent is unreachable
+              if (localRuntime) {
+                // Runtime is online in-memory - route message through it
+                console.log(`[AgentInvoker] @${callsign} bound to LocalRuntime ${rosterEntry.runtimeId}, routing via registry`);
+
+                // Check if agent is online on this runtime
+                if (localRuntime.isOnline(agentId)) {
+                  // Agent is already active - send message directly
+                  const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
+                  await localRuntime.sendMessage(agentId, { content: userMessage, systemPrompt });
+
+                  // Update readmark and lastMessageRoutedAt
+                  const now = new Date().toISOString();
+                  await storage.updateRosterEntry(channelId, rosterEntry.id, {
+                    readmark: message.id,
+                    lastMessageRoutedAt: now,
+                  });
+                  await broadcastAgentState(connectionManager, channelId, callsign, 'pending', now);
+                  console.log(`[AgentInvoker] Successfully sent to @${callsign} via LocalRuntime`);
+                  return;
+                } else {
+                  // Agent not active yet - activate it
+                  console.log(`[AgentInvoker] @${callsign} not active, activating on LocalRuntime ${rosterEntry.runtimeId}`);
+                  await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
+
+                  const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
+                  const authToken = generateContainerToken({ spaceId, channelId, callsign });
+                  const mcpServers = await agentManager.getMcpConfigsForAgent(spaceId, channelId, authToken);
+
+                  await localRuntime.activate({
+                    agentId,
+                    authToken,
+                    systemPrompt,
+                    mcpServers,
+                  });
+
+                  // Update lastMessageRoutedAt - message will be delivered when agent checks in
+                  const now = new Date().toISOString();
+                  await storage.updateRosterEntry(channelId, rosterEntry.id, {
+                    lastMessageRoutedAt: now,
+                  });
+                  console.log(`[AgentInvoker] Activated @${callsign} on LocalRuntime (will get message on checkin)`);
+                  return;
+                }
+              }
+
+              // Fallback: No in-memory registry (Lambda) - look up runtime in DB and send via WebSocket
+              // This is the key path for Lambda where in-memory state doesn't persist
+              console.log(`[AgentInvoker] No in-memory registry, checking DB for runtime ${rosterEntry.runtimeId}`);
+              const runtimeRecord = await storage.getRuntime(rosterEntry.runtimeId);
+
+              if (!runtimeRecord) {
+                console.warn(`[AgentInvoker] @${callsign}'s runtime (${rosterEntry.runtimeId}) not found in DB`);
                 await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
-                // Don't throw - message stays in DB, will be delivered when runtime reconnects
                 return;
               }
 
-              // Runtime is online - route message through it
-              console.log(`[AgentInvoker] @${callsign} bound to LocalRuntime ${rosterEntry.runtimeId}, routing via registry`);
+              const runtimeConfig = runtimeRecord.config as LocalRuntimeConfig | null;
+              const wsConnectionId = runtimeConfig?.wsConnectionId;
 
-              // Check if agent is online on this runtime
-              if (localRuntime.isOnline(agentId)) {
-                // Agent is already active - send message directly
-                const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
-                await localRuntime.sendMessage(agentId, { content: userMessage, systemPrompt });
-
-                // Update readmark and lastMessageRoutedAt
-                const now = new Date().toISOString();
-                await storage.updateRosterEntry(channelId, rosterEntry.id, {
-                  readmark: message.id,
-                  lastMessageRoutedAt: now,
-                });
-                await broadcastAgentState(connectionManager, channelId, callsign, 'pending', now);
-                console.log(`[AgentInvoker] Successfully sent to @${callsign} via LocalRuntime`);
-                return;
-              } else {
-                // Agent not active yet - activate it
-                console.log(`[AgentInvoker] @${callsign} not active, activating on LocalRuntime ${rosterEntry.runtimeId}`);
-                await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
-
-                const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
-                const authToken = generateContainerToken({ spaceId, channelId, callsign });
-                const mcpServers = await agentManager.getMcpConfigsForAgent(spaceId, channelId, authToken);
-
-                await localRuntime.activate({
-                  agentId,
-                  authToken,
-                  systemPrompt,
-                  mcpServers,
-                });
-
-                // Update lastMessageRoutedAt - message will be delivered when agent checks in
-                const now = new Date().toISOString();
-                await storage.updateRosterEntry(channelId, rosterEntry.id, {
-                  lastMessageRoutedAt: now,
-                });
-                console.log(`[AgentInvoker] Activated @${callsign} on LocalRuntime (will get message on checkin)`);
+              if (runtimeRecord.status !== 'online' || !wsConnectionId) {
+                // Runtime is offline - broadcast error to channel, message stays in DB for later
+                console.warn(`[AgentInvoker] @${callsign}'s runtime (${rosterEntry.runtimeId}) is ${runtimeRecord.status}, wsConnectionId: ${wsConnectionId ?? 'none'}`);
+                await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
                 return;
               }
+
+              // Runtime is online - send activate message via WebSocket
+              console.log(`[AgentInvoker] @${callsign} bound to runtime ${rosterEntry.runtimeId}, sending activate via WebSocket ${wsConnectionId}`);
+              await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
+
+              const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
+              const authToken = generateContainerToken({ spaceId, channelId, callsign });
+              const mcpServers = await agentManager.getMcpConfigsForAgent(spaceId, channelId, authToken);
+
+              // Workspace path is set by the runtime client, we don't control it from here
+              const workspacePath = '/tmp/cast-agents';
+
+              const activateMessage: ActivateAgentMessage = {
+                type: 'activate',
+                agentId,
+                systemPrompt,
+                mcpServers,
+                workspacePath,
+              };
+
+              if (!connectionManager) {
+                console.error(`[AgentInvoker] No connectionManager available to send activate message`);
+                await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
+                return;
+              }
+
+              try {
+                // connectionManager.send() may return Promise<boolean> (Postgres) or Promise<void> (local)
+                // We handle both by catching errors and treating false as failure
+                // Cast to allow checking boolean return from PostgresConnectionManager
+                const result = (await connectionManager.send(
+                  wsConnectionId,
+                  JSON.stringify(activateMessage)
+                )) as unknown as boolean | undefined;
+                // PostgresConnectionManager returns false on stale connection
+                if (result === false) {
+                  console.warn(`[AgentInvoker] Failed to send activate to runtime ${rosterEntry.runtimeId} (connection stale)`);
+                  await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
+                  return;
+                }
+              } catch (error) {
+                // Local ConnectionManager throws on failure
+                console.warn(`[AgentInvoker] Failed to send activate to runtime ${rosterEntry.runtimeId}:`, error);
+                await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
+                return;
+              }
+
+              // Update lastMessageRoutedAt - message will be delivered when agent checks in
+              const now = new Date().toISOString();
+              await storage.updateRosterEntry(channelId, rosterEntry.id, {
+                lastMessageRoutedAt: now,
+              });
+              console.log(`[AgentInvoker] Activated @${callsign} via WebSocket (will get message on checkin)`);
+              return;
             }
 
             // Step 2: For local Docker, check if runtime has container running
