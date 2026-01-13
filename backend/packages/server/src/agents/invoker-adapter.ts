@@ -10,14 +10,11 @@
 
 import type { AgentManager } from './agent-manager.js';
 import type { Storage } from '@cast/storage';
-import type { AgentRuntime } from '@cast/runtime';
 import type { LocalRuntimeConfig } from '@cast/core';
 import type { ConnectionManager } from '../websocket/index.js';
 import type { AgentInvoker, Message } from '../handlers/messages.js';
-import type { RuntimeRegistry } from './runtime-registry.js';
 import type { ActivateAgentMessage, DeliverMessageMessage } from '../runtimes/runtime-protocol-handlers.js';
-import { generateMessageId } from '@cast/core';
-import { pushMessagesToContainer, compileMessages, broadcastAgentState } from '../handlers/checkin.js';
+import { pushMessagesToContainer, broadcastAgentState } from '../handlers/checkin.js';
 import { generateContainerToken } from '../auth/index.js';
 
 /**
@@ -52,12 +49,10 @@ export interface AgentInvokerAdapterOptions {
   storage: Storage;
   /** The space ID (all agents in this invoker belong to same space) */
   spaceId: string;
-  /** Agent runtime for direct message routing (local Docker) */
-  runtime?: AgentRuntime;
-  /** WebSocket connection manager for broadcasting agent state */
+  /** WebSocket connection manager for broadcasting agent state to browser clients */
   connectionManager?: ConnectionManager;
-  /** Runtime registry for routing to LocalRuntimes based on roster.runtime_id */
-  runtimeRegistry?: RuntimeRegistry;
+  /** Send function for runtime WebSocket connections (different from client connectionManager) */
+  runtimeSend?: (connectionId: string, data: string) => Promise<boolean>;
 }
 
 // =============================================================================
@@ -68,17 +63,17 @@ export interface AgentInvokerAdapterOptions {
  * Create an AgentInvoker that routes messages to agents.
  *
  * Flow for each target agent:
- * 1. Check roster for callbackUrl (container already running?)
- * 2. If callbackUrl exists → push directly to container
- * 3. If no callbackUrl → spawn new container via AgentManager
- *    (container will checkin and get message via pending queue)
+ * 1. If agent has runtimeId → route via WebSocket to LocalRuntime (DB lookup)
+ * 2. If agent has callbackUrl → push directly to Fly.io container via HTTP
+ * 3. Otherwise → spawn new container via AgentManager
  *
- * This eliminates the need for in-memory state in Lambda - roster is source of truth.
+ * All paths use DB as source of truth - no in-memory state.
+ * This ensures Lambda and local dev use identical routing logic.
  */
 export function createAgentInvokerAdapter(
   options: AgentInvokerAdapterOptions
 ): AgentInvoker {
-  const { agentManager, storage, spaceId, runtime, connectionManager, runtimeRegistry } = options;
+  const { agentManager, storage, spaceId, connectionManager, runtimeSend } = options;
 
   return {
     invokeAgents: async (
@@ -113,62 +108,10 @@ export function createAgentInvokerAdapter(
             const agentId = `${spaceId}:${channelId}:${callsign}`;
             const userMessage = `Message from @${message.sender}: ${message.content}`;
 
-            // Step 1: Check RuntimeRegistry for agents bound to a LocalRuntime (via roster.runtime_id)
-            // This is the primary routing path for local agents running via local-runtime
+            // Step 1: Check if agent is bound to a LocalRuntime (via roster.runtime_id)
+            // Route via WebSocket to the runtime's connection
             if (rosterEntry?.runtimeId) {
-              // First try in-memory registry (works in local dev)
-              const localRuntime = runtimeRegistry
-                ? await runtimeRegistry.getRuntimeForAgent(agentId)
-                : null;
-
-              if (localRuntime) {
-                // Runtime is online in-memory - route message through it
-                console.log(`[AgentInvoker] @${callsign} bound to LocalRuntime ${rosterEntry.runtimeId}, routing via registry`);
-
-                // Check if agent is online on this runtime
-                if (localRuntime.isOnline(agentId)) {
-                  // Agent is already active - send message directly
-                  const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
-                  await localRuntime.sendMessage(agentId, { content: userMessage, systemPrompt });
-
-                  // Update readmark and lastMessageRoutedAt
-                  const now = new Date().toISOString();
-                  await storage.updateRosterEntry(channelId, rosterEntry.id, {
-                    readmark: message.id,
-                    lastMessageRoutedAt: now,
-                  });
-                  await broadcastAgentState(connectionManager, channelId, callsign, 'pending', now);
-                  console.log(`[AgentInvoker] Successfully sent to @${callsign} via LocalRuntime`);
-                  return;
-                } else {
-                  // Agent not active yet - activate it
-                  console.log(`[AgentInvoker] @${callsign} not active, activating on LocalRuntime ${rosterEntry.runtimeId}`);
-                  await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
-
-                  const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
-                  const authToken = generateContainerToken({ spaceId, channelId, callsign });
-                  const mcpServers = await agentManager.getMcpConfigsForAgent(spaceId, channelId, authToken);
-
-                  await localRuntime.activate({
-                    agentId,
-                    authToken,
-                    systemPrompt,
-                    mcpServers,
-                  });
-
-                  // Update lastMessageRoutedAt - message will be delivered when agent checks in
-                  const now = new Date().toISOString();
-                  await storage.updateRosterEntry(channelId, rosterEntry.id, {
-                    lastMessageRoutedAt: now,
-                  });
-                  console.log(`[AgentInvoker] Activated @${callsign} on LocalRuntime (will get message on checkin)`);
-                  return;
-                }
-              }
-
-              // Fallback: No in-memory registry (Lambda) - look up runtime in DB and send via WebSocket
-              // This is the key path for Lambda where in-memory state doesn't persist
-              console.log(`[AgentInvoker] No in-memory registry, checking DB for runtime ${rosterEntry.runtimeId}`);
+              console.log(`[AgentInvoker] @${callsign} bound to LocalRuntime ${rosterEntry.runtimeId}, checking DB`);
               const runtimeRecord = await storage.getRuntime(rosterEntry.runtimeId);
 
               if (!runtimeRecord) {
@@ -187,9 +130,9 @@ export function createAgentInvokerAdapter(
                 return;
               }
 
-              // Runtime is online - check if agent is already active
-              if (!connectionManager) {
-                console.error(`[AgentInvoker] No connectionManager available to send message`);
+              // Runtime is online - check if we have runtimeSend to deliver messages
+              if (!runtimeSend) {
+                console.error(`[AgentInvoker] No runtimeSend available for LocalRuntime routing`);
                 await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
                 return;
               }
@@ -211,10 +154,7 @@ export function createAgentInvokerAdapter(
                 };
 
                 try {
-                  const result = (await connectionManager.send(
-                    wsConnectionId,
-                    JSON.stringify(deliverMessage)
-                  )) as unknown as boolean | undefined;
+                  const result = await runtimeSend(wsConnectionId, JSON.stringify(deliverMessage));
                   if (result === false) {
                     console.warn(`[AgentInvoker] Failed to send message to @${callsign} (connection stale)`);
                     await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
@@ -256,21 +196,14 @@ export function createAgentInvokerAdapter(
               };
 
               try {
-                // connectionManager.send() may return Promise<boolean> (Postgres) or Promise<void> (local)
-                // We handle both by catching errors and treating false as failure
-                // Cast to allow checking boolean return from PostgresConnectionManager
-                const result = (await connectionManager.send(
-                  wsConnectionId,
-                  JSON.stringify(activateMessage)
-                )) as unknown as boolean | undefined;
-                // PostgresConnectionManager returns false on stale connection
+                // runtimeSend returns false if connection is stale/not found
+                const result = await runtimeSend(wsConnectionId, JSON.stringify(activateMessage));
                 if (result === false) {
                   console.warn(`[AgentInvoker] Failed to send activate to runtime ${rosterEntry.runtimeId} (connection stale)`);
                   await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
                   return;
                 }
               } catch (error) {
-                // Local ConnectionManager throws on failure
                 console.warn(`[AgentInvoker] Failed to send activate to runtime ${rosterEntry.runtimeId}:`, error);
                 await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
                 return;
@@ -285,34 +218,10 @@ export function createAgentInvokerAdapter(
               return;
             }
 
-            // Step 2: For local Docker, check if runtime has container running
-            // This bypasses the roster callbackUrl which has host.docker.internal issues
-            if (runtime?.isOnline(agentId)) {
-              console.log(`[AgentInvoker] @${callsign} container running (via runtime), sending directly`);
-
-              // Build system prompt using centralized method from AgentManager
-              const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
-              await runtime.sendMessage(agentId, { content: userMessage, systemPrompt });
-
-              // Update readmark and lastMessageRoutedAt after successful delivery (rosterEntry already fetched above)
-              if (rosterEntry) {
-                const now = new Date().toISOString();
-                await storage.updateRosterEntry(channelId, rosterEntry.id, {
-                  readmark: message.id,
-                  lastMessageRoutedAt: now,
-                });
-                // Broadcast pending state - agent is now processing
-                await broadcastAgentState(connectionManager, channelId, callsign, 'pending', now);
-              }
-              console.log(`[AgentInvoker] Successfully sent to @${callsign} via runtime`);
-              return;
-            }
-
-            // Step 3: Check roster for existing callbackUrl (remote container)
+            // Step 2: Check roster for existing callbackUrl (Fly.io container)
             // Note: rosterEntry already fetched at start of loop for status check
-
             if (rosterEntry?.callbackUrl) {
-              // Step 3a: Container is running - push directly
+              // Container is running - push directly via HTTP
               console.log(`[AgentInvoker] @${callsign} has callbackUrl, pushing directly to ${rosterEntry.callbackUrl}`);
 
               // Generate auth token for this agent (deterministic - same as container received at activate)
@@ -359,7 +268,7 @@ export function createAgentInvokerAdapter(
                 );
               }
             } else {
-              // Step 3b: No container running - spawn new one
+              // Step 3: No container running - spawn new one via AgentManager
               console.log(`[AgentInvoker] @${callsign} has no callbackUrl, spawning new container`);
               // Broadcast 'connecting' state before spawning
               await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');

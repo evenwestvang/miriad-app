@@ -21,11 +21,3 @@ export {
   createAgentInvokerAdapter,
   type AgentInvokerAdapterOptions,
 } from './invoker-adapter.js';
-
-// Runtime registry
-export {
-  createRuntimeRegistry,
-  type RuntimeRegistry,
-  type RuntimeRegistryOptions,
-  type LocalRuntime,
-} from './runtime-registry.js';

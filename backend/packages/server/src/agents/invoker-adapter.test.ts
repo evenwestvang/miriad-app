@@ -3,8 +3,7 @@ import { createAgentInvokerAdapter } from './invoker-adapter.js';
 import type { AgentManager } from './agent-manager.js';
 import type { Storage } from '@cast/storage';
 import type { Message } from '../handlers/messages.js';
-import type { RuntimeRegistry, LocalRuntime } from './runtime-registry.js';
-import type { AgentRuntime } from '@cast/runtime';
+import type { ConnectionManager } from '../websocket/index.js';
 
 // Mock the checkin module to avoid actual HTTP calls
 vi.mock('../handlers/checkin.js', () => ({
@@ -56,92 +55,53 @@ function createMockAgentManager(): AgentManager & {
 }
 
 // =============================================================================
-// Mock RuntimeRegistry and LocalRuntime
+// Mock RuntimeSend (for LocalRuntime WebSocket routing)
 // =============================================================================
 
-function createMockLocalRuntime(runtimeId: string): LocalRuntime & {
-  activateCalls: Array<{ agentId: string; authToken: string; systemPrompt?: string }>;
-  sendMessageCalls: Array<{ agentId: string; content: string; systemPrompt?: string }>;
-  _onlineAgents: Set<string>;
+function createMockRuntimeSend(): {
+  fn: (connectionId: string, data: string) => Promise<boolean>;
+  calls: Array<{ connectionId: string; message: string }>;
 } {
-  const activateCalls: Array<{ agentId: string; authToken: string; systemPrompt?: string }> = [];
-  const sendMessageCalls: Array<{ agentId: string; content: string; systemPrompt?: string }> = [];
-  const onlineAgents = new Set<string>();
-
+  const calls: Array<{ connectionId: string; message: string }> = [];
   return {
-    runtimeId,
-    activateCalls,
-    sendMessageCalls,
-    _onlineAgents: onlineAgents,
-    activate: vi.fn(async (opts) => {
-      activateCalls.push({
-        agentId: opts.agentId,
-        authToken: opts.authToken,
-        systemPrompt: opts.systemPrompt,
-      });
-      return { agentId: opts.agentId, status: 'activating' };
+    fn: vi.fn(async (connectionId: string, data: string) => {
+      calls.push({ connectionId, message: data });
+      return true;
     }),
-    sendMessage: vi.fn(async (agentId, opts) => {
-      sendMessageCalls.push({
-        agentId,
-        content: opts.content,
-        systemPrompt: opts.systemPrompt,
-      });
-    }),
-    suspend: vi.fn(),
-    getState: vi.fn(() => null),
-    isOnline: vi.fn((agentId) => onlineAgents.has(agentId)),
-    getAllOnline: vi.fn(() => []),
-    shutdown: vi.fn(),
-  } as unknown as LocalRuntime & {
-    activateCalls: Array<{ agentId: string; authToken: string; systemPrompt?: string }>;
-    sendMessageCalls: Array<{ agentId: string; content: string; systemPrompt?: string }>;
-    _onlineAgents: Set<string>;
+    calls,
   };
 }
 
-function createMockRuntimeRegistry(
-  localRuntimes: Map<string, LocalRuntime>,
-  agentToRuntimeMap: Map<string, string> = new Map()
-): RuntimeRegistry & {
-  getRuntimeForAgentCalls: string[];
-  _localRuntimes: Map<string, LocalRuntime>;
-  _agentToRuntimeMap: Map<string, string>;
+// =============================================================================
+// Mock ConnectionManager (for browser client broadcasts)
+// =============================================================================
+
+function createMockConnectionManager(): ConnectionManager & {
+  sendCalls: Array<{ connectionId: string; message: string }>;
+  broadcastCalls: Array<{ channelId: string; message: string }>;
 } {
-  const getRuntimeForAgentCalls: string[] = [];
+  const sendCalls: Array<{ connectionId: string; message: string }> = [];
+  const broadcastCalls: Array<{ channelId: string; message: string }> = [];
 
   return {
-    getRuntimeForAgentCalls,
-    _localRuntimes: localRuntimes,
-    _agentToRuntimeMap: agentToRuntimeMap,
-    getRuntimeForAgent: vi.fn(async (agentId) => {
-      getRuntimeForAgentCalls.push(agentId);
-      // Check the mapping to simulate roster.runtimeId lookup
-      const runtimeId = agentToRuntimeMap.get(agentId);
-      if (!runtimeId) {
-        // No runtimeId means use default runtime (return null to indicate no LocalRuntime)
-        // But wait - the actual impl returns defaultRuntime, not null
-        // For our tests, returning null simulates "no LocalRuntime binding"
-        // Actually, we need to distinguish between:
-        // 1. No runtimeId in roster -> return null (fall through to default flow)
-        // 2. Has runtimeId but runtime offline -> return null (broadcast error)
-        // 3. Has runtimeId and runtime online -> return LocalRuntime
-        // For this mock, if agentId is in map, check if runtime is connected
-        return null;
-      }
-      const runtime = localRuntimes.get(runtimeId);
-      // Return the runtime if connected, null if offline
-      return runtime ?? null;
+    sendCalls,
+    broadcastCalls,
+    send: vi.fn(async (connectionId: string, message: string) => {
+      sendCalls.push({ connectionId, message });
+      return true;
     }),
-    registerLocalRuntime: vi.fn(),
-    unregisterLocalRuntime: vi.fn(),
-    getLocalRuntime: vi.fn((runtimeId) => localRuntimes.get(runtimeId)),
-    getAllLocalRuntimes: vi.fn(() => new Map(localRuntimes)),
-    isLocalRuntimeConnected: vi.fn((runtimeId) => localRuntimes.has(runtimeId)),
-  } as RuntimeRegistry & {
-    getRuntimeForAgentCalls: string[];
-    _localRuntimes: Map<string, LocalRuntime>;
-    _agentToRuntimeMap: Map<string, string>;
+    broadcast: vi.fn(async (channelId: string, message: string) => {
+      broadcastCalls.push({ channelId, message });
+    }),
+    addConnection: vi.fn(),
+    removeConnection: vi.fn(),
+    getConnection: vi.fn(),
+    closeAll: vi.fn(),
+    initialize: vi.fn(),
+    switchChannel: vi.fn(),
+  } as unknown as ConnectionManager & {
+    sendCalls: Array<{ connectionId: string; message: string }>;
+    broadcastCalls: Array<{ channelId: string; message: string }>;
   };
 }
 
@@ -154,20 +114,29 @@ interface MockStorageOptions {
   rosterCallbackUrls?: Record<string, string | null>;
   /** Map of callsign -> runtimeId (for LocalRuntime routing) */
   rosterRuntimeIds?: Record<string, string | null>;
+  /** Map of callsign -> lastHeartbeat (for online status check) */
+  rosterHeartbeats?: Record<string, string | null>;
+  /** Map of runtimeId -> runtime record */
+  runtimes?: Record<string, { status: string; config?: { wsConnectionId?: string } } | null>;
 }
 
 function createMockStorage(options: MockStorageOptions = {}): Storage & {
   getRosterByCallsignCalls: string[];
   updateRosterEntryCalls: Array<{ channelId: string; entryId: string; update: unknown }>;
+  getRuntimeCalls: string[];
 } {
   const rosterCallbackUrls = options.rosterCallbackUrls ?? {};
   const rosterRuntimeIds = options.rosterRuntimeIds ?? {};
+  const rosterHeartbeats = options.rosterHeartbeats ?? {};
+  const runtimes = options.runtimes ?? {};
   const getRosterByCallsignCalls: string[] = [];
   const updateRosterEntryCalls: Array<{ channelId: string; entryId: string; update: unknown }> = [];
+  const getRuntimeCalls: string[] = [];
 
   return {
     getRosterByCallsignCalls,
     updateRosterEntryCalls,
+    getRuntimeCalls,
     getRosterByCallsign: vi.fn(async (channelId: string, callsign: string) => {
       getRosterByCallsignCalls.push(callsign);
       const callbackUrl = rosterCallbackUrls[callsign];
@@ -185,10 +154,24 @@ function createMockStorage(options: MockStorageOptions = {}): Storage & {
         createdAt: new Date().toISOString(),
         callbackUrl: callbackUrl ?? undefined,
         runtimeId: runtimeId ?? undefined,
+        lastHeartbeat: rosterHeartbeats[callsign] ?? undefined,
       };
     }),
     updateRosterEntry: vi.fn(async (channelId: string, entryId: string, update: unknown) => {
       updateRosterEntryCalls.push({ channelId, entryId, update });
+    }),
+    getRuntime: vi.fn(async (runtimeId: string) => {
+      getRuntimeCalls.push(runtimeId);
+      const runtime = runtimes[runtimeId];
+      if (!runtime) return null;
+      return {
+        id: runtimeId,
+        spaceId: 'space-1',
+        name: 'test-runtime',
+        status: runtime.status,
+        config: runtime.config ?? null,
+        createdAt: new Date().toISOString(),
+      };
     }),
     // Other methods not used
     saveMessage: vi.fn(),
@@ -211,6 +194,7 @@ function createMockStorage(options: MockStorageOptions = {}): Storage & {
   } as unknown as Storage & {
     getRosterByCallsignCalls: string[];
     updateRosterEntryCalls: Array<{ channelId: string; entryId: string; update: unknown }>;
+    getRuntimeCalls: string[];
   };
 }
 
@@ -389,118 +373,172 @@ describe('createAgentInvokerAdapter', () => {
     }
   });
 
-  describe('when agent has runtime_id (LocalRuntime routing)', () => {
+  describe('when agent has runtime_id (DB-based WebSocket routing)', () => {
     const RUNTIME_ID = 'rt_local_001';
-    let mockLocalRuntime: ReturnType<typeof createMockLocalRuntime>;
-    let mockRuntimeRegistry: ReturnType<typeof createMockRuntimeRegistry>;
+    const WS_CONNECTION_ID = 'ws-conn-123';
+    let mockConnectionManager: ReturnType<typeof createMockConnectionManager>;
+    let mockRuntimeSend: ReturnType<typeof createMockRuntimeSend>;
 
     beforeEach(() => {
-      mockLocalRuntime = createMockLocalRuntime(RUNTIME_ID);
-      const localRuntimes = new Map<string, LocalRuntime>();
-      localRuntimes.set(RUNTIME_ID, mockLocalRuntime as unknown as LocalRuntime);
+      mockConnectionManager = createMockConnectionManager();
+      mockRuntimeSend = createMockRuntimeSend();
+    });
 
-      // Map agent IDs to runtime IDs (simulates roster.runtimeId lookup)
-      const agentToRuntimeMap = new Map<string, string>();
-      agentToRuntimeMap.set('space-1:channel-1:fox', RUNTIME_ID);
-      // bear has no mapping (no runtimeId)
-
-      mockRuntimeRegistry = createMockRuntimeRegistry(localRuntimes, agentToRuntimeMap);
-
-      // Setup storage with runtime_id for fox
+    it('sends message via WebSocket when agent is online (recent heartbeat)', async () => {
+      // Agent has runtime_id, runtime is online, agent has recent heartbeat
       mockStorage = createMockStorage({
-        rosterRuntimeIds: { fox: RUNTIME_ID, bear: null },
-        rosterCallbackUrls: { fox: null, bear: null },
+        rosterRuntimeIds: { fox: RUNTIME_ID },
+        rosterCallbackUrls: { fox: null },
+        rosterHeartbeats: { fox: new Date().toISOString() }, // Recent heartbeat
+        runtimes: {
+          [RUNTIME_ID]: { status: 'online', config: { wsConnectionId: WS_CONNECTION_ID } },
+        },
       });
-    });
-
-    it('routes to LocalRuntime when agent has runtime_id and is online', async () => {
-      // Mark agent as online on the runtime
-      mockLocalRuntime._onlineAgents.add('space-1:channel-1:fox');
 
       const invoker = createAgentInvokerAdapter({
         agentManager: mockAgentManager,
         storage: mockStorage,
         spaceId,
-        runtimeRegistry: mockRuntimeRegistry as unknown as RuntimeRegistry,
+        connectionManager: mockConnectionManager as unknown as ConnectionManager,
+        runtimeSend: mockRuntimeSend.fn,
       });
 
       await invoker.invokeAgents('channel-1', ['fox'], testMessage);
 
-      // Should send message via LocalRuntime, not spawn container
-      expect(mockLocalRuntime.sendMessageCalls).toHaveLength(1);
-      expect(mockLocalRuntime.sendMessageCalls[0].agentId).toBe('space-1:channel-1:fox');
+      // Should send message via runtimeSend, not spawn container
+      expect(mockRuntimeSend.calls).toHaveLength(1);
+      expect(mockRuntimeSend.calls[0].connectionId).toBe(WS_CONNECTION_ID);
+      const parsedMessage = JSON.parse(mockRuntimeSend.calls[0].message);
+      expect(parsedMessage.type).toBe('message');
+      expect(parsedMessage.agentId).toBe('space-1:channel-1:fox');
       expect(mockAgentManager.sendMessageCalls).toHaveLength(0);
     });
 
-    it('activates agent on LocalRuntime when not online', async () => {
-      // Agent is NOT online (default - _onlineAgents is empty)
+    it('sends activate via WebSocket when agent has no recent heartbeat', async () => {
+      // Agent has runtime_id, runtime is online, but agent has no heartbeat
+      mockStorage = createMockStorage({
+        rosterRuntimeIds: { fox: RUNTIME_ID },
+        rosterCallbackUrls: { fox: null },
+        rosterHeartbeats: { fox: null }, // No heartbeat - agent not active
+        runtimes: {
+          [RUNTIME_ID]: { status: 'online', config: { wsConnectionId: WS_CONNECTION_ID } },
+        },
+      });
 
       const invoker = createAgentInvokerAdapter({
         agentManager: mockAgentManager,
         storage: mockStorage,
         spaceId,
-        runtimeRegistry: mockRuntimeRegistry as unknown as RuntimeRegistry,
+        connectionManager: mockConnectionManager as unknown as ConnectionManager,
+        runtimeSend: mockRuntimeSend.fn,
       });
 
       await invoker.invokeAgents('channel-1', ['fox'], testMessage);
 
-      // Should activate via LocalRuntime, not spawn container
-      expect(mockLocalRuntime.activateCalls).toHaveLength(1);
-      expect(mockLocalRuntime.activateCalls[0].agentId).toBe('space-1:channel-1:fox');
+      // Should send activate message via runtimeSend
+      expect(mockRuntimeSend.calls).toHaveLength(1);
+      const parsedMessage = JSON.parse(mockRuntimeSend.calls[0].message);
+      expect(parsedMessage.type).toBe('activate');
+      expect(parsedMessage.agentId).toBe('space-1:channel-1:fox');
       expect(mockAgentManager.sendMessageCalls).toHaveLength(0);
     });
 
-    it('broadcasts offline state when LocalRuntime is disconnected', async () => {
-      // Remove the runtime from registry (simulate disconnect)
-      mockRuntimeRegistry._localRuntimes.clear();
-      // Update the mock to return null
-      vi.mocked(mockRuntimeRegistry.getRuntimeForAgent).mockResolvedValue(null);
+    it('broadcasts offline state when runtime is offline', async () => {
+      // Agent has runtime_id but runtime is offline
+      mockStorage = createMockStorage({
+        rosterRuntimeIds: { fox: RUNTIME_ID },
+        rosterCallbackUrls: { fox: null },
+        runtimes: {
+          [RUNTIME_ID]: { status: 'offline' },
+        },
+      });
 
       const invoker = createAgentInvokerAdapter({
         agentManager: mockAgentManager,
         storage: mockStorage,
         spaceId,
-        runtimeRegistry: mockRuntimeRegistry as unknown as RuntimeRegistry,
+        connectionManager: mockConnectionManager as unknown as ConnectionManager,
       });
 
       await invoker.invokeAgents('channel-1', ['fox'], testMessage);
 
-      // Should NOT spawn container - message stays in DB
+      // Should NOT spawn container or send message - runtime is offline
+      expect(mockConnectionManager.sendCalls).toHaveLength(0);
       expect(mockAgentManager.sendMessageCalls).toHaveLength(0);
-      // broadcastAgentState is mocked, but the call happened
+      // broadcastAgentState is called with 'offline' (mocked)
     });
 
-    it('falls through to default flow for agents without runtime_id', async () => {
+    it('broadcasts offline state when runtime has no wsConnectionId', async () => {
+      // Runtime is online but has no WebSocket connection
+      mockStorage = createMockStorage({
+        rosterRuntimeIds: { fox: RUNTIME_ID },
+        rosterCallbackUrls: { fox: null },
+        runtimes: {
+          [RUNTIME_ID]: { status: 'online', config: {} }, // No wsConnectionId
+        },
+      });
+
       const invoker = createAgentInvokerAdapter({
         agentManager: mockAgentManager,
         storage: mockStorage,
         spaceId,
-        runtimeRegistry: mockRuntimeRegistry as unknown as RuntimeRegistry,
+        connectionManager: mockConnectionManager as unknown as ConnectionManager,
       });
 
+      await invoker.invokeAgents('channel-1', ['fox'], testMessage);
+
+      // Should NOT send message - no WebSocket connection
+      expect(mockConnectionManager.sendCalls).toHaveLength(0);
+      expect(mockAgentManager.sendMessageCalls).toHaveLength(0);
+    });
+
+    it('falls through to spawn for agents without runtime_id', async () => {
       // bear has no runtime_id, should spawn container
+      mockStorage = createMockStorage({
+        rosterRuntimeIds: { bear: null },
+        rosterCallbackUrls: { bear: null },
+      });
+
+      const invoker = createAgentInvokerAdapter({
+        agentManager: mockAgentManager,
+        storage: mockStorage,
+        spaceId,
+        connectionManager: mockConnectionManager as unknown as ConnectionManager,
+      });
+
       await invoker.invokeAgents('channel-1', ['bear'], testMessage);
 
       // Should spawn container via AgentManager
       expect(mockAgentManager.sendMessageCalls).toHaveLength(1);
       expect(mockAgentManager.sendMessageCalls[0].callsign).toBe('bear');
+      expect(mockConnectionManager.sendCalls).toHaveLength(0);
     });
 
     it('routes mixed agents correctly (some with runtime_id, some without)', async () => {
-      mockLocalRuntime._onlineAgents.add('space-1:channel-1:fox');
+      // fox has runtime_id and is online, bear has no runtime_id
+      mockStorage = createMockStorage({
+        rosterRuntimeIds: { fox: RUNTIME_ID, bear: null },
+        rosterCallbackUrls: { fox: null, bear: null },
+        rosterHeartbeats: { fox: new Date().toISOString() },
+        runtimes: {
+          [RUNTIME_ID]: { status: 'online', config: { wsConnectionId: WS_CONNECTION_ID } },
+        },
+      });
 
       const invoker = createAgentInvokerAdapter({
         agentManager: mockAgentManager,
         storage: mockStorage,
         spaceId,
-        runtimeRegistry: mockRuntimeRegistry as unknown as RuntimeRegistry,
+        connectionManager: mockConnectionManager as unknown as ConnectionManager,
+        runtimeSend: mockRuntimeSend.fn,
       });
 
       await invoker.invokeAgents('channel-1', ['fox', 'bear'], testMessage);
 
-      // fox routes via LocalRuntime
-      expect(mockLocalRuntime.sendMessageCalls).toHaveLength(1);
-      expect(mockLocalRuntime.sendMessageCalls[0].agentId).toBe('space-1:channel-1:fox');
+      // fox routes via runtimeSend
+      expect(mockRuntimeSend.calls).toHaveLength(1);
+      const parsedMessage = JSON.parse(mockRuntimeSend.calls[0].message);
+      expect(parsedMessage.agentId).toBe('space-1:channel-1:fox');
 
       // bear spawns container
       expect(mockAgentManager.sendMessageCalls).toHaveLength(1);

@@ -19,7 +19,7 @@ import { createMcpRoutes } from './handlers/mcp-http.js';
 import { createArtifactRoutes } from './handlers/artifacts.js';
 import { createFilesystemAssetStorage } from './assets/index.js';
 import type { ConnectionManager } from './websocket/index.js';
-import { AgentManager, createAgentInvokerAdapter, type RuntimeRegistry } from './agents/index.js';
+import { AgentManager, createAgentInvokerAdapter } from './agents/index.js';
 import { createDevAuthRoutes, createWorkOSAuthRoutes, requireAuth, getSpaceId, generateContainerToken } from './auth/index.js';
 import { createAppRoutes } from './handlers/apps.js';
 import { createRuntimeAuthRoutes } from './handlers/runtime-auth.js';
@@ -34,10 +34,10 @@ export interface AppOptions {
   storage: Storage;
   /** Agent runtime (Docker for local, Fly.io for prod) */
   runtime: AgentRuntime;
-  /** WebSocket connection manager */
+  /** WebSocket connection manager for browser clients */
   connectionManager: ConnectionManager;
-  /** Runtime registry for routing to LocalRuntimes (optional - dev mode only) */
-  runtimeRegistry?: RuntimeRegistry;
+  /** Send function for runtime WebSocket connections (LocalRuntime) */
+  runtimeSend?: (connectionId: string, data: string) => Promise<boolean>;
 }
 
 // =============================================================================
@@ -310,11 +310,10 @@ interface AgentRoutesOptions {
   storage: Storage;
   connectionManager: ConnectionManager;
   agentManager: AgentManager;
-  runtimeRegistry?: RuntimeRegistry;
 }
 
 function createAgentRoutes(options: AgentRoutesOptions): Hono {
-  const { storage, connectionManager, agentManager, runtimeRegistry } = options;
+  const { storage, connectionManager, agentManager } = options;
   const app = new Hono();
 
   /**
@@ -418,25 +417,17 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
       });
       console.log(`[Agents] Set initial readmark to ${messageId}`);
 
-      // Step 4: Spawn container (route to LocalRuntime if runtimeId is set)
+      // Step 4: Spawn container
+      // Note: For agents with runtimeId, the first message will trigger activation
+      // via the invoker-adapter's DB-based WebSocket routing
       try {
-        if (runtimeId && runtimeRegistry) {
-          // Route to LocalRuntime via registry
-          const localRuntime = runtimeRegistry.getLocalRuntime(runtimeId);
-          if (localRuntime) {
-            const agentId = `${spaceId}:${channelId}:${callsign}`;
-            const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
-            const authToken = generateContainerToken({ spaceId, channelId, callsign });
-            const mcpServers = await agentManager.getMcpConfigsForAgent(spaceId, channelId, authToken);
-            await localRuntime.activate({ agentId, authToken, systemPrompt, mcpServers });
-            console.log(`[Agents] Agent ${callsign} activated on LocalRuntime ${runtimeId}`);
-          } else {
-            console.warn(`[Agents] LocalRuntime ${runtimeId} not connected, agent will activate when runtime connects`);
-          }
-        } else {
-          // Default: spawn via Docker/Fly runtime
+        if (!runtimeId) {
+          // No runtime binding - spawn via Docker/Fly runtime
           await agentManager.activate(spaceId, channelId, callsign);
           console.log(`[Agents] Container spawned for ${callsign}`);
+        } else {
+          // Agent bound to LocalRuntime - will activate on first message
+          console.log(`[Agents] Agent ${callsign} bound to runtime ${runtimeId}, will activate on first message`);
         }
       } catch (spawnError) {
         console.error(`[Agents] Failed to spawn container for ${callsign}:`, spawnError);
@@ -863,7 +854,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
  * Create a fully configured Cast backend Hono app.
  */
 export function createApp(options: AppOptions): Hono {
-  const { storage, runtime, connectionManager, runtimeRegistry } = options;
+  const { storage, runtime, connectionManager, runtimeSend } = options;
 
   const app = new Hono();
 
@@ -1358,7 +1349,6 @@ export function createApp(options: AppOptions): Hono {
     storage,
     connectionManager,
     agentManager,
-    runtimeRegistry,
   });
   app.route('/channels', agentRoutes);
 
@@ -1418,9 +1408,8 @@ export function createApp(options: AppOptions): Hono {
               agentManager,
               storage,
               spaceId,
-              runtime,
               connectionManager,
-              runtimeRegistry,
+              runtimeSend,
             });
             return invoker.invokeAgents(cid, targets, message);
           },
@@ -1565,9 +1554,8 @@ export function createApp(options: AppOptions): Hono {
           agentManager,
           storage,
           spaceId: channel.spaceId,
-          runtime,
           connectionManager,
-          runtimeRegistry,
+          runtimeSend,
         });
         return invoker.invokeAgents(channelId, targets, message);
       },

@@ -9,10 +9,14 @@
  * This module handles:
  * - WebSocket lifecycle (connect, disconnect, message routing)
  * - Ping/pong heartbeat for connection health (local dev only)
- * - RuntimeRegistry integration for routing to LocalRuntime instances
  *
  * Business logic (protocol handling, persistence) is in runtime-protocol-handlers.ts
  * which is shared between local dev and AWS Lambda.
+ *
+ * Message routing goes through the DB-based path in invoker-adapter.ts:
+ * - invoker-adapter queries storage.getRuntime() to get wsConnectionId
+ * - Uses connectionManager.send(wsConnectionId) to deliver messages
+ * - This ensures Lambda and local dev use identical routing logic
  *
  * Deployment Note:
  * This requires a persistent WebSocket server (long-running process).
@@ -21,13 +25,11 @@
  */
 
 import type { WebSocket } from 'ws';
-import { tymbal, generateMessageId } from '@cast/core';
 import type { Storage } from '@cast/storage';
 import type { StoredRuntime } from '@cast/core';
-import { AgentStateManager, parseAgentId, createLocalRuntime } from '@cast/runtime';
+import { AgentStateManager, parseAgentId } from '@cast/runtime';
 import type { ConnectionManager } from '../websocket/index.js';
 import { createServerAuthVerifier, type ServerAuthResult } from '../handlers/runtime-auth.js';
-import type { RuntimeRegistry } from '../agents/runtime-registry.js';
 
 // Re-export protocol message types from runtime-protocol-handlers
 // (those are now the source of truth for the protocol types)
@@ -82,7 +84,6 @@ export interface RuntimeConnectionManagerOptions {
   storage: Storage;
   connectionManager: ConnectionManager;
   agentStateManager: AgentStateManager;
-  runtimeRegistry?: RuntimeRegistry;
   requireAuth?: boolean;
   pingIntervalMs?: number;
 }
@@ -93,6 +94,9 @@ export interface RuntimeConnectionManager {
 
   /** Send command to runtime's WS connection */
   sendCommand(runtimeId: string, command: BackendToRuntimeMessage): boolean;
+
+  /** Send raw data to a runtime connection by connectionId (for invoker-adapter) */
+  send(connectionId: string, data: string): Promise<boolean>;
 
   /** Get online runtimes for a space */
   getOnlineRuntimes(spaceId: string): StoredRuntime[];
@@ -118,7 +122,6 @@ export function createRuntimeConnectionManager(
     storage,
     connectionManager,
     agentStateManager,
-    runtimeRegistry,
     requireAuth = false,
     pingIntervalMs = 30000,
   } = options;
@@ -137,18 +140,6 @@ export function createRuntimeConnectionManager(
 
   // Ping interval handle
   let pingInterval: ReturnType<typeof setInterval> | null = null;
-
-  // Self-reference for LocalRuntime's connectionManager requirement
-  const selfRef = {
-    sendCommand: (runtimeId: string, command: BackendToRuntimeMessage): boolean => {
-      const connection = runtimeConnections.get(runtimeId);
-      if (!connection) return false;
-      return sendToWs(connection.ws, command);
-    },
-    isRuntimeOnline: (runtimeId: string): boolean => {
-      return runtimeConnections.has(runtimeId);
-    },
-  };
 
   // ==========================================================================
   // Helper Functions (transport layer)
@@ -200,8 +191,10 @@ export function createRuntimeConnectionManager(
   /**
    * Handle runtime_ready with local dev extensions:
    * - Space auth validation
-   * - RuntimeRegistry integration
    * - AgentStateManager integration
+   *
+   * Note: Runtime state is persisted to DB by the shared handler.
+   * Message routing uses DB-based lookup (storage.getRuntime → wsConnectionId).
    */
   async function handleRuntimeReadyWithExtensions(
     connection: RuntimeConnection,
@@ -228,7 +221,7 @@ export function createRuntimeConnectionManager(
       serverId: connection.serverAuth?.serverId,
     };
 
-    // Call shared handler
+    // Call shared handler (persists to DB with wsConnectionId)
     const result = await protocolHandlers.handleRuntimeReady(state, message);
 
     if (result.success && result.runtimeId) {
@@ -236,20 +229,9 @@ export function createRuntimeConnectionManager(
       connection.runtimeId = result.runtimeId;
       connection.spaceId = spaceId;
 
-      // Move from pending to active
+      // Move from pending to active (for ping/pong and closeAll)
       pendingConnections.delete(connection);
       runtimeConnections.set(result.runtimeId, connection);
-
-      // Create and register LocalRuntime instance if registry provided
-      if (runtimeRegistry) {
-        const localRuntime = createLocalRuntime({
-          runtimeId: result.runtimeId,
-          spaceId,
-          connectionManager: selfRef,
-          stateManager: agentStateManager,
-        });
-        runtimeRegistry.registerLocalRuntime(result.runtimeId, localRuntime);
-      }
 
       console.log(`[RuntimeConnectionManager] Runtime registered: ${result.runtimeId} (${name})`);
     }
@@ -360,11 +342,6 @@ export function createRuntimeConnectionManager(
 
     const runtimeId = connection.runtimeId;
     runtimeConnections.delete(runtimeId);
-
-    // Unregister LocalRuntime from registry (local dev only)
-    if (runtimeRegistry) {
-      runtimeRegistry.unregisterLocalRuntime(runtimeId);
-    }
 
     // Mark agents as offline in local state manager
     const onlineAgents = agentStateManager.getAllOnline();
@@ -539,6 +516,16 @@ export function createRuntimeConnectionManager(
         return false;
       }
       return sendToWs(connection.ws, command);
+    },
+
+    async send(connectionId: string, data: string): Promise<boolean> {
+      const connection = connectionsByConnId.get(connectionId);
+      if (!connection || connection.ws.readyState !== connection.ws.OPEN) {
+        console.log(`[RuntimeConnectionManager] Cannot send: connection ${connectionId} not found or not open`);
+        return false;
+      }
+      connection.ws.send(data);
+      return true;
     },
 
     getOnlineRuntimes(spaceId: string): StoredRuntime[] {

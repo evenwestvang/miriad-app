@@ -25,7 +25,6 @@ import { createLocalConnectionManager, type LocalConnectionInfo } from './websoc
 import { createPostgresStorage, type Storage } from '@cast/storage';
 import { DockerRuntime, FlyRuntime, AgentStateManager } from '@cast/runtime';
 import { createRuntimeConnectionManager } from './runtimes/index.js';
-import { createRuntimeRegistry } from './agents/index.js';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Duplex } from 'stream';
 import { parseSessionCookie, verifySessionToken } from './auth/index.js';
@@ -260,16 +259,6 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------------
-  // Initialize Runtime Registry (routes agents to LocalRuntime or default)
-  // ---------------------------------------------------------------------------
-
-  const runtimeRegistry = createRuntimeRegistry({
-    storage,
-    defaultRuntime: runtime,
-  });
-  console.log('✅ Runtime registry initialized');
-
-  // ---------------------------------------------------------------------------
   // Initialize Runtime Connection Manager (for LocalRuntime WS connections)
   // ---------------------------------------------------------------------------
 
@@ -278,7 +267,6 @@ async function main() {
     storage,
     connectionManager,
     agentStateManager,
-    runtimeRegistry,
     requireAuth: false, // Dev mode - no auth required
     pingIntervalMs: 60000,
   });
@@ -292,7 +280,7 @@ async function main() {
     storage,
     runtime,
     connectionManager,
-    runtimeRegistry,
+    runtimeSend: (connectionId, data) => runtimeConnectionManager.send(connectionId, data),
   });
 
   // ---------------------------------------------------------------------------
