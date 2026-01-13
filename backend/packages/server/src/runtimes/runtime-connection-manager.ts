@@ -98,6 +98,11 @@ export interface AgentCheckinMessage {
   agentId: string;
 }
 
+export interface AgentHeartbeatMessage {
+  type: 'agent_heartbeat';
+  agentId: string;
+}
+
 export interface AgentFrameMessage {
   type: 'frame';
   agentId: string;
@@ -112,6 +117,7 @@ export interface PongMessage {
 export type RuntimeToBackendMessage =
   | RuntimeReadyMessage
   | AgentCheckinMessage
+  | AgentHeartbeatMessage
   | AgentFrameMessage
   | PongMessage;
 
@@ -339,13 +345,55 @@ export function createRuntimeConnectionManager(
       // Parse agent ID to get channel
       const { channelId, callsign } = parseAgentId(agentId);
 
-      // Broadcast online state to frontend (same as Docker checkin)
+      // Update roster lastHeartbeat (same as Docker checkin in checkin.ts)
       const now = new Date().toISOString();
+      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+      if (rosterEntry) {
+        await storage.updateRosterEntry(channelId, rosterEntry.id, {
+          lastHeartbeat: now,
+        });
+      }
+
+      // Broadcast online state to frontend (same as Docker checkin)
       await broadcastAgentState(connectionManager, channelId, callsign, 'online', now);
 
       console.log(`[RuntimeConnectionManager] Agent checkin: ${agentId} -> ${newState.status}`);
     } catch (error) {
       console.error('[RuntimeConnectionManager] Error handling agent_checkin:', error);
+    }
+  }
+
+  async function handleAgentHeartbeat(
+    connection: RuntimeConnection,
+    message: AgentHeartbeatMessage
+  ): Promise<void> {
+    const { agentId } = message;
+
+    if (!connection.runtimeId) {
+      sendError(connection.ws, 'NOT_REGISTERED', 'Must send runtime_ready first');
+      return;
+    }
+
+    try {
+      // Update agent state manager - keeps agent marked as online
+      agentStateManager.handleHeartbeat(agentId);
+
+      // Parse agent ID to get channel and callsign for roster update
+      const { channelId, callsign } = parseAgentId(agentId);
+
+      // Update roster lastHeartbeat (same field as Docker container heartbeat)
+      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+      if (rosterEntry) {
+        const now = new Date().toISOString();
+        await storage.updateRosterEntry(channelId, rosterEntry.id, {
+          lastHeartbeat: now,
+        });
+
+        // Broadcast online state with timestamp so frontend can track staleness
+        await broadcastAgentState(connectionManager, channelId, callsign, 'online', now);
+      }
+    } catch (error) {
+      console.error('[RuntimeConnectionManager] Error handling agent_heartbeat:', error);
     }
   }
 
@@ -643,6 +691,10 @@ export function createRuntimeConnectionManager(
 
             case 'agent_checkin':
               await handleAgentCheckin(connection, message);
+              break;
+
+            case 'agent_heartbeat':
+              await handleAgentHeartbeat(connection, message);
               break;
 
             case 'frame':

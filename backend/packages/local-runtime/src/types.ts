@@ -75,6 +75,11 @@ export interface AgentCheckinMessage {
   agentId: string;
 }
 
+export interface AgentHeartbeatMessage {
+  type: 'agent_heartbeat';
+  agentId: string;
+}
+
 export interface AgentFrameMessage {
   type: 'frame';
   agentId: string;
@@ -89,6 +94,7 @@ export interface PongMessage {
 export type RuntimeToBackendMessage =
   | RuntimeReadyMessage
   | AgentCheckinMessage
+  | AgentHeartbeatMessage
   | AgentFrameMessage
   | PongMessage;
 

@@ -231,6 +231,25 @@ export class AgentStateManager {
   }
 
   /**
+   * Handle agent heartbeat.
+   * Updates lastActivity timestamp without changing state.
+   * Used by LocalRuntime to signal agent is still alive.
+   */
+  handleHeartbeat(agentId: string): AgentRuntimeState {
+    const state = this.states.get(agentId);
+
+    if (!state) {
+      // Heartbeat from unknown agent - should not happen
+      return createInitialState(agentId);
+    }
+
+    // Just update lastActivity, don't change status
+    state.lastActivity = new Date().toISOString();
+
+    return { ...state };
+  }
+
+  /**
    * Handle agent error or timeout.
    * Transitions to 'error' state.
    */

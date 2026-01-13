@@ -15,6 +15,7 @@ import type {
   RuntimeToBackendMessage,
   RuntimeReadyMessage,
   AgentCheckinMessage,
+  AgentHeartbeatMessage,
   AgentFrameMessage,
   PongMessage,
   ActivateAgentMessage,
@@ -47,6 +48,10 @@ export class RuntimeClient {
   private status: RuntimeStatus = 'disconnected';
   private reconnectAttempts = 0;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+
+  /** Heartbeat interval in milliseconds (30 seconds) */
+  private static readonly HEARTBEAT_INTERVAL_MS = 30000;
 
   private readonly onConnected?: () => void;
   private readonly onDisconnected?: (code: number, reason: string) => void;
@@ -121,6 +126,7 @@ export class RuntimeClient {
         console.log(`[RuntimeClient] Disconnected: ${code} ${reason.toString()}`);
         this.status = 'disconnected';
         this.ws = null;
+        this.stopHeartbeatInterval();
         this.onDisconnected?.(code, reason.toString());
         this.scheduleReconnect();
       });
@@ -143,6 +149,9 @@ export class RuntimeClient {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
+
+    // Stop heartbeat interval
+    this.stopHeartbeatInterval();
 
     // Suspend all agents
     await this.agentManager.suspendAll();
@@ -176,6 +185,8 @@ export class RuntimeClient {
         // Re-checkin all active agents on reconnect
         // This ensures backend knows about agents that survived the disconnect
         this.reCheckinActiveAgents();
+        // Start heartbeat interval for agent liveness
+        this.startHeartbeatInterval();
         break;
 
       case 'activate':
@@ -283,6 +294,55 @@ export class RuntimeClient {
     console.log(`[RuntimeClient] Re-checking in ${activeAgents.length} active agent(s)`);
     for (const agent of activeAgents) {
       this.sendCheckin(agent.agentId);
+    }
+  }
+
+  // ===========================================================================
+  // Heartbeat
+  // ===========================================================================
+
+  /**
+   * Start periodic heartbeat for all online agents.
+   */
+  private startHeartbeatInterval(): void {
+    if (this.heartbeatInterval) {
+      return; // Already running
+    }
+
+    console.log(`[RuntimeClient] Starting heartbeat interval (${RuntimeClient.HEARTBEAT_INTERVAL_MS / 1000}s)`);
+    this.heartbeatInterval = setInterval(() => {
+      this.sendHeartbeats();
+    }, RuntimeClient.HEARTBEAT_INTERVAL_MS);
+  }
+
+  /**
+   * Stop the heartbeat interval.
+   */
+  private stopHeartbeatInterval(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+      console.log('[RuntimeClient] Stopped heartbeat interval');
+    }
+  }
+
+  /**
+   * Send heartbeats for all online agents.
+   */
+  private sendHeartbeats(): void {
+    const agents = this.agentManager.getAgents();
+    const onlineAgents = agents.filter((a) => a.status === 'online' || a.status === 'busy');
+
+    if (onlineAgents.length === 0) {
+      return; // No agents to heartbeat
+    }
+
+    for (const agent of onlineAgents) {
+      const message: AgentHeartbeatMessage = {
+        type: 'agent_heartbeat',
+        agentId: agent.agentId,
+      };
+      this.send(message);
     }
   }
 
