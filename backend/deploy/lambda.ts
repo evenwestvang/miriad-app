@@ -134,10 +134,13 @@ async function getHandler() {
     const manager = await getConnectionManager();
 
     // Create the app with real connection manager for broadcasting
+    // runtimeSend uses same manager.send() - in Lambda, both browser and runtime
+    // WebSocket connections go through PostgresConnectionManager → API Gateway
     const app = createApp({
       storage,
       runtime,
       connectionManager: manager,
+      runtimeSend: (connectionId, data) => manager.send(connectionId, data),
     });
 
     honoHandler = handle(app);
