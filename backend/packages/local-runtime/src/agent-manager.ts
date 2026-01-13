@@ -101,7 +101,7 @@ export class AgentManager {
       return;
     }
 
-    console.log(`[AgentManager] Activating agent: ${agentId}`);
+    console.log(`[AgentManager] @${callsign} state: offline → activating`);
 
     // Ensure workspace exists
     const resolvedPath = workspacePath || join(this.config.workspaceBasePath, agentId.replace(/:/g, '/'));
@@ -139,7 +139,7 @@ export class AgentManager {
     instance.state.lastActivity = new Date().toISOString();
     this.config.onCheckin(agentId);
 
-    console.log(`[AgentManager] Agent ${agentId} activated and checked in`);
+    console.log(`[AgentManager] @${callsign} state: activating → online`);
   }
 
   /**
@@ -161,12 +161,13 @@ export class AgentManager {
 
     // Queue message if already processing
     if (instance.isProcessing) {
-      console.log(`[AgentManager] Agent ${agentId} busy, queueing message`);
+      const { callsign } = parseAgentId(agentId);
+      console.log(`[AgentManager] @${callsign} busy, queueing message`);
       instance.messageQueue.push(message);
       return;
     }
 
-    // Process message
+    // Process message (will transition to busy)
     await this.processMessage(instance, content, systemPrompt);
   }
 
@@ -182,7 +183,9 @@ export class AgentManager {
       return;
     }
 
-    console.log(`[AgentManager] Suspending agent ${agentId}: ${reason ?? 'no reason'}`);
+    const { callsign } = parseAgentId(agentId);
+    const oldStatus = instance.state.status;
+    console.log(`[AgentManager] @${callsign} state: ${oldStatus} → offline (${reason ?? 'no reason'})`);
 
     // Update state
     instance.state.status = 'offline';
@@ -232,9 +235,12 @@ export class AgentManager {
   ): Promise<void> {
     const { state, bridge } = instance;
 
+    const { callsign } = parseAgentId(state.agentId);
+    const oldStatus = instance.state.status;
     instance.isProcessing = true;
     instance.state.status = 'busy';
     instance.state.lastActivity = new Date().toISOString();
+    console.log(`[AgentManager] @${callsign} state: ${oldStatus} → busy`);
 
     const workspace = state.workspacePath;
     const shouldContinue = this.hasExistingSession(workspace);
@@ -315,6 +321,7 @@ export class AgentManager {
       instance.isProcessing = false;
       instance.state.status = 'online';
       instance.state.lastActivity = new Date().toISOString();
+      console.log(`[AgentManager] @${callsign} state: busy → online`);
 
       // Process next message in queue
       if (instance.messageQueue.length > 0) {

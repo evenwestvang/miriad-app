@@ -173,6 +173,9 @@ export class RuntimeClient {
         console.log(`[RuntimeClient] Runtime connected: ${message.runtimeId} (protocol ${message.protocolVersion})`);
         this.status = 'ready';
         this.onConnected?.();
+        // Re-checkin all active agents on reconnect
+        // This ensures backend knows about agents that survived the disconnect
+        this.reCheckinActiveAgents();
         break;
 
       case 'activate':
@@ -262,6 +265,25 @@ export class RuntimeClient {
       timestamp,
     };
     this.send(message);
+  }
+
+  /**
+   * Re-checkin all active agents after reconnection.
+   * This notifies the backend about agents that survived the disconnect.
+   */
+  private reCheckinActiveAgents(): void {
+    const agents = this.agentManager.getAgents();
+    const activeAgents = agents.filter((a) => a.status !== 'offline');
+
+    if (activeAgents.length === 0) {
+      console.log('[RuntimeClient] No active agents to re-checkin');
+      return;
+    }
+
+    console.log(`[RuntimeClient] Re-checking in ${activeAgents.length} active agent(s)`);
+    for (const agent of activeAgents) {
+      this.sendCheckin(agent.agentId);
+    }
   }
 
   // ===========================================================================
