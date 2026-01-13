@@ -2,150 +2,77 @@
  * Runtime Connection Manager
  *
  * Manages WebSocket connections from local runtimes.
- * Handles the WS transport layer for LocalRuntime - connection lifecycle,
- * message routing, and runtime/agent state updates.
+ * Thin transport adapter that delegates business logic to shared handlers.
  *
  * Protocol: See [[local-provider-spec]] section 2.2
+ *
+ * This module handles:
+ * - WebSocket lifecycle (connect, disconnect, message routing)
+ * - Ping/pong heartbeat for connection health (local dev only)
+ * - RuntimeRegistry integration for routing to LocalRuntime instances
+ *
+ * Business logic (protocol handling, persistence) is in runtime-protocol-handlers.ts
+ * which is shared between local dev and AWS Lambda.
  *
  * Deployment Note:
  * This requires a persistent WebSocket server (long-running process).
  * Works with: Node.js server (dev.ts), EC2, ECS, Fargate
- * Does NOT work with: AWS Lambda (Lambda's invoke model is incompatible
- * with persistent bidirectional WebSocket connections)
+ * Does NOT work with: AWS Lambda (use websocket-handlers.ts instead)
  */
 
 import type { WebSocket } from 'ws';
-import {
-  isSetFrame,
-  tymbal,
-  generateMessageId,
-  type TymbalFrame,
-  type SetFrame,
-} from '@cast/core';
+import { tymbal, generateMessageId } from '@cast/core';
 import type { Storage } from '@cast/storage';
-import type { StoredRuntime, LocalRuntimeConfig } from '@cast/core';
-import { AgentStateManager, parseAgentId, LocalRuntime, createLocalRuntime } from '@cast/runtime';
+import type { StoredRuntime } from '@cast/core';
+import { AgentStateManager, parseAgentId, createLocalRuntime } from '@cast/runtime';
 import type { ConnectionManager } from '../websocket/index.js';
 import { createServerAuthVerifier, type ServerAuthResult } from '../handlers/runtime-auth.js';
-import { broadcastAgentState } from '../handlers/checkin.js';
 import type { RuntimeRegistry } from '../agents/runtime-registry.js';
 
-// =============================================================================
-// Protocol Message Types (from spec section 2.2)
-// =============================================================================
+// Re-export protocol message types from runtime-protocol-handlers
+// (those are now the source of truth for the protocol types)
+export {
+  PROTOCOL_VERSION,
+  type RuntimeConnectedMessage,
+  type ActivateAgentMessage,
+  type DeliverMessageMessage,
+  type SuspendAgentMessage,
+  type PingMessage,
+  type BackendToRuntimeMessage,
+  type RuntimeReadyMessage,
+  type AgentCheckinMessage,
+  type AgentHeartbeatMessage,
+  type AgentFrameMessage,
+  type PongMessage,
+  type RuntimeToBackendMessage,
+  type McpServerConfig,
+} from './runtime-protocol-handlers.js';
 
-/** Protocol version */
-const PROTOCOL_VERSION = '1.0';
-
-// Backend → Runtime (Commands)
-
-export interface RuntimeConnectedMessage {
-  type: 'runtime_connected';
-  runtimeId: string;
-  protocolVersion: string;
-}
-
-export interface ActivateAgentMessage {
-  type: 'activate';
-  agentId: string;
-  systemPrompt: string;
-  mcpServers?: McpServerConfig[];
-  workspacePath: string;
-}
-
-export interface DeliverMessageMessage {
-  type: 'message';
-  agentId: string;
-  messageId: string;
-  content: string;
-  sender: string;
-  systemPrompt?: string;
-}
-
-export interface SuspendAgentMessage {
-  type: 'suspend';
-  agentId: string;
-  reason?: string;
-}
-
-export interface PingMessage {
-  type: 'ping';
-  timestamp: string;
-}
-
-export type BackendToRuntimeMessage =
-  | RuntimeConnectedMessage
-  | ActivateAgentMessage
-  | DeliverMessageMessage
-  | SuspendAgentMessage
-  | PingMessage;
-
-// Runtime → Backend (Responses & Events)
-
-export interface RuntimeReadyMessage {
-  type: 'runtime_ready';
-  runtimeId: string;
-  spaceId: string;
-  name: string;
-  machineInfo?: {
-    os: string;
-    hostname: string;
-  };
-}
-
-export interface AgentCheckinMessage {
-  type: 'agent_checkin';
-  agentId: string;
-}
-
-export interface AgentHeartbeatMessage {
-  type: 'agent_heartbeat';
-  agentId: string;
-}
-
-export interface AgentFrameMessage {
-  type: 'frame';
-  agentId: string;
-  frame: TymbalFrame;
-}
-
-export interface PongMessage {
-  type: 'pong';
-  timestamp: string;
-}
-
-export type RuntimeToBackendMessage =
-  | RuntimeReadyMessage
-  | AgentCheckinMessage
-  | AgentHeartbeatMessage
-  | AgentFrameMessage
-  | PongMessage;
-
-// MCP Server Config (matches @cast/runtime)
-interface McpServerConfig {
-  name: string;
-  slug?: string;
-  transport: 'stdio' | 'sse' | 'http';
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  cwd?: string;
-  url?: string;
-  headers?: Record<string, string>;
-}
+import {
+  PROTOCOL_VERSION,
+  createRuntimeProtocolHandlers,
+  type RuntimeConnectionState,
+  type RuntimeToBackendMessage,
+  type BackendToRuntimeMessage,
+  type PongMessage,
+} from './runtime-protocol-handlers.js';
 
 // =============================================================================
-// Connection State
+// Connection State (local dev only - holds WebSocket reference)
 // =============================================================================
 
 interface RuntimeConnection {
   ws: WebSocket;
+  connectionId: string;
   runtimeId: string | null;
   spaceId: string | null;
   serverAuth: ServerAuthResult | null;
   connectedAt: Date;
   lastPong: Date;
 }
+
+// Counter for generating unique connection IDs in local dev
+let connectionCounter = 0;
 
 // =============================================================================
 // RuntimeConnectionManager Interface
@@ -199,22 +126,24 @@ export function createRuntimeConnectionManager(
   // Auth verifier
   const verifyServerAuth = createServerAuthVerifier(storage);
 
-  // Track connections by runtimeId
+  // Track connections by runtimeId (local dev only - holds WS references)
   const runtimeConnections = new Map<string, RuntimeConnection>();
 
   // Track pending connections (before runtime_ready)
   const pendingConnections = new Set<RuntimeConnection>();
 
+  // Track connections by connectionId for send()
+  const connectionsByConnId = new Map<string, RuntimeConnection>();
+
   // Ping interval handle
   let pingInterval: ReturnType<typeof setInterval> | null = null;
 
   // Self-reference for LocalRuntime's connectionManager requirement
-  // These are defined before the object is returned, allowing LocalRuntime to call them
   const selfRef = {
     sendCommand: (runtimeId: string, command: BackendToRuntimeMessage): boolean => {
       const connection = runtimeConnections.get(runtimeId);
       if (!connection) return false;
-      return send(connection.ws, command);
+      return sendToWs(connection.ws, command);
     },
     isRuntimeOnline: (runtimeId: string): boolean => {
       return runtimeConnections.has(runtimeId);
@@ -222,10 +151,10 @@ export function createRuntimeConnectionManager(
   };
 
   // ==========================================================================
-  // Helper Functions
+  // Helper Functions (transport layer)
   // ==========================================================================
 
-  function send(ws: WebSocket, message: BackendToRuntimeMessage): boolean {
+  function sendToWs(ws: WebSocket, message: BackendToRuntimeMessage): boolean {
     if (ws.readyState === ws.OPEN) {
       ws.send(JSON.stringify(message));
       return true;
@@ -233,291 +162,190 @@ export function createRuntimeConnectionManager(
     return false;
   }
 
-  function sendError(ws: WebSocket, code: string, message: string): void {
+  function sendErrorToWs(ws: WebSocket, code: string, message: string): void {
     if (ws.readyState === ws.OPEN) {
       ws.send(JSON.stringify({ type: 'error', code, message }));
     }
   }
 
   // ==========================================================================
-  // Message Handlers
+  // Create Shared Protocol Handlers
   // ==========================================================================
 
-  async function handleRuntimeReady(
-    connection: RuntimeConnection,
-    message: RuntimeReadyMessage
-  ): Promise<void> {
-    const { runtimeId, spaceId, name, machineInfo } = message;
+  const protocolHandlers = createRuntimeProtocolHandlers({
+    storage,
+    broadcast: async (channelId: string, data: string) => {
+      await connectionManager.broadcast(channelId, data);
+    },
+    send: async (connectionId: string, data: string): Promise<boolean> => {
+      const connection = connectionsByConnId.get(connectionId);
+      if (!connection || connection.ws.readyState !== connection.ws.OPEN) {
+        return false;
+      }
+      connection.ws.send(data);
+      return true;
+    },
+    sendError: async (connectionId: string, code: string, message: string): Promise<void> => {
+      const connection = connectionsByConnId.get(connectionId);
+      if (connection) {
+        sendErrorToWs(connection.ws, code, message);
+      }
+    },
+  });
 
-    // Validate required fields
-    if (!runtimeId || !spaceId || !name) {
-      sendError(connection.ws, 'INVALID_MESSAGE', 'runtimeId, spaceId, and name are required');
-      return;
-    }
+  // ==========================================================================
+  // Local Dev Extensions (on top of shared handlers)
+  // ==========================================================================
+
+  /**
+   * Handle runtime_ready with local dev extensions:
+   * - Space auth validation
+   * - RuntimeRegistry integration
+   * - AgentStateManager integration
+   */
+  async function handleRuntimeReadyWithExtensions(
+    connection: RuntimeConnection,
+    message: RuntimeToBackendMessage & { type: 'runtime_ready' }
+  ): Promise<void> {
+    const { runtimeId, spaceId, name } = message;
 
     // If auth required, verify server credentials match space
     if (requireAuth && connection.serverAuth) {
       if (connection.serverAuth.spaceId !== spaceId) {
-        sendError(connection.ws, 'SPACE_MISMATCH', 'Server credentials do not match spaceId');
+        sendErrorToWs(connection.ws, 'SPACE_MISMATCH', 'Server credentials do not match spaceId');
         connection.ws.close(4003, 'Space mismatch');
         return;
       }
     }
 
-    try {
-      // Check if runtime already exists
-      let runtime = await storage.getRuntime(runtimeId);
+    // Build connection state for shared handlers
+    const state: RuntimeConnectionState = {
+      connectionId: connection.connectionId,
+      channelId: '__pending__',
+      protocol: 'runtime',
+      runtimeId: null,
+      spaceId: null,
+      serverId: connection.serverAuth?.serverId,
+    };
 
-      const config: LocalRuntimeConfig = {
-        wsConnectionId: `ws_${Date.now()}`,
-        machineInfo,
-      };
+    // Call shared handler
+    const result = await protocolHandlers.handleRuntimeReady(state, message);
 
-      if (runtime) {
-        // Update existing runtime
-        await storage.updateRuntime(runtimeId, {
-          name,
-          status: 'online',
-          config,
-          lastSeenAt: new Date().toISOString(),
-        });
-        console.log(`[RuntimeConnectionManager] Runtime reconnected: ${runtimeId} (${name})`);
-      } else {
-        // Create new runtime
-        runtime = await storage.createRuntime({
-          id: runtimeId,
-          spaceId,
-          serverId: connection.serverAuth?.serverId,
-          name,
-          type: 'local',
-          status: 'online',
-          config,
-        });
-        console.log(`[RuntimeConnectionManager] New runtime registered: ${runtimeId} (${name})`);
-      }
-
-      // Update connection state
-      connection.runtimeId = runtimeId;
+    if (result.success && result.runtimeId) {
+      // Update local connection state
+      connection.runtimeId = result.runtimeId;
       connection.spaceId = spaceId;
 
       // Move from pending to active
       pendingConnections.delete(connection);
-      runtimeConnections.set(runtimeId, connection);
+      runtimeConnections.set(result.runtimeId, connection);
 
       // Create and register LocalRuntime instance if registry provided
       if (runtimeRegistry) {
         const localRuntime = createLocalRuntime({
-          runtimeId,
+          runtimeId: result.runtimeId,
           spaceId,
           connectionManager: selfRef,
           stateManager: agentStateManager,
         });
-        runtimeRegistry.registerLocalRuntime(runtimeId, localRuntime);
+        runtimeRegistry.registerLocalRuntime(result.runtimeId, localRuntime);
       }
 
-      // Send confirmation
-      send(connection.ws, {
-        type: 'runtime_connected',
-        runtimeId,
-        protocolVersion: PROTOCOL_VERSION,
-      });
-    } catch (error) {
-      console.error('[RuntimeConnectionManager] Error handling runtime_ready:', error);
-      sendError(connection.ws, 'REGISTRATION_FAILED', 'Failed to register runtime');
+      console.log(`[RuntimeConnectionManager] Runtime registered: ${result.runtimeId} (${name})`);
     }
   }
 
-  async function handleAgentCheckin(
+  /**
+   * Handle agent_checkin with local dev extensions:
+   * - AgentStateManager integration
+   */
+  async function handleAgentCheckinWithExtensions(
     connection: RuntimeConnection,
-    message: AgentCheckinMessage
+    message: RuntimeToBackendMessage & { type: 'agent_checkin' }
   ): Promise<void> {
-    const { agentId } = message;
-
     if (!connection.runtimeId) {
-      sendError(connection.ws, 'NOT_REGISTERED', 'Must send runtime_ready first');
+      sendErrorToWs(connection.ws, 'NOT_REGISTERED', 'Must send runtime_ready first');
       return;
     }
 
-    try {
-      // Update agent state
-      const newState = agentStateManager.handleCheckin(agentId);
+    // Update local agent state manager
+    const newState = agentStateManager.handleCheckin(message.agentId);
+    console.log(`[RuntimeConnectionManager] Agent checkin: ${message.agentId} -> ${newState.status}`);
 
-      // Parse agent ID to get channel
-      const { channelId, callsign } = parseAgentId(agentId);
-
-      // Update roster lastHeartbeat (same as Docker checkin in checkin.ts)
-      const now = new Date().toISOString();
-      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
-      if (rosterEntry) {
-        await storage.updateRosterEntry(channelId, rosterEntry.id, {
-          lastHeartbeat: now,
-        });
-      }
-
-      // Broadcast online state to frontend (same as Docker checkin)
-      await broadcastAgentState(connectionManager, channelId, callsign, 'online', now);
-
-      console.log(`[RuntimeConnectionManager] Agent checkin: ${agentId} -> ${newState.status}`);
-    } catch (error) {
-      console.error('[RuntimeConnectionManager] Error handling agent_checkin:', error);
-    }
+    // Call shared handler for DB updates and broadcast
+    const state: RuntimeConnectionState = {
+      connectionId: connection.connectionId,
+      channelId: '__pending__',
+      protocol: 'runtime',
+      runtimeId: connection.runtimeId,
+      spaceId: connection.spaceId,
+    };
+    await protocolHandlers.handleAgentCheckin(state, message);
   }
 
-  async function handleAgentHeartbeat(
+  /**
+   * Handle agent_heartbeat with local dev extensions:
+   * - AgentStateManager integration
+   */
+  async function handleAgentHeartbeatWithExtensions(
     connection: RuntimeConnection,
-    message: AgentHeartbeatMessage
+    message: RuntimeToBackendMessage & { type: 'agent_heartbeat' }
   ): Promise<void> {
-    const { agentId } = message;
-
     if (!connection.runtimeId) {
-      sendError(connection.ws, 'NOT_REGISTERED', 'Must send runtime_ready first');
+      sendErrorToWs(connection.ws, 'NOT_REGISTERED', 'Must send runtime_ready first');
       return;
     }
 
-    try {
-      // Update agent state manager - keeps agent marked as online
-      agentStateManager.handleHeartbeat(agentId);
+    // Update local agent state manager
+    agentStateManager.handleHeartbeat(message.agentId);
 
-      // Parse agent ID to get channel and callsign for roster update
-      const { channelId, callsign } = parseAgentId(agentId);
-
-      // Update roster lastHeartbeat (same field as Docker container heartbeat)
-      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
-      if (rosterEntry) {
-        const now = new Date().toISOString();
-        await storage.updateRosterEntry(channelId, rosterEntry.id, {
-          lastHeartbeat: now,
-        });
-
-        // Broadcast online state with timestamp so frontend can track staleness
-        await broadcastAgentState(connectionManager, channelId, callsign, 'online', now);
-      }
-    } catch (error) {
-      console.error('[RuntimeConnectionManager] Error handling agent_heartbeat:', error);
-    }
+    // Call shared handler for DB updates and broadcast
+    const state: RuntimeConnectionState = {
+      connectionId: connection.connectionId,
+      channelId: '__pending__',
+      protocol: 'runtime',
+      runtimeId: connection.runtimeId,
+      spaceId: connection.spaceId,
+    };
+    await protocolHandlers.handleAgentHeartbeat(state, message);
   }
 
-  async function handleFrame(
+  /**
+   * Handle frame with local dev extensions:
+   * - AgentStateManager integration (idle detection)
+   */
+  async function handleFrameWithExtensions(
     connection: RuntimeConnection,
-    message: AgentFrameMessage
+    message: RuntimeToBackendMessage & { type: 'frame' }
   ): Promise<void> {
+    if (!connection.runtimeId) {
+      sendErrorToWs(connection.ws, 'NOT_REGISTERED', 'Must send runtime_ready first');
+      return;
+    }
+
     const { agentId, frame } = message;
 
-    if (!connection.runtimeId) {
-      sendError(connection.ws, 'NOT_REGISTERED', 'Must send runtime_ready first');
-      return;
-    }
+    // Update local agent state manager (idle detection)
+    const value = (frame as { v?: Record<string, unknown> }).v;
+    const isIdle = value?.type === 'idle';
+    agentStateManager.handleFrame(agentId, isIdle);
 
-    try {
-      const { channelId, callsign } = parseAgentId(agentId);
-
-      // Determine if this is an idle frame
-      const isIdle = isIdleFrame(frame);
-
-      // Update agent state (busy/online based on frame type)
-      agentStateManager.handleFrame(agentId, isIdle);
-
-      // Broadcast frame to channel
-      const serialized = JSON.stringify(frame);
-      await connectionManager.broadcast(channelId, serialized);
-
-      // Persist SetFrames as messages (skip cost frames)
-      if (isSetFrame(frame)) {
-        await persistSetFrame(connection, channelId, callsign, frame);
-      }
-    } catch (error) {
-      console.error('[RuntimeConnectionManager] Error handling frame:', error);
-    }
+    // Call shared handler for broadcast and persistence
+    const state: RuntimeConnectionState = {
+      connectionId: connection.connectionId,
+      channelId: '__pending__',
+      protocol: 'runtime',
+      runtimeId: connection.runtimeId,
+      spaceId: connection.spaceId,
+    };
+    await protocolHandlers.handleFrame(state, message);
   }
 
+  /**
+   * Handle pong - local dev only (ping/pong heartbeat)
+   */
   function handlePong(connection: RuntimeConnection, _message: PongMessage): void {
     connection.lastPong = new Date();
-  }
-
-  // ==========================================================================
-  // Frame Persistence
-  // ==========================================================================
-
-  async function persistSetFrame(
-    connection: RuntimeConnection,
-    channelId: string,
-    callsign: string,
-    frame: SetFrame
-  ): Promise<void> {
-    try {
-      const channel = await storage.getChannelById(channelId);
-      if (!channel || !frame.v || typeof frame.v !== 'object') return;
-
-      const value = frame.v as Record<string, unknown>;
-      const messageType = (value.type as string) ?? 'agent';
-
-      // Handle cost frames - persist to costs table
-      if (messageType === 'cost') {
-        await storage.saveCostRecord({
-          spaceId: channel.spaceId,
-          channelId,
-          callsign: (value.sender as string) ?? callsign,
-          costUsd: value.totalCostUsd as number,
-          durationMs: value.durationMs as number,
-          numTurns: value.numTurns as number,
-          usage: value.usage as {
-            inputTokens: number;
-            outputTokens: number;
-            cacheReadInputTokens: number;
-            cacheCreationInputTokens: number;
-          },
-          modelUsage: value.modelUsage as
-            | Record<
-                string,
-                {
-                  inputTokens: number;
-                  outputTokens: number;
-                  cacheReadInputTokens: number;
-                  cacheCreationInputTokens: number;
-                  costUsd: number;
-                }
-              >
-            | undefined,
-        });
-        return;
-      }
-
-      // For tool_call and tool_result, store full value as JSON
-      let messageContent: string | Record<string, unknown>;
-      if (messageType === 'tool_call' || messageType === 'tool_result') {
-        messageContent = JSON.stringify(value);
-      } else {
-        messageContent = (value.content as string | Record<string, unknown>) ?? value;
-      }
-
-      await storage.saveMessage({
-        id: frame.i,
-        spaceId: channel.spaceId,
-        channelId,
-        sender: (value.sender as string) ?? callsign,
-        senderType: 'agent',
-        type: messageType as
-          | 'user'
-          | 'agent'
-          | 'tool_call'
-          | 'tool_result'
-          | 'thinking'
-          | 'status'
-          | 'error'
-          | 'idle',
-        content: messageContent,
-        isComplete: true,
-        metadata: { fromLocalRuntime: true, runtimeId: connection.runtimeId },
-      });
-    } catch (error) {
-      console.error('[RuntimeConnectionManager] Error persisting frame:', error);
-    }
-  }
-
-  function isIdleFrame(frame: TymbalFrame): boolean {
-    if (!isSetFrame(frame)) return false;
-    const value = frame.v as Record<string, unknown> | undefined;
-    return value?.type === 'idle';
   }
 
   // ==========================================================================
@@ -526,55 +354,36 @@ export function createRuntimeConnectionManager(
 
   async function handleDisconnect(connection: RuntimeConnection): Promise<void> {
     pendingConnections.delete(connection);
+    connectionsByConnId.delete(connection.connectionId);
 
     if (!connection.runtimeId) return;
 
     const runtimeId = connection.runtimeId;
     runtimeConnections.delete(runtimeId);
 
-    // Unregister LocalRuntime from registry
+    // Unregister LocalRuntime from registry (local dev only)
     if (runtimeRegistry) {
       runtimeRegistry.unregisterLocalRuntime(runtimeId);
     }
 
-    try {
-      // Mark runtime as offline
-      await storage.updateRuntime(runtimeId, {
-        status: 'offline',
-        config: { wsConnectionId: null },
-      });
-
-      // Mark all agents on this runtime as offline
-      // Get all online agents from state manager and filter by runtime
-      const onlineAgents = agentStateManager.getAllOnline();
-      for (const agentState of onlineAgents) {
-        // Check if this agent is bound to this runtime
-        const { channelId, callsign } = parseAgentId(agentState.agentId);
-        const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
-
-        if (rosterEntry?.runtimeId === runtimeId) {
-          // Mark agent as offline
-          agentStateManager.handleSuspend(agentState.agentId);
-
-          // Broadcast offline status
-          const statusFrame = tymbal.set(generateMessageId(), {
-            type: 'status',
-            sender: callsign,
-            senderType: 'agent',
-            content: `offline (runtime disconnected)`,
-          });
-          await connectionManager.broadcast(channelId, JSON.stringify(statusFrame));
-        }
+    // Mark agents as offline in local state manager
+    const onlineAgents = agentStateManager.getAllOnline();
+    for (const agentState of onlineAgents) {
+      const { channelId, callsign } = parseAgentId(agentState.agentId);
+      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+      if (rosterEntry?.runtimeId === runtimeId) {
+        agentStateManager.handleSuspend(agentState.agentId);
       }
-
-      console.log(`[RuntimeConnectionManager] Runtime disconnected: ${runtimeId}`);
-    } catch (error) {
-      console.error('[RuntimeConnectionManager] Error handling disconnect:', error);
     }
+
+    // Call shared handler for DB updates and broadcast
+    await protocolHandlers.handleDisconnect(runtimeId);
+
+    console.log(`[RuntimeConnectionManager] Runtime disconnected: ${runtimeId}`);
   }
 
   // ==========================================================================
-  // Ping/Pong Heartbeat
+  // Ping/Pong Heartbeat (local dev only - API Gateway handles this in Lambda)
   // ==========================================================================
 
   function startPingInterval(): void {
@@ -593,7 +402,7 @@ export function createRuntimeConnectionManager(
           continue;
         }
 
-        send(connection.ws, { type: 'ping', timestamp });
+        sendToWs(connection.ws, { type: 'ping', timestamp });
       }
     }, pingIntervalMs);
   }
@@ -614,15 +423,22 @@ export function createRuntimeConnectionManager(
 
   return {
     async handleConnection(ws: WebSocket, authHeader?: string): Promise<void> {
+      // Generate unique connection ID for local dev
+      const connectionId = `local_${++connectionCounter}_${Date.now()}`;
+
       // Create connection object immediately (serverAuth will be set after async check)
       const connection: RuntimeConnection = {
         ws,
+        connectionId,
         runtimeId: null,
         spaceId: null,
         serverAuth: null,
         connectedAt: new Date(),
         lastPong: new Date(),
       };
+
+      // Track by connectionId for send() calls from shared handlers
+      connectionsByConnId.set(connectionId, connection);
 
       // Queue to hold messages received before auth completes
       const messageQueue: string[] = [];
@@ -656,8 +472,9 @@ export function createRuntimeConnectionManager(
 
       // If auth required but no valid server auth, reject
       if (requireAuth && !serverAuth) {
-        sendError(ws, 'AUTH_REQUIRED', 'Server authentication required');
+        sendErrorToWs(ws, 'AUTH_REQUIRED', 'Server authentication required');
         ws.close(4001, 'Authentication required');
+        connectionsByConnId.delete(connectionId);
         console.log('[RuntimeConnectionManager] Connection rejected: no valid server auth');
         return;
       }
@@ -667,7 +484,7 @@ export function createRuntimeConnectionManager(
       pendingConnections.add(connection);
 
       console.log(
-        `[RuntimeConnectionManager] New connection${serverAuth ? ` (server: ${serverAuth.serverId})` : ' (dev mode)'}`
+        `[RuntimeConnectionManager] New connection ${connectionId}${serverAuth ? ` (server: ${serverAuth.serverId})` : ' (dev mode)'}`
       );
 
       // Mark auth as complete and process queued messages
@@ -677,7 +494,7 @@ export function createRuntimeConnectionManager(
         await processMessage(queuedData);
       }
 
-      // Message processor function
+      // Message processor function - routes to shared handlers with local extensions
       async function processMessage(dataStr: string): Promise<void> {
         console.log('[RuntimeConnectionManager] Received message:', dataStr.slice(0, 200));
         try {
@@ -686,19 +503,19 @@ export function createRuntimeConnectionManager(
 
           switch (message.type) {
             case 'runtime_ready':
-              await handleRuntimeReady(connection, message);
+              await handleRuntimeReadyWithExtensions(connection, message);
               break;
 
             case 'agent_checkin':
-              await handleAgentCheckin(connection, message);
+              await handleAgentCheckinWithExtensions(connection, message);
               break;
 
             case 'agent_heartbeat':
-              await handleAgentHeartbeat(connection, message);
+              await handleAgentHeartbeatWithExtensions(connection, message);
               break;
 
             case 'frame':
-              await handleFrame(connection, message);
+              await handleFrameWithExtensions(connection, message);
               break;
 
             case 'pong':
@@ -706,11 +523,11 @@ export function createRuntimeConnectionManager(
               break;
 
             default:
-              sendError(ws, 'INVALID_MESSAGE', `Unknown message type: ${(message as { type: string }).type}`);
+              sendErrorToWs(ws, 'INVALID_MESSAGE', `Unknown message type: ${(message as { type: string }).type}`);
           }
         } catch (error) {
           console.error('[RuntimeConnectionManager] Message handling error:', error);
-          sendError(ws, 'INVALID_MESSAGE', 'Failed to parse message');
+          sendErrorToWs(ws, 'INVALID_MESSAGE', 'Failed to parse message');
         }
       }
     },
@@ -721,7 +538,7 @@ export function createRuntimeConnectionManager(
         console.log(`[RuntimeConnectionManager] Cannot send command: runtime ${runtimeId} not connected`);
         return false;
       }
-      return send(connection.ws, command);
+      return sendToWs(connection.ws, command);
     },
 
     getOnlineRuntimes(spaceId: string): StoredRuntime[] {
@@ -755,6 +572,7 @@ export function createRuntimeConnectionManager(
         }
       }
       runtimeConnections.clear();
+      connectionsByConnId.clear();
     },
   };
 }

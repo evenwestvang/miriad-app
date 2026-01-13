@@ -44,10 +44,19 @@ class MockWebSocket extends EventEmitter {
 function createMockStorage() {
   const runtimes = new Map<string, { id: string; spaceId: string; name: string; status: string; config: unknown }>();
   const channels = new Map<string, { id: string; spaceId: string; name: string }>();
-  const rosterEntries = new Map<string, { runtimeId?: string }>();
+  const rosterEntries = new Map<string, { runtimeId?: string; id?: string; lastHeartbeat?: string }>();
 
   return {
     getRuntime: vi.fn(async (id: string) => runtimes.get(id) ?? null),
+    getRuntimeByName: vi.fn(async (spaceId: string, name: string) => {
+      // Look up runtime by spaceId + name
+      for (const runtime of runtimes.values()) {
+        if (runtime.spaceId === spaceId && runtime.name === name) {
+          return runtime;
+        }
+      }
+      return null;
+    }),
     createRuntime: vi.fn(async (input: { id: string; spaceId: string; name: string; type: string; status: string; config: unknown }) => {
       const runtime = { ...input };
       runtimes.set(input.id, runtime);
@@ -59,10 +68,13 @@ function createMockStorage() {
         Object.assign(runtime, update);
       }
     }),
+    updateConnectionRuntime: vi.fn(async () => {}),
+    getAgentsByRuntime: vi.fn(async () => []),
     getChannelById: vi.fn(async (id: string) => channels.get(id) ?? null),
     getRosterByCallsign: vi.fn(async (channelId: string, callsign: string) => {
       return rosterEntries.get(`${channelId}:${callsign}`) ?? null;
     }),
+    updateRosterEntry: vi.fn(async () => {}),
     saveMessage: vi.fn(async () => ({ id: 'msg_1' })),
     saveCostRecord: vi.fn(async () => ({})),
 
@@ -71,7 +83,7 @@ function createMockStorage() {
       channels.set(id, { id, spaceId, name });
     },
     _setRosterEntry: (channelId: string, callsign: string, runtimeId?: string) => {
-      rosterEntries.set(`${channelId}:${callsign}`, { runtimeId });
+      rosterEntries.set(`${channelId}:${callsign}`, { runtimeId, id: `roster_${callsign}` });
     },
     _runtimes: runtimes,
   };
@@ -183,7 +195,7 @@ describe('RuntimeConnectionManager', () => {
       });
 
       // Wait for async handling
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // Should have created runtime
       expect(mockStorage.createRuntime).toHaveBeenCalledWith(
@@ -225,7 +237,7 @@ describe('RuntimeConnectionManager', () => {
         name: 'new-name',
       });
 
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // Should have updated, not created
       expect(mockStorage.updateRuntime).toHaveBeenCalledWith(
@@ -251,7 +263,7 @@ describe('RuntimeConnectionManager', () => {
         spaceId: 'space_123',
         name: 'test-runtime',
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // Set up agent as activating
       const agentId = 'space_123:channel_1:fox';
@@ -263,7 +275,7 @@ describe('RuntimeConnectionManager', () => {
         type: 'agent_checkin',
         agentId,
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // State should be online
       expect(agentStateManager.getState(agentId)?.status).toBe('online');
@@ -284,7 +296,7 @@ describe('RuntimeConnectionManager', () => {
         type: 'agent_checkin',
         agentId: 'space_123:channel_1:fox',
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // Should get error
       expect(ws.sent).toContainEqual(
@@ -305,7 +317,7 @@ describe('RuntimeConnectionManager', () => {
         spaceId: 'space_123',
         name: 'test-runtime',
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // Set up agent as online
       const agentId = 'space_123:channel_1:fox';
@@ -319,7 +331,7 @@ describe('RuntimeConnectionManager', () => {
         agentId,
         frame: { i: 'msg_001', t: new Date().toISOString(), v: { type: 'agent', sender: 'fox', content: 'Hello' } },
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // State should be busy
       expect(agentStateManager.getState(agentId)?.status).toBe('busy');
@@ -342,7 +354,7 @@ describe('RuntimeConnectionManager', () => {
         spaceId: 'space_123',
         name: 'test-runtime',
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // Set up agent as busy
       const agentId = 'space_123:channel_1:fox';
@@ -357,7 +369,7 @@ describe('RuntimeConnectionManager', () => {
         agentId,
         frame: { i: 'msg_002', t: new Date().toISOString(), v: { type: 'idle', sender: 'fox' } },
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // State should be online
       expect(agentStateManager.getState(agentId)?.status).toBe('online');
@@ -374,7 +386,7 @@ describe('RuntimeConnectionManager', () => {
         spaceId: 'space_123',
         name: 'test-runtime',
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // Set up channel
       mockStorage._setChannel('channel_1', 'space_123', 'test-channel');
@@ -390,7 +402,7 @@ describe('RuntimeConnectionManager', () => {
         agentId,
         frame: { i: 'msg_001', t: new Date().toISOString(), v: { type: 'agent', sender: 'fox', content: 'Hello' } },
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // Should save message
       expect(mockStorage.saveMessage).toHaveBeenCalledWith(
@@ -416,7 +428,7 @@ describe('RuntimeConnectionManager', () => {
         spaceId: 'space_123',
         name: 'test-runtime',
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       ws.sent = []; // Clear previous messages
 
@@ -456,7 +468,7 @@ describe('RuntimeConnectionManager', () => {
         spaceId: 'space_123',
         name: 'test-runtime',
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // Set up agent as online with binding to this runtime
       const agentId = 'space_123:channel_1:fox';
@@ -469,7 +481,7 @@ describe('RuntimeConnectionManager', () => {
 
       // Disconnect
       ws.close();
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // Runtime should be offline
       expect(manager.isRuntimeOnline('rt_001')).toBe(false);
@@ -495,14 +507,14 @@ describe('RuntimeConnectionManager', () => {
         spaceId: 'space_123',
         name: 'test-runtime',
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // Send pong
       ws.receiveMessage({
         type: 'pong',
         timestamp: new Date().toISOString(),
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 50));
 
       // Runtime should still be online (no disconnect due to staleness)
       expect(manager.isRuntimeOnline('rt_001')).toBe(true);

@@ -5,22 +5,28 @@
  * Uses PostgresConnectionManager for unified connection state management.
  *
  * Routes:
- * - $connect: Store connection with '__pending__' channelId
- * - $disconnect: Remove connection from Postgres
- * - $default: Handle Tymbal frames (sync requests trigger channel assignment)
+ * - $connect: Store connection with '__pending__' channelId (or 'runtime' protocol)
+ * - $disconnect: Remove connection from Postgres (cleanup runtime if needed)
+ * - $default: Handle Tymbal frames (sync requests) or runtime protocol messages
  */
 
 import type {
   APIGatewayProxyResultV2,
   APIGatewayProxyWebsocketEventV2,
 } from 'aws-lambda';
-import { createPostgresStorage } from '@cast/storage';
-import { parseFrame, isSyncRequest } from '@cast/core';
+import { createPostgresStorage, type Storage } from '@cast/storage';
+import { parseFrame, isSyncRequest, type ConnectionProtocol } from '@cast/core';
 import {
   createPostgresConnectionManager,
   ApiGatewaySender,
   type PostgresConnectionManager,
 } from '@cast/server/websocket';
+import {
+  createRuntimeProtocolHandlers,
+  type RuntimeProtocolHandlers,
+  type RuntimeConnectionState,
+  type RuntimeToBackendMessage,
+} from '@cast/server/runtimes/runtime-protocol-handlers';
 
 // =============================================================================
 // Configuration
@@ -75,6 +81,30 @@ async function getConnectionManager(): Promise<PostgresConnectionManager> {
   return connectionManager;
 }
 
+// Runtime Protocol Handlers (lazy init)
+let runtimeHandlers: RuntimeProtocolHandlers | null = null;
+
+async function getRuntimeHandlers(): Promise<RuntimeProtocolHandlers> {
+  if (!runtimeHandlers) {
+    const storageInstance = await getStorage();
+    const manager = await getConnectionManager();
+
+    runtimeHandlers = createRuntimeProtocolHandlers({
+      storage: storageInstance,
+      broadcast: async (channelId: string, data: string) => {
+        await manager.broadcast(channelId, data);
+      },
+      send: async (connectionId: string, data: string) => {
+        return await manager.send(connectionId, data);
+      },
+      sendError: async (connectionId: string, code: string, message: string) => {
+        await manager.send(connectionId, JSON.stringify({ type: 'error', code, message }));
+      },
+    });
+  }
+  return runtimeHandlers;
+}
+
 // =============================================================================
 // $connect Handler
 // =============================================================================
@@ -84,17 +114,22 @@ export async function connectHandler(
 ): Promise<APIGatewayProxyResultV2> {
   const connectionId = event.requestContext.connectionId;
 
-  // Channel will be set later via sync request
+  // Check for protocol query param (runtime vs browser)
+  const protocol: ConnectionProtocol =
+    event.queryStringParameters?.protocol === 'runtime' ? 'runtime' : 'browser';
+
+  // Channel will be set later via sync request (browser) or runtime_ready (runtime)
   // This matches local dev flow: connect first, auth/channel later
   const channelId = event.queryStringParameters?.channelId ?? '__pending__';
 
-  console.log(`[WebSocket] $connect: ${connectionId}, channelId: ${channelId}`);
+  console.log(`[WebSocket] $connect: ${connectionId}, protocol: ${protocol}, channelId: ${channelId}`);
 
   try {
-    const manager = await getConnectionManager();
-    await manager.addConnection(connectionId, channelId);
+    const storageInstance = await getStorage();
+    // Save connection directly to storage with protocol
+    await storageInstance.saveConnection(connectionId, channelId, { protocol });
 
-    console.log(`[WebSocket] Connection ${connectionId} saved (channel: ${channelId})`);
+    console.log(`[WebSocket] Connection ${connectionId} saved (protocol: ${protocol}, channel: ${channelId})`);
     return { statusCode: 200, body: 'Connected' };
   } catch (error) {
     console.error('[WebSocket] Error in $connect:', error);
@@ -102,6 +137,68 @@ export async function connectHandler(
       statusCode: 500,
       body: 'Failed to connect',
     };
+  }
+}
+
+// =============================================================================
+// Runtime Message Handler (for protocol=runtime connections)
+// =============================================================================
+
+async function handleRuntimeMessage(
+  connectionId: string,
+  connection: { connectionId: string; channelId: string; protocol: ConnectionProtocol; runtimeId?: string },
+  body: string
+): Promise<APIGatewayProxyResultV2> {
+  try {
+    const message = JSON.parse(body) as RuntimeToBackendMessage;
+    console.log(`[WebSocket] Runtime message from ${connectionId}: ${message.type}`);
+
+    const handlers = await getRuntimeHandlers();
+
+    // Build connection state from DB record
+    const state: RuntimeConnectionState = {
+      connectionId: connection.connectionId,
+      channelId: connection.channelId,
+      protocol: connection.protocol,
+      runtimeId: connection.runtimeId ?? null,
+      spaceId: null, // Will be set after runtime_ready
+    };
+
+    switch (message.type) {
+      case 'runtime_ready': {
+        const result = await handlers.handleRuntimeReady(state, message);
+        if (!result.success) {
+          console.error(`[WebSocket] runtime_ready failed: ${result.error?.message}`);
+          return { statusCode: 400, body: result.error?.message ?? 'Failed' };
+        }
+        console.log(`[WebSocket] Runtime ${result.runtimeId} connected`);
+        return { statusCode: 200, body: 'OK' };
+      }
+
+      case 'agent_checkin':
+        await handlers.handleAgentCheckin(state, message);
+        return { statusCode: 200, body: 'OK' };
+
+      case 'agent_heartbeat':
+        await handlers.handleAgentHeartbeat(state, message);
+        return { statusCode: 200, body: 'OK' };
+
+      case 'frame':
+        await handlers.handleFrame(state, message);
+        return { statusCode: 200, body: 'OK' };
+
+      case 'pong':
+        // Pong is just a heartbeat acknowledgment - no action needed in Lambda
+        // (API Gateway handles the ping/pong at transport level)
+        return { statusCode: 200, body: 'OK' };
+
+      default:
+        console.warn(`[WebSocket] Unknown runtime message type: ${(message as { type: string }).type}`);
+        return { statusCode: 400, body: 'Unknown message type' };
+    }
+  } catch (error) {
+    console.error('[WebSocket] Error handling runtime message:', error);
+    return { statusCode: 500, body: 'Internal error' };
   }
 }
 
@@ -117,8 +214,20 @@ export async function disconnectHandler(
   console.log(`[WebSocket] $disconnect: ${connectionId}`);
 
   try {
-    const manager = await getConnectionManager();
-    await manager.removeConnection(connectionId);
+    const storageInstance = await getStorage();
+
+    // Get connection info to check if it's a runtime connection
+    const connection = await storageInstance.getConnection(connectionId);
+
+    // If runtime connection with runtimeId, handle runtime disconnect
+    if (connection?.protocol === 'runtime' && connection.runtimeId) {
+      console.log(`[WebSocket] Runtime disconnect: ${connection.runtimeId}`);
+      const handlers = await getRuntimeHandlers();
+      await handlers.handleDisconnect(connection.runtimeId);
+    }
+
+    // Remove connection from storage
+    await storageInstance.deleteConnection(connectionId);
     console.log(`[WebSocket] Connection ${connectionId} removed`);
 
     return { statusCode: 200, body: 'Disconnected' };
@@ -142,14 +251,22 @@ export async function defaultHandler(
   console.log(`[WebSocket] $default from ${connectionId}: ${body.substring(0, 100)}...`);
 
   try {
-    const manager = await getConnectionManager();
+    const storageInstance = await getStorage();
 
-    // Get connection info
-    const connection = await manager.getConnection(connectionId);
+    // Get connection info from storage (includes protocol)
+    const connection = await storageInstance.getConnection(connectionId);
     if (!connection) {
       console.error(`[WebSocket] Connection ${connectionId} not found`);
       return { statusCode: 400, body: 'Connection not found' };
     }
+
+    // Route by protocol
+    if (connection.protocol === 'runtime') {
+      return await handleRuntimeMessage(connectionId, connection, body);
+    }
+
+    // Browser protocol: handle Tymbal frames
+    const manager = await getConnectionManager();
 
     // Parse the frame
     const frame = parseFrame(body);

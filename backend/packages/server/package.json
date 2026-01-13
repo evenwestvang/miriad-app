@@ -12,6 +12,10 @@
     "./websocket": {
       "import": "./dist/websocket/index.js",
       "types": "./dist/websocket/index.d.ts"
+    },
+    "./runtimes/runtime-protocol-handlers": {
+      "import": "./dist/runtimes/runtime-protocol-handlers.js",
+      "types": "./dist/runtimes/runtime-protocol-handlers.d.ts"
     }
   },
   "scripts": {

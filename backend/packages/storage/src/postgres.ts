@@ -58,6 +58,7 @@ import type {
   ModelUsage,
   // WebSocket connection types
   StoredConnection,
+  ConnectionProtocol,
   // Runtime types
   StoredRuntime,
   CreateRuntimeInput,
@@ -2366,14 +2367,32 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         channel_id VARCHAR(255) NOT NULL DEFAULT '__pending__',
         connected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         agent_callsign VARCHAR(255),
-        container_id VARCHAR(255)
+        container_id VARCHAR(255),
+        protocol VARCHAR(20) NOT NULL DEFAULT 'browser',
+        runtime_id VARCHAR(255)
       )
+    `;
+
+    // Migration: Add protocol and runtime_id columns for existing tables
+    await sql`
+      DO $$ BEGIN
+        ALTER TABLE ws_connections ADD COLUMN IF NOT EXISTS protocol VARCHAR(20) NOT NULL DEFAULT 'browser';
+        ALTER TABLE ws_connections ADD COLUMN IF NOT EXISTS runtime_id VARCHAR(255);
+      EXCEPTION
+        WHEN duplicate_column THEN NULL;
+      END $$
     `;
 
     // Index on channel_id for efficient broadcasts
     await sql`
       CREATE INDEX IF NOT EXISTS idx_ws_connections_channel_id
       ON ws_connections(channel_id)
+    `;
+
+    // Index on protocol for filtering runtime vs browser connections
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_ws_connections_protocol
+      ON ws_connections(protocol)
     `;
   }
 
@@ -2929,6 +2948,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     connected_at: Date;
     agent_callsign: string | null;
     container_id: string | null;
+    protocol: string;
+    runtime_id: string | null;
   }
 
   function rowToConnection(row: ConnectionRow): StoredConnection {
@@ -2938,15 +2959,23 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       connectedAt: row.connected_at.toISOString(),
       agentCallsign: row.agent_callsign ?? undefined,
       containerId: row.container_id ?? undefined,
+      protocol: row.protocol as ConnectionProtocol,
+      runtimeId: row.runtime_id ?? undefined,
     };
   }
 
   async function saveConnection(
     connectionId: string,
     channelId: string,
-    options?: { agentCallsign?: string; containerId?: string }
+    options?: {
+      agentCallsign?: string;
+      containerId?: string;
+      protocol?: ConnectionProtocol;
+      runtimeId?: string;
+    }
   ): Promise<void> {
     const now = new Date();
+    const protocol = options?.protocol ?? 'browser';
 
     await sql`
       INSERT INTO ws_connections (
@@ -2954,19 +2983,25 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         channel_id,
         connected_at,
         agent_callsign,
-        container_id
+        container_id,
+        protocol,
+        runtime_id
       ) VALUES (
         ${connectionId},
         ${channelId},
         ${now},
         ${options?.agentCallsign ?? null},
-        ${options?.containerId ?? null}
+        ${options?.containerId ?? null},
+        ${protocol},
+        ${options?.runtimeId ?? null}
       )
       ON CONFLICT (connection_id) DO UPDATE SET
         channel_id = EXCLUDED.channel_id,
         connected_at = EXCLUDED.connected_at,
         agent_callsign = EXCLUDED.agent_callsign,
-        container_id = EXCLUDED.container_id
+        container_id = EXCLUDED.container_id,
+        protocol = EXCLUDED.protocol,
+        runtime_id = EXCLUDED.runtime_id
     `;
   }
 
@@ -2987,6 +3022,17 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     await sql`
       UPDATE ws_connections
       SET channel_id = ${channelId}
+      WHERE connection_id = ${connectionId}
+    `;
+  }
+
+  async function updateConnectionRuntime(
+    connectionId: string,
+    runtimeId: string
+  ): Promise<void> {
+    await sql`
+      UPDATE ws_connections
+      SET runtime_id = ${runtimeId}
       WHERE connection_id = ${connectionId}
     `;
   }
@@ -3176,6 +3222,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     saveConnection,
     getConnection,
     updateConnectionChannel,
+    updateConnectionRuntime,
     deleteConnection,
     getConnectionsByChannel,
     // Runtime operations
