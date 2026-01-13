@@ -211,4 +211,25 @@ export function createFilesystemAssetStorage(
 // S3 Asset Storage
 // =============================================================================
 
-export { createS3AssetStorage } from './s3.js';
+import { createS3AssetStorage } from './s3.js';
+export { createS3AssetStorage };
+
+// =============================================================================
+// Asset Storage Factory
+// =============================================================================
+
+/**
+ * Create an asset storage backend based on environment configuration.
+ *
+ * - Default (local dev): filesystem storage
+ * - Production: S3 storage when ASSET_STORAGE_BACKEND=s3
+ */
+export function createAssetStorage(): AssetStorage {
+  const backend = process.env.ASSET_STORAGE_BACKEND || 'filesystem';
+
+  if (backend === 's3') {
+    return createS3AssetStorage();
+  }
+
+  return createFilesystemAssetStorage();
+}
