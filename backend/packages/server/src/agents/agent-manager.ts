@@ -110,6 +110,8 @@ export interface AgentManagerConfig {
   getAgentDefinition?: (spaceId: string, agentSlug: string) => Promise<AgentDefinition | null>;
   /** Get focus type by slug from #root */
   getFocusType?: (spaceId: string, focusSlug: string) => Promise<FocusType | null>;
+  /** Platform MCP URL for built-in powpow tools (e.g., "http://localhost:8080" or "https://api.cast.dev") */
+  platformMcpUrl?: string;
 }
 
 // =============================================================================
@@ -450,6 +452,40 @@ export class AgentManager {
     }
 
     return mcpConfigs;
+  }
+
+  /**
+   * Get MCP server configurations for an agent.
+   * Returns both the built-in platform MCP (powpow) and user-configured app MCPs.
+   *
+   * @param spaceId - Space ID
+   * @param channelId - Channel ID
+   * @param authToken - Container auth token for powpow MCP authentication (optional)
+   */
+  async getMcpConfigsForAgent(
+    spaceId: string,
+    channelId: string,
+    authToken?: string
+  ): Promise<McpServerConfig[]> {
+    const configs: McpServerConfig[] = [];
+
+    // Add built-in platform MCP (cast) if configured
+    if (this.config.platformMcpUrl && authToken) {
+      configs.push({
+        name: 'cast',
+        transport: 'http',
+        url: `${this.config.platformMcpUrl}/mcp/${channelId}`,
+        headers: {
+          Authorization: `Container ${authToken}`,
+        },
+      });
+    }
+
+    // Add user-configured app MCPs
+    const appConfigs = await this.deriveMcpConfigsFromApps(spaceId, channelId);
+    configs.push(...appConfigs);
+
+    return configs;
   }
 
   /**

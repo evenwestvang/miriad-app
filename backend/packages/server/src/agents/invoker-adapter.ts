@@ -136,12 +136,13 @@ export function createAgentInvokerAdapter(
 
                 const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
                 const authToken = generateContainerToken({ spaceId, channelId, callsign });
+                const mcpServers = await agentManager.getMcpConfigsForAgent(spaceId, channelId, authToken);
 
                 await localRuntime.activate({
                   agentId,
                   authToken,
                   systemPrompt,
-                  // mcpServers could be added here from roster config in the future
+                  mcpServers,
                 });
 
                 // Update lastMessageRoutedAt - message will be delivered when agent checks in

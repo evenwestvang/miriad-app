@@ -177,16 +177,16 @@ function hasExistingSession(agentId: string): boolean {
 function buildMcpServers(resolvedMcps?: ResolvedMcpConfig[]): Record<string, McpServerConfig> {
   const mcpServers: Record<string, McpServerConfig> = {};
 
-  // Add built-in cast-artifacts MCP via HTTP transport
+  // Add built-in cast MCP via HTTP transport
   if (CAST_API_URL && AGENT_CHANNEL_ID && CAST_AUTH_TOKEN) {
-    mcpServers["cast-artifacts"] = {
+    mcpServers["cast"] = {
       type: "http",
       url: `${CAST_API_URL}/mcp/${AGENT_CHANNEL_ID}`,
       headers: {
         Authorization: `Container ${CAST_AUTH_TOKEN}`,
       },
     };
-    console.log("[Server] Added cast-artifacts MCP (HTTP transport)");
+    console.log("[Server] Added cast MCP (HTTP transport)");
   }
 
   // Use MCPs from env var if no resolvedMcps provided in request

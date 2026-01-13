@@ -27,6 +27,7 @@ import type { StoredRuntime, LocalRuntimeConfig } from '@cast/core';
 import { AgentStateManager, parseAgentId, LocalRuntime, createLocalRuntime } from '@cast/runtime';
 import type { ConnectionManager } from '../websocket/index.js';
 import { createServerAuthVerifier, type ServerAuthResult } from '../handlers/runtime-auth.js';
+import { broadcastAgentState } from '../handlers/checkin.js';
 import type { RuntimeRegistry } from '../agents/runtime-registry.js';
 
 // =============================================================================
@@ -338,14 +339,9 @@ export function createRuntimeConnectionManager(
       // Parse agent ID to get channel
       const { channelId, callsign } = parseAgentId(agentId);
 
-      // Broadcast status to channel
-      const statusFrame = tymbal.set(generateMessageId(), {
-        type: 'status',
-        sender: callsign,
-        senderType: 'agent',
-        content: `online`,
-      });
-      await connectionManager.broadcast(channelId, JSON.stringify(statusFrame));
+      // Broadcast online state to frontend (same as Docker checkin)
+      const now = new Date().toISOString();
+      await broadcastAgentState(connectionManager, channelId, callsign, 'online', now);
 
       console.log(`[RuntimeConnectionManager] Agent checkin: ${agentId} -> ${newState.status}`);
     } catch (error) {

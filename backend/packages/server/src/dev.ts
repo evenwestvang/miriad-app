@@ -292,6 +292,7 @@ async function main() {
     storage,
     runtime,
     connectionManager,
+    runtimeRegistry,
   });
 
   // ---------------------------------------------------------------------------
