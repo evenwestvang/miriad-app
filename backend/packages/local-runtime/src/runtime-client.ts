@@ -99,7 +99,9 @@ export class RuntimeClient {
 
     this.status = 'connecting';
     const { credentials } = this.runtimeConfig;
-    const url = `${credentials.wsUrl}/runtimes/connect`;
+    // Use query param for protocol - works with both local dev and AWS Lambda
+    // (API Gateway doesn't have /runtimes/connect route, uses $connect with query param)
+    const url = `${credentials.wsUrl}?protocol=runtime`;
 
     console.log(`[RuntimeClient] Connecting to ${url}`);
 
