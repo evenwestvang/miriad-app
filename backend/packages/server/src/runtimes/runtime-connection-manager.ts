@@ -30,109 +30,35 @@ import { createServerAuthVerifier, type ServerAuthResult } from '../handlers/run
 import { broadcastAgentState } from '../handlers/checkin.js';
 import type { RuntimeRegistry } from '../agents/runtime-registry.js';
 
-// =============================================================================
-// Protocol Message Types (from spec section 2.2)
-// =============================================================================
+// Re-export protocol message types from runtime-protocol-handlers
+// (those are now the source of truth for the protocol types)
+export {
+  PROTOCOL_VERSION,
+  type RuntimeConnectedMessage,
+  type ActivateAgentMessage,
+  type DeliverMessageMessage,
+  type SuspendAgentMessage,
+  type PingMessage,
+  type BackendToRuntimeMessage,
+  type RuntimeReadyMessage,
+  type AgentCheckinMessage,
+  type AgentHeartbeatMessage,
+  type AgentFrameMessage,
+  type PongMessage,
+  type RuntimeToBackendMessage,
+  type McpServerConfig,
+} from './runtime-protocol-handlers.js';
 
-/** Protocol version */
-const PROTOCOL_VERSION = '1.0';
-
-// Backend → Runtime (Commands)
-
-export interface RuntimeConnectedMessage {
-  type: 'runtime_connected';
-  runtimeId: string;
-  protocolVersion: string;
-}
-
-export interface ActivateAgentMessage {
-  type: 'activate';
-  agentId: string;
-  systemPrompt: string;
-  mcpServers?: McpServerConfig[];
-  workspacePath: string;
-}
-
-export interface DeliverMessageMessage {
-  type: 'message';
-  agentId: string;
-  messageId: string;
-  content: string;
-  sender: string;
-  systemPrompt?: string;
-}
-
-export interface SuspendAgentMessage {
-  type: 'suspend';
-  agentId: string;
-  reason?: string;
-}
-
-export interface PingMessage {
-  type: 'ping';
-  timestamp: string;
-}
-
-export type BackendToRuntimeMessage =
-  | RuntimeConnectedMessage
-  | ActivateAgentMessage
-  | DeliverMessageMessage
-  | SuspendAgentMessage
-  | PingMessage;
-
-// Runtime → Backend (Responses & Events)
-
-export interface RuntimeReadyMessage {
-  type: 'runtime_ready';
-  runtimeId: string;
-  spaceId: string;
-  name: string;
-  machineInfo?: {
-    os: string;
-    hostname: string;
-  };
-}
-
-export interface AgentCheckinMessage {
-  type: 'agent_checkin';
-  agentId: string;
-}
-
-export interface AgentHeartbeatMessage {
-  type: 'agent_heartbeat';
-  agentId: string;
-}
-
-export interface AgentFrameMessage {
-  type: 'frame';
-  agentId: string;
-  frame: TymbalFrame;
-}
-
-export interface PongMessage {
-  type: 'pong';
-  timestamp: string;
-}
-
-export type RuntimeToBackendMessage =
-  | RuntimeReadyMessage
-  | AgentCheckinMessage
-  | AgentHeartbeatMessage
-  | AgentFrameMessage
-  | PongMessage;
-
-// MCP Server Config (matches @cast/runtime)
-interface McpServerConfig {
-  name: string;
-  slug?: string;
-  transport: 'stdio' | 'sse' | 'http';
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  cwd?: string;
-  url?: string;
-  headers?: Record<string, string>;
-}
+import {
+  PROTOCOL_VERSION,
+  type RuntimeReadyMessage,
+  type AgentCheckinMessage,
+  type AgentHeartbeatMessage,
+  type AgentFrameMessage,
+  type PongMessage,
+  type RuntimeToBackendMessage,
+  type BackendToRuntimeMessage,
+} from './runtime-protocol-handlers.js';
 
 // =============================================================================
 // Connection State
