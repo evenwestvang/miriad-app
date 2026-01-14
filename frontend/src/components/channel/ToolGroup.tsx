@@ -87,7 +87,7 @@ export function ToolGroup({ messages, firehoseMode = false }: ToolGroupProps) {
   if (firehoseMode) {
     return (
       <>
-        {pairs.map((pair, index) => (
+        {pairs.map((pair) => (
           <div key={pair.call.id} className="my-4">
             <SingleToolItem pair={pair} />
           </div>

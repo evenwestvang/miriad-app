@@ -13,8 +13,18 @@
 import type { ToolRendererProps } from './types'
 import { BashRenderer } from './BashRenderer'
 import { ReadRenderer } from './ReadRenderer'
+import { WriteRenderer } from './WriteRenderer'
 import { EditRenderer } from './EditRenderer'
 import { GrepRenderer } from './GrepRenderer'
+import { GlobRenderer } from './GlobRenderer'
+import { ArtifactCreateRenderer } from './ArtifactCreateRenderer'
+import { ArtifactReadRenderer } from './ArtifactReadRenderer'
+import { ArtifactEditRenderer } from './ArtifactEditRenderer'
+import { ArtifactListRenderer } from './ArtifactListRenderer'
+import { SetStatusRenderer } from './SetStatusRenderer'
+import { WebFetchRenderer } from './WebFetchRenderer'
+import { WebSearchRenderer } from './WebSearchRenderer'
+import { TaskRenderer } from './TaskRenderer'
 
 // Export the shared types
 export type { ToolRendererProps }
@@ -27,8 +37,18 @@ export const toolRenderers: Record<string, React.ComponentType<ToolRendererProps
   'bash': BashRenderer,
   'run_bash': BashRenderer,
   'read': ReadRenderer,
+  'write': WriteRenderer,
   'edit': EditRenderer,
   'grep': GrepRenderer,
+  'glob': GlobRenderer,
+  'mcp__cast__artifact_create': ArtifactCreateRenderer,
+  'mcp__cast__artifact_read': ArtifactReadRenderer,
+  'mcp__cast__artifact_edit': ArtifactEditRenderer,
+  'mcp__cast__artifact_list': ArtifactListRenderer,
+  'mcp__cast__set_status': SetStatusRenderer,
+  'webfetch': WebFetchRenderer,
+  'websearch': WebSearchRenderer,
+  'task': TaskRenderer,
 }
 
 /**

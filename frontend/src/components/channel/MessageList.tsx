@@ -685,9 +685,10 @@ type MessageOrGroup =
 function groupMessages(messages: Message[]): MessageOrGroup[] {
   const result: MessageOrGroup[] = [];
 
-  // Filter out send_message tool calls (redundant - the actual message is shown)
+  // Filter out send_message and set_status tool calls (redundant - they echo into the thread)
   const filteredMessages = messages.filter(msg => {
-    if (msg.type === "tool_call" && msg.toolName === "mcp__cast__send_message") {
+    if (msg.type === "tool_call" &&
+        (msg.toolName === "mcp__cast__send_message" || msg.toolName === "mcp__cast__set_status")) {
       return false;
     }
     // Also filter out the corresponding results
@@ -696,7 +697,7 @@ function groupMessages(messages: Message[]): MessageOrGroup[] {
         m.type === "tool_call" &&
         (m.toolCallId === msg.toolResultCallId || m.id === msg.toolResultCallId)
       );
-      if (callMsg?.toolName === "mcp__cast__send_message") {
+      if (callMsg?.toolName === "mcp__cast__send_message" || callMsg?.toolName === "mcp__cast__set_status") {
         return false;
       }
     }
