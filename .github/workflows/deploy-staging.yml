@@ -183,7 +183,7 @@ jobs:
         working-directory: backend/packages/tunnel-server
         run: ~/.fly/bin/fly deploy --remote-only
         env:
-          FLY_API_TOKEN: ${{ secrets.STAGING_FLY_API_TOKEN }}
+          FLY_API_TOKEN: ${{ secrets.STAGING_TUNNEL_FLY_API_TOKEN }}
 
   summary:
     name: Deployment Summary
