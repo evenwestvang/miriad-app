@@ -63,41 +63,65 @@ jobs:
         run: node build.mjs
       - name: Install esbuild for SAM
         run: npm install -g esbuild
-      - working-directory: backend/deploy
+      - name: SAM Build
+        working-directory: backend/deploy
         run: sam build
       - name: SAM Deploy
         working-directory: backend/deploy
         env:
-          FLY_API_TOKEN_VALUE: ${{ secrets.PROD_FLY_API_TOKEN }}
+          # Pass all secrets as env vars to avoid shell parsing issues
+          PARAM_PLANETSCALE_URL: ${{ secrets.PROD_PLANETSCALE_URL }}
+          PARAM_ANTHROPIC_API_KEY: ${{ secrets.PROD_ANTHROPIC_API_KEY }}
+          PARAM_JWT_SECRET: ${{ secrets.PROD_JWT_SECRET }}
+          PARAM_SECRET_KEY: ${{ secrets.PROD_SECRET_KEY }}
+          PARAM_WORKOS_API_KEY: ${{ secrets.PROD_WORKOS_API_KEY }}
+          PARAM_WORKOS_CLIENT_ID: ${{ secrets.PROD_WORKOS_CLIENT_ID }}
+          PARAM_WORKOS_REDIRECT_URI: ${{ secrets.PROD_WORKOS_REDIRECT_URI }}
+          PARAM_FRONTEND_URL: ${{ secrets.PROD_FRONTEND_URL }}
+          PARAM_CAST_API_URL: ${{ secrets.PROD_CAST_API_URL }}
+          PARAM_GITHUB_CLIENT_ID: ${{ secrets.PROD_GITHUB_CLIENT_ID }}
+          PARAM_GITHUB_CLIENT_SECRET: ${{ secrets.PROD_GITHUB_CLIENT_SECRET }}
+          PARAM_TUNNEL_SERVER_URL: ${{ secrets.PROD_TUNNEL_SERVER_URL }}
+          PARAM_FLY_API_TOKEN: ${{ secrets.PROD_FLY_API_TOKEN }}
+          PARAM_FLY_APP_NAME: ${{ secrets.PROD_FLY_APP_NAME }}
+          PARAM_FLY_REGION: ${{ secrets.PROD_FLY_REGION }}
         run: |
-          sam deploy \
-            --stack-name cast-backend-prod \
-            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
-            --resolve-s3 \
-            --s3-prefix cast-backend \
-            --region ${{ env.AWS_REGION }} \
-            --parameter-overrides \
-              Stage=prod \
-              PlanetScaleUrl="${{ secrets.PROD_PLANETSCALE_URL }}" \
-              AnthropicApiKey="${{ secrets.PROD_ANTHROPIC_API_KEY }}" \
-              JwtSecret="${{ secrets.PROD_JWT_SECRET }}" \
-              SecretKey="${{ secrets.PROD_SECRET_KEY }}" \
-              AuthMode=workos \
-              WorkOsApiKey="${{ secrets.PROD_WORKOS_API_KEY }}" \
-              WorkOsClientId="${{ secrets.PROD_WORKOS_CLIENT_ID }}" \
-              WorkOsRedirectUri="${{ secrets.PROD_WORKOS_REDIRECT_URI }}" \
-              FrontendUrl="${{ secrets.PROD_FRONTEND_URL }}" \
-              CastApiUrl="${{ secrets.PROD_CAST_API_URL }}" \
-              GitHubClientId="${{ secrets.PROD_GITHUB_CLIENT_ID }}" \
-              GitHubClientSecret="${{ secrets.PROD_GITHUB_CLIENT_SECRET }}" \
-              TunnelServerUrl="${{ secrets.PROD_TUNNEL_SERVER_URL }}" \
-              AgentImageUri="registry.fly.io/${{ secrets.PROD_FLY_APP_NAME }}:latest" \
-              "FlyApiToken=${FLY_API_TOKEN_VALUE}" \
-              FlyAppName="${{ secrets.PROD_FLY_APP_NAME }}" \
-              FlyRegion="${{ secrets.PROD_FLY_REGION }}" \
-              DeployTimestamp="${{ github.run_id }}-${{ github.run_number }}"
+          # Write samconfig.toml to bypass SAM CLI parameter parsing entirely
+          # This avoids the space-truncation issue with FlyV1 tokens
+          cat > samconfig.toml << EOF
+          version = 0.1
+          [default.deploy.parameters]
+          stack_name = "cast-backend-prod"
+          capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
+          confirm_changeset = false
+          fail_on_empty_changeset = false
+          resolve_s3 = true
+          s3_prefix = "cast-backend"
+          region = "${{ env.AWS_REGION }}"
+          parameter_overrides = [
+            "Stage=prod",
+            "PlanetScaleUrl=${PARAM_PLANETSCALE_URL}",
+            "AnthropicApiKey=${PARAM_ANTHROPIC_API_KEY}",
+            "JwtSecret=${PARAM_JWT_SECRET}",
+            "SecretKey=${PARAM_SECRET_KEY}",
+            "AuthMode=workos",
+            "WorkOsApiKey=${PARAM_WORKOS_API_KEY}",
+            "WorkOsClientId=${PARAM_WORKOS_CLIENT_ID}",
+            "WorkOsRedirectUri=${PARAM_WORKOS_REDIRECT_URI}",
+            "FrontendUrl=${PARAM_FRONTEND_URL}",
+            "CastApiUrl=${PARAM_CAST_API_URL}",
+            "GitHubClientId=${PARAM_GITHUB_CLIENT_ID}",
+            "GitHubClientSecret=${PARAM_GITHUB_CLIENT_SECRET}",
+            "TunnelServerUrl=${PARAM_TUNNEL_SERVER_URL}",
+            "AgentImageUri=registry.fly.io/${PARAM_FLY_APP_NAME}:latest",
+            "FlyApiToken=\"${PARAM_FLY_API_TOKEN}\"",
+            "FlyAppName=${PARAM_FLY_APP_NAME}",
+            "FlyRegion=${PARAM_FLY_REGION}",
+            "DeployTimestamp=${{ github.run_id }}-${{ github.run_number }}"
+          ]
+          EOF
+          cat samconfig.toml
+          sam deploy
 
   frontend:
     name: Frontend

@@ -83,10 +83,6 @@ jobs:
           PARAM_FLY_API_TOKEN: ${{ secrets.STAGING_FLY_API_TOKEN }}
           PARAM_FLY_APP_NAME: ${{ secrets.STAGING_FLY_APP_NAME }}
         run: |
-          # Debug: check env var length before any processing
-          echo "FLY token length: ${#PARAM_FLY_API_TOKEN}"
-          echo "FLY token first 10 chars: ${PARAM_FLY_API_TOKEN:0:10}"
-
           # Write samconfig.toml to bypass SAM CLI parameter parsing entirely
           # This avoids the space-truncation issue with FlyV1 tokens
           cat > samconfig.toml << EOF
