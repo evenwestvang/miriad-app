@@ -43,6 +43,31 @@ interface AgentSummonPickerProps {
 
 type PickerState = 'browse' | 'configure'
 
+// Local storage key for remembering the last used runtime
+const LAST_RUNTIME_KEY = 'cast:lastUsedRuntime'
+
+/**
+ * Get the last used runtime ID from local storage.
+ */
+function getLastUsedRuntime(): string | null {
+  try {
+    return localStorage.getItem(LAST_RUNTIME_KEY)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Save the last used runtime ID to local storage.
+ */
+function setLastUsedRuntime(runtimeId: string): void {
+  try {
+    localStorage.setItem(LAST_RUNTIME_KEY, runtimeId)
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 /**
  * Get suggested callsign for an agent, avoiding duplicates.
  */
@@ -117,7 +142,7 @@ export function AgentSummonPicker({
       setSelectedAgent(null)
       setCallsign('')
       setCallsignError(null)
-      setSelectedRuntimeId('cloud')
+      // Note: selectedRuntimeId is set by fetchRuntimes based on last used / availability
       fetchAvailableAgents()
       fetchRuntimes()
     }
@@ -188,7 +213,7 @@ export function AgentSummonPicker({
     }
   }, [apiHost, channelId])
 
-  // Fetch available runtimes from API
+  // Fetch available runtimes from API and select the remembered runtime
   const fetchRuntimes = useCallback(async () => {
     if (!spaceId) {
       setRuntimes([])
@@ -212,6 +237,20 @@ export function AgentSummonPicker({
         (r: RuntimeOption) => r.status === 'online'
       )
       setRuntimes(onlineRuntimes)
+
+      // Select the last used runtime if available, otherwise fall back to first available
+      const lastUsed = getLastUsedRuntime()
+      const availableIds = ['cloud', ...onlineRuntimes.map((r: RuntimeOption) => r.id)]
+
+      if (lastUsed && availableIds.includes(lastUsed)) {
+        setSelectedRuntimeId(lastUsed)
+      } else if (onlineRuntimes.length > 0) {
+        // Fall back to first available runtime
+        setSelectedRuntimeId(onlineRuntimes[0].id)
+      } else {
+        // Fall back to cloud
+        setSelectedRuntimeId('cloud')
+      }
     } catch (err) {
       console.warn('Failed to load runtimes:', err)
       setRuntimes([])
@@ -290,6 +329,9 @@ export function AgentSummonPicker({
         const data = await response.json().catch(() => ({}))
         throw new Error(data.error || `Failed to summon agent: ${response.status}`)
       }
+
+      // Remember the runtime selection for next time
+      setLastUsedRuntime(selectedRuntimeId)
 
       // Success - close picker (roster will update via WebSocket event)
       onClose()

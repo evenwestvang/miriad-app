@@ -518,23 +518,43 @@ export function MessageList({
           )}
         {(() => {
           const groupedItems = groupMessages(messages);
+
+          // Helper to get the last message of a grouped item (for sender comparison)
+          const getLastMessageOfItem = (item: MessageOrGroup): Message | null => {
+            if (item.type === "tool_group") {
+              return item.messages[item.messages.length - 1] || null;
+            }
+            return item.message;
+          };
+
+          // Helper to get the first message of a grouped item
+          const getFirstMessageOfItem = (item: MessageOrGroup): Message | null => {
+            if (item.type === "tool_group") {
+              return item.messages[0] || null;
+            }
+            return item.message;
+          };
+
           return groupedItems.map((item, groupIndex) => {
             const isLastItem = groupIndex === groupedItems.length - 1;
+            const prevItem = groupIndex > 0 ? groupedItems[groupIndex - 1] : null;
+            const nextItem = groupIndex < groupedItems.length - 1 ? groupedItems[groupIndex + 1] : null;
+
+            // Get the last message from the previous item (for header/margin decisions)
+            const prevLastMessage = prevItem ? getLastMessageOfItem(prevItem) : null;
 
             if (item.type === "tool_group") {
               // Render grouped tool messages
               const firstMsg = item.messages[0];
               const lastMsg = item.messages[item.messages.length - 1];
 
-              // Check if next message starts a new group (determines bottom margin)
-              const lastIndex = item.startIndex + item.messages.length - 1;
-              const nextMessage =
-                lastIndex < messages.length - 1 ? messages[lastIndex + 1] : null;
+              // Check if next item starts a new sender group (determines bottom margin)
+              const nextFirstMessage = nextItem ? getFirstMessageOfItem(nextItem) : null;
               const isLastInGroup =
-                !nextMessage ||
-                nextMessage.sender !== lastMsg.sender ||
-                nextMessage.senderType !== lastMsg.senderType ||
-                new Date(nextMessage.timestamp).getTime() -
+                !nextFirstMessage ||
+                nextFirstMessage.sender !== lastMsg.sender ||
+                nextFirstMessage.senderType !== lastMsg.senderType ||
+                new Date(nextFirstMessage.timestamp).getTime() -
                   new Date(lastMsg.timestamp).getTime() >
                   20 * 60 * 1000;
 
@@ -554,27 +574,24 @@ export function MessageList({
 
             // Regular message
             const message = item.message;
-            const index = item.index;
 
             // Check if this message should show the header
-            // Show header if: first message, different sender, or >20 min gap
-            const prevMessage = index > 0 ? messages[index - 1] : null;
+            // Show header if: first message, different sender from previous, or >20 min gap
             const showHeader =
-              !prevMessage ||
-              prevMessage.sender !== message.sender ||
-              prevMessage.senderType !== message.senderType ||
+              !prevLastMessage ||
+              prevLastMessage.sender !== message.sender ||
+              prevLastMessage.senderType !== message.senderType ||
               new Date(message.timestamp).getTime() -
-                new Date(prevMessage.timestamp).getTime() >
+                new Date(prevLastMessage.timestamp).getTime() >
                 20 * 60 * 1000;
 
-            // Check if next message starts a new group (determines bottom margin)
-            const nextMessage =
-              index < messages.length - 1 ? messages[index + 1] : null;
+            // Check if next item starts a new sender group (determines bottom margin)
+            const nextFirstMessage = nextItem ? getFirstMessageOfItem(nextItem) : null;
             const isLastInGroup =
-              !nextMessage ||
-              nextMessage.sender !== message.sender ||
-              nextMessage.senderType !== message.senderType ||
-              new Date(nextMessage.timestamp).getTime() -
+              !nextFirstMessage ||
+              nextFirstMessage.sender !== message.sender ||
+              nextFirstMessage.senderType !== message.senderType ||
+              new Date(nextFirstMessage.timestamp).getTime() -
                 new Date(message.timestamp).getTime() >
                 20 * 60 * 1000;
 
