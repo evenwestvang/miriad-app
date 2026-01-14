@@ -115,7 +115,7 @@ jobs:
             "GitHubClientSecret=${PARAM_GITHUB_CLIENT_SECRET}",
             "TunnelServerUrl=https://tunnel.caststack.site",
             "AgentImageUri=registry.fly.io/${PARAM_FLY_APP_NAME}:latest",
-            "FlyApiToken=\\\"${PARAM_FLY_API_TOKEN}\\\"",
+            "FlyApiToken=\"${PARAM_FLY_API_TOKEN}\"",
             "FlyAppName=${PARAM_FLY_APP_NAME}",
             "FlyRegion=iad",
             "SpaceId=default",
