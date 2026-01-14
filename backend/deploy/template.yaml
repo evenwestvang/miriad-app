@@ -87,6 +87,10 @@ Parameters:
     Type: String
     Description: Default space ID for agents
     Default: 'default'
+  DeployTimestamp:
+    Type: String
+    Description: Timestamp to force Lambda updates on each deploy
+    Default: ''
 
 Globals:
   Function:
@@ -153,6 +157,7 @@ Resources:
           ASSET_STORAGE_BACKEND: s3
           ASSETS_BUCKET_NAME: !Ref AssetsBucket
           ASSETS_BUCKET_REGION: !Ref AWS::Region
+          DEPLOY_TIMESTAMP: !Ref DeployTimestamp
       Events:
         RootPath:
           Type: HttpApi

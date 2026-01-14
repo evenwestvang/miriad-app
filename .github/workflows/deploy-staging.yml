@@ -96,7 +96,8 @@ jobs:
               'FlyApiToken=${{ secrets.STAGING_FLY_API_TOKEN }}' \
               FlyAppName="${{ secrets.STAGING_FLY_APP_NAME }}" \
               FlyRegion="iad" \
-              SpaceId="default"
+              SpaceId="default" \
+              DeployTimestamp="${{ github.run_id }}-${{ github.run_number }}"
 
   frontend:
     name: Frontend
