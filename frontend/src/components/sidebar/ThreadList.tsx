@@ -21,34 +21,6 @@ interface ThreadListProps {
   apiHost?: string
 }
 
-// Status dot color mapping
-const stateColors: Record<string, string> = {
-  starting: 'bg-yellow-500',
-  idle: 'bg-green-500',
-  thinking: 'bg-blue-500',
-  tool_running: 'bg-purple-500',
-  stopped: 'bg-gray-500',
-  error: 'bg-red-500',
-}
-
-// States that should pulse
-const pulsingStates = new Set(['starting', 'thinking', 'tool_running'])
-
-function StatusDot({ state = 'idle' }: { state?: string }) {
-  // Hide dot when idle - only show for active states
-  if (state === 'idle' || !state) return null
-
-  return (
-    <span
-      className={cn(
-        'w-2 h-2 rounded-full flex-shrink-0',
-        stateColors[state] || stateColors.idle,
-        pulsingStates.has(state) && 'animate-pulse'
-      )}
-    />
-  )
-}
-
 interface SpawnDialogProps {
   agents: Agent[]
   isOpen: boolean
@@ -223,7 +195,6 @@ export function ThreadList({
                     onClick={() => onSelectThread(thread.id)}
                   >
                     <span className="text-[var(--cast-text-subtle)]">#</span>
-                    <StatusDot state={thread.agentState} />
                     <span className="text-sm truncate">
                       {thread.agentName}
                     </span>
@@ -251,7 +222,6 @@ export function ThreadList({
                     onClick={() => onSelectThread(thread.id)}
                   >
                     <Radical className="w-3 h-3 text-[var(--cast-text-subtle)]" />
-                    <StatusDot state={thread.agentState} />
                     <span className="text-sm truncate">
                       {thread.agentName}
                     </span>
