@@ -65,18 +65,11 @@ jobs:
         run: node build.mjs
       - name: Install esbuild for SAM
         run: npm install -g esbuild
-      - name: Debug token length
-        env:
-          FLY_TOKEN: ${{ secrets.STAGING_FLY_API_TOKEN }}
-        run: |
-          echo "Token length: ${#FLY_TOKEN}"
-          echo "First 10 chars: ${FLY_TOKEN:0:10}"
       - name: SAM Build and Deploy
         working-directory: backend/deploy
-        env:
-          FLY_API_TOKEN_VALUE: ${{ secrets.STAGING_FLY_API_TOKEN }}
         run: |
           sam build
+          # Use ParameterKey/ParameterValue format for FlyApiToken to preserve spaces
           sam deploy \
             --stack-name cast-backend-stag \
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
@@ -101,7 +94,7 @@ jobs:
               GitHubClientSecret="${{ secrets.STAGING_GITHUB_CLIENT_SECRET }}" \
               TunnelServerUrl="https://tunnel.caststack.site" \
               AgentImageUri="registry.fly.io/${{ secrets.STAGING_FLY_APP_NAME }}:latest" \
-              "FlyApiToken=${FLY_API_TOKEN_VALUE}" \
+              'ParameterKey=FlyApiToken,ParameterValue=${{ secrets.STAGING_FLY_API_TOKEN }}' \
               FlyAppName="${{ secrets.STAGING_FLY_APP_NAME }}" \
               FlyRegion="iad" \
               SpaceId="default" \
