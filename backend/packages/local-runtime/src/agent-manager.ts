@@ -94,6 +94,9 @@ export class AgentManager {
     const { agentId, systemPrompt, mcpServers, workspacePath } = message;
     const { callsign } = parseAgentId(agentId);
 
+    console.log(`[AgentManager] Activating ${agentId}`);
+    console.log(`[AgentManager]   mcpServers from message:`, JSON.stringify(mcpServers));
+
     // Check if already active
     const existing = this.agents.get(agentId);
     if (existing && existing.state.status !== 'offline') {
@@ -135,6 +138,7 @@ export class AgentManager {
       isProcessing: false,
     };
 
+    console.log(`[AgentManager]   Stored mcpServers in state:`, JSON.stringify(instance.state.mcpServers));
     this.agents.set(agentId, instance);
 
     // Signal checkin (SDK ready)
@@ -148,11 +152,18 @@ export class AgentManager {
   }
 
   /**
+   * Format a message with sender header.
+   */
+  private formatMessage(message: DeliverMessageMessage): string {
+    return `--- @${message.sender} says:\n${message.content}`;
+  }
+
+  /**
    * Deliver a message to an agent.
    * Auto-activates the agent if it doesn't exist (local runtime is always-on).
    */
   async deliverMessage(message: DeliverMessageMessage): Promise<void> {
-    const { agentId, content, systemPrompt } = message;
+    const { agentId, systemPrompt, mcpServers } = message;
     let instance = this.agents.get(agentId);
 
     const { callsign } = parseAgentId(agentId);
@@ -160,11 +171,17 @@ export class AgentManager {
     // Auto-activate agent if not found or offline (local runtime is always-on)
     if (!instance || instance.state.status === 'offline') {
       console.log(`[AgentManager] @${callsign} not active, auto-activating for message delivery`);
+      if (mcpServers) {
+        console.log(`[AgentManager] Auto-activation WITH mcpServers (count: ${mcpServers.length})`);
+      } else {
+        console.warn(`[AgentManager] WARNING: Auto-activation WITHOUT mcpServers!`);
+      }
       await this.activate({
         type: 'activate',
         agentId,
         systemPrompt: systemPrompt || '',
         workspacePath: '', // Will be ignored, uses local config
+        mcpServers, // Now passed from message
       });
       instance = this.agents.get(agentId);
       if (!instance) {
@@ -174,6 +191,15 @@ export class AgentManager {
       console.log(`[AgentManager] @${callsign} auto-activated, proceeding with message`);
     }
 
+    // Update mcpServers if provided in message (keeps config fresh even for online agents)
+    if (mcpServers && instance) {
+      console.log(`[AgentManager] Updating mcpServers for online agent @${callsign} (count: ${mcpServers.length})`);
+      instance.state.mcpServers = mcpServers;
+    }
+
+    // Format message with sender header
+    const formattedContent = this.formatMessage(message);
+
     // Queue message if already processing
     if (instance.isProcessing) {
       console.log(`[AgentManager] @${callsign} busy, queueing message`);
@@ -182,8 +208,8 @@ export class AgentManager {
     }
 
     // Process message (will transition to busy)
-    console.log(`[AgentManager] @${callsign} calling processMessage with content length: ${content.length}`);
-    await this.processMessage(instance, content, systemPrompt);
+    console.log(`[AgentManager] @${callsign} calling processMessage with content length: ${formattedContent.length}`);
+    await this.processMessage(instance, formattedContent, systemPrompt);
     console.log(`[AgentManager] @${callsign} processMessage returned`);
   }
 
@@ -296,6 +322,8 @@ export class AgentManager {
 
     // Add MCP servers if configured (SDK expects Record<string, McpServerConfig>)
     if (state.mcpServers && state.mcpServers.length > 0) {
+      console.log(`[AgentManager] Building MCP config from state.mcpServers (count: ${state.mcpServers.length})`);
+      console.log(`[AgentManager]   state.mcpServers:`, JSON.stringify(state.mcpServers));
       // Build MCP servers config - use type assertion since SDK uses discriminated unions
       const mcpServers: Record<string, unknown> = {};
       for (const server of state.mcpServers) {
@@ -316,9 +344,12 @@ export class AgentManager {
         }
       }
       if (Object.keys(mcpServers).length > 0) {
+        console.log(`[AgentManager]   Built SDK mcpServers:`, JSON.stringify(mcpServers));
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         options.mcpServers = mcpServers as any;
       }
+    } else {
+      console.warn(`[AgentManager] No MCP servers configured for ${state.agentId} (state.mcpServers: ${state.mcpServers})`);
     }
 
     try {
@@ -342,11 +373,32 @@ export class AgentManager {
       instance.state.lastActivity = new Date().toISOString();
       console.log(`[AgentManager] @${callsign} state: busy → online`);
 
-      // Process next message in queue
-      if (instance.messageQueue.length > 0) {
-        const nextMessage = instance.messageQueue.shift()!;
-        await this.processMessage(instance, nextMessage.content, nextMessage.systemPrompt);
-      }
+      // Process queued messages as a batch (if any)
+      await this.processQueue(instance);
     }
+  }
+
+  /**
+   * Process the message queue for an agent.
+   * Batches all queued messages into a single message to match sandbox behavior.
+   */
+  private async processQueue(instance: AgentInstance): Promise<void> {
+    if (instance.messageQueue.length === 0) {
+      return;
+    }
+
+    const { callsign } = parseAgentId(instance.state.agentId);
+
+    // Batch all queued messages together
+    const queuedMessages = [...instance.messageQueue];
+    instance.messageQueue = []; // Clear the queue
+
+    console.log(`[AgentManager] @${callsign} processing ${queuedMessages.length} queued messages as a batch`);
+
+    // Format and combine all message contents with separator
+    const combinedContent = queuedMessages.map(msg => this.formatMessage(msg)).join('\n\n');
+
+    // Process as a single message (use first message's metadata)
+    await this.processMessage(instance, combinedContent, queuedMessages[0].systemPrompt);
   }
 }

@@ -467,24 +467,31 @@ export class AgentManager {
     channelId: string,
     authToken?: string
   ): Promise<McpServerConfig[]> {
+    console.log(`[AgentManager] getMcpConfigsForAgent - channelId: ${channelId}, platformMcpUrl: ${this.config.platformMcpUrl ? 'configured' : 'missing'}, authToken: ${authToken ? 'present' : 'missing'}`);
     const configs: McpServerConfig[] = [];
 
     // Add built-in platform MCP (cast) if configured
     if (this.config.platformMcpUrl && authToken) {
-      configs.push({
+      const castMcp = {
         name: 'cast',
-        transport: 'http',
+        transport: 'http' as const,
         url: `${this.config.platformMcpUrl}/mcp/${channelId}`,
         headers: {
           Authorization: `Container ${authToken}`,
         },
-      });
+      };
+      console.log(`[AgentManager] Adding cast MCP:`, JSON.stringify(castMcp));
+      configs.push(castMcp);
+    } else {
+      console.warn(`[AgentManager] Cast MCP NOT added - platformMcpUrl: ${this.config.platformMcpUrl ? 'present' : 'missing'}, authToken: ${authToken ? 'present' : 'missing'}`);
     }
 
     // Add user-configured app MCPs
     const appConfigs = await this.deriveMcpConfigsFromApps(spaceId, channelId);
+    console.log(`[AgentManager] App MCPs: ${appConfigs.length} configured`);
     configs.push(...appConfigs);
 
+    console.log(`[AgentManager] Total MCP configs for channelId ${channelId}: ${configs.length}`);
     return configs;
   }
 

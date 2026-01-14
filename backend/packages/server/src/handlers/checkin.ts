@@ -90,14 +90,7 @@ export function compileMessages(
     return '';
   }
 
-  if (messages.length === 1) {
-    // Single message - just return content
-    return typeof messages[0].content === 'string'
-      ? messages[0].content
-      : JSON.stringify(messages[0].content);
-  }
-
-  // Multiple messages - compile with headers
+  // Always compile with headers for consistency
   return messages
     .map((msg) => {
       const content =
@@ -347,7 +340,10 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
       updatePayload.routeHints = routeHints;
     }
     await storage.updateRosterEntry(channelId, rosterEntry.id, updatePayload);
-    console.log(`[Checkin] Stored callbackUrl for ${callsign} in roster (routeHints: ${routeHints ? 'from container' : 'preserved'})`);
+    console.log(`[Checkin] Stored callbackUrl for ${callsign} in roster`);
+    console.log(`[Checkin]   Previous callbackUrl: ${rosterEntry.callbackUrl ?? '(none)'}`);
+    console.log(`[Checkin]   New callbackUrl: ${endpoint}`);
+    console.log(`[Checkin]   RouteHints: ${routeHints ? JSON.stringify(routeHints) : 'preserved from roster'}`);
 
     // Broadcast online state
     await broadcastAgentState(connectionManager, channelId, callsign, 'online', now);

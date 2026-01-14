@@ -144,6 +144,11 @@ export function createAgentInvokerAdapter(
                 // Agent is already active - send message directly
                 console.log(`[AgentInvoker] @${callsign} is online (lastHeartbeat: ${rosterEntry.lastHeartbeat}), sending message via WebSocket ${wsConnectionId}`);
 
+                // Generate auth token and get MCP configs (same as activation path)
+                const authToken = generateContainerToken({ spaceId, channelId, callsign });
+                const mcpServers = await agentManager.getMcpConfigsForAgent(spaceId, channelId, authToken);
+                console.log(`[AgentInvoker] @${callsign} message delivery MCP configs:`, JSON.stringify(mcpServers));
+
                 const deliverMessage: DeliverMessageMessage = {
                   type: 'message',
                   agentId,
@@ -151,6 +156,7 @@ export function createAgentInvokerAdapter(
                   content: userMessage,
                   sender: message.sender,
                   systemPrompt,
+                  mcpServers,
                 };
 
                 try {
@@ -183,6 +189,7 @@ export function createAgentInvokerAdapter(
 
               const authToken = generateContainerToken({ spaceId, channelId, callsign });
               const mcpServers = await agentManager.getMcpConfigsForAgent(spaceId, channelId, authToken);
+              console.log(`[AgentInvoker] @${callsign} activation MCP configs:`, JSON.stringify(mcpServers));
 
               // Workspace path is set by the runtime client, we don't control it from here
               const workspacePath = '/tmp/cast-agents';

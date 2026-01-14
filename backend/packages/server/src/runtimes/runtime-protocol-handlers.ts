@@ -50,6 +50,7 @@ export interface DeliverMessageMessage {
   content: string;
   sender: string;
   systemPrompt?: string;
+  mcpServers?: McpServerConfig[];
 }
 
 export interface SuspendAgentMessage {
