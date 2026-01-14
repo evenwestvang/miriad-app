@@ -113,6 +113,8 @@ export function App() {
   const currentUser = authSession?.user.callsign || "user";
   const [isCreatingThread, setIsCreatingThread] = useState(false);
   const [roster, setRoster] = useState<RosterAgent[]>([]);
+  // Total channel cost (sum of all agents, including archived)
+  const [totalChannelCost, setTotalChannelCost] = useState(0);
   // Track which agents are "working" (sent messages but no idle frame yet)
   const [workingAgents, setWorkingAgents] = useState<Set<string>>(new Set());
   const [leader, setLeader] = useState<string | undefined>(undefined);
@@ -375,8 +377,11 @@ export function App() {
     });
   }, []);
 
-  // Cost frame handler - accumulates session cost per agent
+  // Cost frame handler - accumulates session cost per agent and total channel cost
   const handleCostFrame = useCallback((callsign: string, cost: CostInfo) => {
+    // Update total channel cost (includes all agents, even archived)
+    setTotalChannelCost((prev) => prev + cost.totalCostUsd);
+    // Update individual agent cost in roster
     setRoster((prev) => {
       const idx = prev.findIndex((a) => a.callsign === callsign);
       if (idx === -1) return prev; // Agent not in roster
@@ -662,6 +667,7 @@ export function App() {
     // Don't clear messages - they're cached per channel
     // Only show switching state if we don't have cached messages for this channel
     setRoster([]);
+    setTotalChannelCost(0);
     setLeader(undefined);
     // Clear agent selection on channel switch
     setSelectedAgent(null);
@@ -722,14 +728,18 @@ export function App() {
 
           // Parse costs response (may fail for new channels with no costs)
           let costsByCallsign = new Map<string, number>();
+          let totalCost = 0;
           if (costsResponse.ok) {
             const costsData = await costsResponse.json();
             if (costsData.tally && Array.isArray(costsData.tally)) {
               for (const t of costsData.tally) {
                 costsByCallsign.set(t.callsign, t.totalCostUsd);
+                totalCost += t.totalCostUsd;
               }
             }
           }
+          // Update total channel cost (includes all agents, even archived)
+          setTotalChannelCost(totalCost);
 
           // Parse archived agents response
           if (archivedResponse.ok) {
@@ -1193,7 +1203,7 @@ export function App() {
                 isThinking={isWaitingForResponse}
                 boardOpen={boardOpen}
                 onToggleBoard={toggleBoard}
-                channelCost={roster.reduce((sum, a) => sum + (a.sessionCost || 0), 0)}
+                channelCost={totalChannelCost}
                 sidebarOpen={sidebarOpen}
                 onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
                 firehoseMode={firehoseMode}
