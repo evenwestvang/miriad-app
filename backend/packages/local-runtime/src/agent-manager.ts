@@ -296,6 +296,7 @@ export class AgentManager {
     console.log(`[AgentManager] Continue session: ${shouldContinue}`);
 
     const options: Options = {
+      model: 'claude-opus-4-5-20251101',
       systemPrompt: prompt
         ? {
             type: 'preset',
