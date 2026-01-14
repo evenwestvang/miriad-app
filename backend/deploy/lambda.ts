@@ -29,7 +29,16 @@ const PLANETSCALE_URL = process.env.PLANETSCALE_URL!;
 const REGION = process.env.AWS_REGION ?? 'us-east-1';
 
 // Fly.io configuration
-const FLY_API_TOKEN = process.env.FLY_API_TOKEN ?? '';
+// FLY_API_TOKEN is base64 encoded to avoid SAM parameter parsing issues with spaces
+// (FlyV1 tokens have format "FlyV1 fm2_..." - the space causes truncation in SAM)
+const FLY_API_TOKEN_RAW = process.env.FLY_API_TOKEN ?? '';
+const FLY_API_TOKEN = FLY_API_TOKEN_RAW.startsWith('Rmx5') // base64 of "Fly"
+  ? Buffer.from(FLY_API_TOKEN_RAW, 'base64').toString('utf-8')
+  : FLY_API_TOKEN_RAW; // fallback for non-encoded tokens
+
+// Debug: Log token info at startup (not the token itself!)
+console.log(`[Lambda] FLY_API_TOKEN: raw_length=${FLY_API_TOKEN_RAW.length}, decoded_length=${FLY_API_TOKEN.length}, starts_with=${FLY_API_TOKEN.substring(0, 10)}`);
+
 const FLY_APP_NAME = process.env.FLY_APP_NAME ?? 'cast-containers-staging';
 const FLY_REGION = process.env.FLY_REGION ?? 'iad';
 const FLY_IMAGE = process.env.FLY_IMAGE ?? '';
