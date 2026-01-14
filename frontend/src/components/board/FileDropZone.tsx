@@ -261,6 +261,7 @@ export function FileDropZone({
     try {
       const response = await fetch(`${apiHost}/channels/${channelId}/assets`, {
         method: 'POST',
+        credentials: 'include',
         body: formData,
       })
 
