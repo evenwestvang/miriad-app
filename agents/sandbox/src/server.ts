@@ -391,6 +391,7 @@ async function processMessage(message: QueuedMessage): Promise<void> {
   }
 }
 
+/**
  * Process the message queue.
  * Batches all queued messages into a single message to match legacy prototype behavior.
  */

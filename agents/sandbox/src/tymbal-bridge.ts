@@ -25,6 +25,7 @@ import type {
   SDKUserMessage,
   SDKResultMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { ulid } from "ulid";
 
 // Content block types from Anthropic API
 interface TextBlock {
@@ -72,28 +73,13 @@ interface CostValue {
   modelUsage?: Record<string, CostModelUsage>;
 }
 
-// ULID generation (Crockford's Base32, 26 characters)
-// Format: 10 chars timestamp + 16 chars randomness
-const ENCODING = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"; // Crockford's Base32
-
+/**
+ * Generate a ULID for message/frame IDs.
+ * Uses the standard ulid library which maintains monotonicity within the same
+ * millisecond (increments random portion instead of generating new random).
+ */
 function generateId(): string {
-  const now = Date.now();
-
-  // Encode timestamp (48 bits -> 10 chars)
-  let timestamp = "";
-  let t = now;
-  for (let i = 0; i < 10; i++) {
-    timestamp = ENCODING[t % 32] + timestamp;
-    t = Math.floor(t / 32);
-  }
-
-  // Generate randomness (80 bits -> 16 chars)
-  let random = "";
-  for (let i = 0; i < 16; i++) {
-    random += ENCODING[Math.floor(Math.random() * 32)];
-  }
-
-  return timestamp + random;
+  return ulid();
 }
 
 export interface TymbalBridgeConfig {

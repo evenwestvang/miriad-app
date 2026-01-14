@@ -3,11 +3,15 @@
  *
  * Manages multiple Claude SDK agent instances within a single runtime process.
  * Handles agent lifecycle: activation, message routing, suspension.
+ *
+ * Key feature: Streaming input support - messages can be pushed to Claude
+ * during execution using the SDK's AsyncIterable prompt feature.
  */
 
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { query, type SDKMessage, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { randomUUID, type UUID } from 'node:crypto';
+import { query, type SDKMessage, type SDKUserMessage, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { TymbalBridge } from './tymbal-bridge.js';
 import type {
   AgentState,
@@ -23,11 +27,123 @@ import type {
 // Types
 // =============================================================================
 
+/**
+ * Message stream for pushing messages to Claude during execution.
+ * Implements AsyncIterable so it can be passed to query().
+ */
+interface MessageStream {
+  /** Push a message to the stream (will be delivered to Claude) */
+  push(content: string): void;
+  /** Close the stream (no more messages) */
+  close(): void;
+  /** The async iterable for the SDK */
+  iterable: AsyncIterable<SDKUserMessage>;
+  /** Session ID for this stream */
+  sessionId: string;
+}
+
 interface AgentInstance {
   state: AgentState;
   bridge: TymbalBridge;
   messageQueue: DeliverMessageMessage[];
   isProcessing: boolean;
+  /** Active message stream for pushing messages during execution */
+  messageStream: MessageStream | null;
+}
+
+// =============================================================================
+// Message Stream Factory
+// =============================================================================
+
+/**
+ * Create a message stream that can push messages to Claude during execution.
+ *
+ * The stream works as follows:
+ * 1. First call to next() yields the initial message immediately
+ * 2. Subsequent calls wait for push() to add messages to the queue
+ * 3. When Claude asks for next input, we batch all queued messages and yield
+ * 4. close() signals no more messages (ends the stream)
+ */
+function createMessageStream(initialContent: string): MessageStream {
+  const sessionId = randomUUID();
+  const queue: string[] = [];
+  let closed = false;
+  let resolveWaiting: ((value: IteratorResult<SDKUserMessage>) => void) | null = null;
+
+  // Helper to create SDKUserMessage from content
+  function makeMessage(content: string): SDKUserMessage {
+    return {
+      type: 'user',
+      message: {
+        role: 'user',
+        content,
+      },
+      parent_tool_use_id: null,
+      session_id: sessionId,
+    };
+  }
+
+  const stream: MessageStream = {
+    sessionId,
+
+    push(content: string): void {
+      if (closed) {
+        console.warn('[MessageStream] Cannot push to closed stream');
+        return;
+      }
+      queue.push(content);
+
+      // If Claude is waiting for input, resolve immediately with batched messages
+      if (resolveWaiting && queue.length > 0) {
+        const batched = queue.splice(0).join('\n\n');
+        resolveWaiting({ value: makeMessage(batched), done: false });
+        resolveWaiting = null;
+      }
+    },
+
+    close(): void {
+      closed = true;
+      // If Claude is waiting, signal end of stream
+      if (resolveWaiting) {
+        resolveWaiting({ value: undefined as unknown as SDKUserMessage, done: true });
+        resolveWaiting = null;
+      }
+    },
+
+    iterable: {
+      [Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
+        let yieldedInitial = false;
+
+        return {
+          async next(): Promise<IteratorResult<SDKUserMessage>> {
+            // First call: yield initial message immediately
+            if (!yieldedInitial) {
+              yieldedInitial = true;
+              return { value: makeMessage(initialContent), done: false };
+            }
+
+            // If stream is closed and queue is empty, we're done
+            if (closed && queue.length === 0) {
+              return { value: undefined as unknown as SDKUserMessage, done: true };
+            }
+
+            // If there are queued messages, batch and yield them
+            if (queue.length > 0) {
+              const batched = queue.splice(0).join('\n\n');
+              return { value: makeMessage(batched), done: false };
+            }
+
+            // Wait for push() or close()
+            return new Promise((resolve) => {
+              resolveWaiting = resolve;
+            });
+          },
+        };
+      },
+    },
+  };
+
+  return stream;
 }
 
 export interface AgentManagerConfig {
@@ -136,6 +252,7 @@ export class AgentManager {
       bridge,
       messageQueue: [],
       isProcessing: false,
+      messageStream: null,
     };
 
     console.log(`[AgentManager]   Stored mcpServers in state:`, JSON.stringify(instance.state.mcpServers));
@@ -200,9 +317,16 @@ export class AgentManager {
     // Format message with sender header
     const formattedContent = this.formatMessage(message);
 
-    // Queue message if already processing
+    // If agent is processing and has an active stream, push to it (mid-execution delivery!)
+    if (instance.isProcessing && instance.messageStream) {
+      console.log(`[AgentManager] @${callsign} busy with active stream, pushing message mid-execution`);
+      instance.messageStream.push(formattedContent);
+      return;
+    }
+
+    // Legacy fallback: queue message if processing but no stream (shouldn't happen with new code)
     if (instance.isProcessing) {
-      console.log(`[AgentManager] @${callsign} busy, queueing message`);
+      console.log(`[AgentManager] @${callsign} busy (no stream), queueing message`);
       instance.messageQueue.push(message);
       return;
     }
@@ -232,6 +356,12 @@ export class AgentManager {
     // Update state
     instance.state.status = 'offline';
     instance.state.lastActivity = new Date().toISOString();
+
+    // Close any active message stream
+    if (instance.messageStream) {
+      instance.messageStream.close();
+      instance.messageStream = null;
+    }
 
     // Clear message queue
     instance.messageQueue = [];
@@ -353,9 +483,15 @@ export class AgentManager {
       console.warn(`[AgentManager] No MCP servers configured for ${state.agentId} (state.mcpServers: ${state.mcpServers})`);
     }
 
+    // Create message stream for this conversation
+    // This allows new messages to be pushed to Claude mid-execution
+    const messageStream = createMessageStream(content);
+    instance.messageStream = messageStream;
+    console.log(`[AgentManager] @${callsign} created message stream (sessionId: ${messageStream.sessionId})`);
+
     try {
       const q = query({
-        prompt: content,
+        prompt: messageStream.iterable,  // Use stream instead of static string!
         options,
       });
 
@@ -369,12 +505,18 @@ export class AgentManager {
       console.error(`[AgentManager] Query error for ${state.agentId}:`, error);
       this.config.onError?.(state.agentId, error as Error);
     } finally {
+      // Clean up stream
+      if (instance.messageStream) {
+        instance.messageStream.close();
+        instance.messageStream = null;
+      }
+
       instance.isProcessing = false;
       instance.state.status = 'online';
       instance.state.lastActivity = new Date().toISOString();
       console.log(`[AgentManager] @${callsign} state: busy → online`);
 
-      // Process queued messages as a batch (if any)
+      // Process any queued messages that came in via legacy path
       await this.processQueue(instance);
     }
   }
