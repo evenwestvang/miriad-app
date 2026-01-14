@@ -158,6 +158,7 @@ export function AssetUpload({ channelId, apiHost, onComplete, onCancel }: AssetU
     ))
 
     xhr.open('POST', `${apiHost}/channels/${channelId}/assets`)
+    xhr.withCredentials = true
     xhr.send(formData)
   }, [apiHost, channelId])
 
