@@ -512,7 +512,7 @@ export function AgentSummonPicker({
                   disabled={isSubmitting || isLoadingRuntimes}
                   className="w-full px-2 py-1.5 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary appearance-none pr-8"
                 >
-                  <option value="cloud">CAST Cloud</option>
+                  <option value="cloud">Miriad Cloud</option>
                   {runtimes.map((runtime) => (
                     <option key={runtime.id} value={runtime.id}>
                       {runtime.name}

@@ -1064,10 +1064,10 @@ export function App() {
       <header className="h-12 flex items-center gap-2 md:gap-3 px-3 md:px-5 border-b border-border bg-card flex-shrink-0">
         {/* Branding */}
         <span className="font-semibold text-[#FF6600] text-sm tracking-[0.05em]">
-          CAST
+          MIRIAD
         </span>
 
-        {/* Mobile: Channel name inline after CAST */}
+        {/* Mobile: Channel name inline after logo */}
         {selectedThread && (
           <span className="md:hidden font-medium text-foreground text-sm truncate max-w-[120px]">
             #{currentThread?.agentName || "channel"}

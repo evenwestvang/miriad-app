@@ -110,7 +110,7 @@ export function OnboardingPage({
             <Sparkles className="w-8 h-8 text-primary" />
           </div>
           <div className="space-y-2">
-            <h1 className="text-3xl font-bold text-foreground">Welcome to CAST!</h1>
+            <h1 className="text-3xl font-bold text-foreground">Welcome to Miriad!</h1>
             <p className="text-muted-foreground">
               Let's set up your account. Choose your callsign—this is how others will mention you.
             </p>
