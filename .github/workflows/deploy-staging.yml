@@ -65,40 +65,61 @@ jobs:
         run: node build.mjs
       - name: Install esbuild for SAM
         run: npm install -g esbuild
-      - name: SAM Build and Deploy
+      - name: SAM Build
         working-directory: backend/deploy
+        run: sam build
+      - name: SAM Deploy
+        working-directory: backend/deploy
+        env:
+          # Pass all secrets as env vars to avoid shell parsing issues
+          PARAM_PLANETSCALE_URL: ${{ secrets.STAGING_PLANETSCALE_URL }}
+          PARAM_ANTHROPIC_API_KEY: ${{ secrets.STAGING_ANTHROPIC_API_KEY }}
+          PARAM_JWT_SECRET: ${{ secrets.STAGING_JWT_SECRET }}
+          PARAM_SECRET_KEY: ${{ secrets.STAGING_SECRET_KEY }}
+          PARAM_WORKOS_API_KEY: ${{ secrets.STAGING_WORKOS_API_KEY }}
+          PARAM_WORKOS_CLIENT_ID: ${{ secrets.STAGING_WORKOS_CLIENT_ID }}
+          PARAM_GITHUB_CLIENT_ID: ${{ secrets.STAGING_GITHUB_CLIENT_ID }}
+          PARAM_GITHUB_CLIENT_SECRET: ${{ secrets.STAGING_GITHUB_CLIENT_SECRET }}
+          PARAM_FLY_API_TOKEN: ${{ secrets.STAGING_FLY_API_TOKEN }}
+          PARAM_FLY_APP_NAME: ${{ secrets.STAGING_FLY_APP_NAME }}
         run: |
-          sam build
-          # Use ParameterKey/ParameterValue format for FlyApiToken to preserve spaces
-          sam deploy \
-            --stack-name cast-backend-stag \
-            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
-            --resolve-s3 \
-            --s3-prefix cast-backend \
-            --region ${{ env.AWS_REGION }} \
-            --parameter-overrides \
-              Stage=stag \
-              PlanetScaleUrl="${{ secrets.STAGING_PLANETSCALE_URL }}" \
-              AnthropicApiKey="${{ secrets.STAGING_ANTHROPIC_API_KEY }}" \
-              JwtSecret="${{ secrets.STAGING_JWT_SECRET }}" \
-              SecretKey="${{ secrets.STAGING_SECRET_KEY }}" \
-              AuthMode=workos \
-              WorkOsApiKey="${{ secrets.STAGING_WORKOS_API_KEY }}" \
-              WorkOsClientId="${{ secrets.STAGING_WORKOS_CLIENT_ID }}" \
-              WorkOsRedirectUri="https://api.staging.caststack.ai/auth/callback" \
-              FrontendUrl="https://app.staging.caststack.ai" \
-              CastApiUrl="https://api.staging.caststack.ai" \
-              GitHubClientId="${{ secrets.STAGING_GITHUB_CLIENT_ID }}" \
-              GitHubClientSecret="${{ secrets.STAGING_GITHUB_CLIENT_SECRET }}" \
-              TunnelServerUrl="https://tunnel.caststack.site" \
-              AgentImageUri="registry.fly.io/${{ secrets.STAGING_FLY_APP_NAME }}:latest" \
-              'ParameterKey=FlyApiToken,ParameterValue=${{ secrets.STAGING_FLY_API_TOKEN }}' \
-              FlyAppName="${{ secrets.STAGING_FLY_APP_NAME }}" \
-              FlyRegion="iad" \
-              SpaceId="default" \
-              DeployTimestamp="${{ github.run_id }}-${{ github.run_number }}"
+          # Write samconfig.toml to bypass SAM CLI parameter parsing entirely
+          # This avoids the space-truncation issue with FlyV1 tokens
+          cat > samconfig.toml << EOF
+          version = 0.1
+          [default.deploy.parameters]
+          stack_name = "cast-backend-stag"
+          capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
+          confirm_changeset = false
+          fail_on_empty_changeset = false
+          resolve_s3 = true
+          s3_prefix = "cast-backend"
+          region = "${{ env.AWS_REGION }}"
+          parameter_overrides = [
+            "Stage=stag",
+            "PlanetScaleUrl=${PARAM_PLANETSCALE_URL}",
+            "AnthropicApiKey=${PARAM_ANTHROPIC_API_KEY}",
+            "JwtSecret=${PARAM_JWT_SECRET}",
+            "SecretKey=${PARAM_SECRET_KEY}",
+            "AuthMode=workos",
+            "WorkOsApiKey=${PARAM_WORKOS_API_KEY}",
+            "WorkOsClientId=${PARAM_WORKOS_CLIENT_ID}",
+            "WorkOsRedirectUri=https://api.staging.caststack.ai/auth/callback",
+            "FrontendUrl=https://app.staging.caststack.ai",
+            "CastApiUrl=https://api.staging.caststack.ai",
+            "GitHubClientId=${PARAM_GITHUB_CLIENT_ID}",
+            "GitHubClientSecret=${PARAM_GITHUB_CLIENT_SECRET}",
+            "TunnelServerUrl=https://tunnel.caststack.site",
+            "AgentImageUri=registry.fly.io/${PARAM_FLY_APP_NAME}:latest",
+            "FlyApiToken=${PARAM_FLY_API_TOKEN}",
+            "FlyAppName=${PARAM_FLY_APP_NAME}",
+            "FlyRegion=iad",
+            "SpaceId=default",
+            "DeployTimestamp=${{ github.run_id }}-${{ github.run_number }}"
+          ]
+          EOF
+          cat samconfig.toml
+          sam deploy
 
   frontend:
     name: Frontend
