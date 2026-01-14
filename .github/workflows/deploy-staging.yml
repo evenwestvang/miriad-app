@@ -93,7 +93,7 @@ jobs:
               GitHubClientSecret="${{ secrets.STAGING_GITHUB_CLIENT_SECRET }}" \
               TunnelServerUrl="https://tunnel.caststack.site" \
               AgentImageUri="registry.fly.io/${{ secrets.STAGING_FLY_APP_NAME }}:latest" \
-              FlyApiToken="${{ secrets.STAGING_FLY_API_TOKEN }}" \
+              'FlyApiToken=${{ secrets.STAGING_FLY_API_TOKEN }}' \
               FlyAppName="${{ secrets.STAGING_FLY_APP_NAME }}" \
               FlyRegion="iad" \
               SpaceId="default"
