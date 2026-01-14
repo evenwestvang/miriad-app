@@ -188,6 +188,7 @@ interface ArtifactRow {
   secrets: Record<string, StoredSecret> | null;
   content_type: string | null;
   file_size: number | null;
+  attached_to_message_id: string | null;
   version: number;
   created_by: string;
   created_at: Date;
@@ -1159,6 +1160,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       secrets: secretsMetadata,
       contentType: row.content_type ?? undefined,
       fileSize: row.file_size ?? undefined,
+      attachedToMessageId: row.attached_to_message_id ?? undefined,
       version: row.version,
       createdBy: row.created_by,
       createdAt: row.created_at.toISOString(),
@@ -1199,7 +1201,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         INSERT INTO artifacts (
           id, channel_id, slug, type, title, tldr, content, parent_slug, path,
           order_key, status, assignees, labels, refs, props,
-          content_type, file_size,
+          content_type, file_size, attached_to_message_id,
           version, created_by, created_at
         )
         VALUES (
@@ -1220,6 +1222,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           ${input.props ? sql.json(input.props as JSONValue) : null},
           ${input.contentType ?? null},
           ${input.fileSize ?? null},
+          ${input.attachedToMessageId ?? null},
           1,
           ${input.createdBy},
           ${now}
@@ -1489,7 +1492,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     // Build dynamic query based on filters
     // Note: Using raw SQL building here since postgres.js doesn't easily support
     // complex conditional WHERE clauses
-    const conditions: string[] = ['channel_id = $1'];
+    // Filter out message attachments (artifacts with attachedToMessageId set)
+    const conditions: string[] = ['channel_id = $1', 'attached_to_message_id IS NULL'];
     const values: unknown[] = [channelId];
     let paramIndex = 2;
 
@@ -1577,6 +1581,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         WHERE channel_id = ${channelId}
           AND parent_slug IS NULL
           AND status != 'archived'
+          AND attached_to_message_id IS NULL
         ORDER BY order_key ASC
       `;
     } else if (ltreeQuery === '*') {
@@ -1585,6 +1590,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         FROM artifacts
         WHERE channel_id = ${channelId}
           AND status != 'archived'
+          AND attached_to_message_id IS NULL
         ORDER BY path ASC, order_key ASC
       `;
     } else {
@@ -1594,6 +1600,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         WHERE channel_id = ${channelId}
           AND path ~ ${ltreeQuery}::lquery
           AND status != 'archived'
+          AND attached_to_message_id IS NULL
         ORDER BY path ASC, order_key ASC
       `;
     }
@@ -2228,6 +2235,15 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     await sql`
       DO $$ BEGIN
         ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS secrets JSONB;
+      EXCEPTION
+        WHEN duplicate_column THEN NULL;
+      END $$;
+    `;
+
+    // Add attached_to_message_id column if it doesn't exist (migration for message attachments)
+    await sql`
+      DO $$ BEGIN
+        ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS attached_to_message_id VARCHAR(26);
       EXCEPTION
         WHEN duplicate_column THEN NULL;
       END $$;

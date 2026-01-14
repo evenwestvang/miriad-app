@@ -38,12 +38,25 @@ export interface SaveAssetResult {
   fileSize: number;
 }
 
+/** Result from reading an asset as a stream */
+export interface ReadAssetStreamResult {
+  /** Readable stream of the asset content */
+  stream: ReadableStream<Uint8Array>;
+  /** Content length in bytes (if known) */
+  contentLength?: number;
+  /** Content type (if known) */
+  contentType?: string;
+}
+
 export interface AssetStorage {
   /** Save a binary asset to storage */
   saveAsset(input: SaveAssetInput): Promise<SaveAssetResult>;
 
-  /** Read an asset from storage */
+  /** Read an asset from storage (buffers entire file - use readAssetStream for large files) */
   readAsset(channelId: string, slug: string): Promise<Buffer>;
+
+  /** Read an asset as a stream (for large files - avoids memory pressure) */
+  readAssetStream?(channelId: string, slug: string): Promise<ReadAssetStreamResult>;
 
   /** Check if an asset exists */
   assetExists(channelId: string, slug: string): Promise<boolean>;
@@ -195,19 +208,28 @@ export function createFilesystemAssetStorage(
 }
 
 // =============================================================================
-// S3 Asset Storage Stub
+// S3 Asset Storage
 // =============================================================================
 
-export function createS3AssetStorage(): AssetStorage {
-  const notImplemented = (): never => {
-    throw new Error('S3 asset storage is not implemented. Use filesystem storage instead.');
-  };
+import { createS3AssetStorage } from './s3.js';
+export { createS3AssetStorage };
 
-  return {
-    saveAsset: notImplemented,
-    readAsset: notImplemented,
-    assetExists: notImplemented,
-    deleteAsset: notImplemented,
-    getAssetPath: notImplemented,
-  };
+// =============================================================================
+// Asset Storage Factory
+// =============================================================================
+
+/**
+ * Create an asset storage backend based on environment configuration.
+ *
+ * - Default (local dev): filesystem storage
+ * - Production: S3 storage when ASSET_STORAGE_BACKEND=s3
+ */
+export function createAssetStorage(): AssetStorage {
+  const backend = process.env.ASSET_STORAGE_BACKEND || 'filesystem';
+
+  if (backend === 's3') {
+    return createS3AssetStorage();
+  }
+
+  return createFilesystemAssetStorage();
 }
