@@ -23,9 +23,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG RATHOLE_VERSION=0.5.0
 ARG TARGETARCH
 RUN ARCH=$(case ${TARGETARCH:-amd64} in \
-        amd64) echo "x86_64-unknown-linux-gnu" ;; \
+        amd64) echo "x86_64-unknown-linux-musl" ;; \
         arm64) echo "aarch64-unknown-linux-musl" ;; \
-        *) echo "x86_64-unknown-linux-gnu" ;; \
+        *) echo "x86_64-unknown-linux-musl" ;; \
     esac) && \
     curl -fsSL "https://github.com/rathole-org/rathole/releases/download/v${RATHOLE_VERSION}/rathole-${ARCH}.zip" -o /tmp/rathole.zip && \
     cd /tmp && unzip rathole.zip && \
