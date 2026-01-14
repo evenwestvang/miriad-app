@@ -18,6 +18,19 @@ const CONFIG_DIR = join(homedir(), '.config', 'cast');
 const CONFIG_FILE = join(CONFIG_DIR, 'local-runtime.json');
 const DEFAULT_WORKSPACE_BASE = '/tmp/cast-agents';
 
+/**
+ * Expand tilde (~) to home directory in paths.
+ */
+function expandTilde(path: string): string {
+  if (path.startsWith('~/')) {
+    return join(homedir(), path.slice(2));
+  }
+  if (path === '~') {
+    return homedir();
+  }
+  return path;
+}
+
 // =============================================================================
 // Environment Detection
 // =============================================================================
@@ -89,11 +102,17 @@ export function parseConnectionString(connectionString: string): ParsedConnectio
 /**
  * Load runtime config from disk.
  * Returns null if no config file exists.
+ * Expands tilde (~) in workspace.basePath.
  */
 export async function loadConfig(): Promise<RuntimeConfig | null> {
   try {
     const content = await readFile(CONFIG_FILE, 'utf-8');
-    return JSON.parse(content) as RuntimeConfig;
+    const config = JSON.parse(content) as RuntimeConfig;
+    // Expand tilde in workspace basePath
+    if (config.workspace?.basePath) {
+      config.workspace.basePath = expandTilde(config.workspace.basePath);
+    }
+    return config;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return null;

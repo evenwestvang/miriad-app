@@ -103,8 +103,13 @@ export class AgentManager {
 
     console.log(`[AgentManager] @${callsign} state: offline → activating`);
 
-    // Ensure workspace exists
-    const resolvedPath = workspacePath || join(this.config.workspaceBasePath, agentId.replace(/:/g, '/'));
+    // Always use local config basePath + agentId structure for security
+    // (ignore workspacePath from backend to prevent arbitrary path access)
+    const resolvedPath = join(this.config.workspaceBasePath, agentId.replace(/:/g, '/'));
+    console.log(`[AgentManager] @${callsign} workspace config:`);
+    console.log(`[AgentManager]   basePath: ${this.config.workspaceBasePath}`);
+    console.log(`[AgentManager]   backend workspacePath (ignored): ${workspacePath || '(none)'}`);
+    console.log(`[AgentManager]   resolved: ${resolvedPath}`);
     this.ensureWorkspace(resolvedPath);
 
     // Create bridge
@@ -144,31 +149,42 @@ export class AgentManager {
 
   /**
    * Deliver a message to an agent.
+   * Auto-activates the agent if it doesn't exist (local runtime is always-on).
    */
   async deliverMessage(message: DeliverMessageMessage): Promise<void> {
     const { agentId, content, systemPrompt } = message;
-    const instance = this.agents.get(agentId);
+    let instance = this.agents.get(agentId);
 
-    if (!instance) {
-      console.error(`[AgentManager] Agent ${agentId} not found`);
-      return;
-    }
+    const { callsign } = parseAgentId(agentId);
 
-    if (instance.state.status === 'offline') {
-      console.error(`[AgentManager] Agent ${agentId} is offline`);
-      return;
+    // Auto-activate agent if not found or offline (local runtime is always-on)
+    if (!instance || instance.state.status === 'offline') {
+      console.log(`[AgentManager] @${callsign} not active, auto-activating for message delivery`);
+      await this.activate({
+        type: 'activate',
+        agentId,
+        systemPrompt: systemPrompt || '',
+        workspacePath: '', // Will be ignored, uses local config
+      });
+      instance = this.agents.get(agentId);
+      if (!instance) {
+        console.error(`[AgentManager] Failed to auto-activate agent ${agentId}`);
+        return;
+      }
+      console.log(`[AgentManager] @${callsign} auto-activated, proceeding with message`);
     }
 
     // Queue message if already processing
     if (instance.isProcessing) {
-      const { callsign } = parseAgentId(agentId);
       console.log(`[AgentManager] @${callsign} busy, queueing message`);
       instance.messageQueue.push(message);
       return;
     }
 
     // Process message (will transition to busy)
+    console.log(`[AgentManager] @${callsign} calling processMessage with content length: ${content.length}`);
     await this.processMessage(instance, content, systemPrompt);
+    console.log(`[AgentManager] @${callsign} processMessage returned`);
   }
 
   /**
@@ -270,7 +286,10 @@ export class AgentManager {
       continue: shouldContinue,
       cwd: workspace,
       env: {
-        ...process.env,
+        // Filter out PWD/OLDPWD to prevent parent's cwd from leaking into subprocess
+        ...Object.fromEntries(
+          Object.entries(process.env).filter(([key]) => !['PWD', 'OLDPWD'].includes(key))
+        ),
         CLAUDE_CONFIG_DIR: claudeConfigDir,
       },
     };
