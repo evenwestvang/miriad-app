@@ -23,7 +23,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Install rathole binary from GitHub releases
-ARG RATHOLE_VERSION=0.5.0
+ARG RATHOLE_VERSION=0.4.8
 ARG TARGETARCH
 
 RUN apk add --no-cache curl ca-certificates && \
@@ -34,7 +34,7 @@ RUN apk add --no-cache curl ca-certificates && \
       *) echo "Unsupported arch: ${TARGETARCH}" && exit 1 ;; \
     esac && \
     # Download and extract rathole
-    curl -fsSL "https://github.com/rapiz1/rathole/releases/download/v${RATHOLE_VERSION}/rathole-${RATHOLE_ARCH}.zip" -o /tmp/rathole.zip && \
+    curl -fsSL "https://github.com/rathole-org/rathole/releases/download/v${RATHOLE_VERSION}/rathole-${RATHOLE_ARCH}.zip" -o /tmp/rathole.zip && \
     unzip /tmp/rathole.zip -d /tmp && \
     mv /tmp/rathole /usr/local/bin/rathole && \
     chmod +x /usr/local/bin/rathole && \
