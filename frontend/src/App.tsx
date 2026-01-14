@@ -5,6 +5,7 @@ import {
   Moon,
   Settings,
 } from "lucide-react";
+import { ChannelSwitcher } from "./components/ChannelSwitcher";
 import {
   ThreadList,
   type ThreadWithState,
@@ -139,6 +140,8 @@ export function App() {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   // Summon picker open state (controlled from MessageInput button)
   const [summonOpen, setSummonOpen] = useState(false);
+  // Channel switcher (Cmd-K) open state
+  const [channelSwitcherOpen, setChannelSwitcherOpen] = useState(false);
   // Recently dismissed agents (for warning when mentioning them)
   const [dismissedAgents, setDismissedAgents] = useState<Set<string>>(new Set());
   // Mobile navigation tab state
@@ -853,6 +856,28 @@ export function App() {
     localStorage.setItem("firehose-mode", JSON.stringify(firehoseMode));
   }, [firehoseMode]);
 
+  // Cmd-K keyboard shortcut for channel switcher
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd-K (Mac) or Ctrl-K (Windows/Linux)
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setChannelSwitcherOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Handle channel selection from switcher
+  const handleSwitchChannel = useCallback(
+    (channelId: string) => {
+      navigateToChannel(channelId);
+    },
+    [navigateToChannel],
+  );
+
   // Create a new channel (displayed as "thread" in UI) - legacy version
   const handleCreateThread = useCallback(
     async (agentId: string, name?: string) => {
@@ -1320,6 +1345,15 @@ export function App() {
         onClose={() => setSettingsOpen(false)}
         apiHost={API_HOST}
         spaceId={authSession?.spaceId}
+      />
+
+      {/* Channel switcher (Cmd-K) */}
+      <ChannelSwitcher
+        isOpen={channelSwitcherOpen}
+        onClose={() => setChannelSwitcherOpen(false)}
+        channels={threads}
+        selectedChannelId={selectedThread}
+        onSelectChannel={handleSwitchChannel}
       />
     </div>
   );
