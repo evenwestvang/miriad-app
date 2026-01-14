@@ -65,7 +65,10 @@ jobs:
         run: npm install -g esbuild
       - working-directory: backend/deploy
         run: sam build
-      - working-directory: backend/deploy
+      - name: SAM Deploy
+        working-directory: backend/deploy
+        env:
+          FLY_API_TOKEN_VALUE: ${{ secrets.PROD_FLY_API_TOKEN }}
         run: |
           sam deploy \
             --stack-name cast-backend-prod \
@@ -91,9 +94,10 @@ jobs:
               GitHubClientSecret="${{ secrets.PROD_GITHUB_CLIENT_SECRET }}" \
               TunnelServerUrl="${{ secrets.PROD_TUNNEL_SERVER_URL }}" \
               AgentImageUri="registry.fly.io/${{ secrets.PROD_FLY_APP_NAME }}:latest" \
-              'FlyApiToken=${{ secrets.PROD_FLY_API_TOKEN }}' \
+              "FlyApiToken=${FLY_API_TOKEN_VALUE}" \
               FlyAppName="${{ secrets.PROD_FLY_APP_NAME }}" \
-              FlyRegion="${{ secrets.PROD_FLY_REGION }}"
+              FlyRegion="${{ secrets.PROD_FLY_REGION }}" \
+              DeployTimestamp="${{ github.run_id }}-${{ github.run_number }}"
 
   frontend:
     name: Frontend
