@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ChevronRight, ChevronDown, Wrench, CheckCircle, XCircle } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { Message } from '../../types'
@@ -7,6 +7,8 @@ import { getToolRenderer } from './tool-renderers'
 interface ToolGroupProps {
   /** Array of consecutive tool_call and tool_result messages */
   messages: Message[]
+  /** Whether firehose mode is enabled (expands tool groups by default) */
+  firehoseMode?: boolean
 }
 
 interface ToolPair {
@@ -58,8 +60,13 @@ function formatOutput(output: unknown): string {
  * Collapsed: "▸ 5 tool calls  Read · Grep · Bash"
  * Expanded: Tree list of tool calls, each expandable for details
  */
-export function ToolGroup({ messages }: ToolGroupProps) {
-  const [expanded, setExpanded] = useState(false)
+export function ToolGroup({ messages, firehoseMode = false }: ToolGroupProps) {
+  const [expanded, setExpanded] = useState(firehoseMode)
+
+  // Sync expanded state when firehoseMode changes
+  useEffect(() => {
+    setExpanded(firehoseMode)
+  }, [firehoseMode])
 
   // Pair tool_calls with their corresponding tool_results
   const pairs = pairToolMessages(messages)
@@ -74,6 +81,19 @@ export function ToolGroup({ messages }: ToolGroupProps) {
   // Single tool call - render inline without grouping
   if (callCount === 1) {
     return <SingleToolItem pair={pairs[0]} />
+  }
+
+  // Firehose mode - render all tools individually without grouping
+  if (firehoseMode) {
+    return (
+      <>
+        {pairs.map((pair, index) => (
+          <div key={pair.call.id} className="my-4">
+            <SingleToolItem pair={pair} />
+          </div>
+        ))}
+      </>
+    )
   }
 
   return (

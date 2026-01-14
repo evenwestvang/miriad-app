@@ -221,6 +221,8 @@ interface MessageListProps {
   isSwitching?: boolean;
   /** Show loading spinner (delayed - only after 500ms) */
   isLoading?: boolean;
+  /** Whether firehose mode is enabled (expands tool groups by default) */
+  firehoseMode?: boolean;
   /** Whether there are more older messages to load */
   hasMoreMessages?: boolean;
   /** Whether currently loading older messages */
@@ -243,6 +245,7 @@ export function MessageList({
   roster = [],
   isSwitching = false,
   isLoading = false,
+  firehoseMode = false,
   hasMoreMessages = true,
   isLoadingOlder = false,
   onRequestOlderMessages,
@@ -544,7 +547,7 @@ export function MessageList({
                   data-message-id={firstMsg.id}
                   className={marginClass}
                 >
-                  <ToolGroup messages={item.messages} />
+                  <ToolGroup messages={item.messages} firehoseMode={firehoseMode} />
                 </div>
               );
             }
@@ -682,17 +685,35 @@ type MessageOrGroup =
 function groupMessages(messages: Message[]): MessageOrGroup[] {
   const result: MessageOrGroup[] = [];
 
+  // Filter out send_message tool calls (redundant - the actual message is shown)
+  const filteredMessages = messages.filter(msg => {
+    if (msg.type === "tool_call" && msg.toolName === "mcp__cast__send_message") {
+      return false;
+    }
+    // Also filter out the corresponding results
+    if (msg.type === "tool_result") {
+      const callMsg = messages.find(m =>
+        m.type === "tool_call" &&
+        (m.toolCallId === msg.toolResultCallId || m.id === msg.toolResultCallId)
+      );
+      if (callMsg?.toolName === "mcp__cast__send_message") {
+        return false;
+      }
+    }
+    return true;
+  });
+
   // First pass: collect all tool_results by their call ID for lookup
   const resultsByCallId = new Map<string, Message>();
-  for (const msg of messages) {
+  for (const msg of filteredMessages) {
     if (msg.type === "tool_result" && msg.toolResultCallId) {
       resultsByCallId.set(msg.toolResultCallId, msg);
     }
   }
 
   let i = 0;
-  while (i < messages.length) {
-    const msg = messages[i];
+  while (i < filteredMessages.length) {
+    const msg = filteredMessages[i];
 
     // Skip tool_result messages - they get paired with their calls
     if (msg.type === "tool_result") {
@@ -706,8 +727,8 @@ function groupMessages(messages: Message[]): MessageOrGroup[] {
       const toolCalls: Message[] = [msg];
       let j = i + 1;
 
-      while (j < messages.length) {
-        const nextMsg = messages[j];
+      while (j < filteredMessages.length) {
+        const nextMsg = filteredMessages[j];
         // Skip tool_results when looking for consecutive calls
         if (nextMsg.type === "tool_result") {
           j++;

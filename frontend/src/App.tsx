@@ -126,6 +126,10 @@ export function App() {
     const stored = localStorage.getItem("sidebar-open");
     return stored !== null ? JSON.parse(stored) : true;
   });
+  const [firehoseMode, setFirehoseMode] = useState(() => {
+    const stored = localStorage.getItem("firehose-mode");
+    return stored !== null ? JSON.parse(stored) : false;
+  });
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Artifact event counter - increment to trigger board refresh
   const [artifactEventTrigger, setArtifactEventTrigger] = useState(0);
@@ -833,6 +837,11 @@ export function App() {
     localStorage.setItem("sidebar-open", JSON.stringify(sidebarOpen));
   }, [sidebarOpen]);
 
+  // Persist firehose mode to localStorage
+  useEffect(() => {
+    localStorage.setItem("firehose-mode", JSON.stringify(firehoseMode));
+  }, [firehoseMode]);
+
   // Create a new channel (displayed as "thread" in UI) - legacy version
   const handleCreateThread = useCallback(
     async (agentId: string, name?: string) => {
@@ -1187,6 +1196,8 @@ export function App() {
                 channelCost={roster.reduce((sum, a) => sum + (a.sessionCost || 0), 0)}
                 sidebarOpen={sidebarOpen}
                 onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+                firehoseMode={firehoseMode}
+                onToggleFirehose={() => setFirehoseMode(!firehoseMode)}
               />
               <MessageList
                 messages={messages}
@@ -1197,6 +1208,7 @@ export function App() {
                 roster={rosterWithWorkingState}
                 isSwitching={isSwitchingChannel}
                 isLoading={showLoadingSpinner}
+                firehoseMode={firehoseMode}
                 hasMoreMessages={hasMoreMessages}
                 isLoadingOlder={isLoadingOlder}
                 onRequestOlderMessages={requestOlderMessages}

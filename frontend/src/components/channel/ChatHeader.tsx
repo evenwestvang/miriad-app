@@ -4,7 +4,7 @@
  * Header for the chat panel, similar to BoardHeader structure.
  * Shows "Thread" label with board toggle button and channel cost total.
  */
-import { LayoutGrid, PanelLeftClose, PanelLeft } from 'lucide-react'
+import { LayoutGrid, PanelLeftClose, PanelLeft, Flame } from 'lucide-react'
 
 interface ChatHeaderProps {
   /** Whether the agent is currently thinking/processing */
@@ -19,6 +19,10 @@ interface ChatHeaderProps {
   sidebarOpen?: boolean
   /** Callback to toggle the sidebar */
   onToggleSidebar?: () => void
+  /** Whether firehose mode is enabled (show expanded tool calls) */
+  firehoseMode?: boolean
+  /** Callback to toggle firehose mode */
+  onToggleFirehose?: () => void
 }
 
 /**
@@ -44,6 +48,8 @@ export function ChatHeader({
   channelCost = 0,
   sidebarOpen = true,
   onToggleSidebar,
+  firehoseMode = false,
+  onToggleFirehose,
 }: ChatHeaderProps) {
   return (
     <div className="flex items-center justify-between h-10 px-3 border-b border-border">
@@ -72,6 +78,20 @@ export function ChatHeader({
         <span className="text-xs text-[#a0a0a0]" title="Total channel cost">
           {formatCost(channelCost)}
         </span>
+        {/* Firehose mode toggle */}
+        {onToggleFirehose && (
+          <button
+            onClick={onToggleFirehose}
+            className={`p-1.5 rounded transition-colors ${
+              firehoseMode
+                ? 'bg-orange-500/20 text-orange-500 hover:bg-orange-500/30'
+                : 'hover:bg-secondary/50 text-muted-foreground'
+            }`}
+            title="Enable firehose mode"
+          >
+            <Flame className="w-4 h-4" />
+          </button>
+        )}
         {/* Board toggle - hidden when board is open (close button takes its place) */}
         {!boardOpen && onToggleBoard && (
           <button
