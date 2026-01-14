@@ -50,6 +50,7 @@ export interface DeliverMessageMessage {
   content: string;
   sender: string;
   systemPrompt?: string;
+  mcpServers?: McpServerConfig[];
 }
 
 export interface SuspendAgentMessage {
@@ -244,7 +245,7 @@ export function createRuntimeProtocolHandlers(
       state,
       lastHeartbeat: timestamp,
     });
-    await broadcast(channelId, JSON.stringify(frame));
+    await broadcast(channelId, frame);
   }
 
   // ---------------------------------------------------------------------------

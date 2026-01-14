@@ -21,6 +21,7 @@ import type {
 } from './types.js';
 import { parseAgentId } from './types.js';
 import type { AgentStateManager } from './state.js';
+import { generateMessageId } from '@cast/core';
 
 // =============================================================================
 // Types
@@ -200,7 +201,7 @@ export class LocalRuntime implements AgentRuntime {
     const sent = this.connectionManager.sendCommand(this.runtimeId, {
       type: 'message',
       agentId,
-      messageId: this.generateMessageId(),
+      messageId: generateMessageId(),
       content: message.content,
       sender: 'backend',
       systemPrompt: message.systemPrompt,
@@ -336,10 +337,6 @@ export class LocalRuntime implements AgentRuntime {
   private computeWorkspacePath(agentId: string): string {
     const { spaceId, channelId, callsign } = parseAgentId(agentId);
     return `${this.workspaceBasePath}/${spaceId}/${channelId}/${callsign}`;
-  }
-
-  private generateMessageId(): string {
-    return `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   }
 
   private async emit(event: Parameters<RuntimeEventHandler>[0]): Promise<void> {

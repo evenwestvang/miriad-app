@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { ChevronRight, ChevronDown, Wrench, CheckCircle, XCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { ChevronRight, ChevronDown, CheckCircle, XCircle } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { Message } from '../../types'
 import { getToolRenderer } from './tool-renderers'
@@ -7,6 +7,8 @@ import { getToolRenderer } from './tool-renderers'
 interface ToolGroupProps {
   /** Array of consecutive tool_call and tool_result messages */
   messages: Message[]
+  /** Whether firehose mode is enabled (expands tool groups by default) */
+  firehoseMode?: boolean
 }
 
 interface ToolPair {
@@ -58,8 +60,13 @@ function formatOutput(output: unknown): string {
  * Collapsed: "▸ 5 tool calls  Read · Grep · Bash"
  * Expanded: Tree list of tool calls, each expandable for details
  */
-export function ToolGroup({ messages }: ToolGroupProps) {
-  const [expanded, setExpanded] = useState(false)
+export function ToolGroup({ messages, firehoseMode = false }: ToolGroupProps) {
+  const [expanded, setExpanded] = useState(firehoseMode)
+
+  // Sync expanded state when firehoseMode changes
+  useEffect(() => {
+    setExpanded(firehoseMode)
+  }, [firehoseMode])
 
   // Pair tool_calls with their corresponding tool_results
   const pairs = pairToolMessages(messages)
@@ -76,6 +83,19 @@ export function ToolGroup({ messages }: ToolGroupProps) {
     return <SingleToolItem pair={pairs[0]} />
   }
 
+  // Firehose mode - render all tools individually without grouping
+  if (firehoseMode) {
+    return (
+      <>
+        {pairs.map((pair) => (
+          <div key={pair.call.id} className="my-4">
+            <SingleToolItem pair={pair} />
+          </div>
+        ))}
+      </>
+    )
+  }
+
   return (
     <div className="my-4">
       {/* Collapsed header */}
@@ -88,7 +108,6 @@ export function ToolGroup({ messages }: ToolGroupProps) {
         ) : (
           <ChevronRight className="w-3 h-3 flex-shrink-0" />
         )}
-        <Wrench className="w-3.5 h-3.5 flex-shrink-0" />
         <span>
           {callCount} tool call{callCount !== 1 ? 's' : ''}
           {errorCount > 0 && (
@@ -232,7 +251,6 @@ function SingleToolItem({ pair }: { pair: ToolPair }) {
         ) : (
           <ChevronRight className="w-3 h-3 text-muted-foreground flex-shrink-0" />
         )}
-        <Wrench className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
         <span className="text-blue-400 font-medium">{toolName}</span>
         {argsPreview && (
           <span className="text-muted-foreground text-xs font-mono truncate">{argsPreview}</span>

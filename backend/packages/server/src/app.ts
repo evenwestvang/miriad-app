@@ -75,6 +75,7 @@ function createMessageStorageAdapter(storage: Storage): {
           since: options?.since,
           before: options?.before,
           limit: options?.limit,
+          includeToolCalls: true,
         });
 
         return stored.map((msg: StoredMessage) => ({

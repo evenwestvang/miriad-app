@@ -5,6 +5,7 @@ import {
   Moon,
   Settings,
 } from "lucide-react";
+import { ChannelSwitcher } from "./components/ChannelSwitcher";
 import {
   ThreadList,
   type ThreadWithState,
@@ -113,6 +114,8 @@ export function App() {
   const currentUser = authSession?.user.callsign || "user";
   const [isCreatingThread, setIsCreatingThread] = useState(false);
   const [roster, setRoster] = useState<RosterAgent[]>([]);
+  // Total channel cost (sum of all agents, including archived)
+  const [totalChannelCost, setTotalChannelCost] = useState(0);
   // Track which agents are "working" (sent messages but no idle frame yet)
   const [workingAgents, setWorkingAgents] = useState<Set<string>>(new Set());
   const [leader, setLeader] = useState<string | undefined>(undefined);
@@ -126,6 +129,10 @@ export function App() {
     const stored = localStorage.getItem("sidebar-open");
     return stored !== null ? JSON.parse(stored) : true;
   });
+  const [firehoseMode, setFirehoseMode] = useState(() => {
+    const stored = localStorage.getItem("firehose-mode");
+    return stored !== null ? JSON.parse(stored) : false;
+  });
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Artifact event counter - increment to trigger board refresh
   const [artifactEventTrigger, setArtifactEventTrigger] = useState(0);
@@ -133,6 +140,8 @@ export function App() {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   // Summon picker open state (controlled from MessageInput button)
   const [summonOpen, setSummonOpen] = useState(false);
+  // Channel switcher (Cmd-K) open state
+  const [channelSwitcherOpen, setChannelSwitcherOpen] = useState(false);
   // Recently dismissed agents (for warning when mentioning them)
   const [dismissedAgents, setDismissedAgents] = useState<Set<string>>(new Set());
   // Mobile navigation tab state
@@ -371,8 +380,11 @@ export function App() {
     });
   }, []);
 
-  // Cost frame handler - accumulates session cost per agent
+  // Cost frame handler - accumulates session cost per agent and total channel cost
   const handleCostFrame = useCallback((callsign: string, cost: CostInfo) => {
+    // Update total channel cost (includes all agents, even archived)
+    setTotalChannelCost((prev) => prev + cost.totalCostUsd);
+    // Update individual agent cost in roster
     setRoster((prev) => {
       const idx = prev.findIndex((a) => a.callsign === callsign);
       if (idx === -1) return prev; // Agent not in roster
@@ -551,13 +563,14 @@ export function App() {
     }
   }, [isSwitchingChannel]);
 
-  // Get newest cached message timestamp for incremental sync
-  const newestCachedTimestamp = selectedThread
+  // Get newest cached message ID for incremental sync
+  // ULIDs are lexicographically sortable (chronological), so we use the ID directly
+  const newestCachedMessageId = selectedThread
     ? (() => {
         const cachedMsgs = messageCache.get(selectedThread);
         if (cachedMsgs && cachedMsgs.length > 0) {
           // Messages are sorted by ULID, last one is newest
-          return cachedMsgs[cachedMsgs.length - 1].timestamp;
+          return cachedMsgs[cachedMsgs.length - 1].id;
         }
         return undefined;
       })()
@@ -584,7 +597,7 @@ export function App() {
     onSyncComplete: handleSyncComplete,
     currentUser,
     wsToken: authSession?.wsToken,
-    newestCachedTimestamp,
+    newestCachedMessageId,
   });
 
   // Set default agents (local Cikada runtime doesn't have /agents endpoint)
@@ -658,6 +671,7 @@ export function App() {
     // Don't clear messages - they're cached per channel
     // Only show switching state if we don't have cached messages for this channel
     setRoster([]);
+    setTotalChannelCost(0);
     setLeader(undefined);
     // Clear agent selection on channel switch
     setSelectedAgent(null);
@@ -718,14 +732,18 @@ export function App() {
 
           // Parse costs response (may fail for new channels with no costs)
           let costsByCallsign = new Map<string, number>();
+          let totalCost = 0;
           if (costsResponse.ok) {
             const costsData = await costsResponse.json();
             if (costsData.tally && Array.isArray(costsData.tally)) {
               for (const t of costsData.tally) {
                 costsByCallsign.set(t.callsign, t.totalCostUsd);
+                totalCost += t.totalCostUsd;
               }
             }
           }
+          // Update total channel cost (includes all agents, even archived)
+          setTotalChannelCost(totalCost);
 
           // Parse archived agents response
           if (archivedResponse.ok) {
@@ -832,6 +850,33 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("sidebar-open", JSON.stringify(sidebarOpen));
   }, [sidebarOpen]);
+
+  // Persist firehose mode to localStorage
+  useEffect(() => {
+    localStorage.setItem("firehose-mode", JSON.stringify(firehoseMode));
+  }, [firehoseMode]);
+
+  // Cmd-K keyboard shortcut for channel switcher
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd-K (Mac) or Ctrl-K (Windows/Linux)
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setChannelSwitcherOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Handle channel selection from switcher
+  const handleSwitchChannel = useCallback(
+    (channelId: string) => {
+      navigateToChannel(channelId);
+    },
+    [navigateToChannel],
+  );
 
   // Create a new channel (displayed as "thread" in UI) - legacy version
   const handleCreateThread = useCallback(
@@ -1045,10 +1090,10 @@ export function App() {
       <header className="h-12 flex items-center gap-2 md:gap-3 px-3 md:px-5 border-b border-border bg-card flex-shrink-0">
         {/* Branding */}
         <span className="font-semibold text-[#FF6600] text-sm tracking-[0.05em]">
-          CAST
+          MIRIAD
         </span>
 
-        {/* Mobile: Channel name inline after CAST */}
+        {/* Mobile: Channel name inline after logo */}
         {selectedThread && (
           <span className="md:hidden font-medium text-foreground text-sm truncate max-w-[120px]">
             #{currentThread?.agentName || "channel"}
@@ -1184,9 +1229,11 @@ export function App() {
                 isThinking={isWaitingForResponse}
                 boardOpen={boardOpen}
                 onToggleBoard={toggleBoard}
-                channelCost={roster.reduce((sum, a) => sum + (a.sessionCost || 0), 0)}
+                channelCost={totalChannelCost}
                 sidebarOpen={sidebarOpen}
                 onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+                firehoseMode={firehoseMode}
+                onToggleFirehose={() => setFirehoseMode(!firehoseMode)}
               />
               <MessageList
                 messages={messages}
@@ -1197,6 +1244,7 @@ export function App() {
                 roster={rosterWithWorkingState}
                 isSwitching={isSwitchingChannel}
                 isLoading={showLoadingSpinner}
+                firehoseMode={firehoseMode}
                 hasMoreMessages={hasMoreMessages}
                 isLoadingOlder={isLoadingOlder}
                 onRequestOlderMessages={requestOlderMessages}
@@ -1241,7 +1289,6 @@ export function App() {
                   channelId={selectedThread || undefined}
                   apiHost={API_HOST}
                   onSummon={() => setSummonOpen(true)}
-                  resetKey={selectedThread}
                   dismissedAgents={dismissedAgents}
                 />
               </div>
@@ -1298,6 +1345,15 @@ export function App() {
         onClose={() => setSettingsOpen(false)}
         apiHost={API_HOST}
         spaceId={authSession?.spaceId}
+      />
+
+      {/* Channel switcher (Cmd-K) */}
+      <ChannelSwitcher
+        isOpen={channelSwitcherOpen}
+        onClose={() => setChannelSwitcherOpen(false)}
+        channels={threads}
+        selectedChannelId={selectedThread}
+        onSelectChannel={handleSwitchChannel}
       />
     </div>
   );

@@ -99,7 +99,7 @@ const CAST_ROUTE_HINTS: Record<string, string> | null = process.env.CAST_ROUTE_H
 const CAST_API_URL = process.env.CAST_API_URL ?? "";
 const CAST_AUTH_TOKEN = process.env.CAST_AUTH_TOKEN ?? "";
 const WORKSPACE_BASE = process.env.WORKSPACE_DIR ?? "/workspace";
-const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS ?? String(10 * 60 * 1000), 10);
+const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS ?? String(30 * 60 * 1000), 10);
 
 // Derived values from agentId
 let AGENT_CHANNEL_ID = "";
@@ -393,15 +393,30 @@ async function processMessage(message: QueuedMessage): Promise<void> {
 
 /**
  * Process the message queue.
+ * Batches all queued messages into a single message to match legacy prototype behavior.
  */
 async function processQueue(): Promise<void> {
-  while (messageQueue.length > 0 && !isShuttingDown) {
-    const nextMessage = messageQueue.shift();
-    if (nextMessage) {
-      console.log(`[Server] Processing queued message (${messageQueue.length} remaining)`);
-      await processMessage(nextMessage);
-    }
+  if (messageQueue.length === 0) {
+    isProcessing = false;
+    idleMonitor.touch();
+    return;
   }
+
+  // Batch all queued messages together
+  const queuedMessages = [...messageQueue];
+  messageQueue.length = 0; // Clear the queue
+
+  console.log(`[Server] Processing ${queuedMessages.length} queued messages as a batch`);
+
+  // Combine all message contents with separator
+  const combinedContent = queuedMessages.map(msg => msg.content).join('\n\n---\n\n');
+
+  // Process as a single message (use first message's metadata)
+  await processMessage({
+    ...queuedMessages[0],
+    content: combinedContent,
+  });
+
   isProcessing = false;
   idleMonitor.touch();
 }

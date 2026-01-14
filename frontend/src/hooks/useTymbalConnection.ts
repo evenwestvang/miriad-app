@@ -144,8 +144,8 @@ interface UseTymbalConnectionOptions {
   currentUser?: string
   /** Pre-fetched WebSocket auth token (avoids re-fetch on every channel switch) */
   wsToken?: string
-  /** Timestamp of newest cached message - use for incremental sync */
-  newestCachedTimestamp?: string
+  /** ID (ULID) of newest cached message - use for incremental sync */
+  newestCachedMessageId?: string
 }
 
 interface PendingMessage {
@@ -171,7 +171,7 @@ export function useTymbalConnection({
   onSyncComplete,
   currentUser = 'user',
   wsToken: providedWsToken,
-  newestCachedTimestamp,
+  newestCachedMessageId,
 }: UseTymbalConnectionOptions) {
   const [connected, setConnected] = useState(false)
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false)
@@ -559,13 +559,13 @@ export function useTymbalConnection({
   // Track the desired channel (for onopen to read latest value)
   const desiredChannelRef = useRef<string | null>(channelId)
 
-  // Track newest cached timestamp per channel for incremental sync
-  const newestCachedTimestampRef = useRef<string | undefined>(newestCachedTimestamp)
-  newestCachedTimestampRef.current = newestCachedTimestamp
+  // Track newest cached message ID per channel for incremental sync
+  const newestCachedMessageIdRef = useRef<string | undefined>(newestCachedMessageId)
+  newestCachedMessageIdRef.current = newestCachedMessageId
 
   // Send sync request to switch/sync channel
   const sendSyncRequest = useCallback((targetChannelId: string) => {
-    console.log(`[ChannelSwitch] sendSyncRequest called for ${targetChannelId}, newestCachedTimestamp=${newestCachedTimestampRef.current}`)
+    console.log(`[ChannelSwitch] sendSyncRequest called for ${targetChannelId}, newestCachedMessageId=${newestCachedMessageIdRef.current}`)
     const ws = wsRef.current
     if (!ws) {
       console.log(`[ChannelSwitch] sendSyncRequest: ws is null`)
@@ -580,12 +580,12 @@ export function useTymbalConnection({
       request: 'sync',
       channelId: targetChannelId,
     }
-    // Use cached timestamp for incremental sync if available
-    // newestCachedTimestampRef.current is computed for the target channel in App.tsx
+    // Use cached message ID (ULID) for incremental sync if available
+    // newestCachedMessageIdRef.current is computed for the target channel in App.tsx
     // If undefined, this is a new/uncached channel - fetch full history
-    if (newestCachedTimestampRef.current) {
-      syncRequest.since = newestCachedTimestampRef.current
-      console.log(`[ChannelSwitch] Using cached timestamp for incremental sync: ${newestCachedTimestampRef.current}`)
+    if (newestCachedMessageIdRef.current) {
+      syncRequest.since = newestCachedMessageIdRef.current
+      console.log(`[ChannelSwitch] Using cached message ID for incremental sync: ${newestCachedMessageIdRef.current}`)
     }
     // Note: lastTimestampRef is for live updates on same channel, not used for channel switches
     if (providedWsToken) {

@@ -23,10 +23,59 @@ interface MessageInputProps {
   channelId?: string
   apiHost?: string
   onSummon?: () => void
-  /** Reset key - change this to clear input state (e.g., on channel switch) */
-  resetKey?: string | number
   /** Set of callsigns for recently dismissed agents (to warn when mentioning) */
   dismissedAgents?: Set<string>
+}
+
+// localStorage key for message input drafts
+const MESSAGE_DRAFT_KEY = 'miriad:messageDrafts'
+
+interface MessageDraft {
+  content: string
+  cursorPosition: number
+}
+
+function getMessageDrafts(): Record<string, MessageDraft> {
+  try {
+    const stored = localStorage.getItem(MESSAGE_DRAFT_KEY)
+    return stored ? JSON.parse(stored) : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveMessageDraft(channelId: string, draft: MessageDraft): void {
+  try {
+    const drafts = getMessageDrafts()
+    if (draft.content.trim()) {
+      drafts[channelId] = draft
+    } else {
+      // Remove empty drafts
+      delete drafts[channelId]
+    }
+    localStorage.setItem(MESSAGE_DRAFT_KEY, JSON.stringify(drafts))
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function getMessageDraft(channelId: string): MessageDraft | null {
+  try {
+    const drafts = getMessageDrafts()
+    return drafts[channelId] || null
+  } catch {
+    return null
+  }
+}
+
+function clearMessageDraft(channelId: string): void {
+  try {
+    const drafts = getMessageDrafts()
+    delete drafts[channelId]
+    localStorage.setItem(MESSAGE_DRAFT_KEY, JSON.stringify(drafts))
+  } catch {
+    // Ignore storage errors
+  }
 }
 
 // Slash commands configuration
@@ -46,7 +95,6 @@ export function MessageInput({
   channelId,
   apiHost,
   onSummon,
-  resetKey,
   dismissedAgents = new Set(),
 }: MessageInputProps) {
   const [content, setContent] = useState('')
@@ -75,13 +123,44 @@ export function MessageInput({
 
   const { findMentionTrigger, getOptionsCount, getOptionAtIndex } = useMentionAutocomplete(roster)
 
-  // Reset input state when resetKey changes (e.g., channel switch)
+  // Track previous channelId to save draft before switching
+  const prevChannelIdRef = useRef<string | undefined>(channelId)
+
+  // Load/save draft on channel switch
   useEffect(() => {
-    setContent('')
+    const prevChannelId = prevChannelIdRef.current
+
+    // Save draft for previous channel (if there was content)
+    if (prevChannelId && prevChannelId !== channelId) {
+      const cursorPos = textareaRef.current?.selectionStart ?? content.length
+      saveMessageDraft(prevChannelId, { content, cursorPosition: cursorPos })
+    }
+
+    // Load draft for new channel
+    if (channelId) {
+      const draft = getMessageDraft(channelId)
+      if (draft) {
+        setContent(draft.content)
+        // Restore cursor position after content is set
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            textareaRef.current.setSelectionRange(draft.cursorPosition, draft.cursorPosition)
+          }
+        })
+      } else {
+        setContent('')
+      }
+    } else {
+      setContent('')
+    }
+
+    // Reset UI state on channel switch
     setShowAutocomplete(false)
     setShowSlashMenu(false)
     setShowAgentPicker(null)
-  }, [resetKey])
+
+    prevChannelIdRef.current = channelId
+  }, [channelId]) // Note: intentionally not including 'content' to avoid infinite loop
 
   // Agents that can be paused (online and not paused)
   const pausableAgents = useMemo(() =>
@@ -256,7 +335,17 @@ export function MessageInput({
     setContent(leadingMentions) // Pre-populate with sticky mentions
     setShowAutocomplete(false)
     setShowSlashMenu(false)
-  }, [content, onSend, extractLeadingMentions])
+
+    // Clear or update draft after sending
+    if (channelId) {
+      if (leadingMentions) {
+        // Save sticky mentions as the new draft
+        saveMessageDraft(channelId, { content: leadingMentions, cursorPosition: leadingMentions.length })
+      } else {
+        clearMessageDraft(channelId)
+      }
+    }
+  }, [content, onSend, extractLeadingMentions, channelId])
 
   // Insert mention at the trigger position
   const insertMention = useCallback((mention: string) => {
@@ -446,6 +535,39 @@ export function MessageInput({
     }
   }, [content])
 
+  // Save draft on blur
+  const handleBlur = useCallback(() => {
+    if (channelId) {
+      const cursorPos = textareaRef.current?.selectionStart ?? content.length
+      saveMessageDraft(channelId, { content, cursorPosition: cursorPos })
+    }
+  }, [channelId, content])
+
+  // Debounced save on content change (every 1 second of typing pause)
+  useEffect(() => {
+    if (!channelId) return
+
+    const timeoutId = setTimeout(() => {
+      const cursorPos = textareaRef.current?.selectionStart ?? content.length
+      saveMessageDraft(channelId, { content, cursorPosition: cursorPos })
+    }, 1000)
+
+    return () => clearTimeout(timeoutId)
+  }, [channelId, content])
+
+  // Save draft before page unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (channelId && content.trim()) {
+        const cursorPos = textareaRef.current?.selectionStart ?? content.length
+        saveMessageDraft(channelId, { content, cursorPosition: cursorPos })
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [channelId, content])
+
   // Update agent picker query when typing in picker mode
   useEffect(() => {
     if (showAgentPicker) {
@@ -616,6 +738,7 @@ export function MessageInput({
             value={content}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
             placeholder={showAgentPicker
               ? `Type to filter ${showAgentPicker === 'pause' ? 'active' : 'paused'} agents...`
               : placeholder

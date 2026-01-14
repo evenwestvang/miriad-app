@@ -221,6 +221,8 @@ interface MessageListProps {
   isSwitching?: boolean;
   /** Show loading spinner (delayed - only after 500ms) */
   isLoading?: boolean;
+  /** Whether firehose mode is enabled (expands tool groups by default) */
+  firehoseMode?: boolean;
   /** Whether there are more older messages to load */
   hasMoreMessages?: boolean;
   /** Whether currently loading older messages */
@@ -243,6 +245,7 @@ export function MessageList({
   roster = [],
   isSwitching = false,
   isLoading = false,
+  firehoseMode = false,
   hasMoreMessages = true,
   isLoadingOlder = false,
   onRequestOlderMessages,
@@ -515,23 +518,43 @@ export function MessageList({
           )}
         {(() => {
           const groupedItems = groupMessages(messages);
+
+          // Helper to get the last message of a grouped item (for sender comparison)
+          const getLastMessageOfItem = (item: MessageOrGroup): Message | null => {
+            if (item.type === "tool_group") {
+              return item.messages[item.messages.length - 1] || null;
+            }
+            return item.message;
+          };
+
+          // Helper to get the first message of a grouped item
+          const getFirstMessageOfItem = (item: MessageOrGroup): Message | null => {
+            if (item.type === "tool_group") {
+              return item.messages[0] || null;
+            }
+            return item.message;
+          };
+
           return groupedItems.map((item, groupIndex) => {
             const isLastItem = groupIndex === groupedItems.length - 1;
+            const prevItem = groupIndex > 0 ? groupedItems[groupIndex - 1] : null;
+            const nextItem = groupIndex < groupedItems.length - 1 ? groupedItems[groupIndex + 1] : null;
+
+            // Get the last message from the previous item (for header/margin decisions)
+            const prevLastMessage = prevItem ? getLastMessageOfItem(prevItem) : null;
 
             if (item.type === "tool_group") {
               // Render grouped tool messages
               const firstMsg = item.messages[0];
               const lastMsg = item.messages[item.messages.length - 1];
 
-              // Check if next message starts a new group (determines bottom margin)
-              const lastIndex = item.startIndex + item.messages.length - 1;
-              const nextMessage =
-                lastIndex < messages.length - 1 ? messages[lastIndex + 1] : null;
+              // Check if next item starts a new sender group (determines bottom margin)
+              const nextFirstMessage = nextItem ? getFirstMessageOfItem(nextItem) : null;
               const isLastInGroup =
-                !nextMessage ||
-                nextMessage.sender !== lastMsg.sender ||
-                nextMessage.senderType !== lastMsg.senderType ||
-                new Date(nextMessage.timestamp).getTime() -
+                !nextFirstMessage ||
+                nextFirstMessage.sender !== lastMsg.sender ||
+                nextFirstMessage.senderType !== lastMsg.senderType ||
+                new Date(nextFirstMessage.timestamp).getTime() -
                   new Date(lastMsg.timestamp).getTime() >
                   20 * 60 * 1000;
 
@@ -544,34 +567,31 @@ export function MessageList({
                   data-message-id={firstMsg.id}
                   className={marginClass}
                 >
-                  <ToolGroup messages={item.messages} />
+                  <ToolGroup messages={item.messages} firehoseMode={firehoseMode} />
                 </div>
               );
             }
 
             // Regular message
             const message = item.message;
-            const index = item.index;
 
             // Check if this message should show the header
-            // Show header if: first message, different sender, or >20 min gap
-            const prevMessage = index > 0 ? messages[index - 1] : null;
+            // Show header if: first message, different sender from previous, or >20 min gap
             const showHeader =
-              !prevMessage ||
-              prevMessage.sender !== message.sender ||
-              prevMessage.senderType !== message.senderType ||
+              !prevLastMessage ||
+              prevLastMessage.sender !== message.sender ||
+              prevLastMessage.senderType !== message.senderType ||
               new Date(message.timestamp).getTime() -
-                new Date(prevMessage.timestamp).getTime() >
+                new Date(prevLastMessage.timestamp).getTime() >
                 20 * 60 * 1000;
 
-            // Check if next message starts a new group (determines bottom margin)
-            const nextMessage =
-              index < messages.length - 1 ? messages[index + 1] : null;
+            // Check if next item starts a new sender group (determines bottom margin)
+            const nextFirstMessage = nextItem ? getFirstMessageOfItem(nextItem) : null;
             const isLastInGroup =
-              !nextMessage ||
-              nextMessage.sender !== message.sender ||
-              nextMessage.senderType !== message.senderType ||
-              new Date(nextMessage.timestamp).getTime() -
+              !nextFirstMessage ||
+              nextFirstMessage.sender !== message.sender ||
+              nextFirstMessage.senderType !== message.senderType ||
+              new Date(nextFirstMessage.timestamp).getTime() -
                 new Date(message.timestamp).getTime() >
                 20 * 60 * 1000;
 
@@ -682,17 +702,36 @@ type MessageOrGroup =
 function groupMessages(messages: Message[]): MessageOrGroup[] {
   const result: MessageOrGroup[] = [];
 
+  // Filter out send_message and set_status tool calls (redundant - they echo into the thread)
+  const filteredMessages = messages.filter(msg => {
+    if (msg.type === "tool_call" &&
+        (msg.toolName === "mcp__cast__send_message" || msg.toolName === "mcp__cast__set_status")) {
+      return false;
+    }
+    // Also filter out the corresponding results
+    if (msg.type === "tool_result") {
+      const callMsg = messages.find(m =>
+        m.type === "tool_call" &&
+        (m.toolCallId === msg.toolResultCallId || m.id === msg.toolResultCallId)
+      );
+      if (callMsg?.toolName === "mcp__cast__send_message" || callMsg?.toolName === "mcp__cast__set_status") {
+        return false;
+      }
+    }
+    return true;
+  });
+
   // First pass: collect all tool_results by their call ID for lookup
   const resultsByCallId = new Map<string, Message>();
-  for (const msg of messages) {
+  for (const msg of filteredMessages) {
     if (msg.type === "tool_result" && msg.toolResultCallId) {
       resultsByCallId.set(msg.toolResultCallId, msg);
     }
   }
 
   let i = 0;
-  while (i < messages.length) {
-    const msg = messages[i];
+  while (i < filteredMessages.length) {
+    const msg = filteredMessages[i];
 
     // Skip tool_result messages - they get paired with their calls
     if (msg.type === "tool_result") {
@@ -706,8 +745,8 @@ function groupMessages(messages: Message[]): MessageOrGroup[] {
       const toolCalls: Message[] = [msg];
       let j = i + 1;
 
-      while (j < messages.length) {
-        const nextMsg = messages[j];
+      while (j < filteredMessages.length) {
+        const nextMsg = filteredMessages[j];
         // Skip tool_results when looking for consecutive calls
         if (nextMsg.type === "tool_result") {
           j++;

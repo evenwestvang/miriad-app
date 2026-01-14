@@ -107,7 +107,7 @@ export function LoginPage({ onLogin, apiHost }: LoginPageProps) {
       <div className="max-w-lg w-full space-y-8">
         {/* Header */}
         <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold text-foreground">CAST</h1>
+          <h1 className="text-3xl font-bold text-foreground">Miriad</h1>
           <p className="text-muted-foreground">
             Select a space or create a new one
           </p>

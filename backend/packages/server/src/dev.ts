@@ -134,6 +134,7 @@ async function main() {
           limit: effectiveLimit,
           // Get newest messages for initial sync (no cursors), oldest-first for incremental
           newestFirst: !since && !before,
+          includeToolCalls: true,
         });
         const t1 = performance.now();
 

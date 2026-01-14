@@ -8,6 +8,7 @@
 import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import { homedir, hostname, platform } from 'node:os';
 import { dirname, join } from 'node:path';
+import { ulid } from 'ulid';
 import type { RuntimeConfig, BootstrapResponse, ParsedConnectionString } from './types.js';
 
 // =============================================================================
@@ -153,51 +154,23 @@ export function getConfigPath(): string {
 // ULID Generation
 // =============================================================================
 
-const ENCODING = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-
+/**
+ * Generate a ULID for message/frame IDs.
+ * Uses the standard ulid library which maintains monotonicity within the same
+ * millisecond (increments random portion instead of generating new random).
+ */
 export function generateId(): string {
-  const now = Date.now();
-
-  // Encode timestamp (48 bits -> 10 chars)
-  let timestamp = '';
-  let t = now;
-  for (let i = 0; i < 10; i++) {
-    timestamp = ENCODING[t % 32] + timestamp;
-    t = Math.floor(t / 32);
-  }
-
-  // Generate randomness (80 bits -> 16 chars)
-  let random = '';
-  for (let i = 0; i < 16; i++) {
-    random += ENCODING[Math.floor(Math.random() * 32)];
-  }
-
-  return timestamp + random;
+  return ulid();
 }
 
 /**
  * Generate a runtime ID (rt_ prefix).
- * Total length must be <= 26 chars to fit VARCHAR(26) column.
- * Format: rt_ (3 chars) + 10 char timestamp + 13 char random = 26 chars
+ * Uses ULID for the unique portion, truncated to fit VARCHAR(26) column.
+ * Format: rt_ (3 chars) + 23 char ULID fragment = 26 chars
  */
 export function generateRuntimeId(): string {
-  const now = Date.now();
-
-  // Encode timestamp (48 bits -> 10 chars)
-  let timestamp = '';
-  let t = now;
-  for (let i = 0; i < 10; i++) {
-    timestamp = ENCODING[t % 32] + timestamp;
-    t = Math.floor(t / 32);
-  }
-
-  // Generate randomness (52 bits -> 13 chars, to fit in 26 total)
-  let random = '';
-  for (let i = 0; i < 13; i++) {
-    random += ENCODING[Math.floor(Math.random() * 32)];
-  }
-
-  return `rt_${timestamp}${random}`;
+  // Take first 23 chars of ULID to fit in 26 char limit with rt_ prefix
+  return `rt_${ulid().substring(0, 23)}`;
 }
 
 // =============================================================================

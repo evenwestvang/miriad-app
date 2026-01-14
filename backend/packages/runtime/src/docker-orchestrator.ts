@@ -120,7 +120,8 @@ export class DockerRuntime implements AgentRuntime {
     );
 
     // Compute callback URL for this container
-    const callbackUrl = `http://host.docker.internal:${port}`;
+    // Use localhost because the backend (running on host) will connect to the mapped port
+    const callbackUrl = `http://localhost:${port}`;
 
     // Build docker run command with v3.0 env vars
     const containerName = `cast-agent-${this.hashAgentId(agentId)}`;

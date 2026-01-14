@@ -414,8 +414,9 @@ describe('createAgentInvokerAdapter', () => {
       expect(mockAgentManager.sendMessageCalls).toHaveLength(0);
     });
 
-    it('sends activate via WebSocket when agent has no recent heartbeat', async () => {
+    it('sends message via WebSocket even when agent has no recent heartbeat', async () => {
       // Agent has runtime_id, runtime is online, but agent has no heartbeat
+      // LocalRuntime simplification: always send 'message' directly - AgentManager auto-activates
       mockStorage = createMockStorage({
         rosterRuntimeIds: { fox: RUNTIME_ID },
         rosterCallbackUrls: { fox: null },
@@ -435,10 +436,10 @@ describe('createAgentInvokerAdapter', () => {
 
       await invoker.invokeAgents('channel-1', ['fox'], testMessage);
 
-      // Should send activate message via runtimeSend
+      // Should send message directly - AgentManager.deliverMessage auto-activates if needed
       expect(mockRuntimeSend.calls).toHaveLength(1);
       const parsedMessage = JSON.parse(mockRuntimeSend.calls[0].message);
-      expect(parsedMessage.type).toBe('activate');
+      expect(parsedMessage.type).toBe('message');
       expect(parsedMessage.agentId).toBe('space-1:channel-1:fox');
       expect(mockAgentManager.sendMessageCalls).toHaveLength(0);
     });
