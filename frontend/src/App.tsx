@@ -560,13 +560,14 @@ export function App() {
     }
   }, [isSwitchingChannel]);
 
-  // Get newest cached message timestamp for incremental sync
-  const newestCachedTimestamp = selectedThread
+  // Get newest cached message ID for incremental sync
+  // ULIDs are lexicographically sortable (chronological), so we use the ID directly
+  const newestCachedMessageId = selectedThread
     ? (() => {
         const cachedMsgs = messageCache.get(selectedThread);
         if (cachedMsgs && cachedMsgs.length > 0) {
           // Messages are sorted by ULID, last one is newest
-          return cachedMsgs[cachedMsgs.length - 1].timestamp;
+          return cachedMsgs[cachedMsgs.length - 1].id;
         }
         return undefined;
       })()
@@ -593,7 +594,7 @@ export function App() {
     onSyncComplete: handleSyncComplete,
     currentUser,
     wsToken: authSession?.wsToken,
-    newestCachedTimestamp,
+    newestCachedMessageId,
   });
 
   // Set default agents (local Cikada runtime doesn't have /agents endpoint)
