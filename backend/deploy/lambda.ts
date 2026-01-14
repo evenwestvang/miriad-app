@@ -37,6 +37,9 @@ console.log(`[Lambda] FLY_API_TOKEN: length=${FLY_API_TOKEN.length}, starts_with
 const FLY_APP_NAME = process.env.FLY_APP_NAME ?? 'cast-containers-staging';
 const FLY_REGION = process.env.FLY_REGION ?? 'iad';
 const FLY_IMAGE = process.env.FLY_IMAGE ?? '';
+const FLY_MEMORY_MB = parseInt(process.env.FLY_MEMORY_MB ?? '4096', 10);
+const FLY_CPUS = parseInt(process.env.FLY_CPUS ?? '4', 10);
+const FLY_CPU_KIND = (process.env.FLY_CPU_KIND ?? 'performance') as 'shared' | 'performance';
 const CAST_API_URL = process.env.CAST_API_URL ?? '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? '';
 const SPACE_ID = process.env.SPACE_ID ?? 'default';
@@ -106,8 +109,11 @@ if (FLY_API_TOKEN && FLY_IMAGE && CAST_API_URL && ANTHROPIC_API_KEY) {
     anthropicApiKey: ANTHROPIC_API_KEY,
     storage,
     spaceId: SPACE_ID,
+    memoryMb: FLY_MEMORY_MB,
+    cpus: FLY_CPUS,
+    cpuKind: FLY_CPU_KIND,
   });
-  console.log(`[Lambda] FlyRuntime initialized: app=${FLY_APP_NAME}, region=${FLY_REGION}`);
+  console.log(`[Lambda] FlyRuntime initialized: app=${FLY_APP_NAME}, region=${FLY_REGION}, ${FLY_CPUS} ${FLY_CPU_KIND} CPUs, ${FLY_MEMORY_MB}MB`);
 } else {
   // Placeholder runtime when Fly.io is not configured
   console.warn('[Lambda] FlyRuntime not configured - missing env vars. Using placeholder.');

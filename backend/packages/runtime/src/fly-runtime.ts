@@ -49,10 +49,12 @@ export interface FlyRuntimeConfig {
   spaceId: string;
   /** Activation timeout in ms (default: 180s per spec) */
   activationTimeoutMs?: number;
-  /** Machine memory in MB (default: 512) */
+  /** Machine memory in MB (default: 4096) */
   memoryMb?: number;
-  /** Machine CPUs (default: 1) */
+  /** Machine CPUs (default: 4) */
   cpus?: number;
+  /** CPU type: 'shared' or 'performance' (default: 'performance') */
+  cpuKind?: 'shared' | 'performance';
   /** Event handler for status updates */
   onEvent?: RuntimeEventHandler;
 }
@@ -262,11 +264,12 @@ function isHeartbeatStale(lastHeartbeat: string | null | undefined): boolean {
 // =============================================================================
 
 export class FlyRuntime implements AgentRuntime {
-  private readonly config: Required<Omit<FlyRuntimeConfig, 'onEvent' | 'activationTimeoutMs' | 'memoryMb' | 'cpus'>> & {
+  private readonly config: Required<Omit<FlyRuntimeConfig, 'onEvent' | 'activationTimeoutMs' | 'memoryMb' | 'cpus' | 'cpuKind'>> & {
     onEvent?: RuntimeEventHandler;
     activationTimeoutMs: number;
     memoryMb: number;
     cpus: number;
+    cpuKind: 'shared' | 'performance';
   };
 
   private readonly flyClient: FlyClient;
@@ -285,8 +288,9 @@ export class FlyRuntime implements AgentRuntime {
       storage: config.storage,
       spaceId: config.spaceId,
       activationTimeoutMs: config.activationTimeoutMs ?? 180_000, // 180s per spec
-      memoryMb: config.memoryMb ?? 512,
-      cpus: config.cpus ?? 1,
+      memoryMb: config.memoryMb ?? 4096,
+      cpus: config.cpus ?? 4,
+      cpuKind: config.cpuKind ?? 'performance',
       onEvent: config.onEvent,
     };
 
@@ -296,6 +300,7 @@ export class FlyRuntime implements AgentRuntime {
     console.log(`[FlyRuntime] App: ${this.config.flyAppName}`);
     console.log(`[FlyRuntime] Region: ${this.config.flyRegion}`);
     console.log(`[FlyRuntime] Image: ${this.config.imageName}`);
+    console.log(`[FlyRuntime] Machine spec: ${this.config.cpus} ${this.config.cpuKind} CPUs, ${this.config.memoryMb}MB RAM`);
   }
 
   // ---------------------------------------------------------------------------
@@ -390,7 +395,7 @@ export class FlyRuntime implements AgentRuntime {
       image: this.config.imageName,
       env,
       guest: {
-        cpu_kind: 'shared',
+        cpu_kind: this.config.cpuKind,
         cpus: this.config.cpus,
         memory_mb: this.config.memoryMb,
       },
