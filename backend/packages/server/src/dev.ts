@@ -235,7 +235,7 @@ async function main() {
       console.error('❌ AGENT_RUNTIME=fly requires FLY_API_TOKEN and FLY_APP_NAME');
       process.exit(1);
     }
-    const flyMemoryMb = parseInt(process.env.FLY_MEMORY_MB ?? '4096', 10);
+    const flyMemoryMb = parseInt(process.env.FLY_MEMORY_MB ?? '8192', 10);
     const flyCpus = parseInt(process.env.FLY_CPUS ?? '4', 10);
     const flyCpuKind = (process.env.FLY_CPU_KIND ?? 'performance') as 'shared' | 'performance';
     runtime = new FlyRuntime({

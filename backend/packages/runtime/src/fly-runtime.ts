@@ -49,7 +49,7 @@ export interface FlyRuntimeConfig {
   spaceId: string;
   /** Activation timeout in ms (default: 180s per spec) */
   activationTimeoutMs?: number;
-  /** Machine memory in MB (default: 4096) */
+  /** Machine memory in MB (default: 8192, minimum for performance CPUs) */
   memoryMb?: number;
   /** Machine CPUs (default: 4) */
   cpus?: number;
@@ -288,7 +288,7 @@ export class FlyRuntime implements AgentRuntime {
       storage: config.storage,
       spaceId: config.spaceId,
       activationTimeoutMs: config.activationTimeoutMs ?? 180_000, // 180s per spec
-      memoryMb: config.memoryMb ?? 4096,
+      memoryMb: config.memoryMb ?? 8192, // 8GB minimum for performance CPUs
       cpus: config.cpus ?? 4,
       cpuKind: config.cpuKind ?? 'performance',
       onEvent: config.onEvent,
