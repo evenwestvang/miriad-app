@@ -639,6 +639,10 @@ Resources:
               - s3:GetObject
               - s3:DeleteObject
             Resource: !Sub ${AssetsBucket.Arn}/*
+          - Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !Sub ${AssetsBucket.Arn}
 
   # Lambda execution role (referenced by policy above)
   ApiFunctionRole:
