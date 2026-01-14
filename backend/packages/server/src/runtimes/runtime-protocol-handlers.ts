@@ -244,7 +244,7 @@ export function createRuntimeProtocolHandlers(
       state,
       lastHeartbeat: timestamp,
     });
-    await broadcast(channelId, JSON.stringify(frame));
+    await broadcast(channelId, frame);
   }
 
   // ---------------------------------------------------------------------------

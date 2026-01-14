@@ -99,7 +99,7 @@ const CAST_ROUTE_HINTS: Record<string, string> | null = process.env.CAST_ROUTE_H
 const CAST_API_URL = process.env.CAST_API_URL ?? "";
 const CAST_AUTH_TOKEN = process.env.CAST_AUTH_TOKEN ?? "";
 const WORKSPACE_BASE = process.env.WORKSPACE_DIR ?? "/workspace";
-const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS ?? String(10 * 60 * 1000), 10);
+const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS ?? String(30 * 60 * 1000), 10);
 
 // Derived values from agentId
 let AGENT_CHANNEL_ID = "";

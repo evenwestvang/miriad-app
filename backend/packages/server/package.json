@@ -21,6 +21,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/dev.ts",
+    "dev:no-watch": "tsx src/dev.ts",
     "typecheck": "tsc --noEmit",
     "test:local-runtime": "tsx test/local-runtime-e2e.ts"
   },
