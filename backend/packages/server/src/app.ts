@@ -17,7 +17,7 @@ import { createMessageRoutes, type MessageStorage, type RosterProvider, type Mes
 import { createCheckinRoutes, broadcastAgentState } from './handlers/checkin.js';
 import { createMcpRoutes } from './handlers/mcp-http.js';
 import { createArtifactRoutes } from './handlers/artifacts.js';
-import { createFilesystemAssetStorage } from './assets/index.js';
+import { createAssetStorage } from './assets/index.js';
 import type { ConnectionManager } from './websocket/index.js';
 import { AgentManager, createAgentInvokerAdapter } from './agents/index.js';
 import { createDevAuthRoutes, createWorkOSAuthRoutes, requireAuth, getSpaceId, generateContainerToken } from './auth/index.js';
@@ -1471,8 +1471,8 @@ export function createApp(options: AppOptions): Hono {
   });
   app.route('/agents', checkinRoutes);
 
-  // Asset storage for binary files
-  const assetStorage = createFilesystemAssetStorage();
+  // Asset storage for binary files (uses factory to select backend based on env)
+  const assetStorage = createAssetStorage();
 
   // ---------------------------------------------------------------------------
   // /boards/:channel/:slug - PowPow-compatible artifact content serving
