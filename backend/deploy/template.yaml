@@ -195,6 +195,7 @@ Resources:
           - 'http://localhost:5173'
           - 'https://app.staging.caststack.ai'
           - 'https://app.caststack.ai'
+          - 'https://miriad.tech'
         AllowHeaders:
           - Content-Type
           - Authorization

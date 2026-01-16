@@ -119,14 +119,44 @@ export async function parseSession(c: Context): Promise<SessionData | null> {
 }
 
 /**
+ * Get the cookie domain based on FRONTEND_URL or STAGE.
+ * Returns undefined for localhost (no domain scoping needed).
+ */
+function getCookieDomain(): string | undefined {
+  const frontendUrl = process.env.FRONTEND_URL;
+  if (frontendUrl) {
+    try {
+      const url = new URL(frontendUrl);
+      const hostname = url.hostname;
+      // For localhost, don't set domain
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return undefined;
+      }
+      // Extract root domain (e.g., miriad.tech from app.miriad.tech)
+      const parts = hostname.split('.');
+      if (parts.length >= 2) {
+        return '.' + parts.slice(-2).join('.');
+      }
+      return '.' + hostname;
+    } catch {
+      // Fall through to default
+    }
+  }
+  // Fallback for staging/prod without FRONTEND_URL
+  const stage = process.env.STAGE;
+  if (stage === 'stag' || stage === 'prod') {
+    return '.caststack.ai';
+  }
+  return undefined;
+}
+
+/**
  * Set the session cookie on the response.
  *
- * Cookie is scoped to .caststack.ai so it's shared between:
- * - api.staging.caststack.ai (backend)
- * - app.staging.caststack.ai (frontend)
- * - api.caststack.ai / app.caststack.ai (production)
- *
- * In dev (localhost), we omit the domain so cookie is scoped to localhost.
+ * Cookie domain is derived from FRONTEND_URL to support multiple deployments:
+ * - miriad.tech (production)
+ * - caststack.ai (legacy)
+ * - localhost (development)
  */
 export function setSessionCookie(c: Context, token: string): void {
   const isProduction = process.env.NODE_ENV === 'production' ||
@@ -138,7 +168,7 @@ export function setSessionCookie(c: Context, token: string): void {
     secure: isProduction,
     sameSite: 'Lax',
     path: '/',
-    domain: isProduction ? '.caststack.ai' : undefined,
+    domain: getCookieDomain(),
     maxAge: Math.floor(SESSION_DURATION_MS / 1000),
   });
 }
@@ -147,13 +177,9 @@ export function setSessionCookie(c: Context, token: string): void {
  * Clear the session cookie.
  */
 export function clearSessionCookie(c: Context): void {
-  const isProduction = process.env.NODE_ENV === 'production' ||
-    process.env.STAGE === 'stag' ||
-    process.env.STAGE === 'prod';
-
   deleteCookie(c, COOKIE_NAME, {
     path: '/',
-    domain: isProduction ? '.caststack.ai' : undefined,
+    domain: getCookieDomain(),
   });
 }
 
