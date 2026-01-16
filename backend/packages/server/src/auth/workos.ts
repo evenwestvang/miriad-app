@@ -238,6 +238,13 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
         code,
       });
 
+      // Check domain restriction if configured
+      const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN;
+      if (allowedDomain && !workosUser.email.endsWith(`@${allowedDomain}`)) {
+        console.log(`[WorkOS] Rejected login from ${workosUser.email} - not in allowed domain ${allowedDomain}`);
+        return c.redirect('https://miriad.systems');
+      }
+
       // Parse state to get returnTo
       let returnTo = '/';
       if (state) {
