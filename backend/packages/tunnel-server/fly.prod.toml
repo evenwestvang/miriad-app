@@ -1,0 +1,53 @@
+# Fly.io configuration for cast-tunnel-server (PRODUCTION)
+
+app = "cast-tunnel-prod"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# HTTPS traffic (user requests to tunneled services)
+# Hono proxy receives these and routes to appropriate rathole port
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false  # Always running - tunnels need persistent availability
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 1000
+    soft_limit = 800
+
+# TCP traffic (rathole control connections from containers)
+# Containers connect here to establish tunnels
+[[services]]
+  internal_port = 2333
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 2333
+
+  [[services.tcp_checks]]
+    interval = "10s"
+    timeout = "2s"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  RATHOLE_CONTROL_PORT = "2333"
+  RATHOLE_CONFIG_DIR = "/etc/rathole"
+  BASE_SERVICE_PORT = "10000"
+  # Use .fly.dev hostname for TCP control connections
+  # Custom domains only route HTTP, not raw TCP on port 2333
+  RATHOLE_CONTROL_HOST = "cast-tunnel-prod.fly.dev"
+
+# Fly.io VM sizing - minimal for this lightweight service
+# IMPORTANT: Single instance only - rathole state is in-memory and not shared.
+# Multi-instance would require shared state (Redis/Postgres) for HA.
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+  count = 1
