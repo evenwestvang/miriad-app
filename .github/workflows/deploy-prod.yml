@@ -80,6 +80,7 @@ jobs:
           PARAM_GITHUB_CLIENT_SECRET: ${{ secrets.PROD_GITHUB_CLIENT_SECRET }}
           PARAM_FLY_API_TOKEN: ${{ secrets.PROD_FLY_API_TOKEN }}
           PARAM_FLY_APP_NAME: ${{ secrets.PROD_FLY_APP_NAME }}
+          PARAM_CONTAINER_SECRET: ${{ secrets.PROD_CONTAINER_SECRET }}
         run: |
           # Write samconfig.toml to bypass SAM CLI parameter parsing entirely
           # This avoids the space-truncation issue with FlyV1 tokens
@@ -113,6 +114,7 @@ jobs:
             "FlyAppName=${PARAM_FLY_APP_NAME}",
             "FlyRegion=iad",
             "SpaceId=default",
+            "ContainerSecret=${PARAM_CONTAINER_SECRET}",
             "DeployTimestamp=${{ github.run_id }}-${{ github.run_number }}"
           ]
           EOF

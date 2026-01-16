@@ -87,6 +87,11 @@ Parameters:
     Type: String
     Description: Default space ID for agents
     Default: 'default'
+  ContainerSecret:
+    Type: String
+    Description: Secret for container token validation (must match tunnel server)
+    NoEcho: true
+    Default: ''
   DeployTimestamp:
     Type: String
     Description: Timestamp to force Lambda updates on each deploy
@@ -154,6 +159,7 @@ Resources:
           FLY_REGION: !Ref FlyRegion
           FLY_IMAGE: !Ref AgentImageUri
           SPACE_ID: !Ref SpaceId
+          CAST_CONTAINER_SECRET: !Ref ContainerSecret
           ASSET_STORAGE_BACKEND: s3
           ASSETS_BUCKET_NAME: !Ref AssetsBucket
           ASSETS_BUCKET_REGION: !Ref AWS::Region
