@@ -22,6 +22,9 @@ concurrency:
   group: deploy-prod
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 env:
   AWS_REGION: us-east-1
 
