@@ -13,6 +13,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: npm-publish
     defaults:
       run:
         working-directory: backend/packages/local-runtime
