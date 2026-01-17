@@ -68,6 +68,3 @@ npx @miriad-systems/backend start --name my-vps
 
 Use `--name` to give this runtime a recognizable name in the Miriad UI.
 
-## License
-
-MIT

@@ -28,7 +28,7 @@
     "runtime",
     "vps"
   ],
-  "license": "MIT",
+  "license": "UNLICENSED",
   "engines": {
     "node": ">=18.0.0"
   },
