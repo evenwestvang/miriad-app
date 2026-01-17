@@ -1,12 +1,10 @@
 {
-  "name": "@caststack/local-runtime",
+  "name": "@miriad-systems/backend",
   "version": "0.1.0",
   "description": "Run CAST agents on your local machine",
   "type": "module",
   "main": "./dist/cli.js",
-  "bin": {
-    "local-runtime": "./dist/cli.js"
-  },
+  "bin": "./dist/cli.js",
   "exports": {
     ".": {
       "import": "./dist/index.js",

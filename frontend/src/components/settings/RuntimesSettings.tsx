@@ -82,12 +82,7 @@ export function RuntimesSettings({ apiHost, spaceId }: RuntimesSettingsProps) {
         `${apiHost}/api/runtimes/auth/bootstrap-token`,
         {}
       )
-      // Update command to use new package name
-      const command = data.command.replace(
-        '@anthropic/cast-local-agent init',
-        'npx @caststack/local-runtime auth'
-      )
-      setGeneratedCommand(command)
+      setGeneratedCommand(data.command)
       setExpiresAt(data.expiresAt)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate token')

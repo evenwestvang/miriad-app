@@ -11,7 +11,7 @@
  * Flow:
  * 1. User clicks "Connect Local Runtime" in CAST UI
  * 2. UI calls /bootstrap-token → gets connection string
- * 3. User runs `npx @caststack/local-runtime init "cast://..."` command
+ * 3. User runs `npx @miriad-systems/backend auth "cast://..."` command
  * 4. CLI calls /bootstrap → exchanges token for server credentials
  * 5. Runtime uses credentials to request agent tokens via /agent-token
  */
@@ -143,7 +143,7 @@ export function createRuntimeAuthRoutes(options: RuntimeAuthOptions): Hono {
 
     // Build connection string and command
     const connectionString = `cast://${token}@${apiHost}/${spaceId}`;
-    const command = `npx @caststack/local-runtime init "${connectionString}"`;
+    const command = `npx @miriad-systems/backend auth "${connectionString}"`;
 
     return c.json({
       bootstrapToken: token,

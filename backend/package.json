@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "lint": "eslint packages/*/src/**/*.ts",
     "typecheck": "pnpm -r typecheck",
-    "deploy": "cd deploy && ./deploy.sh"
+    "deploy": "cd deploy && ./deploy.sh",
+    "publish:backend": "pnpm --filter @miriad-systems/backend build && pnpm --filter @miriad-systems/backend publish --access public"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

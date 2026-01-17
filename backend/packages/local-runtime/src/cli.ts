@@ -23,19 +23,19 @@ import {
 // =============================================================================
 
 const HELP = `
-Local Runtime - Run CAST agents on your local machine
+Miriad Backend - Run CAST agents on your local machine
 
 Usage:
-  local-runtime auth <connection-string>   Authenticate with CAST
-  local-runtime start [options]            Start the runtime
-  local-runtime status                     Show runtime status
-  local-runtime agents                     List active agents
-  local-runtime help                       Show this help message
+  npx @miriad-systems/backend auth <connection-string>   Authenticate with CAST
+  npx @miriad-systems/backend start [options]            Start the runtime
+  npx @miriad-systems/backend status                     Show runtime status
+  npx @miriad-systems/backend agents                     List active agents
+  npx @miriad-systems/backend help                       Show this help message
 
 Commands:
   auth <connection-string>
     Authenticate with CAST using a connection string from the UI.
-    Example: local-runtime auth "cast://bst_xxx@api.cast.dev/space_abc"
+    Example: npx @miriad-systems/backend auth "cast://bst_xxx@api.cast.dev/space_abc"
 
   start [--name <name>]
     Start the runtime and connect to CAST.
@@ -49,7 +49,7 @@ Commands:
     List all active agents on this runtime.
 
 Configuration:
-  Config is stored at: ~/.config/cast/local-runtime.json
+  Config is stored at: ~/.config/miriad/config.json
 
 Environment Variables:
   ANTHROPIC_API_KEY    Required for Claude Agent SDK
@@ -64,7 +64,7 @@ async function cmdAuth(args: string[]): Promise<void> {
 
   if (!connectionString) {
     console.error('Error: Connection string required');
-    console.error('Usage: local-runtime auth "cast://bst_xxx@api.cast.dev/space_abc"');
+    console.error('Usage: npx @miriad-systems/backend auth "cast://bst_xxx@api.cast.dev/space_abc"');
     process.exit(1);
   }
 
@@ -78,7 +78,7 @@ async function cmdAuth(args: string[]): Promise<void> {
   try {
     await initFromConnectionString(connectionString, name);
     console.log('\nAuthentication successful!');
-    console.log('Run "local-runtime start" to connect.');
+    console.log('Run "npx @miriad-systems/backend start" to connect.');
   } catch (error) {
     console.error('Authentication failed:', (error as Error).message);
     process.exit(1);
@@ -95,7 +95,7 @@ async function cmdStart(args: string[]): Promise<void> {
   // Load config
   const config = await loadConfig();
   if (!config) {
-    console.error('Error: Not authenticated. Run "local-runtime auth" first.');
+    console.error('Error: Not authenticated. Run "npx @miriad-systems/backend auth" first.');
     process.exit(1);
   }
 
@@ -151,7 +151,7 @@ async function cmdStatus(): Promise<void> {
   if (!config) {
     console.log('Status: Not configured');
     console.log(`Config file: ${getConfigPath()}`);
-    console.log('\nRun "local-runtime auth" to configure.');
+    console.log('\nRun "npx @miriad-systems/backend auth" to configure.');
     return;
   }
 
@@ -176,7 +176,7 @@ async function cmdAgents(): Promise<void> {
   const config = await loadConfig();
 
   if (!config) {
-    console.error('Error: Not configured. Run "local-runtime auth" first.');
+    console.error('Error: Not configured. Run "npx @miriad-systems/backend auth" first.');
     process.exit(1);
   }
 
@@ -184,7 +184,7 @@ async function cmdAgents(): Promise<void> {
   console.log('=============');
   console.log();
   console.log('Note: This command shows agents only when the runtime is running.');
-  console.log('Use "local-runtime start" to start the runtime first.');
+  console.log('Use "npx @miriad-systems/backend start" to start the runtime first.');
   console.log();
   console.log('To see agent status, check the CAST UI or runtime logs.');
 }
@@ -225,7 +225,7 @@ async function main(): Promise<void> {
 
     default:
       console.error(`Unknown command: ${command}`);
-      console.error('Run "local-runtime help" for usage.');
+      console.error('Run "npx @miriad-systems/backend help" for usage.');
       process.exit(1);
   }
 }

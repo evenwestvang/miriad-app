@@ -1,7 +1,7 @@
 /**
  * Configuration Module
  *
- * Handles reading/writing runtime config from ~/.config/cast/local-runtime.json
+ * Handles reading/writing runtime config from ~/.config/miriad/config.json
  * and API interactions for bootstrap exchange.
  */
 
@@ -15,8 +15,8 @@ import type { RuntimeConfig, BootstrapResponse, ParsedConnectionString } from '.
 // Configuration Paths
 // =============================================================================
 
-const CONFIG_DIR = join(homedir(), '.config', 'cast');
-const CONFIG_FILE = join(CONFIG_DIR, 'local-runtime.json');
+const CONFIG_DIR = join(homedir(), '.config', 'miriad');
+const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 const DEFAULT_WORKSPACE_BASE = '/tmp/cast-agents';
 
 /**

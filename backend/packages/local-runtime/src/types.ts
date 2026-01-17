@@ -209,7 +209,7 @@ export type TymbalValue =
 // Configuration
 // =============================================================================
 
-/** Runtime config stored in ~/.config/cast/local-runtime.json */
+/** Runtime config stored in ~/.config/miriad/config.json */
 export interface RuntimeConfig {
   spaceId: string;
   name: string;
