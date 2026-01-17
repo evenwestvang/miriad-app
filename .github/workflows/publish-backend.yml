@@ -1,0 +1,39 @@
+name: Publish @miriad-systems/backend
+
+on:
+  push:
+    tags:
+      - 'backend-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/packages/local-runtime
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: backend
+
+      - name: Build
+        run: pnpm build
+
+      - name: Publish to npm
+        run: npm publish --access public --provenance

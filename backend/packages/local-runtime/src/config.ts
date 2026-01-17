@@ -17,7 +17,7 @@ import type { RuntimeConfig, BootstrapResponse, ParsedConnectionString } from '.
 
 const CONFIG_DIR = join(homedir(), '.config', 'miriad');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
-const DEFAULT_WORKSPACE_BASE = '/tmp/cast-agents';
+const DEFAULT_WORKSPACE_BASE = join(homedir(), 'miriad-workspaces');
 
 /**
  * Expand tilde (~) to home directory in paths.

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Local Runtime CLI
+ * Miriad Backend CLI
  *
- * Run CAST agents on your local machine.
+ * Run Miriad agents on your local machine, container, or VPS.
  *
  * Commands:
- *   auth <connection-string>  - Authenticate with CAST
+ *   auth <connection-string>  - Authenticate with Miriad
  *   start [--name <name>]     - Start the runtime
  *   status                    - Show runtime status
  *   agents                    - List active agents
@@ -23,10 +23,10 @@ import {
 // =============================================================================
 
 const HELP = `
-Miriad Backend - Run CAST agents on your local machine
+Miriad Backend - Run Miriad agents on your local machine, container, or VPS
 
 Usage:
-  npx @miriad-systems/backend auth <connection-string>   Authenticate with CAST
+  npx @miriad-systems/backend auth <connection-string>   Authenticate with Miriad
   npx @miriad-systems/backend start [options]            Start the runtime
   npx @miriad-systems/backend status                     Show runtime status
   npx @miriad-systems/backend agents                     List active agents
@@ -34,11 +34,11 @@ Usage:
 
 Commands:
   auth <connection-string>
-    Authenticate with CAST using a connection string from the UI.
-    Example: npx @miriad-systems/backend auth "cast://bst_xxx@api.cast.dev/space_abc"
+    Authenticate with Miriad using a connection string from the UI.
+    Example: npx @miriad-systems/backend auth "cast://bst_xxx@api.miriad.systems/space_abc"
 
   start [--name <name>]
-    Start the runtime and connect to CAST.
+    Start the runtime and connect to Miriad.
     Options:
       --name <name>    Runtime name (default: hostname)
 
@@ -50,6 +50,7 @@ Commands:
 
 Configuration:
   Config is stored at: ~/.config/miriad/config.json
+  Agent workspaces: ~/miriad-workspaces/
 
 Environment Variables:
   ANTHROPIC_API_KEY    Required for Claude Agent SDK

@@ -1,7 +1,7 @@
 /**
  * @miriad-systems/backend
  *
- * Run CAST agents on your local machine.
+ * Run Miriad agents on your local machine, container, or VPS.
  */
 
 export { RuntimeClient, type RuntimeClientConfig, type RuntimeStatus } from './runtime-client.js';

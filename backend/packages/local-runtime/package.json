@@ -1,7 +1,7 @@
 {
   "name": "@miriad-systems/backend",
-  "version": "0.1.0",
-  "description": "Run CAST agents on your local machine",
+  "version": "0.1.1",
+  "description": "Run Miriad agents on your local machine, container, or VPS",
   "type": "module",
   "main": "./dist/cli.js",
   "bin": "./dist/cli.js",
@@ -22,11 +22,11 @@
     "README.md"
   ],
   "keywords": [
-    "cast",
+    "miriad",
     "claude",
     "agent",
-    "local",
-    "runtime"
+    "runtime",
+    "vps"
   ],
   "license": "MIT",
   "engines": {
