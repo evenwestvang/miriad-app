@@ -24,6 +24,30 @@ import type {
 } from './types.js';
 
 // =============================================================================
+// URL Rewriting for Docker
+// =============================================================================
+
+/**
+ * Check if we're running inside a Docker container.
+ * When MIRIAD_CONFIG contains host.docker.internal, we know we're in Docker.
+ */
+function isRunningInDocker(): boolean {
+  const config = process.env.MIRIAD_CONFIG;
+  if (!config) return false;
+  return config.includes('host.docker.internal');
+}
+
+/**
+ * Rewrite localhost URLs to host.docker.internal when running in Docker.
+ * This is needed because localhost inside a container refers to the container,
+ * not the host machine where the backend is running.
+ */
+function rewriteUrlForDocker(url: string): string {
+  if (!isRunningInDocker()) return url;
+  return url.replace(/localhost/g, 'host.docker.internal');
+}
+
+// =============================================================================
 // Types
 // =============================================================================
 
@@ -466,10 +490,10 @@ export class AgentManager {
             env: server.env,
             cwd: server.cwd,
           };
-        } else if (server.transport === 'sse' || server.transport === 'http') {
+        } else if ((server.transport === 'sse' || server.transport === 'http') && server.url) {
           mcpServers[server.name] = {
             type: server.transport as 'sse' | 'http',
-            url: server.url,
+            url: rewriteUrlForDocker(server.url),
             headers: server.headers,
           };
         }
