@@ -10,20 +10,13 @@
 # =============================================================================
 FROM node:20-bookworm AS builder
 
-WORKDIR /build
-
-# Copy package files first for dependency caching
-COPY backend/packages/local-runtime/package*.json ./local-runtime/
-
-# Install dependencies
 WORKDIR /build/local-runtime
-RUN npm install
 
-# Copy source and build
-WORKDIR /build
-COPY backend/packages/local-runtime ./local-runtime
-WORKDIR /build/local-runtime
-RUN npm run build
+# Copy entire package (source + package.json)
+COPY backend/packages/local-runtime/ ./
+
+# Install dependencies and build
+RUN npm install && npm run build
 
 # =============================================================================
 # Stage 2: Runtime image
@@ -75,7 +68,7 @@ WORKDIR /app
 # Copy built local-runtime from builder stage
 COPY --from=builder /build/local-runtime/dist ./dist
 COPY --from=builder /build/local-runtime/node_modules ./node_modules
-COPY --from=builder /build/local-runtime/package.json ./package.json
+COPY --from=builder /build/local-runtime/package.json ./
 
 # Create non-root user (Claude Code requires non-root for unrestricted mode)
 RUN useradd -m -s /bin/bash agent && chown -R agent:agent /app /workspace
