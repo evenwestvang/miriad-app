@@ -1,0 +1,28 @@
+#!/bin/bash
+# Command shim for agent containers
+# Phase 1: Reads credentials from environment variables
+# Phase 2+: Will call backend for authorization
+#
+# This script is installed as /usr/bin/git (and future commands)
+# The real command is moved to /usr/bin/<cmd>.real
+
+set -e
+
+# Determine which command we're shimming based on how we were invoked
+COMMAND=$(basename "$0")
+REAL_CMD="/usr/bin/${COMMAND}.real"
+
+# Verify the real command exists
+if [ ! -x "$REAL_CMD" ]; then
+    echo "error: real command not found at $REAL_CMD" >&2
+    exit 1
+fi
+
+# Log the command (for debugging/audit in Phase 1)
+echo "[cmd-shim] ${COMMAND} $*" >&2
+
+# Phase 1: Token is read from environment by the credential helper
+# configured in gitconfig. Phase 2+ will call POST /cmd/authorize instead.
+
+# Execute the real command with all original arguments
+exec "$REAL_CMD" "$@"
