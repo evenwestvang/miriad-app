@@ -113,6 +113,10 @@ function getAnthropicApiKey(): string | undefined {
   return process.env.ANTHROPIC_API_KEY;
 }
 
+function getTunnelServerUrl(): string | undefined {
+  return process.env.TUNNEL_SERVER_URL;
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -233,6 +237,8 @@ async function startDockerContainer(
   };
 
   const anthropicKey = getAnthropicApiKey();
+  const tunnelServerUrl = getTunnelServerUrl();
+  const githubToken = process.env.GITHUB_TOKEN;
   const args = [
     'run',
     '-d',
@@ -240,6 +246,8 @@ async function startDockerContainer(
     '--name', containerName,
     '-e', `MIRIAD_CONFIG=${JSON.stringify(localConfig)}`,
     '-e', `ANTHROPIC_API_KEY=${anthropicKey}`,
+    ...(tunnelServerUrl ? ['-e', `TUNNEL_SERVER_URL=${tunnelServerUrl}`] : []),
+    ...(githubToken ? ['-e', `GITHUB_TOKEN=${githubToken}`] : []),
     '-v', `miriad-workspace-${spaceId}:/workspace`,
     getDockerImage(),
   ];
@@ -366,6 +374,8 @@ async function startFlyMachine(
       env: {
         MIRIAD_CONFIG: JSON.stringify(config),
         ANTHROPIC_API_KEY: getAnthropicApiKey() ?? '',
+        TUNNEL_SERVER_URL: getTunnelServerUrl() ?? '',
+        GITHUB_TOKEN: process.env.GITHUB_TOKEN ?? '',
       },
       guest: {
         cpu_kind: 'shared',

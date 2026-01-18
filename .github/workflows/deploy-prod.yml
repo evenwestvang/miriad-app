@@ -118,6 +118,7 @@ jobs:
             "FlyRegion=iad",
             "SpaceId=default",
             "ContainerSecret=${PARAM_CONTAINER_SECRET}",
+            "MiriadRuntimeMode=fly",
             "DeployTimestamp=${{ github.run_id }}-${{ github.run_number }}"
           ]
           EOF
@@ -174,16 +175,14 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.PROD_FLY_API_TOKEN }}
 
-      - name: Build TypeScript
-        working-directory: agents/sandbox
-        run: npm ci && npm run build
-
       - uses: docker/setup-buildx-action@v3
 
-      # Build and push to Fly.io registry (MUST be linux/amd64 for Fly Machines)
+      # Build and push Miriad Cloud container to Fly.io registry (MUST be linux/amd64 for Fly Machines)
+      # Multi-stage build compiles local-runtime from source
       - uses: docker/build-push-action@v5
         with:
-          context: agents/sandbox
+          context: .
+          file: agents/miriad-cloud/Dockerfile
           platforms: linux/amd64
           push: true
           tags: |

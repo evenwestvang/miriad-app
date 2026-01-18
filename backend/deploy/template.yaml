@@ -92,6 +92,13 @@ Parameters:
     Description: Secret for container token validation (must match tunnel server)
     NoEcho: true
     Default: ''
+  MiriadRuntimeMode:
+    Type: String
+    Description: Runtime mode for Miriad Cloud containers (docker for local dev, fly for production)
+    AllowedValues:
+      - docker
+      - fly
+    Default: fly
   DeployTimestamp:
     Type: String
     Description: Timestamp to force Lambda updates on each deploy
@@ -163,6 +170,7 @@ Resources:
           ASSET_STORAGE_BACKEND: s3
           ASSETS_BUCKET_NAME: !Ref AssetsBucket
           ASSETS_BUCKET_REGION: !Ref AWS::Region
+          MIRIAD_RUNTIME_MODE: !Ref MiriadRuntimeMode
           DEPLOY_TIMESTAMP: !Ref DeployTimestamp
       Events:
         RootPath:
