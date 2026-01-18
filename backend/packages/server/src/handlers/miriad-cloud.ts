@@ -37,14 +37,29 @@ const USE_DOCKER = process.env.USE_DOCKER === 'true' || !FLY_API_TOKEN;
 
 // Secret for generating server credentials (same as runtime-auth.ts)
 const DEV_SECRET = 'cast-dev-server-secret-do-not-use-in-production';
-const SERVER_SECRET = process.env.CAST_SERVER_SECRET ?? DEV_SECRET;
 
-// API URLs for container config
-const API_URL = process.env.CAST_API_URL || 'http://localhost:8080';
-const WS_URL = process.env.CAST_WS_URL || API_URL.replace('http', 'ws');
+// Helper functions to read env vars at runtime (not module load time)
+// This is important because dotenv may not have loaded yet when this module is imported
+function getServerSecret(): string {
+  return process.env.CAST_SERVER_SECRET ?? DEV_SECRET;
+}
 
-// Anthropic API key to pass to containers
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+function getApiUrl(): string {
+  const url = process.env.CAST_API_URL;
+  if (!url) {
+    throw new Error('CAST_API_URL environment variable is required');
+  }
+  return url;
+}
+
+function getWsUrl(): string {
+  const apiUrl = getApiUrl();
+  return process.env.CAST_WS_URL || apiUrl.replace('http', 'ws');
+}
+
+function getAnthropicApiKey(): string | undefined {
+  return process.env.ANTHROPIC_API_KEY;
+}
 
 // =============================================================================
 // Types
@@ -83,9 +98,9 @@ function generateRuntimeId(): string {
   return `rt_${ulid().substring(0, 23)}`;
 }
 
-function generateServerSecret(serverId: string, spaceId: string): string {
+function generateServerSecretHmac(serverId: string, spaceId: string): string {
   const data = `${serverId}:${spaceId}`;
-  const hmac = createHmac('sha256', SERVER_SECRET).update(data).digest('base64url');
+  const hmac = createHmac('sha256', getServerSecret()).update(data).digest('base64url');
   return `sk_cast_${hmac}`;
 }
 
@@ -102,8 +117,8 @@ function buildMiriadConfig(
       runtimeId,
       serverId,
       secret,
-      apiUrl: API_URL,
-      wsUrl: WS_URL,
+      apiUrl: getApiUrl(),
+      wsUrl: getWsUrl(),
     },
     workspace: {
       basePath: '/workspace',
@@ -152,8 +167,10 @@ async function startDockerContainer(
   }
 
   // For local dev, we need to use host.docker.internal for API access
-  const localApiUrl = API_URL.replace('localhost', 'host.docker.internal');
-  const localWsUrl = WS_URL.replace('localhost', 'host.docker.internal');
+  const apiUrl = getApiUrl();
+  const wsUrl = getWsUrl();
+  const localApiUrl = apiUrl.replace('localhost', 'host.docker.internal');
+  const localWsUrl = wsUrl.replace('localhost', 'host.docker.internal');
   const localConfig = {
     ...config,
     credentials: {
@@ -163,13 +180,14 @@ async function startDockerContainer(
     },
   };
 
+  const anthropicKey = getAnthropicApiKey();
   const args = [
     'run',
     '-d',
     '--rm',
     '--name', containerName,
     '-e', `MIRIAD_CONFIG=${JSON.stringify(localConfig)}`,
-    '-e', `ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}`,
+    '-e', `ANTHROPIC_API_KEY=${anthropicKey}`,
     '-v', `miriad-workspace-${spaceId}:/workspace`,
     MIRIAD_CLOUD_IMAGE,
   ];
@@ -295,7 +313,7 @@ async function startFlyMachine(
       image: MIRIAD_CLOUD_IMAGE,
       env: {
         MIRIAD_CONFIG: JSON.stringify(config),
-        ANTHROPIC_API_KEY: ANTHROPIC_API_KEY,
+        ANTHROPIC_API_KEY: getAnthropicApiKey() ?? '',
       },
       guest: {
         cpu_kind: 'shared',
@@ -358,7 +376,7 @@ export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
 
     const { userId, spaceId } = session;
 
-    if (!ANTHROPIC_API_KEY) {
+    if (!getAnthropicApiKey()) {
       return c.json({ error: 'ANTHROPIC_API_KEY not configured on server' }, 500);
     }
 
@@ -381,7 +399,7 @@ export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
       // Generate credentials
       const serverId = generateServerId();
       const runtimeId = generateRuntimeId();
-      const secret = generateServerSecret(serverId, spaceId);
+      const secret = generateServerSecretHmac(serverId, spaceId);
 
       // Store server credentials
       await storage.saveLocalAgentServer({
