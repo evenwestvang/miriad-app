@@ -345,7 +345,8 @@ function getFlyMachineName(spaceId: string): string {
 }
 
 function getFlyVolumeName(spaceId: string): string {
-  return `miriad-ws-${spaceId.substring(0, 12)}`;
+  // Fly volume names: lowercase alphanumeric and underscores only, max 30 chars
+  return `miriad_ws_${spaceId.substring(0, 12).toLowerCase()}`;
 }
 
 // Volume size in GB for agent workspaces
