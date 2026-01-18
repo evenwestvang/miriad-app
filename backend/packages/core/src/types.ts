@@ -209,6 +209,8 @@ export interface LocalRuntimeConfig {
     os: string;
     hostname: string;
   };
+  /** Fly.io volume ID for persistent storage (Miriad Cloud only) */
+  flyVolumeId?: string;
 }
 
 /**
