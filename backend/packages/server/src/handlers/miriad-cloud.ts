@@ -24,16 +24,68 @@ import { parseSession } from '../auth/index.js';
 // Runtime name used for idempotency (one per space)
 const MIRIAD_CLOUD_NAME = 'Miriad Cloud';
 
-// Container image
-const MIRIAD_CLOUD_IMAGE = process.env.MIRIAD_CLOUD_IMAGE || 'miriad-cloud:latest';
+// =============================================================================
+// Config getters - read env vars at runtime, not module load time
+// This is critical because dotenv may not have loaded when this module is imported
+// =============================================================================
 
-// Fly.io configuration
-const FLY_API_TOKEN = process.env.FLY_API_TOKEN;
-const FLY_APP_NAME = process.env.FLY_APP_NAME || 'miriad-cloud';
-const FLY_REGION = process.env.FLY_REGION || 'iad';
+function getRuntimeMode(): 'docker' | 'fly' {
+  const mode = process.env.MIRIAD_RUNTIME_MODE;
+  if (!mode) {
+    throw new Error('MIRIAD_RUNTIME_MODE must be set to "docker" or "fly"');
+  }
+  if (mode !== 'docker' && mode !== 'fly') {
+    throw new Error(`MIRIAD_RUNTIME_MODE must be "docker" or "fly", got "${mode}"`);
+  }
+  return mode;
+}
 
-// Docker configuration (local dev)
-const USE_DOCKER = process.env.USE_DOCKER === 'true' || !FLY_API_TOKEN;
+function getFlyApiToken(): string {
+  const token = process.env.FLY_API_TOKEN;
+  if (!token) throw new Error('FLY_API_TOKEN is required when MIRIAD_RUNTIME_MODE=fly');
+  return token;
+}
+
+function getFlyAppName(): string {
+  const name = process.env.FLY_APP_NAME;
+  if (!name) throw new Error('FLY_APP_NAME is required when MIRIAD_RUNTIME_MODE=fly');
+  return name;
+}
+
+function getFlyRegion(): string {
+  const region = process.env.FLY_REGION;
+  if (!region) throw new Error('FLY_REGION is required when MIRIAD_RUNTIME_MODE=fly');
+  return region;
+}
+
+function getFlyImage(): string {
+  const image = process.env.FLY_IMAGE;
+  if (!image) throw new Error('FLY_IMAGE is required when MIRIAD_RUNTIME_MODE=fly');
+  return image;
+}
+
+function getDockerImage(): string {
+  const image = process.env.MIRIAD_CLOUD_IMAGE;
+  if (!image) throw new Error('MIRIAD_CLOUD_IMAGE is required when MIRIAD_RUNTIME_MODE=docker');
+  return image;
+}
+
+function useDocker(): boolean {
+  return getRuntimeMode() === 'docker';
+}
+
+function validateConfig(): void {
+  const mode = getRuntimeMode();
+  if (mode === 'fly') {
+    getFlyApiToken();
+    getFlyAppName();
+    getFlyRegion();
+    getFlyImage();
+  }
+  if (mode === 'docker') {
+    getDockerImage();
+  }
+}
 
 // Secret for generating server credentials (same as runtime-auth.ts)
 const DEV_SECRET = 'cast-dev-server-secret-do-not-use-in-production';
@@ -189,7 +241,7 @@ async function startDockerContainer(
     '-e', `MIRIAD_CONFIG=${JSON.stringify(localConfig)}`,
     '-e', `ANTHROPIC_API_KEY=${anthropicKey}`,
     '-v', `miriad-workspace-${spaceId}:/workspace`,
-    MIRIAD_CLOUD_IMAGE,
+    getDockerImage(),
   ];
 
   console.log(`[MiriadCloud] Starting Docker container: ${containerName}`);
@@ -248,13 +300,13 @@ async function flyRequest<T>(
   path: string,
   body?: unknown
 ): Promise<T> {
-  const baseUrl = `https://api.machines.dev/v1/apps/${FLY_APP_NAME}`;
+  const baseUrl = `https://api.machines.dev/v1/apps/${getFlyAppName()}`;
   const url = `${baseUrl}${path}`;
 
   const response = await fetch(url, {
     method,
     headers: {
-      'Authorization': `Bearer ${FLY_API_TOKEN}`,
+      'Authorization': `Bearer ${getFlyApiToken()}`,
       'Content-Type': 'application/json',
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -308,9 +360,9 @@ async function startFlyMachine(
 
   const machine = await flyRequest<FlyMachine>('POST', '/machines', {
     name: machineName,
-    region: FLY_REGION,
+    region: getFlyRegion(),
     config: {
-      image: MIRIAD_CLOUD_IMAGE,
+      image: getFlyImage(),
       env: {
         MIRIAD_CONFIG: JSON.stringify(config),
         ANTHROPIC_API_KEY: getAnthropicApiKey() ?? '',
@@ -362,6 +414,9 @@ async function getFlyMachineStatus(spaceId: string): Promise<'running' | 'stoppe
 // =============================================================================
 
 export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
+  // Validate config at route creation time (app startup)
+  validateConfig();
+
   const { storage } = options;
   const app = new Hono();
 
@@ -438,7 +493,7 @@ export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
       }
 
       // Start container (Docker or Fly)
-      if (USE_DOCKER) {
+      if (useDocker()) {
         await startDockerContainer(spaceId, config);
       } else {
         await startFlyMachine(spaceId, config);
@@ -475,7 +530,7 @@ export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
 
     try {
       // Stop container
-      if (USE_DOCKER) {
+      if (useDocker()) {
         await stopDockerContainer(spaceId);
       } else {
         await stopFlyMachine(spaceId);
@@ -513,7 +568,7 @@ export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
 
       // Get container status
       let containerStatus: 'running' | 'stopped' | 'not_found';
-      if (USE_DOCKER) {
+      if (useDocker()) {
         containerStatus = getDockerContainerStatus(spaceId);
       } else {
         containerStatus = await getFlyMachineStatus(spaceId);
@@ -531,7 +586,7 @@ export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
           : null,
         container: {
           status: containerStatus,
-          provider: USE_DOCKER ? 'docker' : 'fly',
+          provider: useDocker() ? 'docker' : 'fly',
         },
       });
     } catch (error) {
