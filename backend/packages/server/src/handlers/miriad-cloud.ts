@@ -303,6 +303,14 @@ interface FlyMachine {
   region: string;
 }
 
+interface FlyVolume {
+  id: string;
+  name: string;
+  state: string;
+  region: string;
+  size_gb: number;
+}
+
 async function flyRequest<T>(
   method: string,
   path: string,
@@ -336,6 +344,83 @@ function getFlyMachineName(spaceId: string): string {
   return `miriad-cloud-${spaceId.substring(0, 12)}`;
 }
 
+function getFlyVolumeName(spaceId: string): string {
+  // Fly volume names: lowercase alphanumeric and underscores only, max 30 chars
+  return `miriad_ws_${spaceId.substring(0, 12).toLowerCase()}`;
+}
+
+// Volume size in GB for agent workspaces
+const FLY_VOLUME_SIZE_GB = 10;
+
+/**
+ * Get an existing volume by ID, or null if not found/destroyed.
+ */
+async function getFlyVolume(volumeId: string): Promise<FlyVolume | null> {
+  try {
+    return await flyRequest<FlyVolume>('GET', `/volumes/${volumeId}`);
+  } catch (error) {
+    // Volume may have been destroyed
+    if (error instanceof Error && error.message.includes('404')) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Find a volume by name in the specified region.
+ */
+async function findFlyVolumeByName(name: string, region: string): Promise<FlyVolume | null> {
+  const volumes = await flyRequest<FlyVolume[]>('GET', '/volumes');
+  return volumes.find((v) => v.name === name && v.region === region) ?? null;
+}
+
+/**
+ * Create a new Fly volume for the space's workspace.
+ */
+async function createFlyVolume(spaceId: string): Promise<FlyVolume> {
+  const volumeName = getFlyVolumeName(spaceId);
+  const region = getFlyRegion();
+
+  console.log(`[MiriadCloud] Creating Fly volume ${volumeName} in ${region}`);
+
+  return await flyRequest<FlyVolume>('POST', '/volumes', {
+    name: volumeName,
+    region,
+    size_gb: FLY_VOLUME_SIZE_GB,
+    encrypted: true,
+  });
+}
+
+/**
+ * Ensure a volume exists for the space, creating one if needed.
+ * Returns the volume ID to use for machine mounting.
+ */
+async function ensureFlyVolume(spaceId: string, existingVolumeId?: string): Promise<string> {
+  // If we have a stored volume ID, verify it still exists
+  if (existingVolumeId) {
+    const volume = await getFlyVolume(existingVolumeId);
+    if (volume) {
+      console.log(`[MiriadCloud] Using existing volume ${existingVolumeId}`);
+      return existingVolumeId;
+    }
+    console.log(`[MiriadCloud] Stored volume ${existingVolumeId} not found, will create new`);
+  }
+
+  // Check if a volume with our naming convention already exists (recovery case)
+  const volumeName = getFlyVolumeName(spaceId);
+  const region = getFlyRegion();
+  const existingByName = await findFlyVolumeByName(volumeName, region);
+  if (existingByName) {
+    console.log(`[MiriadCloud] Found existing volume by name: ${existingByName.id}`);
+    return existingByName.id;
+  }
+
+  // Create new volume
+  const volume = await createFlyVolume(spaceId);
+  return volume.id;
+}
+
 async function findFlyMachine(spaceId: string): Promise<FlyMachine | null> {
   const machineName = getFlyMachineName(spaceId);
   const machines = await flyRequest<FlyMachine[]>('GET', '/machines');
@@ -344,7 +429,8 @@ async function findFlyMachine(spaceId: string): Promise<FlyMachine | null> {
 
 async function startFlyMachine(
   spaceId: string,
-  config: MiriadConfig
+  config: MiriadConfig,
+  volumeId: string
 ): Promise<{ machineId: string }> {
   const machineName = getFlyMachineName(spaceId);
 
@@ -363,8 +449,8 @@ async function startFlyMachine(
     return { machineId: existing.id };
   }
 
-  // Create new machine
-  console.log(`[MiriadCloud] Creating Fly machine ${machineName}`);
+  // Create new machine with volume mounted
+  console.log(`[MiriadCloud] Creating Fly machine ${machineName} with volume ${volumeId}`);
 
   const machine = await flyRequest<FlyMachine>('POST', '/machines', {
     name: machineName,
@@ -377,6 +463,10 @@ async function startFlyMachine(
         TUNNEL_SERVER_URL: getTunnelServerUrl() ?? '',
         GITHUB_TOKEN: process.env.GITHUB_TOKEN ?? '',
       },
+      mounts: [{
+        volume: volumeId,
+        path: '/workspace',
+      }],
       guest: {
         cpu_kind: 'shared',
         cpus: 2,
@@ -477,11 +567,22 @@ export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
       // Build config for container
       const config = buildMiriadConfig(spaceId, runtimeId, serverId, secret);
 
+      // For Fly deployments, ensure we have a persistent volume
+      // TODO: Race condition - concurrent /start requests for same space could create
+      // duplicate volumes. Fix: use SELECT FOR UPDATE on runtime record before this block.
+      // Low priority since concurrent starts for same space are rare in practice.
+      let flyVolumeId: string | undefined;
+      if (!useDocker()) {
+        const existingVolumeId = runtime?.config?.flyVolumeId;
+        flyVolumeId = await ensureFlyVolume(spaceId, existingVolumeId);
+      }
+
       // Create or update runtime record
       // Status starts as 'offline' - will become 'online' when container connects via WS
       const runtimeConfig = {
         wsConnectionId: null,
         machineInfo: { os: 'linux', hostname: 'miriad-cloud' },
+        flyVolumeId,
       };
 
       if (runtime) {
@@ -506,7 +607,7 @@ export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
       if (useDocker()) {
         await startDockerContainer(spaceId, config);
       } else {
-        await startFlyMachine(spaceId, config);
+        await startFlyMachine(spaceId, config, flyVolumeId!);
       }
 
       console.log(`[MiriadCloud] Started for space ${spaceId}, runtime ${runtime.id}`);
