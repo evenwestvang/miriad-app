@@ -24,6 +24,7 @@ import { createDevAuthRoutes, createWorkOSAuthRoutes, requireAuth, getSpaceId, g
 import { createAppRoutes } from './handlers/apps.js';
 import { createRuntimeAuthRoutes } from './handlers/runtime-auth.js';
 import { createRuntimeRoutes } from './handlers/runtimes.js';
+import { createMiriadCloudRoutes } from './handlers/miriad-cloud.js';
 
 // =============================================================================
 // Types
@@ -983,6 +984,12 @@ export function createApp(options: AppOptions): Hono {
   // ---------------------------------------------------------------------------
   const runtimeRoutes = createRuntimeRoutes({ storage });
   app.route('/api/spaces', runtimeRoutes);
+
+  // ---------------------------------------------------------------------------
+  // Miriad Cloud Routes (container provisioning)
+  // ---------------------------------------------------------------------------
+  const miriadCloudRoutes = createMiriadCloudRoutes({ storage });
+  app.route('/api/runtimes/miriad-cloud', miriadCloudRoutes);
 
   // ---------------------------------------------------------------------------
   // Focus Types & Agent Types (stubs for frontend)

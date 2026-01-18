@@ -101,19 +101,46 @@ export function parseConnectionString(connectionString: string): ParsedConnectio
 // =============================================================================
 
 /**
- * Load runtime config from disk.
- * Returns null if no config file exists.
- * Expands tilde (~) in workspace.basePath.
+ * Parse and normalize a RuntimeConfig object.
+ * Expands tilde in workspace.basePath and sets defaults.
+ */
+function normalizeConfig(config: RuntimeConfig): RuntimeConfig {
+  // Expand tilde in workspace basePath
+  if (config.workspace?.basePath) {
+    config.workspace.basePath = expandTilde(config.workspace.basePath);
+  } else {
+    // Default workspace path if not specified
+    config.workspace = { basePath: DEFAULT_WORKSPACE_BASE };
+  }
+  return config;
+}
+
+/**
+ * Load runtime config.
+ *
+ * Config sources (in priority order):
+ * 1. MIRIAD_CONFIG env var (JSON string) - for containerized deployments
+ * 2. Config file at ~/.config/miriad/config.json - for local installs
+ *
+ * Returns null if no config found.
  */
 export async function loadConfig(): Promise<RuntimeConfig | null> {
+  // Priority 1: Environment variable (for containers)
+  const envConfig = process.env.MIRIAD_CONFIG;
+  if (envConfig) {
+    try {
+      const config = JSON.parse(envConfig) as RuntimeConfig;
+      return normalizeConfig(config);
+    } catch {
+      throw new Error('MIRIAD_CONFIG env var contains invalid JSON');
+    }
+  }
+
+  // Priority 2: Config file
   try {
     const content = await readFile(CONFIG_FILE, 'utf-8');
     const config = JSON.parse(content) as RuntimeConfig;
-    // Expand tilde in workspace basePath
-    if (config.workspace?.basePath) {
-      config.workspace.basePath = expandTilde(config.workspace.basePath);
-    }
-    return config;
+    return normalizeConfig(config);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return null;

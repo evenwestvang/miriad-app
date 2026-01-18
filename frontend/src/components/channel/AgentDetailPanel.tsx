@@ -456,7 +456,7 @@ export function AgentDetailPanel({
             ) : (
               <>
                 <Cloud className="w-3.5 h-3.5" />
-                Miriad Cloud
+                Legacy Cloud
               </>
             )}
           </span>
