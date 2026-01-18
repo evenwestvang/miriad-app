@@ -109,6 +109,7 @@ jobs:
             "WorkOsRedirectUri=https://api.miriad.tech/auth/callback",
             "FrontendUrl=https://miriad.tech",
             "CastApiUrl=https://api.miriad.tech",
+            "CastWsUrl=wss://ws.miriad.tech",
             "GitHubClientId=${PARAM_GITHUB_CLIENT_ID}",
             "GitHubClientSecret=${PARAM_GITHUB_CLIENT_SECRET}",
             "TunnelServerUrl=https://tunnel.miriad.site",

@@ -107,6 +107,7 @@ jobs:
             "WorkOsRedirectUri=https://api.staging.caststack.ai/auth/callback",
             "FrontendUrl=https://app.staging.caststack.ai",
             "CastApiUrl=https://api.staging.caststack.ai",
+            "CastWsUrl=wss://ws.staging.caststack.ai",
             "GitHubClientId=${PARAM_GITHUB_CLIENT_ID}",
             "GitHubClientSecret=${PARAM_GITHUB_CLIENT_SECRET}",
             "TunnelServerUrl=https://tunnel.caststack.site",

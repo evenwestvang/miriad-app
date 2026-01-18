@@ -49,6 +49,10 @@ Parameters:
     Type: String
     Description: HTTP API URL for agent containers to call back (e.g., https://api.staging.caststack.ai)
     Default: ''
+  CastWsUrl:
+    Type: String
+    Description: WebSocket URL for agent containers to connect (e.g., wss://ws.staging.caststack.ai)
+    Default: ''
   FrontendUrl:
     Type: String
     Description: Frontend URL for OAuth redirects (e.g., https://app.staging.caststack.ai)
@@ -153,6 +157,7 @@ Resources:
           WEBSOCKET_ENDPOINT: !Sub https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
           ANTHROPIC_API_KEY: !Ref AnthropicApiKey
           CAST_API_URL: !Ref CastApiUrl
+          CAST_WS_URL: !Ref CastWsUrl
           WORKOS_API_KEY: !Ref WorkOsApiKey
           WORKOS_CLIENT_ID: !Ref WorkOsClientId
           WORKOS_REDIRECT_URI: !Ref WorkOsRedirectUri
