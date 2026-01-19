@@ -95,5 +95,6 @@ WORKDIR /workspace
 #   "workspace": { "basePath": "/workspace" }
 # }
 
-# Run local-runtime CLI
-CMD ["node", "/app/dist/cli.js", "start"]
+# Run local-runtime CLI with 15 minute idle timeout
+# Container will exit after 15 minutes of inactivity
+CMD ["node", "/app/dist/cli.js", "start", "--idle-timeout", "15"]
