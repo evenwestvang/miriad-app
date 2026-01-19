@@ -46,7 +46,7 @@ export function MobileMenu({
   }, [isOpen])
 
   return (
-    <div ref={menuRef} className="relative md:hidden">
+    <div ref={menuRef} className="relative">
       {/* Hamburger button */}
       <button
         onClick={() => setIsOpen(!isOpen)}

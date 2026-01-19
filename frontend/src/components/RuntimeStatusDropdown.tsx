@@ -257,7 +257,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
             hasAnyOnline ? 'bg-green-500' : 'bg-gray-400'
           }`}
         />
-        <span className="hidden md:inline text-xs text-muted-foreground">
+        <span className="text-xs text-muted-foreground">
           {hasAnyOnline ? `${totalOnline} online` : 'Offline'}
         </span>
       </button>

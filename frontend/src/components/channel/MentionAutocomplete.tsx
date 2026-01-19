@@ -51,7 +51,6 @@ export function MentionAutocomplete({
   onSelect,
   onClose,
   position,
-  channelId = '',
 }: MentionAutocompleteProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 

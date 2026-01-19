@@ -6,17 +6,11 @@ import {
   Bed,
   Cloud,
   Laptop,
-  ExternalLink,
-  Copy,
-  Check,
   Loader2,
   MoreVertical,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { RosterAgent } from './MentionAutocomplete'
-
-// Tunnel domain from environment, defaults to production
-const TUNNEL_DOMAIN = import.meta.env.VITE_TUNNEL_DOMAIN || 'cast-stack.site'
 
 interface AgentDetailPanelProps {
   /** Selected agent to display */
@@ -67,7 +61,6 @@ export function AgentDetailPanel({
   onMute,
   onUnmute,
 }: AgentDetailPanelProps) {
-  const [copied, setCopied] = useState(false)
   const [actionLoading, setActionLoading] = useState<'pause' | 'resume' | 'dismiss' | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -86,27 +79,10 @@ export function AgentDetailPanel({
 
   const stateBadge = getStateBadge(agent)
 
-  // Construct tunnel URL from hash
-  const tunnelUrl = agent.tunnelHash
-    ? `https://${agent.tunnelHash}.${TUNNEL_DOMAIN}`
-    : null
-
   // Format cost display
   const costDisplay = agent.sessionCost !== undefined && agent.sessionCost > 0
     ? `$${agent.sessionCost < 0.01 ? agent.sessionCost.toFixed(4) : agent.sessionCost.toFixed(2)}`
     : '$0.00'
-
-  // Copy tunnel URL to clipboard
-  const handleCopyUrl = async () => {
-    if (!tunnelUrl) return
-    try {
-      await navigator.clipboard.writeText(tunnelUrl)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch (err) {
-      console.error('Failed to copy URL:', err)
-    }
-  }
 
   // Handle pause action (mute)
   const handlePause = async () => {
@@ -222,67 +198,11 @@ export function AgentDetailPanel({
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Wide: inline action buttons (hidden on narrow) */}
-          <div className="hidden sm:flex items-center gap-1">
-            {/* Mute/Unmute - always available */}
-            {agent.isPaused ? (
-              <button
-                onClick={handleResume}
-                disabled={actionLoading !== null}
-                className={cn(
-                  "flex items-center gap-1.5 px-2 py-1 text-sm",
-                  "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
-                  "disabled:opacity-50 disabled:cursor-not-allowed"
-                )}
-              >
-                {actionLoading === 'resume' ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Bot className="w-4 h-4" />
-                )}
-                Unmute
-              </button>
-            ) : (
-              <button
-                onClick={handlePause}
-                disabled={actionLoading !== null}
-                className={cn(
-                  "flex items-center gap-1.5 px-2 py-1 text-sm",
-                  "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
-                  "disabled:opacity-50 disabled:cursor-not-allowed"
-                )}
-              >
-                {actionLoading === 'pause' ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <BotOff className="w-4 h-4" />
-                )}
-                Mute
-              </button>
-            )}
-            <button
-              onClick={handleDismiss}
-              disabled={actionLoading !== null}
-              className={cn(
-                "flex items-center gap-1.5 px-2 py-1 text-sm",
-                "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
-                "disabled:opacity-50 disabled:cursor-not-allowed"
-              )}
-            >
-              {actionLoading === 'dismiss' ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Bed className="w-4 h-4" />
-              )}
-              Dismiss
-            </button>
-          </div>
-
-          {/* Narrow: kebab menu (hidden on wide) */}
-          <div className="relative sm:hidden" ref={menuRef}>
+          {/* Kebab menu for actions */}
+          <div className="relative" ref={menuRef}>
             <button
               onClick={() => setMenuOpen(!menuOpen)}
-              className="p-1 text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]"
+              className="p-1 text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]"
               title="Actions"
             >
               <MoreVertical className="w-4 h-4" />
@@ -290,7 +210,7 @@ export function AgentDetailPanel({
 
             {/* Dropdown menu */}
             {menuOpen && (
-              <div className="absolute right-0 top-full mt-1 bg-white border border-[#e5e5e5] shadow-sm z-10 min-w-[140px]">
+              <div className="absolute right-0 top-full mt-1 bg-card border border-[var(--cast-border-default)] shadow-sm z-10 min-w-[140px]">
                 {/* Mute/Unmute - always available */}
                 {agent.isPaused ? (
                   <button
@@ -298,7 +218,7 @@ export function AgentDetailPanel({
                     disabled={actionLoading !== null}
                     className={cn(
                       "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
-                      "text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                      "text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]",
                       "disabled:opacity-50 disabled:cursor-not-allowed"
                     )}
                   >
@@ -315,7 +235,7 @@ export function AgentDetailPanel({
                     disabled={actionLoading !== null}
                     className={cn(
                       "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
-                      "text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                      "text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]",
                       "disabled:opacity-50 disabled:cursor-not-allowed"
                     )}
                   >
@@ -332,7 +252,7 @@ export function AgentDetailPanel({
                   disabled={actionLoading !== null}
                   className={cn(
                     "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
-                    "text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
+                    "text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]",
                     "disabled:opacity-50 disabled:cursor-not-allowed"
                   )}
                 >
@@ -350,7 +270,7 @@ export function AgentDetailPanel({
           {/* Close button */}
           <button
             onClick={onClose}
-            className="p-1 text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]"
+            className="p-1 text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]"
             title="Close"
           >
             <X className="w-4 h-4" />
@@ -362,33 +282,6 @@ export function AgentDetailPanel({
           <span>{getStatusDescription()}</span>
           <span>·</span>
           <span className="font-mono">{costDisplay}</span>
-          {tunnelUrl && (
-            <>
-              <span>·</span>
-              <div className="flex items-center gap-1">
-                <a
-                  href={tunnelUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-[var(--cast-text-primary)] flex items-center gap-1"
-                >
-                  web
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-                <button
-                  onClick={handleCopyUrl}
-                  className="p-0.5 hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]"
-                  title="Copy URL"
-                >
-                  {copied ? (
-                    <Check className="w-3 h-3 text-green-600" />
-                  ) : (
-                    <Copy className="w-3 h-3" />
-                  )}
-                </button>
-              </div>
-            </>
-          )}
           <span>·</span>
           <span className="flex items-center gap-1">
             {agent.runtimeId ? (
@@ -402,8 +295,8 @@ export function AgentDetailPanel({
                 "w-1.5 h-1.5 rounded-full",
                 agent.runtimeStatus === 'online' ? "bg-green-500" : "bg-gray-400"
               )}
-              title={agent.runtimeStatus === 'online' ? 'Runtime online' : 'Runtime offline'}
             />
+            <span>{agent.runtimeStatus === 'online' ? 'connected' : 'offline'}</span>
           </span>
         </div>
       </div>

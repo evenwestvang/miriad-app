@@ -1,10 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import {
-  LogOut,
-  Sun,
-  Moon,
-  Settings,
-} from "lucide-react";
 import { ChannelSwitcher } from "./components/ChannelSwitcher";
 import {
   ThreadList,
@@ -1110,46 +1104,7 @@ export function App() {
           />
         )}
 
-        {/* Desktop-only: Settings */}
-        <button
-          onClick={() => {
-            setSettingsSection('cloud')
-            setSettingsOpen(true)
-          }}
-          className="hidden md:block p-1.5 hover:bg-[var(--cast-bg-hover)] transition-colors"
-          title="Settings"
-        >
-          <Settings className="w-4 h-4 text-[var(--cast-text-muted)]" />
-        </button>
-
-        {/* Desktop-only: Theme toggle */}
-        <button
-          onClick={toggleTheme}
-          className="hidden md:block p-1.5 hover:bg-[var(--cast-bg-hover)] transition-colors"
-          title={
-            theme === "light" ? "Switch to dark mode" : "Switch to light mode"
-          }
-        >
-          {theme === "light" ? (
-            <Moon className="w-4 h-4 text-[var(--cast-text-muted)]" />
-          ) : (
-            <Sun className="w-4 h-4 text-[var(--cast-text-muted)]" />
-          )}
-        </button>
-
-        {/* Desktop-only: User display */}
-        <span className="hidden md:inline text-sm text-muted-foreground">@{currentUser}</span>
-
-        {/* Desktop-only: Logout */}
-        <button
-          onClick={logout}
-          className="hidden md:block p-1.5 rounded hover:bg-secondary/50 transition-colors"
-          title="Log out"
-        >
-          <LogOut className="w-4 h-4 text-muted-foreground" />
-        </button>
-
-        {/* Mobile: Hamburger menu */}
+        {/* Hamburger menu (shown on both mobile and desktop) */}
         <MobileMenu
           currentUser={currentUser}
           theme={theme}
