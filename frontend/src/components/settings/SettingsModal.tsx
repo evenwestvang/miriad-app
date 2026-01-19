@@ -1,19 +1,27 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Settings, Monitor, Cloud } from 'lucide-react'
 import { RuntimesSettings } from './RuntimesSettings'
 import { CloudSettings } from './CloudSettings'
 
-type SettingsSection = 'cloud' | 'runtimes'
+export type SettingsSection = 'cloud' | 'runtimes'
 
 interface SettingsModalProps {
   isOpen: boolean
   onClose: () => void
   apiHost: string
   spaceId?: string
+  initialSection?: SettingsSection
 }
 
-export function SettingsModal({ isOpen, onClose, apiHost, spaceId }: SettingsModalProps) {
-  const [activeSection, setActiveSection] = useState<SettingsSection>('cloud')
+export function SettingsModal({ isOpen, onClose, apiHost, spaceId, initialSection = 'cloud' }: SettingsModalProps) {
+  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection)
+
+  // Update active section when initialSection changes (e.g., opening from different places)
+  useEffect(() => {
+    if (isOpen) {
+      setActiveSection(initialSection)
+    }
+  }, [isOpen, initialSection])
 
   if (!isOpen) return null
 

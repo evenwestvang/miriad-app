@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { Monitor, RefreshCw, ChevronDown, ChevronRight, Bot, Cloud, Play } from 'lucide-react'
-import { apiFetch, apiPost } from '../lib/api'
+import { Monitor, RefreshCw, ChevronDown, ChevronRight, Bot, Cloud, Play, Settings } from 'lucide-react'
+import { apiFetch, apiPost, apiJson } from '../lib/api'
+
+const ANTHROPIC_API_KEY = 'anthropic_api_key'
 
 interface Runtime {
   id: string
@@ -24,9 +26,21 @@ interface RuntimeAgent {
   channelName: string
 }
 
+interface SecretMetadata {
+  setAt: string
+  expiresAt?: string
+}
+
+interface SecretsListResponse {
+  secrets: Record<string, SecretMetadata>
+}
+
+type SettingsSection = 'cloud' | 'runtimes'
+
 interface RuntimeStatusDropdownProps {
   apiHost: string
   spaceId: string
+  onOpenSettings?: (section?: SettingsSection) => void
 }
 
 // Temporary hack: identify Miriad Cloud by name
@@ -34,7 +48,7 @@ function isMiriadCloud(runtime: Runtime): boolean {
   return runtime.name === 'Miriad Cloud'
 }
 
-export function RuntimeStatusDropdown({ apiHost, spaceId }: RuntimeStatusDropdownProps) {
+export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings }: RuntimeStatusDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [runtimes, setRuntimes] = useState<Runtime[]>([])
   const [loading, setLoading] = useState(true)
@@ -42,7 +56,30 @@ export function RuntimeStatusDropdown({ apiHost, spaceId }: RuntimeStatusDropdow
   const [runtimeAgents, setRuntimeAgents] = useState<Record<string, RuntimeAgent[]>>({})
   const [loadingAgents, setLoadingAgents] = useState<Set<string>>(new Set())
   const [startingCloud, setStartingCloud] = useState(false)
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null)
+  const [hasCheckedRuntimes, setHasCheckedRuntimes] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  // Determine overall status (computed early so it can be used in effects)
+  const onlineRuntimes = runtimes.filter(r => r.status === 'online')
+  const hasAnyOnline = onlineRuntimes.length > 0
+  const totalOnline = onlineRuntimes.length
+
+  // Check if API key is configured
+  useEffect(() => {
+    async function checkApiKey() {
+      try {
+        const data = await apiJson<SecretsListResponse>(
+          `${apiHost}/api/spaces/${spaceId}/secrets`
+        )
+        setHasApiKey(ANTHROPIC_API_KEY in data.secrets)
+      } catch (err) {
+        console.error('Failed to check API key:', err)
+        setHasApiKey(false)
+      }
+    }
+    checkApiKey()
+  }, [apiHost, spaceId])
 
   // Fetch status on mount and periodically
   // Poll faster (every 2s) when starting cloud, otherwise every 30s
@@ -53,31 +90,44 @@ export function RuntimeStatusDropdown({ apiHost, spaceId }: RuntimeStatusDropdow
     return () => clearInterval(interval)
   }, [apiHost, spaceId, startingCloud])
 
-  // Close on outside click
+  // Close on outside click (but not when no runtimes are online)
   useEffect(() => {
     if (!isOpen) return
 
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setIsOpen(false)
+        // Don't close if no runtimes are online - user needs to configure one
+        if (hasAnyOnline) {
+          setIsOpen(false)
+        }
       }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isOpen])
+  }, [isOpen, hasAnyOnline])
 
-  // Close on escape
+  // Close on escape (but not when no runtimes are online)
   useEffect(() => {
     if (!isOpen) return
 
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsOpen(false)
+      // Don't close if no runtimes are online - user needs to configure one
+      if (e.key === 'Escape' && hasAnyOnline) {
+        setIsOpen(false)
+      }
     }
 
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
-  }, [isOpen])
+  }, [isOpen, hasAnyOnline])
+
+  // Auto-open dropdown if no runtimes are online after initial check
+  useEffect(() => {
+    if (hasCheckedRuntimes && !hasAnyOnline && !isOpen) {
+      setIsOpen(true)
+    }
+  }, [hasCheckedRuntimes, hasAnyOnline])
 
   async function fetchRuntimes() {
     setLoading(true)
@@ -91,6 +141,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId }: RuntimeStatusDropdow
       console.error('Failed to fetch runtime status:', err)
     } finally {
       setLoading(false)
+      setHasCheckedRuntimes(true)
     }
   }
 
@@ -156,11 +207,6 @@ export function RuntimeStatusDropdown({ apiHost, spaceId }: RuntimeStatusDropdow
     return `${diffDays}d ago`
   }
 
-  // Determine overall status
-  const onlineRuntimes = runtimes.filter(r => r.status === 'online')
-  const hasAnyOnline = onlineRuntimes.length > 0
-  const totalOnline = onlineRuntimes.length
-
   // Check if Miriad Cloud is in the list
   const miriadCloudRuntime = runtimes.find(isMiriadCloud)
   const hasMiriadCloudRecord = !!miriadCloudRuntime
@@ -202,6 +248,15 @@ export function RuntimeStatusDropdown({ apiHost, spaceId }: RuntimeStatusDropdow
             </button>
           </div>
 
+          {/* Warning when no runtimes online */}
+          {!hasAnyOnline && (
+            <div className="px-3 py-2 bg-orange-500/10 border-b border-orange-500/20">
+              <p className="text-xs text-orange-600 dark:text-orange-400">
+                You need at least one runtime to work with agents. Start Miriad Cloud or connect a local runtime.
+              </p>
+            </div>
+          )}
+
           <div className="max-h-80 overflow-y-auto">
             {/* Bootstrap Miriad Cloud - only show when there's no record at all */}
             {!hasMiriadCloudRecord && (
@@ -212,25 +267,38 @@ export function RuntimeStatusDropdown({ apiHost, spaceId }: RuntimeStatusDropdow
                     <div>
                       <div className="text-sm font-medium">Miriad Cloud</div>
                       <div className="text-xs text-muted-foreground">
-                        {startingCloud ? 'Starting...' : 'Not running'}
+                        {hasApiKey === false ? 'Not configured' : startingCloud ? 'Starting...' : 'Not running'}
                       </div>
                     </div>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      startMiriadCloud()
-                    }}
-                    disabled={startingCloud}
-                    className="flex items-center gap-1.5 px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    {startingCloud ? (
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Play className="w-3 h-3" />
-                    )}
-                    Start
-                  </button>
+                  {hasApiKey === false ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onOpenSettings?.('cloud')
+                      }}
+                      className="flex items-center gap-1.5 px-2 py-1 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/80"
+                    >
+                      <Settings className="w-3 h-3" />
+                      Configure
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        startMiriadCloud()
+                      }}
+                      disabled={startingCloud}
+                      className="flex items-center gap-1.5 px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {startingCloud ? (
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Play className="w-3 h-3" />
+                      )}
+                      Start
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -284,23 +352,36 @@ export function RuntimeStatusDropdown({ apiHost, spaceId }: RuntimeStatusDropdow
                               : 'Offline'}
                           </div>
                         </div>
-                        {/* Start button for offline Miriad Cloud */}
+                        {/* Start/Configure button for offline Miriad Cloud */}
                         {isCloud && runtime.status === 'offline' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              startMiriadCloud()
-                            }}
-                            disabled={startingCloud}
-                            className="flex items-center gap-1.5 px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
-                          >
-                            {startingCloud ? (
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Play className="w-3 h-3" />
-                            )}
-                            Start
-                          </button>
+                          hasApiKey === false ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onOpenSettings?.('cloud')
+                              }}
+                              className="flex items-center gap-1.5 px-2 py-1 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/80"
+                            >
+                              <Settings className="w-3 h-3" />
+                              Configure
+                            </button>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                startMiriadCloud()
+                              }}
+                              disabled={startingCloud}
+                              className="flex items-center gap-1.5 px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+                            >
+                              {startingCloud ? (
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Play className="w-3 h-3" />
+                              )}
+                              Start
+                            </button>
+                          )
                         )}
                       </div>
 
@@ -332,6 +413,18 @@ export function RuntimeStatusDropdown({ apiHost, spaceId }: RuntimeStatusDropdow
                 })}
               </div>
             ) : null}
+
+            {/* Link to local runtimes settings */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenSettings?.('runtimes')
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:bg-secondary/50 border-t border-border transition-colors"
+            >
+              <Monitor className="w-3.5 h-3.5" />
+              Run agents on your own systems
+            </button>
           </div>
         </div>
       )}

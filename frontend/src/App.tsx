@@ -40,7 +40,7 @@ import { OnboardingPage } from "./components/OnboardingPage";
 import { AuthErrorPage } from "./components/AuthErrorPage";
 import { OAuthCallbackPage } from "./components/OAuthCallbackPage";
 import { OAuthErrorPage } from "./components/OAuthErrorPage";
-import { SettingsModal } from "./components/settings";
+import { SettingsModal, type SettingsSection } from "./components/settings";
 import { MobileNav, type MobileTab } from "./components/MobileNav";
 import { MobileMenu } from "./components/MobileMenu";
 import { RuntimeStatusDropdown } from "./components/RuntimeStatusDropdown";
@@ -135,6 +135,7 @@ export function App() {
     return stored !== null ? JSON.parse(stored) : false;
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('cloud');
   // Artifact event counter - increment to trigger board refresh
   const [artifactEventTrigger, setArtifactEventTrigger] = useState(0);
   // Selected agent for detail panel (callsign or null)
@@ -1114,12 +1115,22 @@ export function App() {
 
         {/* Runtime status dropdown */}
         {authSession?.spaceId && (
-          <RuntimeStatusDropdown apiHost={API_HOST} spaceId={authSession.spaceId} />
+          <RuntimeStatusDropdown
+            apiHost={API_HOST}
+            spaceId={authSession.spaceId}
+            onOpenSettings={(section?: SettingsSection) => {
+              setSettingsSection(section ?? 'cloud')
+              setSettingsOpen(true)
+            }}
+          />
         )}
 
         {/* Desktop-only: Settings */}
         <button
-          onClick={() => setSettingsOpen(true)}
+          onClick={() => {
+            setSettingsSection('cloud')
+            setSettingsOpen(true)
+          }}
           className="hidden md:block p-1.5 hover:bg-[var(--cast-bg-hover)] transition-colors"
           title="Settings"
         >
@@ -1331,6 +1342,7 @@ export function App() {
         onClose={() => setSettingsOpen(false)}
         apiHost={API_HOST}
         spaceId={authSession?.spaceId}
+        initialSection={settingsSection}
       />
 
       {/* Channel switcher (Cmd-K) */}
