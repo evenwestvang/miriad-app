@@ -19,7 +19,7 @@
     }
   },
   "scripts": {
-    "build": "tsc && cp -r src/defaults dist/",
+    "build": "tsc",
     "dev": "tsx watch src/dev.ts",
     "dev:no-watch": "tsx src/dev.ts",
     "typecheck": "tsc --noEmit",
