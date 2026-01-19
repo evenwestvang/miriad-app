@@ -45,7 +45,7 @@ export function ChannelEmptyState({
   }, [fetchStarterAgents])
 
   return (
-    <div className="flex flex-col items-center justify-center h-full text-center px-6 max-w-2xl mx-auto">
+    <div className="flex flex-col items-center justify-center h-full text-center px-6 pb-16 max-w-2xl mx-auto">
       {/* Hero section */}
       <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-6">
         <Hash className="w-8 h-8 text-primary" />

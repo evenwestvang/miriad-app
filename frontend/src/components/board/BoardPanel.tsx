@@ -589,9 +589,47 @@ export function BoardPanel({
                 <span className="text-sm text-muted-foreground">Loading...</span>
               </div>
             ) : tree.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-40 px-4 text-center">
-                <p className="text-muted-foreground text-sm mb-1">Nothing here yet</p>
-                <p className="text-muted-foreground text-xs">Drop files or create artifacts to share with your team.</p>
+              <div className="flex flex-col items-center justify-center h-full px-6 text-center">
+                {/* Abstract tree illustration using CSS shapes */}
+                <div className="mb-8 select-none">
+                  {/* Root level items */}
+                  <div className="flex flex-col gap-2">
+                    {/* First branch with children */}
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-sm bg-muted-foreground/20" />
+                      <div className="w-16 h-2 rounded-full bg-muted-foreground/15" />
+                    </div>
+                    <div className="flex flex-col gap-1.5 ml-4 pl-3 border-l border-muted-foreground/15">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-sm bg-muted-foreground/15" />
+                        <div className="w-12 h-1.5 rounded-full bg-muted-foreground/10" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-sm bg-muted-foreground/15" />
+                        <div className="w-10 h-1.5 rounded-full bg-muted-foreground/10" />
+                      </div>
+                    </div>
+                    {/* Second branch with children */}
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="w-3 h-3 rounded-sm bg-muted-foreground/20" />
+                      <div className="w-14 h-2 rounded-full bg-muted-foreground/15" />
+                    </div>
+                    <div className="flex flex-col gap-1.5 ml-4 pl-3 border-l border-muted-foreground/15">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-sm bg-muted-foreground/15" />
+                        <div className="w-14 h-1.5 rounded-full bg-muted-foreground/10" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-sm bg-muted-foreground/15" />
+                        <div className="w-8 h-1.5 rounded-full bg-muted-foreground/10" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <h3 className="text-xl font-semibold text-foreground mb-3">Board</h3>
+                <p className="text-muted-foreground text-sm leading-relaxed max-w-[260px]">
+                  A shared space to organize documents, files, tasks, and plans while working in the channel.
+                </p>
               </div>
             ) : (
               <div className="flex flex-col h-full">
