@@ -29,6 +29,7 @@ import { highlightMentions, type ArtifactInfo } from "../../utils";
 import { ToolGroup } from "./ToolGroup";
 import { StructuredAskForm } from "../structured-ask";
 import { AttachmentList, AttachmentRenderer } from "./AttachmentRenderer";
+import { ChannelEmptyState } from "./ChannelEmptyState";
 import type { AttachmentMessageContent, Attachment } from "../../types";
 // Avatar components kept for potential future use
 // import { AgentAvatar, UserAvatar } from './AgentAvatar'
@@ -233,6 +234,8 @@ interface MessageListProps {
     messageId: string,
     response: Record<string, unknown>,
   ) => void;
+  /** Callback when user selects a starter agent from empty state */
+  onSelectStarterAgent?: (agentSlug: string) => void;
 }
 
 export function MessageList({
@@ -250,6 +253,7 @@ export function MessageList({
   isLoadingOlder = false,
   onRequestOlderMessages,
   onStructuredAskSubmit,
+  onSelectStarterAgent,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -488,19 +492,28 @@ export function MessageList({
           null
         ) : (
           // Empty state - only show when NOT switching channels
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-              <span className="text-2xl">💬</span>
-            </div>
-            <p className="text-muted-foreground text-sm mb-1">
-              Start a conversation with {threadName}
-            </p>
-            {threadAgentType && (
-              <p className="text-xs text-muted-foreground">
-                This is a {threadAgentType} agent
+          onSelectStarterAgent ? (
+            <ChannelEmptyState
+              channelId={channelId}
+              apiHost={apiHost}
+              onSelectAgent={onSelectStarterAgent}
+            />
+          ) : (
+            // Fallback simple empty state when no starter agent handler provided
+            <div className="flex flex-col items-center justify-center h-full text-center px-4">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                <span className="text-2xl">💬</span>
+              </div>
+              <p className="text-muted-foreground text-sm mb-1">
+                Start a conversation with {threadName}
               </p>
-            )}
-          </div>
+              {threadAgentType && (
+                <p className="text-xs text-muted-foreground">
+                  This is a {threadAgentType} agent
+                </p>
+              )}
+            </div>
+          )
         )
       ) : (
         <>

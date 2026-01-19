@@ -361,6 +361,15 @@ export interface Storage {
   ): Promise<RecursiveArchiveResult>;
 
   /**
+   * Hard delete all artifacts in a channel.
+   * WARNING: This is a destructive operation - artifacts cannot be recovered.
+   * Used for resetting channels during development/testing.
+   *
+   * @returns Number of artifacts deleted
+   */
+  deleteAllArtifactsInChannel(channelId: string): Promise<number>;
+
+  /**
    * List artifacts with optional filters.
    * Returns summary info (not full content) for efficiency.
    *

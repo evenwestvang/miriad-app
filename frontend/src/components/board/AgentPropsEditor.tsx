@@ -12,6 +12,7 @@ export interface AgentProps {
   nameTheme?: string
   agentName?: string
   mcp?: McpReference[]
+  featuredChannelStarter?: boolean
 }
 
 interface McpReference {
@@ -272,6 +273,23 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
           </button>
         )}
       </div>
+
+      {/* Featured Channel Starter */}
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="featuredChannelStarter"
+          checked={props.featuredChannelStarter || false}
+          onChange={(e) => onChange({ featuredChannelStarter: e.target.checked || undefined })}
+          className="w-4 h-4 rounded border-border text-primary focus:ring-primary focus:ring-offset-0"
+        />
+        <label htmlFor="featuredChannelStarter" className="text-sm text-foreground">
+          Featured channel starter
+        </label>
+      </div>
+      <p className="text-xs text-muted-foreground -mt-2">
+        Show this agent as a suggested starter when creating new channels
+      </p>
     </div>
   )
 }

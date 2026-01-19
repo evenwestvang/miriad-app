@@ -1144,6 +1144,16 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       }
     }
 
+    // Parse props if it comes back as a string (JSONB sometimes does this)
+    let props = row.props;
+    if (typeof props === 'string') {
+      try {
+        props = JSON.parse(props);
+      } catch {
+        props = null;
+      }
+    }
+
     return {
       id: row.id,
       channelId: row.channel_id,
@@ -1159,7 +1169,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       assignees: row.assignees ?? [],
       labels: row.labels ?? [],
       refs: row.refs ?? [],
-      props: row.props ?? undefined,
+      props: props ?? undefined,
       secrets: secretsMetadata,
       contentType: row.content_type ?? undefined,
       fileSize: row.file_size ?? undefined,
@@ -1173,6 +1183,16 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   function rowToArtifactSummary(row: ArtifactRow): ArtifactSummary {
+    // Parse props if it comes back as a string (JSONB sometimes does this)
+    let props = row.props;
+    if (typeof props === 'string') {
+      try {
+        props = JSON.parse(props);
+      } catch {
+        props = null;
+      }
+    }
+
     return {
       slug: row.slug,
       type: row.type as ArtifactType,
@@ -1184,7 +1204,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       assignees: row.assignees ?? [],
       parentSlug: row.parent_slug ?? undefined,
       channelId: row.channel_id,
-      props: row.props ?? undefined,
+      props: props ?? undefined,
     };
   }
 
@@ -1324,7 +1344,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           updateObj.labels = change.newValue ?? [];
           break;
         case 'props':
-          updateObj.props = change.newValue ? JSON.stringify(change.newValue) : null;
+          updateObj.props = change.newValue ?? null;
           break;
         case 'orderKey':
           updateObj.order_key = change.newValue ?? null;
@@ -1483,6 +1503,23 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       archived: archivedItems,
       count: archivedItems.length,
     };
+  }
+
+  async function deleteAllArtifactsInChannel(channelId: string): Promise<number> {
+    // First delete all artifact versions (references artifacts by channel_id + slug)
+    await sql`
+      DELETE FROM artifact_versions
+      WHERE channel_id = ${channelId}
+    `;
+
+    // Then delete all artifacts in the channel
+    const result = await sql`
+      DELETE FROM artifacts
+      WHERE channel_id = ${channelId}
+      RETURNING id
+    `;
+
+    return result.length;
   }
 
   async function listArtifacts(
@@ -3371,6 +3408,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     editArtifact,
     archiveArtifact,
     archiveArtifactRecursive,
+    deleteAllArtifactsInChannel,
     listArtifacts,
     globArtifacts,
     checkpointArtifact,

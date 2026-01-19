@@ -36,6 +36,8 @@ interface AgentRosterProps {
   summonOpen?: boolean
   /** Controlled: called when summon picker should close */
   onSummonClose?: () => void
+  /** Pre-selected agent slug - skips browse and goes to configure */
+  preSelectedAgentSlug?: string
 }
 
 interface AgentBadgeProps {
@@ -118,6 +120,7 @@ export function AgentRoster({
   canManageAgents = false,
   summonOpen = false,
   onSummonClose,
+  preSelectedAgentSlug,
 }: AgentRosterProps) {
   // Note: agentTypes and onAgentAdded are deprecated but kept for backwards compatibility
   void _agentTypes
@@ -165,6 +168,7 @@ export function AgentRoster({
           apiHost={apiHost}
           onClose={() => onSummonClose?.()}
           isOpen={summonOpen}
+          preSelectedAgentSlug={preSelectedAgentSlug}
         />
       )}
 

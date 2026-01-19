@@ -115,6 +115,10 @@ export const SystemAgentPropsSchema = z.object({
     .array(McpReferenceSchema)
     .optional()
     .describe('List of MCP servers to provide to this agent'),
+  featuredChannelStarter: z
+    .boolean()
+    .optional()
+    .describe('Show this agent as a suggested starter when creating new channels'),
 });
 
 export type SystemAgentProps = z.infer<typeof SystemAgentPropsSchema>;

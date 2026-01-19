@@ -34,6 +34,7 @@ import { OnboardingPage } from "./components/OnboardingPage";
 import { AuthErrorPage } from "./components/AuthErrorPage";
 import { OAuthCallbackPage } from "./components/OAuthCallbackPage";
 import { OAuthErrorPage } from "./components/OAuthErrorPage";
+import { InitializeRootChannelPage } from "./components/InitializeRootChannelPage";
 import { SettingsModal, type SettingsSection } from "./components/settings";
 import { MobileNav, type MobileTab } from "./components/MobileNav";
 import { MobileMenu } from "./components/MobileMenu";
@@ -138,6 +139,8 @@ export function App() {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   // Summon picker open state (controlled from MessageInput button)
   const [summonOpen, setSummonOpen] = useState(false);
+  // Pre-selected agent slug for summon picker (set from empty state)
+  const [preSelectedAgentSlug, setPreSelectedAgentSlug] = useState<string | undefined>(undefined);
   // Channel switcher (Cmd-K) open state
   const [channelSwitcherOpen, setChannelSwitcherOpen] = useState(false);
   // Recently dismissed agents (for warning when mentioning them)
@@ -600,8 +603,11 @@ export function App() {
     setAgentsLoading(false);
   }, []);
 
-  // Fetch channels from API on mount
+  // Fetch channels from API when authenticated
   useEffect(() => {
+    // Don't fetch until auth is confirmed
+    if (!authSession) return;
+
     async function fetchChannels() {
       try {
         const response = await apiFetch(`${API_HOST}/channels`);
@@ -631,6 +637,15 @@ export function App() {
           }),
         );
         setThreads(threadList);
+
+        // Auto-navigate to first non-root channel if no channel is selected
+        if (!urlState.channelId && threadList.length > 0) {
+          // Find first non-root channel (root is for system config, not user work)
+          const firstUserChannel = threadList.find((t) => t.agentName !== "root");
+          if (firstUserChannel) {
+            navigateToChannel(firstUserChannel.id);
+          }
+        }
       } catch (error) {
         console.error("Failed to fetch channels:", error);
         // Keep empty list on error
@@ -639,7 +654,7 @@ export function App() {
       }
     }
     fetchChannels();
-  }, []);
+  }, [authSession]);
 
   // Handle thread/channel changes
   useEffect(() => {
@@ -1060,6 +1075,17 @@ export function App() {
     return <LoginPage onLogin={handleLogin} apiHost={API_HOST} />;
   }
 
+  // Initialize root channel page (for debugging onboarding/curation)
+  if (pathname === "/initialize-root-channel") {
+    return (
+      <InitializeRootChannelPage
+        onComplete={() => {
+          window.location.href = "/";
+        }}
+      />
+    );
+  }
+
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Unified header - spans full width */}
@@ -1185,6 +1211,10 @@ export function App() {
                 hasMoreMessages={hasMoreMessages}
                 isLoadingOlder={isLoadingOlder}
                 onRequestOlderMessages={requestOlderMessages}
+                onSelectStarterAgent={(agentSlug) => {
+                  setPreSelectedAgentSlug(agentSlug);
+                  setSummonOpen(true);
+                }}
               />
               {/* Input area with detail panel + roster bar above message input */}
               <div className="border-t border-border bg-card">
@@ -1216,7 +1246,11 @@ export function App() {
                     selectedAgent={selectedAgent}
                     canManageAgents={!!selectedThread}
                     summonOpen={summonOpen}
-                    onSummonClose={() => setSummonOpen(false)}
+                    onSummonClose={() => {
+                      setSummonOpen(false);
+                      setPreSelectedAgentSlug(undefined);
+                    }}
+                    preSelectedAgentSlug={preSelectedAgentSlug}
                   />
                 </div>
                 {/* Message input below roster */}

@@ -25,6 +25,7 @@ import { createAppRoutes } from './handlers/apps.js';
 import { createRuntimeAuthRoutes } from './handlers/runtime-auth.js';
 import { createRuntimeRoutes } from './handlers/runtimes.js';
 import { createMiriadCloudRoutes } from './handlers/miriad-cloud.js';
+import { resetRootChannel } from './onboarding/index.js';
 
 // =============================================================================
 // Types
@@ -513,6 +514,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
         tldr?: string;
         nameTheme?: string;
         suggestedName?: string;
+        featuredChannelStarter?: boolean;
         source: 'local' | 'root';
       }>();
 
@@ -525,6 +527,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
           tldr: agent.tldr,
           nameTheme: props?.nameTheme as string | undefined,
           suggestedName: props?.suggestedName as string | undefined,
+          featuredChannelStarter: props?.featuredChannelStarter as boolean | undefined,
           source: 'root',
         });
       }
@@ -538,6 +541,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
           tldr: agent.tldr,
           nameTheme: props?.nameTheme as string | undefined,
           suggestedName: props?.suggestedName as string | undefined,
+          featuredChannelStarter: props?.featuredChannelStarter as boolean | undefined,
           source: 'local',
         });
       }
@@ -1362,6 +1366,28 @@ export function createApp(options: AppOptions): Hono {
   const channelRoutes = createChannelRoutes(storage);
   app.route('/channels', channelRoutes);
 
+  // ---------------------------------------------------------------------------
+  // Root Channel Reset (for debugging onboarding/curation)
+  // ---------------------------------------------------------------------------
+  app.use('/initialize-root-channel', requireAuth);
+  app.post('/initialize-root-channel', async (c) => {
+    const spaceId = getSpaceId(c);
+    try {
+      const result = await resetRootChannel(storage, spaceId);
+      return c.json({
+        success: true,
+        message: `Reset root channel: deleted ${result.deletedCount} artifacts, created ${result.createdCount} new artifacts`,
+        ...result,
+      });
+    } catch (error) {
+      console.error('[ResetRootChannel] Error:', error);
+      return c.json(
+        { error: 'Failed to reset root channel', message: error instanceof Error ? error.message : 'Unknown error' },
+        500
+      );
+    }
+  });
+
   // Roster routes (mounted under /channels/:id/roster)
   const rosterRoutes = createRosterRoutes(storage);
   app.route('/channels', rosterRoutes);
@@ -1558,7 +1584,6 @@ export function createApp(options: AppOptions): Hono {
   // spaceId extracted from container auth
   const mcpRoutes = createMcpRoutes({
     storage,
-    assetStorage,
     connectionManager,
     // AgentInvoker for send_message tool - creates invoker with spaceId from container auth context
     agentInvoker: {
