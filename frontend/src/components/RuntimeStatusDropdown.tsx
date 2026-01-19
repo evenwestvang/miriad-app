@@ -45,6 +45,8 @@ interface RuntimeStatusDropdownProps {
   settingsOpen?: boolean
   /** Called when any runtime status changes (triggers roster reload) */
   onRuntimeStatusChange?: () => void
+  /** Called when the disconnected state changes (no runtime online AND no API key) */
+  onDisconnectedStateChange?: (isDisconnected: boolean) => void
 }
 
 // Temporary hack: identify Miriad Cloud by name
@@ -52,7 +54,7 @@ function isMiriadCloud(runtime: Runtime): boolean {
   return runtime.name === 'Miriad Cloud'
 }
 
-export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settingsOpen, onRuntimeStatusChange }: RuntimeStatusDropdownProps) {
+export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settingsOpen, onRuntimeStatusChange, onDisconnectedStateChange }: RuntimeStatusDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [runtimes, setRuntimes] = useState<Runtime[]>([])
   const [loading, setLoading] = useState(true)
@@ -137,6 +139,14 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
       setIsOpen(true)
     }
   }, [hasCheckedRuntimes, hasAnyOnline])
+
+  // Notify parent of disconnected state (no runtime online AND no API key)
+  useEffect(() => {
+    if (onDisconnectedStateChange && hasCheckedRuntimes && hasApiKey !== null) {
+      const isDisconnected = !hasAnyOnline && !hasApiKey
+      onDisconnectedStateChange(isDisconnected)
+    }
+  }, [hasCheckedRuntimes, hasAnyOnline, hasApiKey, onDisconnectedStateChange])
 
   async function fetchRuntimes() {
     setLoading(true)

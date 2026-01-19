@@ -30,6 +30,7 @@ import { ToolGroup } from "./ToolGroup";
 import { StructuredAskForm } from "../structured-ask";
 import { AttachmentList, AttachmentRenderer } from "./AttachmentRenderer";
 import { ChannelEmptyState } from "./ChannelEmptyState";
+import { RootChannelEmptyState } from "./RootChannelEmptyState";
 import type { AttachmentMessageContent, Attachment } from "../../types";
 // Avatar components kept for potential future use
 // import { AgentAvatar, UserAvatar } from './AgentAvatar'
@@ -490,30 +491,31 @@ export function MessageList({
             </div>
           ) : // Before 500ms - show nothing (blank screen feels faster)
           null
+        ) : // Empty state - only show when NOT switching channels
+        threadName === "root" ? (
+          // Root channel has a special empty state
+          <RootChannelEmptyState />
+        ) : onSelectStarterAgent ? (
+          <ChannelEmptyState
+            channelId={channelId}
+            apiHost={apiHost}
+            onSelectAgent={onSelectStarterAgent}
+          />
         ) : (
-          // Empty state - only show when NOT switching channels
-          onSelectStarterAgent ? (
-            <ChannelEmptyState
-              channelId={channelId}
-              apiHost={apiHost}
-              onSelectAgent={onSelectStarterAgent}
-            />
-          ) : (
-            // Fallback simple empty state when no starter agent handler provided
-            <div className="flex flex-col items-center justify-center h-full text-center px-4">
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-                <span className="text-2xl">💬</span>
-              </div>
-              <p className="text-muted-foreground text-sm mb-1">
-                Start a conversation with {threadName}
-              </p>
-              {threadAgentType && (
-                <p className="text-xs text-muted-foreground">
-                  This is a {threadAgentType} agent
-                </p>
-              )}
+          // Fallback simple empty state when no starter agent handler provided
+          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+              <span className="text-2xl">💬</span>
             </div>
-          )
+            <p className="text-muted-foreground text-sm mb-1">
+              Start a conversation with {threadName}
+            </p>
+            {threadAgentType && (
+              <p className="text-xs text-muted-foreground">
+                This is a {threadAgentType} agent
+              </p>
+            )}
+          </div>
         )
       ) : (
         <>

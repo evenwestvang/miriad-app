@@ -133,6 +133,8 @@ export function App() {
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('cloud');
+  // Disconnected state: no runtimes online AND no API key configured
+  const [isDisconnected, setIsDisconnected] = useState(false);
   // Artifact event counter - increment to trigger board refresh
   const [artifactEventTrigger, setArtifactEventTrigger] = useState(0);
   // Selected agent for detail panel (callsign or null)
@@ -1127,6 +1129,7 @@ export function App() {
               // Runtime came online/offline - reload roster to update agent online states
               setRosterRefreshKey((k) => k + 1)
             }}
+            onDisconnectedStateChange={setIsDisconnected}
           />
         )}
 
@@ -1141,7 +1144,14 @@ export function App() {
       </header>
 
       {/* Main content area - add bottom padding on mobile for nav bar */}
-      <div className="flex flex-1 min-h-0 overflow-hidden pb-14 md:pb-0">
+      <div className="flex flex-1 min-h-0 overflow-hidden pb-14 md:pb-0 relative">
+        {/* Disconnected overlay - blocks interaction when no runtime and no API key */}
+        {isDisconnected && !settingsOpen && (
+          <div
+            className="absolute inset-0 bg-background/70 z-40 pointer-events-auto"
+            aria-hidden="true"
+          />
+        )}
         {/* Sidebar - hidden on mobile, shows as full-screen when channels tab active */}
         <aside
           className={cn(
