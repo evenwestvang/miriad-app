@@ -4,10 +4,8 @@ import { getRosterColor } from '../../utils/senderColors'
 
 export interface RosterAgent {
   callsign: string
-  /** Whether agent has a callbackUrl (container is running) */
+  /** Whether the agent's runtime is online (agent can receive messages) */
   isOnline: boolean
-  /** Whether agent container is starting up */
-  isConnecting?: boolean
   /** Whether agent is in an active turn (sent messages, no idle frame yet) */
   isWorking?: boolean
   /** Whether agent is pending (message routed, awaiting first frame) */
@@ -32,6 +30,8 @@ export interface RosterAgent {
   runtimeId?: string | null
   /** Runtime name for display (populated from runtime record) */
   runtimeName?: string
+  /** Runtime connection status - agent is online when runtime is online */
+  runtimeStatus?: 'online' | 'offline'
 }
 
 interface MentionAutocompleteProps {

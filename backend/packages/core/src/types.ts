@@ -341,6 +341,12 @@ export interface RosterEntry {
    * Only present when runtimeId is set.
    */
   runtimeName?: string;
+
+  /**
+   * Runtime connection status (populated from runtime record via JOIN).
+   * Agent is considered online when runtime is online.
+   */
+  runtimeStatus?: RuntimeStatus;
 }
 
 /**

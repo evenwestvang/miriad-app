@@ -149,6 +149,7 @@ interface RosterRow {
   last_message_routed_at: Date | null;
   runtime_id: string | null;
   runtime_name?: string | null;
+  runtime_status?: string | null;
 }
 
 interface UserRow {
@@ -811,8 +812,10 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     callsign: string
   ): Promise<RosterEntry | null> {
     const result = await sql<RosterRow[]>`
-      SELECT * FROM roster
-      WHERE channel_id = ${channelId} AND callsign = ${callsign}
+      SELECT r.*, rt.name as runtime_name, rt.status as runtime_status
+      FROM roster r
+      LEFT JOIN runtimes rt ON r.runtime_id = rt.id
+      WHERE r.channel_id = ${channelId} AND r.callsign = ${callsign}
     `;
 
     if (result.length === 0) return null;
@@ -821,7 +824,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
   async function listRoster(channelId: string): Promise<RosterEntry[]> {
     const result = await sql<RosterRow[]>`
-      SELECT r.*, rt.name as runtime_name
+      SELECT r.*, rt.name as runtime_name, rt.status as runtime_status
       FROM roster r
       LEFT JOIN runtimes rt ON r.runtime_id = rt.id
       WHERE r.channel_id = ${channelId}
@@ -834,7 +837,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
   async function listArchivedRoster(channelId: string): Promise<RosterEntry[]> {
     const result = await sql<RosterRow[]>`
-      SELECT r.*, rt.name as runtime_name
+      SELECT r.*, rt.name as runtime_name, rt.status as runtime_status
       FROM roster r
       LEFT JOIN runtimes rt ON r.runtime_id = rt.id
       WHERE r.channel_id = ${channelId}
@@ -849,7 +852,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     runtimeId: string
   ): Promise<Array<RosterEntry & { channelName: string }>> {
     const result = await sql<(RosterRow & { channel_name: string })[]>`
-      SELECT r.*, rt.name as runtime_name, c.name as channel_name
+      SELECT r.*, rt.name as runtime_name, rt.status as runtime_status, c.name as channel_name
       FROM roster r
       LEFT JOIN runtimes rt ON r.runtime_id = rt.id
       JOIN channels c ON r.channel_id = c.id
@@ -2852,6 +2855,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       lastMessageRoutedAt: row.last_message_routed_at?.toISOString() ?? undefined,
       runtimeId: row.runtime_id ?? undefined,
       runtimeName: row.runtime_name ?? undefined,
+      runtimeStatus: (row.runtime_status as RuntimeStatus) ?? undefined,
     };
   }
 

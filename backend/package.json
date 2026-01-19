@@ -12,7 +12,8 @@
     "lint": "eslint packages/*/src/**/*.ts",
     "typecheck": "pnpm -r typecheck",
     "deploy": "cd deploy && ./deploy.sh",
-    "publish:backend": "pnpm --filter @miriad-systems/backend build && pnpm --filter @miriad-systems/backend publish --access public"
+    "publish:backend": "pnpm --filter @miriad-systems/backend build && pnpm --filter @miriad-systems/backend publish --access public",
+    "build:miriad-cloud": "docker build -t miriad-cloud -f ../agents/miriad-cloud/Dockerfile .."
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

@@ -43,6 +43,8 @@ interface RuntimeStatusDropdownProps {
   onOpenSettings?: (section?: SettingsSection) => void
   /** When true, settings modal is open - used to refresh state when it closes */
   settingsOpen?: boolean
+  /** Called when any runtime status changes (triggers roster reload) */
+  onRuntimeStatusChange?: () => void
 }
 
 // Temporary hack: identify Miriad Cloud by name
@@ -50,7 +52,7 @@ function isMiriadCloud(runtime: Runtime): boolean {
   return runtime.name === 'Miriad Cloud'
 }
 
-export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settingsOpen }: RuntimeStatusDropdownProps) {
+export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settingsOpen, onRuntimeStatusChange }: RuntimeStatusDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [runtimes, setRuntimes] = useState<Runtime[]>([])
   const [loading, setLoading] = useState(true)
@@ -61,6 +63,8 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null)
   const [hasCheckedRuntimes, setHasCheckedRuntimes] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  // Track previous runtime statuses to detect changes
+  const prevRuntimeStatusesRef = useRef<Map<string, 'online' | 'offline'>>(new Map())
 
   // Determine overall status (computed early so it can be used in effects)
   const onlineRuntimes = runtimes.filter(r => r.status === 'online')
@@ -140,7 +144,31 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
       const response = await apiFetch(`${apiHost}/api/spaces/${spaceId}/runtimes`)
       if (response.ok) {
         const data = await response.json()
-        setRuntimes(data.runtimes || [])
+        const newRuntimes: Runtime[] = data.runtimes || []
+        setRuntimes(newRuntimes)
+
+        // Check if any runtime status changed
+        let statusChanged = false
+        const newStatusMap = new Map<string, 'online' | 'offline'>()
+        for (const rt of newRuntimes) {
+          newStatusMap.set(rt.id, rt.status)
+          const prevStatus = prevRuntimeStatusesRef.current.get(rt.id)
+          if (prevStatus !== undefined && prevStatus !== rt.status) {
+            statusChanged = true
+          }
+        }
+        // Also check for runtimes that disappeared
+        for (const [id] of prevRuntimeStatusesRef.current) {
+          if (!newStatusMap.has(id)) {
+            statusChanged = true
+          }
+        }
+        prevRuntimeStatusesRef.current = newStatusMap
+
+        // Notify parent if status changed (triggers roster reload)
+        if (statusChanged && onRuntimeStatusChange) {
+          onRuntimeStatusChange()
+        }
       }
     } catch (err) {
       console.error('Failed to fetch runtime status:', err)

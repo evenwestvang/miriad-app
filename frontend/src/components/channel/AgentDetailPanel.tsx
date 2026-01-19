@@ -12,7 +12,6 @@ import {
   Loader2,
   Circle,
   MoreVertical,
-  Coffee,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { getRosterColor } from '../../utils/senderColors'
@@ -34,6 +33,10 @@ interface AgentDetailPanelProps {
   onClose: () => void
   /** Called after agent is dismissed */
   onDismiss?: (callsign: string) => void
+  /** Called immediately when mute is clicked (optimistic update) */
+  onMute?: (callsign: string) => void
+  /** Called immediately when unmute is clicked (optimistic update) */
+  onUnmute?: (callsign: string) => void
 }
 
 /**
@@ -43,11 +46,8 @@ function getStateBadge(agent: RosterAgent): { label: string; colorClass: string 
   if (agent.isPaused) {
     return { label: 'Muted', colorClass: 'bg-amber-500 text-white' }
   }
-  if (agent.isConnecting) {
-    return { label: 'Connecting', colorClass: 'bg-yellow-500 text-black' }
-  }
   if (!agent.isOnline) {
-    return { label: 'Suspended', colorClass: 'bg-gray-500 text-white' }
+    return { label: 'Offline', colorClass: 'bg-gray-500 text-white' }
   }
   if (agent.isWorking) {
     return { label: 'Working', colorClass: 'bg-blue-500 text-white' }
@@ -69,9 +69,11 @@ export function AgentDetailPanel({
   apiHost,
   onClose,
   onDismiss,
+  onMute,
+  onUnmute,
 }: AgentDetailPanelProps) {
   const [copied, setCopied] = useState(false)
-  const [actionLoading, setActionLoading] = useState<'pause' | 'resume' | 'dismiss' | 'activate' | null>(null)
+  const [actionLoading, setActionLoading] = useState<'pause' | 'resume' | 'dismiss' | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -113,8 +115,10 @@ export function AgentDetailPanel({
     }
   }
 
-  // Handle pause action
+  // Handle pause action (mute)
   const handlePause = async () => {
+    // Optimistic update - reflect immediately in UI
+    onMute?.(agent.callsign)
     setActionLoading('pause')
     try {
       const response = await fetch(
@@ -124,16 +128,22 @@ export function AgentDetailPanel({
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
         console.error('Failed to pause agent:', data.error || response.status)
+        // Revert on failure - unmute
+        onUnmute?.(agent.callsign)
       }
     } catch (err) {
       console.error('Failed to pause agent:', err)
+      // Revert on failure - unmute
+      onUnmute?.(agent.callsign)
     } finally {
       setActionLoading(null)
     }
   }
 
-  // Handle resume action
+  // Handle resume action (unmute)
   const handleResume = async () => {
+    // Optimistic update - reflect immediately in UI
+    onUnmute?.(agent.callsign)
     setActionLoading('resume')
     try {
       const response = await fetch(
@@ -143,9 +153,13 @@ export function AgentDetailPanel({
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
         console.error('Failed to resume agent:', data.error || response.status)
+        // Revert on failure - mute again
+        onMute?.(agent.callsign)
       }
     } catch (err) {
       console.error('Failed to resume agent:', err)
+      // Revert on failure - mute again
+      onMute?.(agent.callsign)
     } finally {
       setActionLoading(null)
     }
@@ -153,7 +167,10 @@ export function AgentDetailPanel({
 
   // Handle dismiss action
   const handleDismiss = async () => {
-    setActionLoading('dismiss')
+    // Optimistic update - remove from roster and close panel immediately
+    onDismiss?.(agent.callsign)
+    onClose()
+
     try {
       const response = await fetch(
         `${apiHost}/channels/${channelId}/agents/${agent.callsign}`,
@@ -162,33 +179,12 @@ export function AgentDetailPanel({
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
         console.error('Failed to dismiss agent:', data.error || response.status)
-      } else {
-        onDismiss?.(agent.callsign)
-        onClose()
+        // Note: We don't revert on failure because the WebSocket broadcast
+        // will sync the correct state. If the backend failed, the agent
+        // will reappear when we get the next roster update.
       }
     } catch (err) {
       console.error('Failed to dismiss agent:', err)
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
-  // Handle activate action (for suspended agents)
-  const handleActivate = async () => {
-    setActionLoading('activate')
-    try {
-      const response = await fetch(
-        `${apiHost}/channels/${channelId}/agents/${agent.callsign}/activate`,
-        { method: 'POST', credentials: 'include' }
-      )
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        console.error('Failed to activate agent:', data.error || response.status)
-      }
-    } catch (err) {
-      console.error('Failed to activate agent:', err)
-    } finally {
-      setActionLoading(null)
     }
   }
 
@@ -199,8 +195,7 @@ export function AgentDetailPanel({
 
     // Fall back to derived status
     if (agent.isPaused) return 'Muted — will not respond to mentions'
-    if (agent.isConnecting) return 'Starting container...'
-    if (!agent.isOnline) return 'Suspended — container stopped'
+    if (!agent.isOnline) return 'Offline — runtime not connected'
     if (agent.isWorking) return 'Working on a task'
     if (agent.isPending) return 'Pending — waiting for response'
     return 'Idle — ready for work'
@@ -243,25 +238,6 @@ export function AgentDetailPanel({
 
           {/* Wide: inline action buttons (hidden on narrow) */}
           <div className="hidden sm:flex items-center gap-1">
-            {/* Activate button for suspended agents */}
-            {!agent.isOnline && !agent.isConnecting && (
-              <button
-                onClick={handleActivate}
-                disabled={actionLoading !== null}
-                className={cn(
-                  "flex items-center gap-1.5 px-2 py-1 text-sm",
-                  "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
-                  "disabled:opacity-50 disabled:cursor-not-allowed"
-                )}
-              >
-                {actionLoading === 'activate' ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Coffee className="w-4 h-4" />
-                )}
-                Activate
-              </button>
-            )}
             {/* Mute/Unmute - always available */}
             {agent.isPaused ? (
               <button
@@ -329,25 +305,6 @@ export function AgentDetailPanel({
             {/* Dropdown menu */}
             {menuOpen && (
               <div className="absolute right-0 top-full mt-1 bg-white border border-[#e5e5e5] shadow-sm z-10 min-w-[140px]">
-                {/* Activate for suspended agents */}
-                {!agent.isOnline && !agent.isConnecting && (
-                  <button
-                    onClick={() => { handleActivate(); setMenuOpen(false) }}
-                    disabled={actionLoading !== null}
-                    className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
-                      "text-[var(--cast-text-primary)] hover:bg-[#f5f5f5]",
-                      "disabled:opacity-50 disabled:cursor-not-allowed"
-                    )}
-                  >
-                    {actionLoading === 'activate' ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Coffee className="w-4 h-4" />
-                    )}
-                    Activate
-                  </button>
-                )}
                 {/* Mute/Unmute - always available */}
                 {agent.isPaused ? (
                   <button
@@ -449,16 +406,18 @@ export function AgentDetailPanel({
           <span>·</span>
           <span className="flex items-center gap-1">
             {agent.runtimeId ? (
-              <>
-                <Laptop className="w-3.5 h-3.5" />
-                {agent.runtimeName || 'Local'}
-              </>
+              <Laptop className="w-3.5 h-3.5" />
             ) : (
-              <>
-                <Cloud className="w-3.5 h-3.5" />
-                Legacy Cloud
-              </>
+              <Cloud className="w-3.5 h-3.5" />
             )}
+            {agent.runtimeName || 'Miriad Cloud'}
+            <span
+              className={cn(
+                "w-1.5 h-1.5 rounded-full",
+                agent.runtimeStatus === 'online' ? "bg-green-500" : "bg-gray-400"
+              )}
+              title={agent.runtimeStatus === 'online' ? 'Runtime online' : 'Runtime offline'}
+            />
           </span>
         </div>
       </div>

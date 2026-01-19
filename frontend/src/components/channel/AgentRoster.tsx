@@ -69,28 +69,20 @@ function AgentBadge({ agent, isLeader, isSelected, channelId, rosterIndex, onCli
   // Derive state label for tooltip
   const stateLabel = agent.isPaused
     ? 'muted'
-    : agent.isConnecting
-      ? 'connecting'
-      : !agent.isOnline
-        ? 'offline'
-        : agent.isWorking
-          ? 'working'
-          : agent.isPending
-            ? 'pending'
-            : 'idle'
+    : !agent.isOnline
+      ? 'offline'
+      : agent.isWorking
+        ? 'working'
+        : agent.isPending
+          ? 'pending'
+          : 'idle'
 
   // Runtime info for tooltip
-  const runtimeLabel = agent.runtimeId
-    ? agent.runtimeName || 'local'
-    : 'cloud'
+  const runtimeLabel = agent.runtimeName || 'Miriad Cloud'
 
-  // Derive dot color: yellow for connecting, gray for offline, otherwise signature color
+  // Derive dot color: gray for offline, otherwise signature color
   // Muted state doesn't affect dot color - only adds strikethrough to name
-  const displayDotColor = agent.isConnecting
-    ? '#eab308' // yellow-500
-    : agent.isOnline
-      ? dotColor
-      : '#a0a0a0'
+  const displayDotColor = agent.isOnline ? dotColor : '#a0a0a0'
 
   return (
     <button
@@ -102,11 +94,10 @@ function AgentBadge({ agent, isLeader, isSelected, channelId, rosterIndex, onCli
       )}
       title={`@${agent.callsign} - ${stateLabel}${isLeader ? ' (leader)' : ''} • ${runtimeLabel}`}
     >
-      {/* Dot: gray for paused/offline, yellow+pulse for connecting, subtle pulse for pending, colored when online */}
+      {/* Dot: gray for offline, subtle pulse for pending, colored when online */}
       <span
         className={cn(
           "w-1.5 h-1.5 rounded-full flex-shrink-0",
-          agent.isConnecting && "animate-pulse",
           agent.isOnline && agent.isPending && !agent.isWorking && "animate-pending"
         )}
         style={{ backgroundColor: displayDotColor }}
@@ -114,7 +105,7 @@ function AgentBadge({ agent, isLeader, isSelected, channelId, rosterIndex, onCli
       {/* Name: color based on online/offline, strikethrough added if muted */}
       <span className={cn(
         // Base color: gray for offline, black otherwise
-        agent.isOnline || agent.isConnecting
+        agent.isOnline
           ? "text-[var(--cast-text-primary)]"
           : "text-[#a0a0a0]",
         // Working animation (only when online and working)
