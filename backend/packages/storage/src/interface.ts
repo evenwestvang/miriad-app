@@ -501,6 +501,70 @@ export interface Storage {
   ): Promise<SecretMetadata | null>;
 
   // ---------------------------------------------------------------------------
+  // Space Secrets Operations
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Set a secret on a space.
+   * Secrets are encrypted using AES-256-GCM with a per-space derived key.
+   *
+   * @param spaceId - Space ID
+   * @param key - Secret key name (e.g., "anthropic_api_key")
+   * @param input - Secret value and optional expiry
+   */
+  setSpaceSecret(
+    spaceId: string,
+    key: string,
+    input: SetSecretInput
+  ): Promise<void>;
+
+  /**
+   * Delete a secret from a space.
+   *
+   * @param spaceId - Space ID
+   * @param key - Secret key name
+   */
+  deleteSpaceSecret(
+    spaceId: string,
+    key: string
+  ): Promise<void>;
+
+  /**
+   * Get the decrypted value of a space secret.
+   * Only the server should call this - values are never exposed via API.
+   *
+   * @param spaceId - Space ID
+   * @param key - Secret key name
+   * @returns The decrypted value, or null if not found
+   */
+  getSpaceSecretValue(
+    spaceId: string,
+    key: string
+  ): Promise<string | null>;
+
+  /**
+   * Get metadata for a space secret (without the value).
+   *
+   * @param spaceId - Space ID
+   * @param key - Secret key name
+   * @returns Secret metadata, or null if not found
+   */
+  getSpaceSecretMetadata(
+    spaceId: string,
+    key: string
+  ): Promise<SecretMetadata | null>;
+
+  /**
+   * List all secret keys on a space (metadata only, no values).
+   *
+   * @param spaceId - Space ID
+   * @returns Record of key names to metadata
+   */
+  listSpaceSecrets(
+    spaceId: string
+  ): Promise<Record<string, SecretMetadata>>;
+
+  // ---------------------------------------------------------------------------
   // Local Agent Server Operations (Stage 3)
   // ---------------------------------------------------------------------------
 

@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { X, Settings, Monitor } from 'lucide-react'
+import { X, Settings, Monitor, Cloud } from 'lucide-react'
 import { RuntimesSettings } from './RuntimesSettings'
+import { CloudSettings } from './CloudSettings'
 
-type SettingsSection = 'runtimes'
+type SettingsSection = 'cloud' | 'runtimes'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -12,11 +13,12 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose, apiHost, spaceId }: SettingsModalProps) {
-  const [activeSection, setActiveSection] = useState<SettingsSection>('runtimes')
+  const [activeSection, setActiveSection] = useState<SettingsSection>('cloud')
 
   if (!isOpen) return null
 
   const sections: { id: SettingsSection; label: string; icon: typeof Monitor }[] = [
+    { id: 'cloud', label: 'Miriad Cloud', icon: Cloud },
     { id: 'runtimes', label: 'Local Runtimes', icon: Monitor },
   ]
 
@@ -71,6 +73,9 @@ export function SettingsModal({ isOpen, onClose, apiHost, spaceId }: SettingsMod
 
           {/* Content area */}
           <div className="flex-1 overflow-y-auto p-6">
+            {activeSection === 'cloud' && spaceId && (
+              <CloudSettings apiHost={apiHost} spaceId={spaceId} />
+            )}
             {activeSection === 'runtimes' && spaceId && (
               <RuntimesSettings apiHost={apiHost} spaceId={spaceId} />
             )}

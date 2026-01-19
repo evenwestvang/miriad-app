@@ -1997,9 +1997,15 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         id VARCHAR(26) PRIMARY KEY,
         owner_id VARCHAR(26) NOT NULL REFERENCES users(id),
         name VARCHAR(255),
+        secrets JSONB,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `;
+
+    // Add secrets column if it doesn't exist (migration for existing DBs)
+    await sql`
+      ALTER TABLE spaces ADD COLUMN IF NOT EXISTS secrets JSONB
     `;
 
     await sql`
@@ -2623,6 +2629,158 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   // ---------------------------------------------------------------------------
+  // Space Secrets
+  // ---------------------------------------------------------------------------
+
+  async function setSpaceSecret(
+    spaceId: string,
+    key: string,
+    input: SetSecretInput
+  ): Promise<void> {
+    // Encrypt the value
+    const encrypted = encrypt(input.value, spaceId);
+    const now = new Date().toISOString();
+
+    // Build the stored secret
+    const storedSecret: StoredSecret = {
+      setAt: now,
+      expiresAt: input.expiresAt,
+      encrypted: encrypted.encrypted,
+      iv: encrypted.iv,
+      tag: encrypted.tag,
+    };
+
+    // Get current secrets
+    const currentSecrets = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+      SELECT secrets FROM spaces WHERE id = ${spaceId}
+    `;
+
+    if (currentSecrets.length === 0) {
+      throw new Error(`Space not found: ${spaceId}`);
+    }
+
+    const secrets = currentSecrets[0]?.secrets ?? {};
+    secrets[key] = storedSecret;
+
+    // Update the space with new secrets
+    await sql`
+      UPDATE spaces
+      SET secrets = ${sql.json(secrets as unknown as JSONValue)},
+          updated_at = NOW()
+      WHERE id = ${spaceId}
+    `;
+  }
+
+  async function deleteSpaceSecret(
+    spaceId: string,
+    key: string
+  ): Promise<void> {
+    // Get current secrets
+    const currentSecrets = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+      SELECT secrets FROM spaces WHERE id = ${spaceId}
+    `;
+
+    if (currentSecrets.length === 0) {
+      throw new Error(`Space not found: ${spaceId}`);
+    }
+
+    const secrets = currentSecrets[0]?.secrets ?? {};
+    if (!(key in secrets)) {
+      return; // Secret doesn't exist, nothing to delete
+    }
+
+    delete secrets[key];
+
+    // Update with null if no secrets remain, otherwise update with remaining secrets
+    const secretsValue = Object.keys(secrets).length > 0 ? secrets : null;
+
+    await sql`
+      UPDATE spaces
+      SET secrets = ${secretsValue ? sql.json(secretsValue as unknown as JSONValue) : null},
+          updated_at = NOW()
+      WHERE id = ${spaceId}
+    `;
+  }
+
+  async function getSpaceSecretValue(
+    spaceId: string,
+    key: string
+  ): Promise<string | null> {
+    const result = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+      SELECT secrets FROM spaces WHERE id = ${spaceId}
+    `;
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    const secrets = result[0]?.secrets;
+    if (!secrets || !(key in secrets)) {
+      return null;
+    }
+
+    const storedSecret = secrets[key];
+
+    // Decrypt and return
+    return decrypt(
+      {
+        encrypted: storedSecret.encrypted,
+        iv: storedSecret.iv,
+        tag: storedSecret.tag,
+      },
+      spaceId
+    );
+  }
+
+  async function getSpaceSecretMetadata(
+    spaceId: string,
+    key: string
+  ): Promise<SecretMetadata | null> {
+    const result = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+      SELECT secrets FROM spaces WHERE id = ${spaceId}
+    `;
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    const secrets = result[0]?.secrets;
+    if (!secrets || !(key in secrets)) {
+      return null;
+    }
+
+    const storedSecret = secrets[key];
+    return {
+      setAt: storedSecret.setAt,
+      expiresAt: storedSecret.expiresAt,
+    };
+  }
+
+  async function listSpaceSecrets(
+    spaceId: string
+  ): Promise<Record<string, SecretMetadata>> {
+    const result = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+      SELECT secrets FROM spaces WHERE id = ${spaceId}
+    `;
+
+    if (result.length === 0 || !result[0]?.secrets) {
+      return {};
+    }
+
+    const secrets = result[0].secrets;
+    const metadata: Record<string, SecretMetadata> = {};
+
+    for (const [key, storedSecret] of Object.entries(secrets)) {
+      metadata[key] = {
+        setAt: storedSecret.setAt,
+        expiresAt: storedSecret.expiresAt,
+      };
+    }
+
+    return metadata;
+  }
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
 
@@ -3220,6 +3378,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     deleteSecret,
     getSecretValue,
     getSecretMetadata,
+    // Space Secrets operations
+    setSpaceSecret,
+    deleteSpaceSecret,
+    getSpaceSecretValue,
+    getSpaceSecretMetadata,
+    listSpaceSecrets,
     // Local Agent Server operations (Stage 3)
     saveLocalAgentServer,
     getLocalAgentServer,

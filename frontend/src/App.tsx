@@ -43,6 +43,7 @@ import { OAuthErrorPage } from "./components/OAuthErrorPage";
 import { SettingsModal } from "./components/settings";
 import { MobileNav, type MobileTab } from "./components/MobileNav";
 import { MobileMenu } from "./components/MobileMenu";
+import { RuntimeStatusDropdown } from "./components/RuntimeStatusDropdown";
 
 // Auth mode: 'dev' (show LoginPage) or 'workos' (redirect to /auth/login)
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || "dev";
@@ -1111,24 +1112,9 @@ export function App() {
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Mobile: Connection dot only */}
-        {selectedThread && (
-          <span
-            className={cn(
-              "md:hidden w-2 h-2 rounded-full",
-              connected ? "bg-green-500" : "bg-muted-foreground"
-            )}
-            title={connected ? "Connected" : "Disconnected"}
-          />
-        )}
-
-        {/* Desktop: Full connection status */}
-        {selectedThread && (
-          <span
-            className={`hidden md:inline text-xs ${connected ? "text-green-500" : "text-muted-foreground"}`}
-          >
-            {connected ? "● Connected" : "○ Disconnected"}
-          </span>
+        {/* Runtime status dropdown */}
+        {authSession?.spaceId && (
+          <RuntimeStatusDropdown apiHost={API_HOST} spaceId={authSession.spaceId} />
         )}
 
         {/* Desktop-only: Settings */}

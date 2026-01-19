@@ -8,12 +8,37 @@
  * - GET  /api/spaces/:spaceId/runtimes/:id   - Get runtime details
  * - DELETE /api/spaces/:spaceId/runtimes/:id - Delete runtime
  *
+ * Space Secrets:
+ * - PUT    /api/spaces/:spaceId/secrets/:key - Set a secret
+ * - DELETE /api/spaces/:spaceId/secrets/:key - Delete a secret
+ * - GET    /api/spaces/:spaceId/secrets      - List secrets (metadata only)
+ *
  * All endpoints require authentication and space membership verification.
  */
 
 import { Hono } from 'hono';
+import { z } from 'zod';
 import type { Storage } from '@cast/storage';
 import { parseSession } from '../auth/index.js';
+
+// =============================================================================
+// Schemas
+// =============================================================================
+
+const SetSecretSchema = z.object({
+  value: z.string().min(1, 'value is required'),
+  expiresAt: z.string().datetime().optional(),
+});
+
+function formatZodError(error: z.ZodError): { error: string; details?: unknown } {
+  return {
+    error: 'Validation error',
+    details: error.errors.map((e) => ({
+      path: e.path.join('.'),
+      message: e.message,
+    })),
+  };
+}
 
 // =============================================================================
 // Types
@@ -211,6 +236,114 @@ export function createRuntimeRoutes(options: RuntimeRoutesOptions): Hono {
     } catch (error) {
       console.error('[Runtimes] Error deleting runtime:', error);
       return c.json({ error: 'Failed to delete runtime' }, 500);
+    }
+  });
+
+  // ===========================================================================
+  // Space Secrets Endpoints
+  // ===========================================================================
+
+  // ---------------------------------------------------------------------------
+  // PUT /api/spaces/:spaceId/secrets/:key - Set a secret
+  // ---------------------------------------------------------------------------
+  app.put('/:spaceId/secrets/:key', async (c) => {
+    const session = await parseSession(c);
+    if (!session) {
+      return c.json({ error: 'Authentication required' }, 401);
+    }
+
+    const spaceId = c.req.param('spaceId');
+    const key = c.req.param('key');
+
+    // Verify user has access to this space
+    if (session.spaceId !== spaceId) {
+      return c.json({ error: 'Access denied to this space' }, 403);
+    }
+
+    const body = await c.req.json();
+    const parsed = SetSecretSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(formatZodError(parsed.error), 400);
+    }
+
+    const { value, expiresAt } = parsed.data;
+
+    try {
+      await storage.setSpaceSecret(spaceId, key, {
+        value,
+        expiresAt,
+      });
+
+      // Get updated metadata to return
+      const metadata = await storage.getSpaceSecretMetadata(spaceId, key);
+
+      return c.json({
+        key,
+        setAt: metadata?.setAt,
+        expiresAt: metadata?.expiresAt,
+      });
+    } catch (error) {
+      console.error('[Spaces] Error setting secret:', error);
+      return c.json({ error: 'Failed to set secret' }, 500);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // DELETE /api/spaces/:spaceId/secrets/:key - Delete a secret
+  // ---------------------------------------------------------------------------
+  app.delete('/:spaceId/secrets/:key', async (c) => {
+    const session = await parseSession(c);
+    if (!session) {
+      return c.json({ error: 'Authentication required' }, 401);
+    }
+
+    const spaceId = c.req.param('spaceId');
+    const key = c.req.param('key');
+
+    // Verify user has access to this space
+    if (session.spaceId !== spaceId) {
+      return c.json({ error: 'Access denied to this space' }, 403);
+    }
+
+    try {
+      // Check secret exists
+      const metadata = await storage.getSpaceSecretMetadata(spaceId, key);
+      if (!metadata) {
+        return c.json({ error: `Secret not found: ${key}` }, 404);
+      }
+
+      await storage.deleteSpaceSecret(spaceId, key);
+
+      return c.json({ deleted: true, key });
+    } catch (error) {
+      console.error('[Spaces] Error deleting secret:', error);
+      return c.json({ error: 'Failed to delete secret' }, 500);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // GET /api/spaces/:spaceId/secrets - List secrets (metadata only)
+  // ---------------------------------------------------------------------------
+  app.get('/:spaceId/secrets', async (c) => {
+    const session = await parseSession(c);
+    if (!session) {
+      return c.json({ error: 'Authentication required' }, 401);
+    }
+
+    const spaceId = c.req.param('spaceId');
+
+    // Verify user has access to this space
+    if (session.spaceId !== spaceId) {
+      return c.json({ error: 'Access denied to this space' }, 403);
+    }
+
+    try {
+      const secrets = await storage.listSpaceSecrets(spaceId);
+
+      return c.json({ secrets });
+    } catch (error) {
+      console.error('[Spaces] Error listing secrets:', error);
+      return c.json({ error: 'Failed to list secrets' }, 500);
     }
   });
 

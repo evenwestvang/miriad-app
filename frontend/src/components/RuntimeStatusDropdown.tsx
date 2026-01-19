@@ -1,0 +1,340 @@
+import { useState, useRef, useEffect } from 'react'
+import { Monitor, RefreshCw, ChevronDown, ChevronRight, Bot, Cloud, Play } from 'lucide-react'
+import { apiFetch, apiPost } from '../lib/api'
+
+interface Runtime {
+  id: string
+  name: string
+  type: 'local' | 'docker' | 'fly'
+  status: 'online' | 'offline'
+  machineInfo?: {
+    os: string
+    hostname: string
+  } | null
+  lastSeenAt: string | null
+  agentCount: number
+}
+
+interface RuntimeAgent {
+  id: string
+  callsign: string
+  agentType: string
+  status: string
+  channelId: string
+  channelName: string
+}
+
+interface RuntimeStatusDropdownProps {
+  apiHost: string
+  spaceId: string
+}
+
+// Temporary hack: identify Miriad Cloud by name
+function isMiriadCloud(runtime: Runtime): boolean {
+  return runtime.name === 'Miriad Cloud'
+}
+
+export function RuntimeStatusDropdown({ apiHost, spaceId }: RuntimeStatusDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [runtimes, setRuntimes] = useState<Runtime[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expandedRuntimes, setExpandedRuntimes] = useState<Set<string>>(new Set())
+  const [runtimeAgents, setRuntimeAgents] = useState<Record<string, RuntimeAgent[]>>({})
+  const [loadingAgents, setLoadingAgents] = useState<Set<string>>(new Set())
+  const [startingCloud, setStartingCloud] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Fetch status on mount and periodically
+  // Poll faster (every 2s) when starting cloud, otherwise every 30s
+  useEffect(() => {
+    fetchRuntimes()
+    const pollInterval = startingCloud ? 2000 : 30000
+    const interval = setInterval(fetchRuntimes, pollInterval)
+    return () => clearInterval(interval)
+  }, [apiHost, spaceId, startingCloud])
+
+  // Close on outside click
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isOpen])
+
+  // Close on escape
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false)
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [isOpen])
+
+  async function fetchRuntimes() {
+    setLoading(true)
+    try {
+      const response = await apiFetch(`${apiHost}/api/spaces/${spaceId}/runtimes`)
+      if (response.ok) {
+        const data = await response.json()
+        setRuntimes(data.runtimes || [])
+      }
+    } catch (err) {
+      console.error('Failed to fetch runtime status:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function startMiriadCloud() {
+    setStartingCloud(true)
+    try {
+      await apiPost(`${apiHost}/api/runtimes/miriad-cloud/start`, {})
+      await fetchRuntimes()
+
+      // Lock button for up to 30 seconds, unlock early if cloud comes online
+      setTimeout(() => setStartingCloud(false), 30000)
+    } catch (err) {
+      console.error('Failed to start Miriad Cloud:', err)
+      setStartingCloud(false)
+    }
+  }
+
+  async function fetchRuntimeAgents(runtimeId: string) {
+    setLoadingAgents(prev => new Set(prev).add(runtimeId))
+    try {
+      const response = await apiFetch(`${apiHost}/api/spaces/${spaceId}/runtimes/${runtimeId}/agents`)
+      if (response.ok) {
+        const data = await response.json()
+        setRuntimeAgents(prev => ({ ...prev, [runtimeId]: data.agents || [] }))
+      }
+    } catch (err) {
+      console.error('Failed to fetch runtime agents:', err)
+      setRuntimeAgents(prev => ({ ...prev, [runtimeId]: [] }))
+    } finally {
+      setLoadingAgents(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(runtimeId)
+        return newSet
+      })
+    }
+  }
+
+  function toggleRuntimeExpanded(runtimeId: string) {
+    const newExpanded = new Set(expandedRuntimes)
+    if (newExpanded.has(runtimeId)) {
+      newExpanded.delete(runtimeId)
+    } else {
+      newExpanded.add(runtimeId)
+      if (!runtimeAgents[runtimeId]) {
+        fetchRuntimeAgents(runtimeId)
+      }
+    }
+    setExpandedRuntimes(newExpanded)
+  }
+
+  function formatRelativeTime(dateString: string | null): string {
+    if (!dateString) return 'never'
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMins / 60)
+    const diffDays = Math.floor(diffHours / 24)
+
+    if (diffMins < 1) return 'just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    return `${diffDays}d ago`
+  }
+
+  // Determine overall status
+  const onlineRuntimes = runtimes.filter(r => r.status === 'online')
+  const hasAnyOnline = onlineRuntimes.length > 0
+  const totalOnline = onlineRuntimes.length
+
+  // Check if Miriad Cloud is in the list
+  const miriadCloudRuntime = runtimes.find(isMiriadCloud)
+  const hasMiriadCloudRecord = !!miriadCloudRuntime
+
+  return (
+    <div ref={menuRef} className="relative">
+      {/* Status indicator button */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-1.5 px-2 py-1 hover:bg-[var(--cast-bg-hover)] rounded transition-colors"
+        title={hasAnyOnline ? `${totalOnline} runtime${totalOnline !== 1 ? 's' : ''} online` : 'No runtimes online'}
+      >
+        <span
+          className={`w-2 h-2 rounded-full ${
+            hasAnyOnline ? 'bg-green-500' : 'bg-gray-400'
+          }`}
+        />
+        <span className="hidden md:inline text-xs text-muted-foreground">
+          {hasAnyOnline ? `${totalOnline} online` : 'Offline'}
+        </span>
+      </button>
+
+      {/* Dropdown */}
+      {isOpen && (
+        <div className="absolute right-0 top-full mt-1 w-72 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-secondary/20">
+            <span className="text-sm font-medium">Runtimes</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                fetchRuntimes()
+              }}
+              disabled={loading}
+              className="p-1 hover:bg-secondary rounded transition-colors"
+              title="Refresh"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-muted-foreground ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          <div className="max-h-80 overflow-y-auto">
+            {/* Bootstrap Miriad Cloud - only show when there's no record at all */}
+            {!hasMiriadCloudRecord && (
+              <div className="p-3 border-b border-border">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Cloud className="w-4 h-4 text-muted-foreground" />
+                    <div>
+                      <div className="text-sm font-medium">Miriad Cloud</div>
+                      <div className="text-xs text-muted-foreground">
+                        {startingCloud ? 'Starting...' : 'Not running'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      startMiriadCloud()
+                    }}
+                    disabled={startingCloud}
+                    className="flex items-center gap-1.5 px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {startingCloud ? (
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Play className="w-3 h-3" />
+                    )}
+                    Start
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Runtime list */}
+            {runtimes.length === 0 && hasMiriadCloudRecord ? (
+              <div className="p-4 text-center text-sm text-muted-foreground">
+                No runtimes connected
+              </div>
+            ) : runtimes.length > 0 ? (
+              <div>
+                {runtimes.map(runtime => {
+                  const isExpanded = expandedRuntimes.has(runtime.id)
+                  const agents = runtimeAgents[runtime.id] || []
+                  const isLoadingAgents = loadingAgents.has(runtime.id)
+                  const isCloud = isMiriadCloud(runtime)
+
+                  return (
+                    <div key={runtime.id} className="border-b border-border last:border-b-0">
+                      <div className="flex items-center gap-2 p-3">
+                        <button
+                          onClick={() => runtime.agentCount > 0 && toggleRuntimeExpanded(runtime.id)}
+                          className="p-0.5 hover:bg-secondary rounded transition-colors"
+                          disabled={runtime.agentCount === 0}
+                        >
+                          {runtime.agentCount === 0 ? (
+                            <div className="w-4 h-4" />
+                          ) : isExpanded ? (
+                            <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                          )}
+                        </button>
+                        {isCloud ? (
+                          <Cloud className="w-4 h-4 text-muted-foreground" />
+                        ) : (
+                          <Monitor className="w-4 h-4 text-muted-foreground" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium truncate">{runtime.name}</span>
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                              runtime.status === 'online' ? 'bg-green-500' : 'bg-gray-400'
+                            }`} />
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {runtime.agentCount} agent{runtime.agentCount !== 1 ? 's' : ''}
+                            {' • '}
+                            {runtime.status === 'online'
+                              ? formatRelativeTime(runtime.lastSeenAt)
+                              : 'Offline'}
+                          </div>
+                        </div>
+                        {/* Start button for offline Miriad Cloud */}
+                        {isCloud && runtime.status === 'offline' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              startMiriadCloud()
+                            }}
+                            disabled={startingCloud}
+                            className="flex items-center gap-1.5 px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+                          >
+                            {startingCloud ? (
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Play className="w-3 h-3" />
+                            )}
+                            Start
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Expanded agent list */}
+                      {isExpanded && (
+                        <div className="bg-secondary/20 px-3 py-2 border-t border-border">
+                          {isLoadingAgents ? (
+                            <div className="text-xs text-muted-foreground py-1">Loading...</div>
+                          ) : agents.length === 0 ? (
+                            <div className="text-xs text-muted-foreground py-1">No agents</div>
+                          ) : (
+                            <div className="space-y-1">
+                              {agents.map(agent => (
+                                <div
+                                  key={agent.id}
+                                  className="flex items-center gap-2 py-1 text-xs"
+                                >
+                                  <Bot className="w-3 h-3 text-muted-foreground" />
+                                  <span className="font-medium">@{agent.callsign}</span>
+                                  <span className="text-muted-foreground truncate">#{agent.channelName}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
