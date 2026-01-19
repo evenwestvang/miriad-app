@@ -41,6 +41,8 @@ interface RuntimeStatusDropdownProps {
   apiHost: string
   spaceId: string
   onOpenSettings?: (section?: SettingsSection) => void
+  /** When true, settings modal is open - used to refresh state when it closes */
+  settingsOpen?: boolean
 }
 
 // Temporary hack: identify Miriad Cloud by name
@@ -48,7 +50,7 @@ function isMiriadCloud(runtime: Runtime): boolean {
   return runtime.name === 'Miriad Cloud'
 }
 
-export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings }: RuntimeStatusDropdownProps) {
+export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settingsOpen }: RuntimeStatusDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [runtimes, setRuntimes] = useState<Runtime[]>([])
   const [loading, setLoading] = useState(true)
@@ -65,7 +67,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings }: Runt
   const hasAnyOnline = onlineRuntimes.length > 0
   const totalOnline = onlineRuntimes.length
 
-  // Check if API key is configured
+  // Check if API key is configured (re-check when dropdown opens or settings closes)
   useEffect(() => {
     async function checkApiKey() {
       try {
@@ -78,8 +80,11 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings }: Runt
         setHasApiKey(false)
       }
     }
-    checkApiKey()
-  }, [apiHost, spaceId])
+    // Check when dropdown is open and settings modal is not covering it
+    if (isOpen && !settingsOpen) {
+      checkApiKey()
+    }
+  }, [apiHost, spaceId, isOpen, settingsOpen])
 
   // Fetch status on mount and periodically
   // Poll faster (every 2s) when starting cloud, otherwise every 30s

@@ -1118,6 +1118,7 @@ export function App() {
           <RuntimeStatusDropdown
             apiHost={API_HOST}
             spaceId={authSession.spaceId}
+            settingsOpen={settingsOpen}
             onOpenSettings={(section?: SettingsSection) => {
               setSettingsSection(section ?? 'cloud')
               setSettingsOpen(true)

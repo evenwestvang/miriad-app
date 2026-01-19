@@ -109,10 +109,6 @@ function getWsUrl(): string {
   return process.env.CAST_WS_URL || apiUrl.replace('http', 'ws');
 }
 
-function getAnthropicApiKey(): string | undefined {
-  return process.env.ANTHROPIC_API_KEY;
-}
-
 function getTunnelServerUrl(): string | undefined {
   return process.env.TUNNEL_SERVER_URL;
 }
@@ -193,7 +189,8 @@ function getDockerContainerName(spaceId: string): string {
 
 async function startDockerContainer(
   spaceId: string,
-  config: MiriadConfig
+  config: MiriadConfig,
+  anthropicApiKey: string
 ): Promise<{ containerId: string }> {
   const containerName = getDockerContainerName(spaceId);
 
@@ -236,7 +233,6 @@ async function startDockerContainer(
     },
   };
 
-  const anthropicKey = getAnthropicApiKey();
   const tunnelServerUrl = getTunnelServerUrl();
   const githubToken = process.env.GITHUB_TOKEN;
   const args = [
@@ -245,7 +241,7 @@ async function startDockerContainer(
     '--rm',
     '--name', containerName,
     '-e', `MIRIAD_CONFIG=${JSON.stringify(localConfig)}`,
-    '-e', `ANTHROPIC_API_KEY=${anthropicKey}`,
+    '-e', `ANTHROPIC_API_KEY=${anthropicApiKey}`,
     ...(tunnelServerUrl ? ['-e', `TUNNEL_SERVER_URL=${tunnelServerUrl}`] : []),
     ...(githubToken ? ['-e', `GITHUB_TOKEN=${githubToken}`] : []),
     '-v', `miriad-workspace-${spaceId}:/workspace`,
@@ -430,7 +426,8 @@ async function findFlyMachine(spaceId: string): Promise<FlyMachine | null> {
 async function startFlyMachine(
   spaceId: string,
   config: MiriadConfig,
-  volumeId: string
+  volumeId: string,
+  anthropicApiKey: string
 ): Promise<{ machineId: string }> {
   const machineName = getFlyMachineName(spaceId);
 
@@ -459,7 +456,7 @@ async function startFlyMachine(
       image: getFlyImage(),
       env: {
         MIRIAD_CONFIG: JSON.stringify(config),
-        ANTHROPIC_API_KEY: getAnthropicApiKey() ?? '',
+        ANTHROPIC_API_KEY: anthropicApiKey,
         TUNNEL_SERVER_URL: getTunnelServerUrl() ?? '',
         GITHUB_TOKEN: process.env.GITHUB_TOKEN ?? '',
       },
@@ -531,11 +528,13 @@ export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
 
     const { userId, spaceId } = session;
 
-    if (!getAnthropicApiKey()) {
-      return c.json({ error: 'ANTHROPIC_API_KEY not configured on server' }, 500);
-    }
-
     try {
+      // Fetch API key from space secrets
+      const anthropicApiKey = await storage.getSpaceSecretValue(spaceId, 'anthropic_api_key');
+
+      if (!anthropicApiKey) {
+        return c.json({ error: 'Claude API key not configured. Please set it in Settings → Cloud.' }, 400);
+      }
       // Check if runtime already exists for this space
       let runtime = await storage.getRuntimeByName(spaceId, MIRIAD_CLOUD_NAME);
 
@@ -605,9 +604,9 @@ export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
 
       // Start container (Docker or Fly)
       if (useDocker()) {
-        await startDockerContainer(spaceId, config);
+        await startDockerContainer(spaceId, config, anthropicApiKey);
       } else {
-        await startFlyMachine(spaceId, config, flyVolumeId!);
+        await startFlyMachine(spaceId, config, flyVolumeId!, anthropicApiKey);
       }
 
       console.log(`[MiriadCloud] Started for space ${spaceId}, runtime ${runtime.id}`);
