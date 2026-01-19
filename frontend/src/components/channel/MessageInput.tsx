@@ -600,7 +600,7 @@ export function MessageInput({
         {showSlashMenu && filteredCommands.length > 0 && (
           <div
             ref={slashMenuRef}
-            className="absolute z-50 bg-white border border-[var(--cast-border-default)] shadow-sm py-1 min-w-[180px] max-h-[200px] overflow-y-auto"
+            className="absolute z-50 bg-card border border-[var(--cast-border-default)] shadow-sm py-1 min-w-[180px] max-h-[200px] overflow-y-auto"
             style={{ bottom: 8, left: 16 }}
           >
             {filteredCommands.map((cmd, index) => {
@@ -611,8 +611,8 @@ export function MessageInput({
                   data-selected={index === slashSelectedIndex}
                   className={cn(
                     "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
-                    "hover:bg-[#f5f5f5] transition-colors",
-                    index === slashSelectedIndex && "bg-[#f5f5f5]"
+                    "hover:bg-[var(--cast-bg-secondary)] transition-colors",
+                    index === slashSelectedIndex && "bg-[var(--cast-bg-secondary)]"
                   )}
                   onClick={() => executeSlashCommand(cmd.name)}
                 >
@@ -754,7 +754,7 @@ export function MessageInput({
             )}
           />
           {/* Input actions row */}
-          <div className="flex items-center justify-between px-3 py-2 border-t border-[#f0f0f0]">
+          <div className="flex items-center justify-between px-3 py-2 border-t border-[var(--cast-border-default)]">
             {/* Left side buttons */}
             <div className="flex items-center gap-2">
               <button

@@ -74,8 +74,8 @@ function AgentBadge({ agent, isLeader, isSelected, onClick }: Omit<AgentBadgePro
       onClick={onClick}
       className={cn(
         "flex items-center gap-1 text-xs cursor-pointer px-1.5 py-0.5",
-        "hover:bg-[#f5f5f5]",
-        isSelected && "bg-[#f5f5f5]"
+        "hover:bg-[var(--cast-bg-secondary)]",
+        isSelected && "bg-[var(--cast-bg-secondary)] font-semibold"
       )}
       title={`@${agent.callsign} - ${stateLabel}${isLeader ? ' (leader)' : ''} • ${runtimeLabel}`}
     >
