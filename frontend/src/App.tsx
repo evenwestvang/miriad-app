@@ -1029,11 +1029,6 @@ export function App() {
     ? rosterWithWorkingState.find((a) => a.callsign === selectedAgent)
     : null;
 
-  // Get selected agent's roster index for color
-  const selectedAgentIndex = selectedAgent
-    ? rosterWithWorkingState.findIndex((a) => a.callsign === selectedAgent)
-    : -1;
-
   // Show auth error page if there was an OAuth error
   if (authError) {
     const handleRetryAuth = () => {
@@ -1243,7 +1238,6 @@ export function App() {
                   <AgentDetailPanel
                     key="agent-detail-panel"
                     agent={selectedAgentData}
-                    rosterIndex={selectedAgentIndex}
                     channelId={selectedThread}
                     apiHost={API_HOST}
                     onClose={handleAgentPanelClose}

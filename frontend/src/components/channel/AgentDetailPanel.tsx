@@ -10,11 +10,9 @@ import {
   Copy,
   Check,
   Loader2,
-  Circle,
   MoreVertical,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { getRosterColor } from '../../utils/senderColors'
 import type { RosterAgent } from './MentionAutocomplete'
 
 // Tunnel domain from environment, defaults to production
@@ -23,9 +21,7 @@ const TUNNEL_DOMAIN = import.meta.env.VITE_TUNNEL_DOMAIN || 'cast-stack.site'
 interface AgentDetailPanelProps {
   /** Selected agent to display */
   agent: RosterAgent
-  /** Agent's index in roster (for color) */
-  rosterIndex: number
-  /** Channel ID for color calculation and API calls */
+  /** Channel ID for API calls */
   channelId: string
   /** API host for actions */
   apiHost: string
@@ -64,7 +60,6 @@ function getStateBadge(agent: RosterAgent): { label: string; colorClass: string 
  */
 export function AgentDetailPanel({
   agent,
-  rosterIndex,
   channelId,
   apiHost,
   onClose,
@@ -89,8 +84,6 @@ export function AgentDetailPanel({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [menuOpen])
 
-  // Get agent's color based on roster position
-  const dotColor = getRosterColor(channelId, rosterIndex)
   const stateBadge = getStateBadge(agent)
 
   // Construct tunnel URL from hash
@@ -209,13 +202,6 @@ export function AgentDetailPanel({
         <div className="flex items-center gap-3">
           {/* Agent identity + status badge */}
           <div className="flex items-center gap-2">
-            <Circle
-              size={14}
-              color={dotColor}
-              fill={dotColor}
-              strokeWidth={0}
-              className="flex-shrink-0"
-            />
             <span className="text-[14px] font-semibold text-[var(--cast-text-primary)] tracking-[-0.01em]">
               {agent.callsign}
             </span>

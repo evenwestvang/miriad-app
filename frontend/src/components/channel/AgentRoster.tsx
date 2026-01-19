@@ -1,7 +1,5 @@
 import { useState } from 'react'
-import { Monitor } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { getRosterColor } from '../../utils/senderColors'
 import { AgentSummonPicker } from './AgentSummonPicker'
 import { DismissConfirmDialog } from './DismissConfirmDialog'
 import type { RosterAgent } from './MentionAutocomplete'
@@ -44,28 +42,19 @@ interface AgentBadgeProps {
   agent: RosterAgent
   isLeader: boolean
   isSelected: boolean
-  /** Channel ID for color calculation */
-  channelId: string
-  /** Agent's index in the roster (for color assignment) */
-  rosterIndex: number
   onClick?: () => void
 }
 
 /**
  * Individual agent badge with visual states:
- * 1. Offline: Gray dot, gray name
- * 2. Connecting: Yellow pulsing dot, normal name
- * 3. Online/Idle: Colored dot, black name
- * 4. Pending: Colored dot with subtle pulse, black name
- * 5. Working: Colored dot, black name with animation
- * 6. Paused: Gray dot, strikethrough black name
+ * 1. Offline: Gray name
+ * 2. Online/Idle: Black name
+ * 3. Working: Black name with animation
+ * 4. Paused: Strikethrough black name
  *
- * Selected state adds underline indicator.
+ * Selected state adds background highlight.
  */
-function AgentBadge({ agent, isLeader, isSelected, channelId, rosterIndex, onClick }: AgentBadgeProps) {
-  // Get agent's color based on roster position (matches message list cartouche)
-  const dotColor = getRosterColor(channelId, rosterIndex)
-
+function AgentBadge({ agent, isLeader, isSelected, onClick }: Omit<AgentBadgeProps, 'channelId' | 'rosterIndex'>) {
   // Derive state label for tooltip
   const stateLabel = agent.isPaused
     ? 'muted'
@@ -80,10 +69,6 @@ function AgentBadge({ agent, isLeader, isSelected, channelId, rosterIndex, onCli
   // Runtime info for tooltip
   const runtimeLabel = agent.runtimeName || 'Miriad Cloud'
 
-  // Derive dot color: gray for offline, otherwise signature color
-  // Muted state doesn't affect dot color - only adds strikethrough to name
-  const displayDotColor = agent.isOnline ? dotColor : '#a0a0a0'
-
   return (
     <button
       onClick={onClick}
@@ -94,14 +79,6 @@ function AgentBadge({ agent, isLeader, isSelected, channelId, rosterIndex, onCli
       )}
       title={`@${agent.callsign} - ${stateLabel}${isLeader ? ' (leader)' : ''} • ${runtimeLabel}`}
     >
-      {/* Dot: gray for offline, subtle pulse for pending, colored when online */}
-      <span
-        className={cn(
-          "w-1.5 h-1.5 rounded-full flex-shrink-0",
-          agent.isOnline && agent.isPending && !agent.isWorking && "animate-pending"
-        )}
-        style={{ backgroundColor: displayDotColor }}
-      />
       {/* Name: color based on online/offline, strikethrough added if muted */}
       <span className={cn(
         // Base color: gray for offline, black otherwise
@@ -117,9 +94,6 @@ function AgentBadge({ agent, isLeader, isSelected, channelId, rosterIndex, onCli
       </span>
       {isLeader && (
         <span className="text-amber-500 text-[10px]">★</span>
-      )}
-      {agent.runtimeId && (
-        <Monitor className="w-2.5 h-2.5 text-muted-foreground" />
       )}
     </button>
   )
@@ -166,14 +140,12 @@ export function AgentRoster({
     <div className="relative flex flex-wrap items-center justify-between gap-y-2 text-xs text-[#8c8c8c]">
       {/* Agent roster - horizontal list that wraps */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        {roster.map((agent, index) => (
+        {roster.map((agent) => (
           <AgentBadge
             key={agent.callsign}
             agent={agent}
             isLeader={agent.callsign === leader}
             isSelected={agent.callsign === selectedAgent}
-            channelId={channelId || ''}
-            rosterIndex={index}
             onClick={() => onAgentSelect?.(agent.callsign)}
           />
         ))}
