@@ -1,2 +1,2 @@
-export { SettingsModal } from './SettingsModal'
-export { RuntimesSettings, type Runtime } from './RuntimesSettings'
+export { SettingsModal, type SettingsSection } from './SettingsModal'
+export { RuntimesSettings } from './RuntimesSettings'

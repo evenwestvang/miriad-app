@@ -4,7 +4,6 @@ import { createMcpRoutes } from './mcp-http.js';
 import { generateContainerToken } from '../auth/container-token.js';
 import type { Storage } from '@cast/storage';
 import type { StoredMessage, StoredChannel } from '@cast/core';
-import type { AssetStorage } from '../assets/index.js';
 
 // =============================================================================
 // Test Fixtures
@@ -223,24 +222,6 @@ function createMockStorage(): Storage {
 }
 
 // =============================================================================
-// Mock Asset Storage
-// =============================================================================
-
-function createMockAssetStorage(): AssetStorage {
-  return {
-    saveAsset: vi.fn(async ({ channelId, slug }) => ({
-      filePath: `/tmp/.cast-dev/assets/${channelId}/${slug}`,
-      contentType: 'image/png',
-      fileSize: 1024,
-    })),
-    readAsset: vi.fn(async () => Buffer.from('fake binary data')),
-    assetExists: vi.fn(async () => false),
-    deleteAsset: vi.fn(async () => {}),
-    getAssetPath: vi.fn((channelId, slug) => `/tmp/.cast-dev/assets/${channelId}/${slug}`),
-  };
-}
-
-// =============================================================================
 // Helper Functions
 // =============================================================================
 
@@ -260,17 +241,14 @@ function jsonRpcRequest(method: string, params?: Record<string, unknown>, id: nu
 describe('MCP HTTP Routes (JSON-RPC)', () => {
   let app: Hono;
   let mockStorage: Storage;
-  let mockAssetStorage: AssetStorage;
   let token: string;
 
   beforeEach(() => {
     mockStorage = createMockStorage();
-    mockAssetStorage = createMockAssetStorage();
 
     const mcpRoutes = createMcpRoutes({
       storage: mockStorage,
       spaceId: TEST_SPACE_ID,
-      assetStorage: mockAssetStorage,
     });
 
     app = new Hono();
@@ -462,7 +440,7 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
       expect(json.id).toBe(1);
       expect(json.result.tools).toBeDefined();
       expect(Array.isArray(json.result.tools)).toBe(true);
-      expect(json.result.tools.length).toBe(19); // 10 artifact + 2 message + 1 instructions + 2 communication + 4 channel awareness
+      expect(json.result.tools.length).toBe(18); // 9 artifact + 2 message + 1 instructions + 2 communication + 4 channel awareness
 
       // Verify tool names
       const toolNames = json.result.tools.map((t: { name: string }) => t.name);
@@ -475,7 +453,6 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
       expect(toolNames).toContain('artifact_archive');
       expect(toolNames).toContain('artifact_checkpoint');
       expect(toolNames).toContain('artifact_diff');
-      expect(toolNames).toContain('upload_asset');
       expect(toolNames).toContain('message_get');
       expect(toolNames).toContain('message_search');
       expect(toolNames).toContain('read_instructions');
@@ -735,172 +712,6 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
       });
     });
 
-    describe('upload_asset', () => {
-      it('uploads asset with base64 data', async () => {
-        const base64Data = Buffer.from('fake image data').toString('base64');
-
-        const res = await app.request('/mcp/test-channel', {
-          method: 'POST',
-          headers: {
-            Authorization: `Container ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: jsonRpcRequest('tools/call', {
-            name: 'upload_asset',
-            arguments: {
-              slug: 'test-image.png',
-              tldr: 'A test image',
-              data: base64Data,
-            },
-          }),
-        });
-
-        expect(res.status).toBe(200);
-        const json = await res.json();
-        expect(json.result.isError).toBeUndefined();
-
-        const result = JSON.parse(json.result.content[0].text);
-        expect(result.slug).toBe('test-artifact');
-        expect(result.contentType).toBe('image/png');
-        expect(result.fileSize).toBe(1024);
-        expect(result.url).toContain('/channels/');
-
-        expect(mockAssetStorage.saveAsset).toHaveBeenCalledWith({
-          channelId: TEST_CHANNEL_ID,
-          slug: 'test-image.png',
-          source: { type: 'base64', data: base64Data },
-        });
-        expect(mockStorage.createArtifact).toHaveBeenCalled();
-      });
-
-      it('returns error when neither path nor data provided', async () => {
-        const res = await app.request('/mcp/test-channel', {
-          method: 'POST',
-          headers: {
-            Authorization: `Container ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: jsonRpcRequest('tools/call', {
-            name: 'upload_asset',
-            arguments: {
-              slug: 'test-image.png',
-              tldr: 'A test image',
-            },
-          }),
-        });
-
-        expect(res.status).toBe(200);
-        const json = await res.json();
-        expect(json.result.isError).toBe(true);
-        expect(json.result.content[0].text).toContain('Either path or data must be provided');
-      });
-
-      it('returns error when both path and data provided', async () => {
-        const res = await app.request('/mcp/test-channel', {
-          method: 'POST',
-          headers: {
-            Authorization: `Container ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: jsonRpcRequest('tools/call', {
-            name: 'upload_asset',
-            arguments: {
-              slug: 'test-image.png',
-              tldr: 'A test image',
-              path: '/tmp/test.png',
-              data: 'base64data',
-            },
-          }),
-        });
-
-        expect(res.status).toBe(200);
-        const json = await res.json();
-        expect(json.result.isError).toBe(true);
-        expect(json.result.content[0].text).toContain('Provide either path OR data, not both');
-      });
-
-      it('returns error when slug missing file extension', async () => {
-        const res = await app.request('/mcp/test-channel', {
-          method: 'POST',
-          headers: {
-            Authorization: `Container ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: jsonRpcRequest('tools/call', {
-            name: 'upload_asset',
-            arguments: {
-              slug: 'test-image-no-extension',
-              tldr: 'A test image',
-              data: 'base64data',
-            },
-          }),
-        });
-
-        expect(res.status).toBe(200);
-        const json = await res.json();
-        expect(json.result.isError).toBe(true);
-        expect(json.result.content[0].text).toContain('Slug must include file extension');
-      });
-
-      it('returns error when base64 data exceeds 5MB limit', async () => {
-        // Create base64 string that will decode to >5MB
-        // 5MB = 5 * 1024 * 1024 bytes = 5242880 bytes
-        // Base64 encoding increases size by ~33%, so we need ~7MB of base64
-        const largeBase64 = 'A'.repeat(7 * 1024 * 1024);
-
-        const res = await app.request('/mcp/test-channel', {
-          method: 'POST',
-          headers: {
-            Authorization: `Container ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: jsonRpcRequest('tools/call', {
-            name: 'upload_asset',
-            arguments: {
-              slug: 'large-file.bin',
-              tldr: 'A large file',
-              data: largeBase64,
-            },
-          }),
-        });
-
-        expect(res.status).toBe(200);
-        const json = await res.json();
-        expect(json.result.isError).toBe(true);
-        expect(json.result.content[0].text).toContain('exceeds 5MB limit');
-      });
-
-      it('creates artifact with correct type and encoding', async () => {
-        const base64Data = Buffer.from('test').toString('base64');
-
-        await app.request('/mcp/test-channel', {
-          method: 'POST',
-          headers: {
-            Authorization: `Container ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: jsonRpcRequest('tools/call', {
-            name: 'upload_asset',
-            arguments: {
-              slug: 'doc.pdf',
-              tldr: 'A PDF document',
-              data: base64Data,
-            },
-          }),
-        });
-
-        expect(mockStorage.createArtifact).toHaveBeenCalledWith(
-          TEST_CHANNEL_ID,
-          expect.objectContaining({
-            slug: 'doc.pdf',
-            type: 'asset',
-            contentType: 'image/png', // from mock
-            fileSize: 1024, // from mock
-          })
-        );
-      });
-    });
-
     describe('read_instructions', () => {
       it('returns instruction content for valid article', async () => {
         const res = await app.request('/mcp/test-channel', {
@@ -924,25 +735,6 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
         // Content should include key interactive artifact info
         expect(json.result.content[0].text).toContain('.app.js');
         expect(json.result.content[0].text).toContain('render');
-      });
-
-      it('returns instruction content for binary-assets article', async () => {
-        const res = await app.request('/mcp/test-channel', {
-          method: 'POST',
-          headers: {
-            Authorization: `Container ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: jsonRpcRequest('tools/call', {
-            name: 'read_instructions',
-            arguments: { article: 'binary-assets' },
-          }),
-        });
-
-        expect(res.status).toBe(200);
-        const json = await res.json();
-        expect(json.error).toBeUndefined();
-        expect(json.result.content[0].text).toContain('upload_asset');
       });
 
       it('returns instruction content for system-mcp article', async () => {

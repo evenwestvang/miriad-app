@@ -24,13 +24,16 @@ export interface RosterEvent {
     callsign: string
     agentType: string
     status?: string
+    runtimeId?: string | null
+    runtimeName?: string
+    runtimeStatus?: 'online' | 'offline'
   }
 }
 
 // Roster state event - agent lifecycle changes from backend
 export interface RosterStateEvent {
   callsign: string
-  state: 'connecting' | 'online' | 'offline' | 'paused' | 'pending' | 'dismissed'
+  state: 'connecting' | 'online' | 'offline' | 'paused' | 'resumed' | 'pending' | 'dismissed'
   /** ISO timestamp of last heartbeat (for client-side offline timeout tracking) */
   lastHeartbeat?: string
   /** ISO timestamp of when message was routed (for client-side pending timeout tracking) */

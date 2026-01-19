@@ -1,14 +1,11 @@
-import { Circle } from "lucide-react";
-import { getRosterColor } from "../../utils/senderColors";
-
 interface CartoucheProps {
   /** The name/callsign - for tooltip */
   name: string;
-  /** Channel ID - used to shuffle color order */
+  /** Channel ID - unused, kept for API compatibility */
   channelId?: string;
-  /** Roster index - determines which color from the shuffled palette */
+  /** Roster index - unused, kept for API compatibility */
   rosterIndex?: number;
-  /** Whether this is a human (user) - renders as emdash instead of colored circle */
+  /** Whether this is a human (user) - unused, all senders now render the same */
   isHuman?: boolean;
   className?: string;
 }
@@ -16,31 +13,15 @@ interface CartoucheProps {
 /**
  * Cartouche: A visual identifier for message senders.
  *
- * - Agents: colored circle, color determined by roster position
- * - Humans: emdash (—)
+ * All senders (humans and agents) render as an emdash (—).
  */
 export function Cartouche({
   name,
-  channelId = "",
-  rosterIndex = 0,
-  isHuman = false,
   className = "",
 }: CartoucheProps) {
-  // Humans get an emdash
-  if (isHuman) {
-    return (
-      <span className={`inline-flex items-center ${className}`} title={name}>
-        <span className="text-black dark:text-white leading-none">—</span>
-      </span>
-    );
-  }
-
-  // Agents get colored circles (color determined by channel + roster position)
-  const color = getRosterColor(channelId, rosterIndex);
-
   return (
     <span className={`inline-flex items-center ${className}`} title={name}>
-      <Circle size="1em" color={color} fill={color} strokeWidth={0} />
+      <span className="text-black dark:text-white leading-none">—</span>
     </span>
   );
 }

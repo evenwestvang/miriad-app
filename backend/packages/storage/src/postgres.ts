@@ -149,6 +149,7 @@ interface RosterRow {
   last_message_routed_at: Date | null;
   runtime_id: string | null;
   runtime_name?: string | null;
+  runtime_status?: string | null;
 }
 
 interface UserRow {
@@ -811,8 +812,10 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     callsign: string
   ): Promise<RosterEntry | null> {
     const result = await sql<RosterRow[]>`
-      SELECT * FROM roster
-      WHERE channel_id = ${channelId} AND callsign = ${callsign}
+      SELECT r.*, rt.name as runtime_name, rt.status as runtime_status
+      FROM roster r
+      LEFT JOIN runtimes rt ON r.runtime_id = rt.id
+      WHERE r.channel_id = ${channelId} AND r.callsign = ${callsign}
     `;
 
     if (result.length === 0) return null;
@@ -821,7 +824,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
   async function listRoster(channelId: string): Promise<RosterEntry[]> {
     const result = await sql<RosterRow[]>`
-      SELECT r.*, rt.name as runtime_name
+      SELECT r.*, rt.name as runtime_name, rt.status as runtime_status
       FROM roster r
       LEFT JOIN runtimes rt ON r.runtime_id = rt.id
       WHERE r.channel_id = ${channelId}
@@ -834,7 +837,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
   async function listArchivedRoster(channelId: string): Promise<RosterEntry[]> {
     const result = await sql<RosterRow[]>`
-      SELECT r.*, rt.name as runtime_name
+      SELECT r.*, rt.name as runtime_name, rt.status as runtime_status
       FROM roster r
       LEFT JOIN runtimes rt ON r.runtime_id = rt.id
       WHERE r.channel_id = ${channelId}
@@ -849,7 +852,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     runtimeId: string
   ): Promise<Array<RosterEntry & { channelName: string }>> {
     const result = await sql<(RosterRow & { channel_name: string })[]>`
-      SELECT r.*, rt.name as runtime_name, c.name as channel_name
+      SELECT r.*, rt.name as runtime_name, rt.status as runtime_status, c.name as channel_name
       FROM roster r
       LEFT JOIN runtimes rt ON r.runtime_id = rt.id
       JOIN channels c ON r.channel_id = c.id
@@ -1141,6 +1144,16 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       }
     }
 
+    // Parse props if it comes back as a string (JSONB sometimes does this)
+    let props = row.props;
+    if (typeof props === 'string') {
+      try {
+        props = JSON.parse(props);
+      } catch {
+        props = null;
+      }
+    }
+
     return {
       id: row.id,
       channelId: row.channel_id,
@@ -1156,7 +1169,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       assignees: row.assignees ?? [],
       labels: row.labels ?? [],
       refs: row.refs ?? [],
-      props: row.props ?? undefined,
+      props: props ?? undefined,
       secrets: secretsMetadata,
       contentType: row.content_type ?? undefined,
       fileSize: row.file_size ?? undefined,
@@ -1170,6 +1183,16 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   function rowToArtifactSummary(row: ArtifactRow): ArtifactSummary {
+    // Parse props if it comes back as a string (JSONB sometimes does this)
+    let props = row.props;
+    if (typeof props === 'string') {
+      try {
+        props = JSON.parse(props);
+      } catch {
+        props = null;
+      }
+    }
+
     return {
       slug: row.slug,
       type: row.type as ArtifactType,
@@ -1181,7 +1204,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       assignees: row.assignees ?? [],
       parentSlug: row.parent_slug ?? undefined,
       channelId: row.channel_id,
-      props: row.props ?? undefined,
+      props: props ?? undefined,
     };
   }
 
@@ -1321,7 +1344,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           updateObj.labels = change.newValue ?? [];
           break;
         case 'props':
-          updateObj.props = change.newValue ? JSON.stringify(change.newValue) : null;
+          updateObj.props = change.newValue ?? null;
           break;
         case 'orderKey':
           updateObj.order_key = change.newValue ?? null;
@@ -1480,6 +1503,23 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       archived: archivedItems,
       count: archivedItems.length,
     };
+  }
+
+  async function deleteAllArtifactsInChannel(channelId: string): Promise<number> {
+    // First delete all artifact versions (references artifacts by channel_id + slug)
+    await sql`
+      DELETE FROM artifact_versions
+      WHERE channel_id = ${channelId}
+    `;
+
+    // Then delete all artifacts in the channel
+    const result = await sql`
+      DELETE FROM artifacts
+      WHERE channel_id = ${channelId}
+      RETURNING id
+    `;
+
+    return result.length;
   }
 
   async function listArtifacts(
@@ -1997,9 +2037,15 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         id VARCHAR(26) PRIMARY KEY,
         owner_id VARCHAR(26) NOT NULL REFERENCES users(id),
         name VARCHAR(255),
+        secrets JSONB,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `;
+
+    // Add secrets column if it doesn't exist (migration for existing DBs)
+    await sql`
+      ALTER TABLE spaces ADD COLUMN IF NOT EXISTS secrets JSONB
     `;
 
     await sql`
@@ -2623,6 +2669,158 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   // ---------------------------------------------------------------------------
+  // Space Secrets
+  // ---------------------------------------------------------------------------
+
+  async function setSpaceSecret(
+    spaceId: string,
+    key: string,
+    input: SetSecretInput
+  ): Promise<void> {
+    // Encrypt the value
+    const encrypted = encrypt(input.value, spaceId);
+    const now = new Date().toISOString();
+
+    // Build the stored secret
+    const storedSecret: StoredSecret = {
+      setAt: now,
+      expiresAt: input.expiresAt,
+      encrypted: encrypted.encrypted,
+      iv: encrypted.iv,
+      tag: encrypted.tag,
+    };
+
+    // Get current secrets
+    const currentSecrets = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+      SELECT secrets FROM spaces WHERE id = ${spaceId}
+    `;
+
+    if (currentSecrets.length === 0) {
+      throw new Error(`Space not found: ${spaceId}`);
+    }
+
+    const secrets = currentSecrets[0]?.secrets ?? {};
+    secrets[key] = storedSecret;
+
+    // Update the space with new secrets
+    await sql`
+      UPDATE spaces
+      SET secrets = ${sql.json(secrets as unknown as JSONValue)},
+          updated_at = NOW()
+      WHERE id = ${spaceId}
+    `;
+  }
+
+  async function deleteSpaceSecret(
+    spaceId: string,
+    key: string
+  ): Promise<void> {
+    // Get current secrets
+    const currentSecrets = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+      SELECT secrets FROM spaces WHERE id = ${spaceId}
+    `;
+
+    if (currentSecrets.length === 0) {
+      throw new Error(`Space not found: ${spaceId}`);
+    }
+
+    const secrets = currentSecrets[0]?.secrets ?? {};
+    if (!(key in secrets)) {
+      return; // Secret doesn't exist, nothing to delete
+    }
+
+    delete secrets[key];
+
+    // Update with null if no secrets remain, otherwise update with remaining secrets
+    const secretsValue = Object.keys(secrets).length > 0 ? secrets : null;
+
+    await sql`
+      UPDATE spaces
+      SET secrets = ${secretsValue ? sql.json(secretsValue as unknown as JSONValue) : null},
+          updated_at = NOW()
+      WHERE id = ${spaceId}
+    `;
+  }
+
+  async function getSpaceSecretValue(
+    spaceId: string,
+    key: string
+  ): Promise<string | null> {
+    const result = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+      SELECT secrets FROM spaces WHERE id = ${spaceId}
+    `;
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    const secrets = result[0]?.secrets;
+    if (!secrets || !(key in secrets)) {
+      return null;
+    }
+
+    const storedSecret = secrets[key];
+
+    // Decrypt and return
+    return decrypt(
+      {
+        encrypted: storedSecret.encrypted,
+        iv: storedSecret.iv,
+        tag: storedSecret.tag,
+      },
+      spaceId
+    );
+  }
+
+  async function getSpaceSecretMetadata(
+    spaceId: string,
+    key: string
+  ): Promise<SecretMetadata | null> {
+    const result = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+      SELECT secrets FROM spaces WHERE id = ${spaceId}
+    `;
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    const secrets = result[0]?.secrets;
+    if (!secrets || !(key in secrets)) {
+      return null;
+    }
+
+    const storedSecret = secrets[key];
+    return {
+      setAt: storedSecret.setAt,
+      expiresAt: storedSecret.expiresAt,
+    };
+  }
+
+  async function listSpaceSecrets(
+    spaceId: string
+  ): Promise<Record<string, SecretMetadata>> {
+    const result = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+      SELECT secrets FROM spaces WHERE id = ${spaceId}
+    `;
+
+    if (result.length === 0 || !result[0]?.secrets) {
+      return {};
+    }
+
+    const secrets = result[0].secrets;
+    const metadata: Record<string, SecretMetadata> = {};
+
+    for (const [key, storedSecret] of Object.entries(secrets)) {
+      metadata[key] = {
+        setAt: storedSecret.setAt,
+        expiresAt: storedSecret.expiresAt,
+      };
+    }
+
+    return metadata;
+  }
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
 
@@ -2694,6 +2892,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       lastMessageRoutedAt: row.last_message_routed_at?.toISOString() ?? undefined,
       runtimeId: row.runtime_id ?? undefined,
       runtimeName: row.runtime_name ?? undefined,
+      runtimeStatus: (row.runtime_status as RuntimeStatus) ?? undefined,
     };
   }
 
@@ -3209,6 +3408,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     editArtifact,
     archiveArtifact,
     archiveArtifactRecursive,
+    deleteAllArtifactsInChannel,
     listArtifacts,
     globArtifacts,
     checkpointArtifact,
@@ -3220,6 +3420,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     deleteSecret,
     getSecretValue,
     getSecretMetadata,
+    // Space Secrets operations
+    setSpaceSecret,
+    deleteSpaceSecret,
+    getSpaceSecretValue,
+    getSpaceSecretMetadata,
+    listSpaceSecrets,
     // Local Agent Server operations (Stage 3)
     saveLocalAgentServer,
     getLocalAgentServer,

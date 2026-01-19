@@ -1,13 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { cn } from '../../lib/utils'
-import { getRosterColor } from '../../utils/senderColors'
 
 export interface RosterAgent {
   callsign: string
-  /** Whether agent has a callbackUrl (container is running) */
+  /** Whether the agent's runtime is online (agent can receive messages) */
   isOnline: boolean
-  /** Whether agent container is starting up */
-  isConnecting?: boolean
   /** Whether agent is in an active turn (sent messages, no idle frame yet) */
   isWorking?: boolean
   /** Whether agent is pending (message routed, awaiting first frame) */
@@ -32,6 +29,8 @@ export interface RosterAgent {
   runtimeId?: string | null
   /** Runtime name for display (populated from runtime record) */
   runtimeName?: string
+  /** Runtime connection status - agent is online when runtime is online */
+  runtimeStatus?: 'online' | 'offline'
 }
 
 interface MentionAutocompleteProps {
@@ -52,7 +51,6 @@ export function MentionAutocomplete({
   onSelect,
   onClose,
   position,
-  channelId = '',
 }: MentionAutocompleteProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -83,39 +81,28 @@ export function MentionAutocomplete({
   return (
     <div
       ref={containerRef}
-      className="absolute z-50 bg-white border border-[var(--cast-border-default)] shadow-sm py-1 min-w-[180px] max-h-[200px] overflow-y-auto"
+      className="absolute z-50 bg-card border border-[var(--cast-border-default)] shadow-sm py-1 min-w-[180px] max-h-[200px] overflow-y-auto"
       style={{ bottom: position.top, left: position.left }}
     >
       {filteredOptions.map((option, index) => {
-        // Get roster index for coordinated color
-        const rosterIndex = option.agent
-          ? roster.findIndex(a => a.callsign === option.agent?.callsign)
-          : -1
-        const dotColor = rosterIndex >= 0 ? getRosterColor(channelId, rosterIndex) : undefined
-
         return (
           <button
             key={option.value}
             data-selected={index === selectedIndex}
             className={cn(
               "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
-              "hover:bg-[#f5f5f5] transition-colors",
-              index === selectedIndex && "bg-[#f5f5f5]"
+              "hover:bg-[var(--cast-bg-secondary)] transition-colors",
+              index === selectedIndex && "bg-[var(--cast-bg-secondary)]"
             )}
             onClick={() => onSelect(option.value)}
           >
             {option.type === 'channel' ? (
               <>
-                <span className="w-2 h-2 rounded-full bg-[#a0a0a0]" />
                 <span className="font-medium text-[var(--cast-text-primary)]">channel</span>
                 <span className="text-[var(--cast-text-muted)] text-xs ml-auto">broadcast</span>
               </>
             ) : (
               <>
-                <span
-                  className="w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: dotColor }}
-                />
                 <span className={cn(
                   "font-medium text-[var(--cast-text-primary)]",
                   option.agent?.isPaused && "line-through opacity-60"

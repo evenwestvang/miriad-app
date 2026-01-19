@@ -222,7 +222,7 @@ export async function broadcastAgentState(
   connectionManager: ConnectionManager | undefined,
   channelId: string,
   callsign: string,
-  state: 'connecting' | 'online' | 'offline' | 'paused' | 'pending' | 'dismissed',
+  state: 'connecting' | 'online' | 'offline' | 'paused' | 'resumed' | 'pending' | 'dismissed',
   timestamp?: string
 ): Promise<void> {
   if (!connectionManager) return;
@@ -487,11 +487,13 @@ export function createCheckinRoutes(options: CheckinHandlerOptions): Hono {
       lastHeartbeat: now,
     });
 
-    // Always broadcast heartbeat with timestamp so clients can track offline timeout locally
-    // (Server can't run timers in Lambda - clients handle their own 60s timeout)
-    await broadcastAgentState(connectionManager, channelId, callsign, 'online', now);
+    // Only broadcast 'online' if agent is not paused or archived
+    // Paused/archived agents should not send online events (their state is user-controlled)
+    if (rosterEntry.status !== 'paused' && rosterEntry.status !== 'archived') {
+      await broadcastAgentState(connectionManager, channelId, callsign, 'online', now);
+    }
 
-    console.log(`[Heartbeat] Agent ${callsign} (${agentId}) - heartbeat at ${now}${wasOffline ? ' (now online)' : ''}`);
+    console.log(`[Heartbeat] Agent ${callsign} (${agentId}) - heartbeat at ${now}${wasOffline ? ' (now online)' : ''}${rosterEntry.status === 'paused' ? ' (muted)' : ''}`);
 
     return c.json({ ok: true, timestamp: now });
   });

@@ -13,11 +13,12 @@
  */
 
 import { Hono } from 'hono';
-import * as fs from 'node:fs/promises';
-import * as fsSync from 'node:fs';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { Storage } from '@cast/storage';
+import {
+  getInstructions,
+  getInstruction,
+  buildReadInstructionsDescription,
+} from '../instructions/index.js';
 import {
   parseMentions,
   determineRouting,
@@ -33,72 +34,8 @@ import {
   getContainerAuth,
   type ContainerAuthVariables,
 } from '../auth/container-middleware.js';
-import type { AssetStorage } from '../assets/index.js';
 import type { ConnectionManager } from '../websocket/index.js';
 import type { AgentInvoker, Message } from './messages.js';
-
-// =============================================================================
-// Instruction Loading (Phase F)
-// =============================================================================
-
-interface Instruction {
-  id: string;
-  summary: string;
-  content: string;
-}
-
-/**
- * Load instruction markdown files from the defaults/instructions directory.
- * Files have YAML frontmatter with a `summary` field.
- */
-function loadInstructions(): Map<string, Instruction> {
-  const instructions = new Map<string, Instruction>();
-
-  // Get path relative to this file
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const instructionsDir = path.join(__dirname, '../defaults/instructions');
-
-  if (!fsSync.existsSync(instructionsDir)) {
-    console.warn('[MCP] Instructions directory not found:', instructionsDir);
-    return instructions;
-  }
-
-  const files = fsSync.readdirSync(instructionsDir).filter((f) => f.endsWith('.md'));
-
-  for (const file of files) {
-    const content = fsSync.readFileSync(path.join(instructionsDir, file), 'utf-8');
-    const slug = file.replace(/\.md$/, '');
-
-    // Parse YAML frontmatter: ---\n...\n---\n content
-    const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-
-    if (match) {
-      // Extract summary from frontmatter
-      const frontmatter = match[1];
-      const summaryMatch = frontmatter.match(/summary:\s*(.+)/);
-      const summary = summaryMatch ? summaryMatch[1].trim() : slug;
-
-      instructions.set(slug, {
-        id: slug,
-        summary,
-        content: match[2].trim(),
-      });
-    } else {
-      // No frontmatter - use file content as-is
-      instructions.set(slug, {
-        id: slug,
-        summary: slug,
-        content: content.trim(),
-      });
-    }
-  }
-
-  console.log(`[MCP] Loaded ${instructions.size} instruction articles:`, Array.from(instructions.keys()).join(', '));
-  return instructions;
-}
-
-// Load instructions at module initialization
-const instructions = loadInstructions();
 
 // =============================================================================
 // Types
@@ -136,7 +73,6 @@ interface McpHttpHandlerOptions {
   storage: Storage;
   /** @deprecated spaceId is now extracted from container auth */
   spaceId?: string;
-  assetStorage?: AssetStorage;
   /** Connection manager for broadcasting messages */
   connectionManager?: ConnectionManager;
   /** Agent invoker for routing @mentions to other agents */
@@ -405,45 +341,6 @@ const TOOLS: McpToolDefinition[] = [
     },
   },
   // ---------------------------------------------------------------------------
-  // Asset Tools
-  // ---------------------------------------------------------------------------
-  {
-    name: 'upload_asset',
-    description:
-      'Upload a binary file (image, PDF, audio, video) to the channel. THIS IS THE ONLY WAY to upload images and other binary files - do NOT use artifact_create for binary assets. Provide either a local file path OR base64-encoded data. The file will be stored and served at /channels/:channelId/assets/:slug',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        slug: {
-          type: 'string',
-          description: "Artifact slug with file extension (e.g., 'mockup.png', 'report.pdf')",
-        },
-        tldr: {
-          type: 'string',
-          description: 'Brief description of the asset',
-        },
-        path: {
-          type: 'string',
-          description: 'Local file path (absolute or relative to cwd) - use this OR data',
-        },
-        data: {
-          type: 'string',
-          description: 'Base64-encoded file content - use this OR path (max 5MB)',
-        },
-        title: {
-          type: 'string',
-          description: 'Optional display name',
-        },
-        parentSlug: {
-          type: 'string',
-          description: 'Optional parent artifact for tree structure',
-        },
-        channel: channelProperty,
-      },
-      required: ['slug', 'tldr'],
-    },
-  },
-  // ---------------------------------------------------------------------------
   // Message Tools
   // ---------------------------------------------------------------------------
   {
@@ -492,21 +389,8 @@ const TOOLS: McpToolDefinition[] = [
   },
   // ---------------------------------------------------------------------------
   // Instruction Tools (Phase F)
+  // Note: read_instructions is added dynamically in getToolsWithInstructions()
   // ---------------------------------------------------------------------------
-  {
-    name: 'read_instructions',
-    description: buildReadInstructionsDescription(),
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        article: {
-          type: 'string',
-          description: 'Article ID to read',
-        },
-      },
-      required: ['article'],
-    },
-  },
   // ---------------------------------------------------------------------------
   // Communication Tools (Agent UX)
   // ---------------------------------------------------------------------------
@@ -611,17 +495,27 @@ Messages without @mentions are logged but won't notify anyone.`,
 ];
 
 /**
- * Build dynamic description for read_instructions tool based on loaded articles.
+ * Get the full TOOLS array with dynamically loaded instruction description.
  */
-function buildReadInstructionsDescription(): string {
-  const articleList = Array.from(instructions.values())
-    .map((i) => `- ${i.id}: ${i.summary}`)
-    .join('\n');
-
-  return `Read documentation for special artifact types and capabilities.
-
-Available articles:
-${articleList || '(no instructions available)'}`;
+async function getToolsWithInstructions(): Promise<McpToolDefinition[]> {
+  const description = await buildReadInstructionsDescription();
+  return [
+    ...TOOLS,
+    {
+      name: 'read_instructions',
+      description,
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          article: {
+            type: 'string',
+            description: 'Article ID to read',
+          },
+        },
+        required: ['article'],
+      },
+    },
+  ];
 }
 
 // =============================================================================
@@ -634,7 +528,6 @@ interface ToolContext {
   channelId: string;
   channelName: string;
   callsign: string;
-  assetStorage?: AssetStorage;
   connectionManager?: ConnectionManager;
   agentInvoker?: AgentInvoker;
 }
@@ -857,90 +750,6 @@ const toolHandlers: Record<string, ToolHandler> = {
     return diff;
   },
 
-  async upload_asset(args, { storage, channelId, callsign, assetStorage }) {
-    const { slug, tldr, path, data, title, parentSlug, channel } = args as {
-      slug: string;
-      tldr: string;
-      path?: string;
-      data?: string;
-      title?: string;
-      parentSlug?: string;
-      channel?: string;
-    };
-    const targetChannel = channel || channelId;
-
-    if (!assetStorage) {
-      throw new Error('Asset storage not configured');
-    }
-
-    // Validate: exactly one of path or data must be provided
-    if (!path && !data) {
-      throw new Error('Either path or data must be provided');
-    }
-    if (path && data) {
-      throw new Error('Provide either path OR data, not both');
-    }
-
-    // Validate slug has file extension
-    if (!slug.includes('.')) {
-      throw new Error('Slug must include file extension (e.g., "mockup.png", "report.pdf")');
-    }
-
-    // Save asset to filesystem
-    let result;
-    if (path) {
-      // Resolve relative paths
-      const resolvedPath = path.startsWith('/') ? path : `${process.cwd()}/${path}`;
-
-      // Verify file exists
-      try {
-        await fs.access(resolvedPath);
-      } catch {
-        throw new Error(`File not found: ${path}`);
-      }
-
-      result = await assetStorage.saveAsset({
-        channelId: targetChannel,
-        slug,
-        source: { type: 'path', path: resolvedPath },
-      });
-    } else {
-      // Base64 data - check size limit (5MB)
-      const MAX_BASE64_SIZE = 5 * 1024 * 1024;
-      const decodedSize = Math.ceil((data!.length * 3) / 4);
-      if (decodedSize > MAX_BASE64_SIZE) {
-        throw new Error(`Base64 data exceeds 5MB limit (${Math.round(decodedSize / 1024 / 1024)}MB). Use path-based upload for larger files.`);
-      }
-
-      result = await assetStorage.saveAsset({
-        channelId: targetChannel,
-        slug,
-        source: { type: 'base64', data: data! },
-      });
-    }
-
-    // Create artifact record
-    const artifact = await storage.createArtifact(targetChannel, {
-      slug,
-      channelId: targetChannel,
-      type: 'asset',
-      title,
-      tldr,
-      content: '', // Assets have no text content
-      parentSlug,
-      contentType: result.contentType,
-      fileSize: result.fileSize,
-      createdBy: callsign,
-    });
-
-    return JSON.stringify({
-      slug: artifact.slug,
-      contentType: result.contentType,
-      fileSize: result.fileSize,
-      url: `/channels/${targetChannel}/assets/${slug}`,
-    }, null, 2);
-  },
-
   // ---------------------------------------------------------------------------
   // Message Tools (fully implemented)
   // ---------------------------------------------------------------------------
@@ -1025,9 +834,10 @@ const toolHandlers: Record<string, ToolHandler> = {
   async read_instructions(args) {
     const { article } = args as { article: string };
 
-    const instruction = instructions.get(article);
+    const instruction = await getInstruction(article);
 
     if (!instruction) {
+      const instructions = await getInstructions();
       const availableIds = Array.from(instructions.keys()).join(', ');
       throw new Error(`Unknown article: ${article}\n\nAvailable: ${availableIds || '(none)'}`);
     }
@@ -1606,7 +1416,7 @@ function jsonRpcSuccess(id: string | number, result: unknown): JsonRpcResponse {
 }
 
 export function createMcpRoutes(opts: McpHttpHandlerOptions): Hono<{ Variables: ContainerAuthVariables }> {
-  const { storage, assetStorage, connectionManager, agentInvoker } = opts;
+  const { storage, connectionManager, agentInvoker } = opts;
   const app = new Hono<{ Variables: ContainerAuthVariables }>();
 
   // Apply container auth to all MCP routes
@@ -1667,7 +1477,8 @@ export function createMcpRoutes(opts: McpHttpHandlerOptions): Hono<{ Variables: 
       }
 
       case 'tools/list': {
-        return c.json(jsonRpcSuccess(request.id, { tools: TOOLS }));
+        const tools = await getToolsWithInstructions();
+        return c.json(jsonRpcSuccess(request.id, { tools }));
       }
 
       case 'tools/call': {
@@ -1689,7 +1500,6 @@ export function createMcpRoutes(opts: McpHttpHandlerOptions): Hono<{ Variables: 
             channelId: channel.id,
             channelName: channel.name,
             callsign: container.callsign,
-            assetStorage,
             connectionManager,
             agentInvoker,
           };

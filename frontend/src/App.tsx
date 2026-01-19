@@ -1,10 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import {
-  LogOut,
-  Sun,
-  Moon,
-  Settings,
-} from "lucide-react";
 import { ChannelSwitcher } from "./components/ChannelSwitcher";
 import {
   ThreadList,
@@ -40,9 +34,11 @@ import { OnboardingPage } from "./components/OnboardingPage";
 import { AuthErrorPage } from "./components/AuthErrorPage";
 import { OAuthCallbackPage } from "./components/OAuthCallbackPage";
 import { OAuthErrorPage } from "./components/OAuthErrorPage";
-import { SettingsModal } from "./components/settings";
+import { InitializeRootChannelPage } from "./components/InitializeRootChannelPage";
+import { SettingsModal, type SettingsSection } from "./components/settings";
 import { MobileNav, type MobileTab } from "./components/MobileNav";
 import { MobileMenu } from "./components/MobileMenu";
+import { RuntimeStatusDropdown } from "./components/RuntimeStatusDropdown";
 
 // Auth mode: 'dev' (show LoginPage) or 'workos' (redirect to /auth/login)
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || "dev";
@@ -114,6 +110,8 @@ export function App() {
   const currentUser = authSession?.user.callsign || "user";
   const [isCreatingThread, setIsCreatingThread] = useState(false);
   const [roster, setRoster] = useState<RosterAgent[]>([]);
+  // Increment to trigger roster reload (e.g., when runtime status changes)
+  const [rosterRefreshKey, setRosterRefreshKey] = useState(0);
   // Total channel cost (sum of all agents, including archived)
   const [totalChannelCost, setTotalChannelCost] = useState(0);
   // Track which agents are "working" (sent messages but no idle frame yet)
@@ -134,12 +132,17 @@ export function App() {
     return stored !== null ? JSON.parse(stored) : false;
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('cloud');
+  // Disconnected state: no runtimes online AND no API key configured
+  const [isDisconnected, setIsDisconnected] = useState(false);
   // Artifact event counter - increment to trigger board refresh
   const [artifactEventTrigger, setArtifactEventTrigger] = useState(0);
   // Selected agent for detail panel (callsign or null)
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   // Summon picker open state (controlled from MessageInput button)
   const [summonOpen, setSummonOpen] = useState(false);
+  // Pre-selected agent slug for summon picker (set from empty state)
+  const [preSelectedAgentSlug, setPreSelectedAgentSlug] = useState<string | undefined>(undefined);
   // Channel switcher (Cmd-K) open state
   const [channelSwitcherOpen, setChannelSwitcherOpen] = useState(false);
   // Recently dismissed agents (for warning when mentioning them)
@@ -351,7 +354,12 @@ export function App() {
           ...prev,
           {
             callsign: event.agent.callsign,
-            isOnline: event.agent.status === "idle", // idle means container is ready
+            agentType: event.agent.agentType,
+            // isOnline based on runtime status
+            isOnline: event.agent.runtimeStatus === "online",
+            runtimeId: event.agent.runtimeId,
+            runtimeName: event.agent.runtimeName,
+            runtimeStatus: event.agent.runtimeStatus,
           },
         ];
       });
@@ -429,7 +437,7 @@ export function App() {
       const idx = prev.findIndex((a) => a.callsign === event.callsign);
       if (idx === -1) {
         // Agent not in roster yet - might be joining (new or unarchived), add them
-        if (event.state === "connecting" || event.state === "online") {
+        if (event.state === "online") {
           // Remove from dismissed set if they were archived (unarchive flow)
           setDismissedAgents((dismissed) => {
             if (!dismissed.has(event.callsign)) return dismissed;
@@ -441,32 +449,32 @@ export function App() {
             ...prev,
             {
               callsign: event.callsign,
-              isOnline: event.state === "online",
-              isConnecting: event.state === "connecting",
-              lastHeartbeat: event.lastHeartbeat,
+              isOnline: true,
             },
           ];
         }
         return prev; // offline/paused for unknown agent, ignore
       }
       // Update existing agent
-      // Paused/muted is independent of online/connecting - an agent can be online AND muted
       const updated = [...prev];
       if (event.state === "paused") {
-        // Mute event - only set isPaused, preserve online/connecting state
+        // Mute event - only set isPaused, preserve online state
         updated[idx] = {
           ...updated[idx],
           isPaused: true,
-          lastHeartbeat: event.lastHeartbeat ?? updated[idx].lastHeartbeat,
+        };
+      } else if (event.state === "resumed") {
+        // Resume event - clear isPaused
+        updated[idx] = {
+          ...updated[idx],
+          isPaused: false,
         };
       } else if (event.state === "online") {
-        // Online event clears muted state (this is how unmute/resume works)
+        // Online event - runtime is connected, agent is ready
+        // DO NOT clear isPaused - that's controlled by explicit pause/resume actions
         updated[idx] = {
           ...updated[idx],
           isOnline: true,
-          isConnecting: false,
-          isPaused: false,
-          lastHeartbeat: event.lastHeartbeat ?? updated[idx].lastHeartbeat,
         };
       } else if (event.state === "pending") {
         // Pending event - message routed, awaiting first frame
@@ -475,16 +483,15 @@ export function App() {
           isPending: true,
           lastMessageRoutedAt: event.lastMessageRoutedAt ?? new Date().toISOString(),
         };
-      } else {
-        // Offline/connecting - update lifecycle state but preserve muted flag
+      } else if (event.state === "offline") {
+        // Offline - runtime disconnected, but preserve muted flag
         updated[idx] = {
           ...updated[idx],
           isOnline: false,
-          isConnecting: event.state === "connecting",
           // isPaused preserved - muted agent that goes offline stays muted
-          lastHeartbeat: event.lastHeartbeat ?? updated[idx].lastHeartbeat,
         };
       }
+      // Ignore 'connecting' state - no longer relevant with local runtimes
       return updated;
     });
   }, []);
@@ -494,52 +501,28 @@ export function App() {
     setIsSwitchingChannel(false);
   }, []);
 
-  // Client-side offline timeout - check every 15s for stale heartbeats (60s threshold)
-  // Server broadcasts heartbeat timestamps, client handles offline detection locally
-  // (Required because Lambda can't run persistent timers)
-  // Also checks pending state timeout (10s) - clears pending if agent hasn't responded
+  // Client-side pending timeout (10s) - clears pending if agent hasn't responded
+  // Note: Agent online/offline is now based on runtime status, not heartbeat
   useEffect(() => {
-    const HEARTBEAT_STALE_MS = 60_000; // 60 seconds
     const PENDING_TIMEOUT_MS = 10_000; // 10 seconds
-    const CHECK_INTERVAL_MS = 2_000; // Check every 2 seconds (for faster pending timeout)
+    const CHECK_INTERVAL_MS = 2_000; // Check every 2 seconds
 
     const checkTimeouts = () => {
       const now = Date.now();
       setRoster((prev) => {
         let changed = false;
         const updated = prev.map((agent) => {
-          let agentChanged = false;
-          let updatedAgent = agent;
-
-          // Check heartbeat timeout (offline detection)
-          if (agent.isOnline && !agent.isConnecting && agent.lastHeartbeat) {
-            const lastTime = new Date(agent.lastHeartbeat).getTime();
-            const isStale = now - lastTime > HEARTBEAT_STALE_MS;
-            if (isStale) {
-              console.log(
-                `[HeartbeatTimeout] Agent ${agent.callsign} is stale (last heartbeat: ${agent.lastHeartbeat})`,
-              );
-              updatedAgent = { ...updatedAgent, isOnline: false, isConnecting: false };
-              agentChanged = true;
-            }
-          }
-
           // Check pending timeout - clear pending if expired (agent didn't respond in time)
-          if (updatedAgent.isPending && updatedAgent.lastMessageRoutedAt) {
-            const routedTime = new Date(updatedAgent.lastMessageRoutedAt).getTime();
+          if (agent.isPending && agent.lastMessageRoutedAt) {
+            const routedTime = new Date(agent.lastMessageRoutedAt).getTime();
             const isPendingStale = now - routedTime > PENDING_TIMEOUT_MS;
             if (isPendingStale) {
               console.log(
                 `[PendingTimeout] Agent ${agent.callsign} pending expired (routed at: ${agent.lastMessageRoutedAt})`,
               );
-              updatedAgent = { ...updatedAgent, isPending: false };
-              agentChanged = true;
+              changed = true;
+              return { ...agent, isPending: false };
             }
-          }
-
-          if (agentChanged) {
-            changed = true;
-            return updatedAgent;
           }
           return agent;
         });
@@ -622,8 +605,11 @@ export function App() {
     setAgentsLoading(false);
   }, []);
 
-  // Fetch channels from API on mount
+  // Fetch channels from API when authenticated
   useEffect(() => {
+    // Don't fetch until auth is confirmed
+    if (!authSession) return;
+
     async function fetchChannels() {
       try {
         const response = await apiFetch(`${API_HOST}/channels`);
@@ -653,6 +639,15 @@ export function App() {
           }),
         );
         setThreads(threadList);
+
+        // Auto-navigate to first non-root channel if no channel is selected
+        if (!urlState.channelId && threadList.length > 0) {
+          // Find first non-root channel (root is for system config, not user work)
+          const firstUserChannel = threadList.find((t) => t.agentName !== "root");
+          if (firstUserChannel) {
+            navigateToChannel(firstUserChannel.id);
+          }
+        }
       } catch (error) {
         console.error("Failed to fetch channels:", error);
         // Keep empty list on error
@@ -661,7 +656,7 @@ export function App() {
       }
     }
     fetchChannels();
-  }, []);
+  }, [authSession]);
 
   // Handle thread/channel changes
   useEffect(() => {
@@ -772,12 +767,11 @@ export function App() {
                 current?: { status?: string };
                 runtimeId?: string | null;
                 runtimeName?: string;
+                runtimeStatus?: 'online' | 'offline';
               }) => ({
                 callsign: r.callsign,
-                // isOnline: requires fresh heartbeat (within 60s)
-                isOnline: r.lastHeartbeat
-                  ? Date.now() - new Date(r.lastHeartbeat).getTime() < 60000
-                  : false,
+                // isOnline: runtime is online (agent can receive messages)
+                isOnline: r.runtimeStatus === "online",
                 // Paused/muted status from API
                 isPaused: r.status === "paused",
                 // Tunnel hash for HTTP exposure
@@ -793,6 +787,7 @@ export function App() {
                 // Runtime binding (null = cloud)
                 runtimeId: r.runtimeId,
                 runtimeName: r.runtimeName,
+                runtimeStatus: r.runtimeStatus,
               }),
             );
             setRoster(rosterAgents);
@@ -804,10 +799,10 @@ export function App() {
         }
       }
       fetchRosterAndCosts();
-    }, 250); // Delay to not compete with initial message sync
+    }, rosterRefreshKey > 0 ? 0 : 250); // No delay on manual refresh, delay on initial load
 
     return () => clearTimeout(timeoutId);
-  }, [selectedThread, connected]);
+  }, [selectedThread, connected, rosterRefreshKey]);
 
   // Update thread state based on isWaitingForResponse
   useEffect(() => {
@@ -992,40 +987,21 @@ export function App() {
     setRoster((prev) => [...prev, agent]);
   }, []);
 
-  // Handle agent dismissed from roster
-  const handleAgentDismiss = useCallback(
-    async (callsign: string) => {
-      if (!selectedThread) return;
-
-      try {
-        const response = await apiFetch(
-          `${API_HOST}/channels/${selectedThread}/agents/${callsign}`,
-          {
-            method: "DELETE",
-          },
-        );
-
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          console.error(
-            "Failed to dismiss agent:",
-            data.error || response.status,
-          );
-          return;
-        }
-
-        // Remove from local roster
-        setRoster((prev) => prev.filter((a) => a.callsign !== callsign));
-        // Close panel if dismissed agent was selected
-        if (selectedAgent === callsign) {
-          setSelectedAgent(null);
-        }
-      } catch (error) {
-        console.error("Failed to dismiss agent:", error);
-      }
-    },
-    [selectedThread, selectedAgent],
-  );
+  // Handle agent dismissed from roster (optimistic update - API call made by panel)
+  const handleAgentDismiss = useCallback((callsign: string) => {
+    // Remove from local roster immediately
+    setRoster((prev) => prev.filter((a) => a.callsign !== callsign));
+    // Track dismissed agent for warning when user @mentions them
+    setDismissedAgents((prev) => {
+      const next = new Set(prev);
+      next.add(callsign);
+      return next;
+    });
+    // Close panel if dismissed agent was selected
+    if (selectedAgent === callsign) {
+      setSelectedAgent(null);
+    }
+  }, [selectedAgent]);
 
   // Handle agent selected in roster (toggle behavior)
   const handleAgentSelect = useCallback((callsign: string) => {
@@ -1037,15 +1013,32 @@ export function App() {
     setSelectedAgent(null);
   }, []);
 
+  // Handle agent mute (optimistic update)
+  const handleAgentMute = useCallback((callsign: string) => {
+    setRoster((prev) => {
+      const idx = prev.findIndex((a) => a.callsign === callsign);
+      if (idx === -1) return prev;
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], isPaused: true };
+      return updated;
+    });
+  }, []);
+
+  // Handle agent unmute (optimistic update)
+  const handleAgentUnmute = useCallback((callsign: string) => {
+    setRoster((prev) => {
+      const idx = prev.findIndex((a) => a.callsign === callsign);
+      if (idx === -1) return prev;
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], isPaused: false };
+      return updated;
+    });
+  }, []);
+
   // Get selected agent data from roster
   const selectedAgentData = selectedAgent
     ? rosterWithWorkingState.find((a) => a.callsign === selectedAgent)
     : null;
-
-  // Get selected agent's roster index for color
-  const selectedAgentIndex = selectedAgent
-    ? rosterWithWorkingState.findIndex((a) => a.callsign === selectedAgent)
-    : -1;
 
   // Show auth error page if there was an OAuth error
   if (authError) {
@@ -1084,6 +1077,17 @@ export function App() {
     return <LoginPage onLogin={handleLogin} apiHost={API_HOST} />;
   }
 
+  // Initialize root channel page (for debugging onboarding/curation)
+  if (pathname === "/initialize-root-channel") {
+    return (
+      <InitializeRootChannelPage
+        onComplete={() => {
+          window.location.href = "/";
+        }}
+      />
+    );
+  }
+
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Unified header - spans full width */}
@@ -1111,63 +1115,25 @@ export function App() {
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Mobile: Connection dot only */}
-        {selectedThread && (
-          <span
-            className={cn(
-              "md:hidden w-2 h-2 rounded-full",
-              connected ? "bg-green-500" : "bg-muted-foreground"
-            )}
-            title={connected ? "Connected" : "Disconnected"}
+        {/* Runtime status dropdown */}
+        {authSession?.spaceId && (
+          <RuntimeStatusDropdown
+            apiHost={API_HOST}
+            spaceId={authSession.spaceId}
+            settingsOpen={settingsOpen}
+            onOpenSettings={(section?: SettingsSection) => {
+              setSettingsSection(section ?? 'cloud')
+              setSettingsOpen(true)
+            }}
+            onRuntimeStatusChange={() => {
+              // Runtime came online/offline - reload roster to update agent online states
+              setRosterRefreshKey((k) => k + 1)
+            }}
+            onDisconnectedStateChange={setIsDisconnected}
           />
         )}
 
-        {/* Desktop: Full connection status */}
-        {selectedThread && (
-          <span
-            className={`hidden md:inline text-xs ${connected ? "text-green-500" : "text-muted-foreground"}`}
-          >
-            {connected ? "● Connected" : "○ Disconnected"}
-          </span>
-        )}
-
-        {/* Desktop-only: Settings */}
-        <button
-          onClick={() => setSettingsOpen(true)}
-          className="hidden md:block p-1.5 hover:bg-[var(--cast-bg-hover)] transition-colors"
-          title="Settings"
-        >
-          <Settings className="w-4 h-4 text-[var(--cast-text-muted)]" />
-        </button>
-
-        {/* Desktop-only: Theme toggle */}
-        <button
-          onClick={toggleTheme}
-          className="hidden md:block p-1.5 hover:bg-[var(--cast-bg-hover)] transition-colors"
-          title={
-            theme === "light" ? "Switch to dark mode" : "Switch to light mode"
-          }
-        >
-          {theme === "light" ? (
-            <Moon className="w-4 h-4 text-[var(--cast-text-muted)]" />
-          ) : (
-            <Sun className="w-4 h-4 text-[var(--cast-text-muted)]" />
-          )}
-        </button>
-
-        {/* Desktop-only: User display */}
-        <span className="hidden md:inline text-sm text-muted-foreground">@{currentUser}</span>
-
-        {/* Desktop-only: Logout */}
-        <button
-          onClick={logout}
-          className="hidden md:block p-1.5 rounded hover:bg-secondary/50 transition-colors"
-          title="Log out"
-        >
-          <LogOut className="w-4 h-4 text-muted-foreground" />
-        </button>
-
-        {/* Mobile: Hamburger menu */}
+        {/* Hamburger menu (shown on both mobile and desktop) */}
         <MobileMenu
           currentUser={currentUser}
           theme={theme}
@@ -1178,7 +1144,14 @@ export function App() {
       </header>
 
       {/* Main content area - add bottom padding on mobile for nav bar */}
-      <div className="flex flex-1 min-h-0 overflow-hidden pb-14 md:pb-0">
+      <div className="flex flex-1 min-h-0 overflow-hidden pb-14 md:pb-0 relative">
+        {/* Disconnected overlay - blocks interaction when no runtime and no API key */}
+        {isDisconnected && !settingsOpen && (
+          <div
+            className="absolute inset-0 bg-background/70 z-40 pointer-events-auto"
+            aria-hidden="true"
+          />
+        )}
         {/* Sidebar - hidden on mobile, shows as full-screen when channels tab active */}
         <aside
           className={cn(
@@ -1248,6 +1221,10 @@ export function App() {
                 hasMoreMessages={hasMoreMessages}
                 isLoadingOlder={isLoadingOlder}
                 onRequestOlderMessages={requestOlderMessages}
+                onSelectStarterAgent={(agentSlug) => {
+                  setPreSelectedAgentSlug(agentSlug);
+                  setSummonOpen(true);
+                }}
               />
               {/* Input area with detail panel + roster bar above message input */}
               <div className="border-t border-border bg-card">
@@ -1256,11 +1233,12 @@ export function App() {
                   <AgentDetailPanel
                     key="agent-detail-panel"
                     agent={selectedAgentData}
-                    rosterIndex={selectedAgentIndex}
                     channelId={selectedThread}
                     apiHost={API_HOST}
                     onClose={handleAgentPanelClose}
                     onDismiss={handleAgentDismiss}
+                    onMute={handleAgentMute}
+                    onUnmute={handleAgentUnmute}
                   />
                 )}
                 {/* Roster bar - horizontal row, acts as tabs */}
@@ -1278,7 +1256,11 @@ export function App() {
                     selectedAgent={selectedAgent}
                     canManageAgents={!!selectedThread}
                     summonOpen={summonOpen}
-                    onSummonClose={() => setSummonOpen(false)}
+                    onSummonClose={() => {
+                      setSummonOpen(false);
+                      setPreSelectedAgentSlug(undefined);
+                    }}
+                    preSelectedAgentSlug={preSelectedAgentSlug}
                   />
                 </div>
                 {/* Message input below roster */}
@@ -1345,6 +1327,7 @@ export function App() {
         onClose={() => setSettingsOpen(false)}
         apiHost={API_HOST}
         spaceId={authSession?.spaceId}
+        initialSection={settingsSection}
       />
 
       {/* Channel switcher (Cmd-K) */}

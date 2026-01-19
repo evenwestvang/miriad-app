@@ -211,6 +211,19 @@ export async function apiPost<T>(
 }
 
 /**
+ * PUT JSON helper.
+ */
+export async function apiPut<T>(
+  input: string,
+  body: unknown
+): Promise<T> {
+  return apiJson<T>(input, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+/**
  * DELETE helper.
  */
 export async function apiDelete(input: string): Promise<void> {

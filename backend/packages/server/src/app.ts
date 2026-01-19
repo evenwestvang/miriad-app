@@ -25,6 +25,7 @@ import { createAppRoutes } from './handlers/apps.js';
 import { createRuntimeAuthRoutes } from './handlers/runtime-auth.js';
 import { createRuntimeRoutes } from './handlers/runtimes.js';
 import { createMiriadCloudRoutes } from './handlers/miriad-cloud.js';
+import { resetRootChannel } from './onboarding/index.js';
 
 // =============================================================================
 // Types
@@ -410,6 +411,31 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
       await connectionManager.broadcast(channelId, frame);
       console.log(`[Agents] Broadcast summoning message to channel`);
 
+      // Broadcast roster event so clients add the new agent to their roster
+      // Need to fetch the full entry with runtime info
+      const fullEntry = await storage.getRosterByCallsign(channelId, callsign);
+      if (fullEntry) {
+        const rosterFrame = {
+          i: generateMessageId(),
+          t: now,
+          v: {
+            type: 'roster',
+            action: 'agent_joined',
+            agent: {
+              callsign: fullEntry.callsign,
+              agentType: fullEntry.agentType,
+              status: fullEntry.status,
+              runtimeId: fullEntry.runtimeId,
+              runtimeName: fullEntry.runtimeName,
+              runtimeStatus: fullEntry.runtimeStatus,
+            },
+          },
+          c: channelId,
+        };
+        await connectionManager.broadcast(channelId, JSON.stringify(rosterFrame));
+        console.log(`[Agents] Broadcast roster join event for ${callsign}`);
+      }
+
       // Broadcast 'connecting' agent state - user knows to wait
       await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
 
@@ -488,6 +514,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
         tldr?: string;
         nameTheme?: string;
         suggestedName?: string;
+        featuredChannelStarter?: boolean;
         source: 'local' | 'root';
       }>();
 
@@ -500,6 +527,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
           tldr: agent.tldr,
           nameTheme: props?.nameTheme as string | undefined,
           suggestedName: props?.suggestedName as string | undefined,
+          featuredChannelStarter: props?.featuredChannelStarter as boolean | undefined,
           source: 'root',
         });
       }
@@ -513,6 +541,7 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
           tldr: agent.tldr,
           nameTheme: props?.nameTheme as string | undefined,
           suggestedName: props?.suggestedName as string | undefined,
+          featuredChannelStarter: props?.featuredChannelStarter as boolean | undefined,
           source: 'local',
         });
       }
@@ -609,24 +638,13 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
 
       console.log(`[Agents] Resuming ${callsign} in channel ${channelId}`);
 
-      const spaceId = getSpaceId(c);
-
       // Update roster status to active
       await storage.updateRosterEntry(channelId, rosterEntry.id, {
         status: 'active',
       });
 
-      // Broadcast connecting state (container not ready yet)
-      await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
-
-      // Spawn new container
-      try {
-        await agentManager.activate(spaceId, channelId, callsign);
-        console.log(`[Agents] Container spawned for ${callsign}`);
-      } catch (spawnError) {
-        console.error(`[Agents] Failed to spawn container for ${callsign}:`, spawnError);
-        // Don't fail the request - agent is active, container spawn can retry
-      }
+      // Broadcast resumed state - agent is no longer muted
+      await broadcastAgentState(connectionManager, channelId, callsign, 'resumed');
 
       console.log(`[Agents] ${callsign} resumed successfully`);
       return c.json({ success: true, callsign, status: 'active' });
@@ -1348,6 +1366,28 @@ export function createApp(options: AppOptions): Hono {
   const channelRoutes = createChannelRoutes(storage);
   app.route('/channels', channelRoutes);
 
+  // ---------------------------------------------------------------------------
+  // Root Channel Reset (for debugging onboarding/curation)
+  // ---------------------------------------------------------------------------
+  app.use('/initialize-root-channel', requireAuth);
+  app.post('/initialize-root-channel', async (c) => {
+    const spaceId = getSpaceId(c);
+    try {
+      const result = await resetRootChannel(storage, spaceId);
+      return c.json({
+        success: true,
+        message: `Reset root channel: deleted ${result.deletedCount} artifacts, created ${result.createdCount} new artifacts`,
+        ...result,
+      });
+    } catch (error) {
+      console.error('[ResetRootChannel] Error:', error);
+      return c.json(
+        { error: 'Failed to reset root channel', message: error instanceof Error ? error.message : 'Unknown error' },
+        500
+      );
+    }
+  });
+
   // Roster routes (mounted under /channels/:id/roster)
   const rosterRoutes = createRosterRoutes(storage);
   app.route('/channels', rosterRoutes);
@@ -1544,7 +1584,6 @@ export function createApp(options: AppOptions): Hono {
   // spaceId extracted from container auth
   const mcpRoutes = createMcpRoutes({
     storage,
-    assetStorage,
     connectionManager,
     // AgentInvoker for send_message tool - creates invoker with spaceId from container auth context
     agentInvoker: {

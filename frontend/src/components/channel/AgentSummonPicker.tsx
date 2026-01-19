@@ -23,6 +23,7 @@ export interface AvailableAgent {
   tldr: string
   nameTheme?: string
   suggestedName?: string
+  featuredChannelStarter?: boolean
   source: 'local' | 'root'
 }
 
@@ -39,6 +40,8 @@ interface AgentSummonPickerProps {
   onClose: () => void
   /** Whether picker is open */
   isOpen: boolean
+  /** Pre-selected agent slug - skips browse and goes directly to configure */
+  preSelectedAgentSlug?: string
 }
 
 type PickerState = 'browse' | 'configure'
@@ -95,6 +98,7 @@ export function AgentSummonPicker({
   apiHost,
   onClose,
   isOpen,
+  preSelectedAgentSlug,
 }: AgentSummonPickerProps) {
   // State
   const [state, setState] = useState<PickerState>('browse')
@@ -136,7 +140,11 @@ export function AgentSummonPicker({
   // Reset state when picker opens/closes
   useEffect(() => {
     if (isOpen) {
-      setState('browse')
+      // If pre-selected, we'll go to configure after agents load
+      // Otherwise start in browse mode
+      if (!preSelectedAgentSlug) {
+        setState('browse')
+      }
       setSearchQuery('')
       setSelectedIndex(0)
       setSelectedAgent(null)
@@ -146,7 +154,20 @@ export function AgentSummonPicker({
       fetchAvailableAgents()
       fetchRuntimes()
     }
-  }, [isOpen])
+  }, [isOpen, preSelectedAgentSlug])
+
+  // Handle pre-selection after agents are loaded
+  useEffect(() => {
+    if (isOpen && preSelectedAgentSlug && availableAgents.length > 0 && !isLoadingAgents) {
+      const preSelectedAgent = availableAgents.find(a => a.slug === preSelectedAgentSlug)
+      if (preSelectedAgent) {
+        handleSelectAgent(preSelectedAgent)
+      } else {
+        // Pre-selected agent not found, fall back to browse
+        setState('browse')
+      }
+    }
+  }, [isOpen, preSelectedAgentSlug, availableAgents, isLoadingAgents])
 
   // Focus search input when in browse state
   useEffect(() => {
