@@ -60,9 +60,16 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
       - uses: aws-actions/setup-sam@v2
-      - working-directory: backend
+      - name: Install and build
+        working-directory: backend
         run: pnpm install --frozen-lockfile && pnpm build
-      - working-directory: backend/deploy
+      - name: Run database migrations
+        working-directory: backend
+        env:
+          PLANETSCALE_URL: ${{ secrets.PROD_PLANETSCALE_URL }}
+        run: pnpm --filter @cast/storage migrate
+      - name: Build Lambda bundle
+        working-directory: backend/deploy
         run: node build.mjs
       - name: Install esbuild for SAM
         run: npm install -g esbuild

@@ -53,14 +53,8 @@ const storage = createPostgresStorage({
   connectionString: PLANETSCALE_URL,
 });
 
-// Initialize storage (create tables if not exists)
-let storageInitialized = false;
-async function ensureStorageInitialized() {
-  if (!storageInitialized) {
-    await storage.initialize();
-    storageInitialized = true;
-  }
-}
+// Note: Database migrations are run in CI/CD before deployment.
+// See: pnpm --filter @cast/storage migrate
 
 // =============================================================================
 // Connection Manager
@@ -72,9 +66,6 @@ let connectionManager: PostgresConnectionManager | null = null;
 
 async function getConnectionManager(): Promise<PostgresConnectionManager> {
   if (!connectionManager) {
-    // Ensure storage is initialized first
-    await ensureStorageInitialized();
-
     // Convert wss:// to https:// for API Gateway Management API
     const httpsEndpoint = WEBSOCKET_ENDPOINT.replace('wss://', 'https://');
 
@@ -139,8 +130,7 @@ let honoHandler: ReturnType<typeof handle> | null = null;
 
 async function getHandler() {
   if (!honoHandler) {
-    // Ensure storage and connection manager are initialized
-    await ensureStorageInitialized();
+    // Initialize connection manager (storage is already migrated via CI/CD)
     const manager = await getConnectionManager();
 
     // Create the app with real connection manager for broadcasting

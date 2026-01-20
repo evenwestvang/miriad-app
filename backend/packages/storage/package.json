@@ -12,14 +12,17 @@
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "migrate": "tsx src/migrate.ts"
   },
   "dependencies": {
     "@cast/core": "workspace:*",
-    "postgres": "^3.4.7",
+    "@neondatabase/serverless": "^1.0.0",
+    "dotenv": "^17.2.3",
     "ulid": "^3.0.2"
   },
   "devDependencies": {
+    "tsx": "^4.7.0",
     "typescript": "^5.3.0"
   }
 }

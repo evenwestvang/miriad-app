@@ -1215,14 +1215,13 @@ export function createApp(options: AppOptions): Hono {
           return; // Don't save cost frames as messages
         }
 
-        // For tool_call and tool_result, store the full value object as JSON
+        // For tool_call and tool_result, store the full value object
         // so we can reconstruct all fields (toolCallId, name, args, isError, etc.)
-        // when reading back. Other types can use value.content directly.
+        // when reading back. Storage layer handles JSON serialization.
         const messageType = (value.type as string) ?? 'agent';
         let messageContent: string | Record<string, unknown>;
         if (messageType === 'tool_call' || messageType === 'tool_result') {
-          // Store entire value object as JSON string
-          messageContent = JSON.stringify(value);
+          messageContent = value as Record<string, unknown>;
         } else {
           // For other types, use content field or fall back to whole value
           messageContent = (value.content as string | Record<string, unknown>) ?? value;
@@ -1312,14 +1311,13 @@ export function createApp(options: AppOptions): Hono {
             return c.json({ ok: true }); // Don't save cost frames as messages
           }
 
-          // For tool_call and tool_result, store the full value object as JSON
+          // For tool_call and tool_result, store the full value object
           // so we can reconstruct all fields (toolCallId, name, args, isError, etc.)
-          // when reading back. Other types can use value.content directly.
+          // when reading back. Storage layer handles JSON serialization.
           const messageType = (value.type as string) ?? 'agent';
           let messageContent: string | Record<string, unknown>;
           if (messageType === 'tool_call' || messageType === 'tool_result') {
-            // Store entire value object as JSON string
-            messageContent = JSON.stringify(value);
+            messageContent = value as Record<string, unknown>;
           } else {
             // For other types, use content field or fall back to whole value
             messageContent = (value.content as string | Record<string, unknown>) ?? value;

@@ -60,6 +60,11 @@ jobs:
       - name: Install and build
         working-directory: backend
         run: pnpm install --frozen-lockfile && pnpm build
+      - name: Run database migrations
+        working-directory: backend
+        env:
+          PLANETSCALE_URL: ${{ secrets.STAGING_PLANETSCALE_URL }}
+        run: pnpm --filter @cast/storage migrate
       - name: Build Lambda bundle
         working-directory: backend/deploy
         run: node build.mjs

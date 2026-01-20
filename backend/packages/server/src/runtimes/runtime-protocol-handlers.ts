@@ -306,10 +306,10 @@ export function createRuntimeProtocolHandlers(
         return;
       }
 
-      // For tool_call and tool_result, store full value as JSON
+      // For tool_call and tool_result, store full value object (storage layer handles serialization)
       let messageContent: string | Record<string, unknown>;
       if (messageType === 'tool_call' || messageType === 'tool_result') {
-        messageContent = JSON.stringify(value);
+        messageContent = value as Record<string, unknown>;
       } else {
         messageContent = (value.content as string | Record<string, unknown>) ?? value;
       }
