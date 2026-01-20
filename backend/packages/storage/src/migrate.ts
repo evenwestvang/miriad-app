@@ -22,7 +22,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const envPath = resolve(__dirname, '../../../.env');
 config({ path: envPath });
 
-import { createPostgresClient, POSTGRES_CONFIG } from './postgres.js';
+import { createPostgresClient } from './postgres.js';
 
 const connectionString = process.env.PLANETSCALE_URL || process.env.DATABASE_URL;
 
@@ -506,13 +506,11 @@ async function migrate(): Promise<void> {
 
 // Run migration
 migrate()
-  .then(async () => {
+  .then(() => {
     console.log('Migration completed successfully!');
-    await sql.end();
     process.exit(0);
   })
-  .catch(async (error) => {
+  .catch((error) => {
     console.error('Migration failed:', error);
-    await sql.end();
     process.exit(1);
   });

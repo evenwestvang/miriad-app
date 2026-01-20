@@ -1,11 +1,13 @@
 /**
  * PostgreSQL Storage Implementation
  *
- * Uses postgres (porsager/postgres) for PlanetScale Postgres.
- * Standard TCP/TLS connection that works everywhere.
+ * Uses @neondatabase/serverless for PlanetScale Postgres.
+ * HTTP-based queries optimized for serverless environments.
+ *
+ * @see https://planetscale.com/docs/postgres/connecting/neon-serverless-driver
  */
 
-import postgres, { JSONValue } from 'postgres';
+import { neon, neonConfig, NeonQueryFunction } from '@neondatabase/serverless';
 import crypto from 'crypto';
 import { ulid } from 'ulid';
 import type {
@@ -85,25 +87,106 @@ export interface PostgresStorageOptions {
 }
 
 /**
- * Standard postgres client configuration.
- * Single source of truth for all postgres connections in the system.
+ * Configure Neon driver for PlanetScale Postgres.
+ * Must be set before creating any connections.
+ *
+ * @see https://planetscale.com/docs/postgres/connecting/neon-serverless-driver
  */
-export const POSTGRES_CONFIG = {
-  ssl: 'require' as const,
-  max: 10,
-  prepare: false,
-} as const;
+neonConfig.fetchEndpoint = (host) => `https://${host}/sql`;
 
 /**
- * Create a postgres client with standard configuration.
- * Use this for any postgres connection to ensure consistent settings.
+ * Tagged template function type that allows generic result typing.
+ * Wraps Neon's query function to provide type safety.
  */
-export function createPostgresClient(connectionString: string) {
-  return postgres(connectionString, POSTGRES_CONFIG);
+export interface TypedSql {
+  <T = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]>;
+  /** Parameterized query with placeholders ($1, $2, etc.) */
+  query<T = Record<string, unknown>>(queryString: string, params: unknown[]): Promise<T[]>;
+}
+
+/**
+ * Create a postgres client using Neon's HTTP driver.
+ * Optimized for serverless environments - each query is a stateless HTTP request.
+ */
+export function createPostgresClient(connectionString: string): TypedSql {
+  const client = neon(connectionString);
+  // Wrap the client to provide type-safe query interface
+  const typedSql = (<T = Record<string, unknown>>(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<T[]> => {
+    return client(strings, ...values) as Promise<T[]>;
+  }) as TypedSql;
+  // Add query method for parameterized queries
+  typedSql.query = <T = Record<string, unknown>>(
+    queryString: string,
+    params: unknown[]
+  ): Promise<T[]> => {
+    return client.query(queryString, params) as Promise<T[]>;
+  };
+  return typedSql;
 }
 
 /** Type of the postgres client returned by createPostgresClient */
-export type PostgresClient = ReturnType<typeof createPostgresClient>;
+export type PostgresClient = TypedSql;
+
+/**
+ * Valid SQL identifier pattern: letters, numbers, underscores, starting with letter or underscore.
+ */
+const VALID_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+/**
+ * TEMPORARY: Defensive parsing for JSONB columns that may have been double-stringified.
+ * Only logs when a string looks like a JSON object/array (starts with { or [).
+ * Plain strings are valid JSONB values and don't trigger warnings.
+ * TODO: Remove once we confirm the Neon migration is stable.
+ */
+function parseJsonbField<T>(value: unknown, context: string): T | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    // Only warn and parse if it looks like a stringified object/array
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      console.warn(`[Storage] JSONB double-stringified - ${context}:`, value.slice(0, 100));
+      try {
+        return JSON.parse(value) as T;
+      } catch {
+        return null;
+      }
+    }
+    // Plain string - valid JSONB value, no warning
+    return null;
+  }
+  return value as T | null;
+}
+
+/**
+ * Helper to build dynamic UPDATE SET clauses for Neon driver.
+ * Returns [setClauses, values, nextParamIndex] for building parameterized queries.
+ *
+ * @example
+ * const obj = { name: 'foo', count: 42 };
+ * const [setClauses, values, nextIdx] = buildSetClause(obj);
+ * // setClauses = "name = $1, count = $2"
+ * // values = ['foo', 42]
+ * // nextIdx = 3
+ */
+function buildSetClause(
+  obj: Record<string, unknown>,
+  startIndex: number = 1
+): [string, unknown[], number] {
+  const entries = Object.entries(obj);
+  // Validate column names to prevent SQL injection
+  for (const [key] of entries) {
+    if (!VALID_IDENTIFIER.test(key)) {
+      throw new Error(`Invalid column name: ${key}`);
+    }
+  }
+  const setClauses = entries
+    .map(([key], i) => `${key} = $${startIndex + i}`)
+    .join(', ');
+  const values = entries.map(([, value]) => value);
+  return [setClauses, values, startIndex + entries.length];
+}
 
 // Row type from database
 interface MessageRow {
@@ -254,7 +337,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const timestamp = new Date();
     const isComplete = input.isComplete ?? true;
 
-    const result = await sql<MessageRow[]>`
+    const result = await sql<MessageRow>`
       INSERT INTO messages (
         id, space_id, channel_id, sender, sender_type, type, content,
         timestamp, is_complete, addressed_agents, turn_id, metadata
@@ -266,12 +349,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ${input.sender},
         ${input.senderType},
         ${input.type},
-        ${sql.json(input.content as JSONValue)},
+        ${JSON.stringify(input.content)},
         ${timestamp},
         ${isComplete},
         ${input.addressedAgents ?? null},
         ${input.turnId ?? null},
-        ${input.metadata ? sql.json(input.metadata as JSONValue) : null}
+        ${input.metadata ? JSON.stringify(input.metadata) : null}
       )
       RETURNING *
     `;
@@ -283,7 +366,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     spaceId: string,
     messageId: string
   ): Promise<StoredMessage | null> {
-    const result = await sql<MessageRow[]>`
+    const result = await sql<MessageRow>`
       SELECT * FROM messages
       WHERE space_id = ${spaceId} AND id = ${messageId}
     `;
@@ -312,7 +395,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
     if (since && before) {
       // Range query between two cursors
-      result = await sql<MessageRow[]>`
+      result = await sql<MessageRow>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
@@ -326,7 +409,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       `;
     } else if (since) {
       // Forward pagination (newer messages)
-      result = await sql<MessageRow[]>`
+      result = await sql<MessageRow>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
@@ -339,7 +422,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       `;
     } else if (before) {
       // Backward pagination (older messages) - fetch DESC then reverse
-      result = await sql<MessageRow[]>`
+      result = await sql<MessageRow>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
@@ -353,7 +436,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       result = result.reverse(); // Return in chronological order
     } else if (newestFirst) {
       // Initial load - fetch newest, then reverse for chronological order
-      result = await sql<MessageRow[]>`
+      result = await sql<MessageRow>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
@@ -366,7 +449,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       result = result.reverse(); // Return in chronological order
     } else {
       // Default: oldest first
-      result = await sql<MessageRow[]>`
+      result = await sql<MessageRow>`
         SELECT * FROM messages
         WHERE space_id = ${spaceId}
           AND channel_id = ${channelId}
@@ -404,7 +487,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     let result: MessageRow[];
 
     if (since && before) {
-      result = await sql<MessageRow[]>`
+      result = await sql<MessageRow>`
         SELECT * FROM messages
         WHERE channel_id = ${channelId}
           AND id > ${since}
@@ -416,7 +499,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         LIMIT ${limit}
       `;
     } else if (since) {
-      result = await sql<MessageRow[]>`
+      result = await sql<MessageRow>`
         SELECT * FROM messages
         WHERE channel_id = ${channelId}
           AND id > ${since}
@@ -428,7 +511,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       `;
     } else if (before) {
       // Get newest N messages before the cursor, then reverse for chronological order
-      result = await sql<MessageRow[]>`
+      result = await sql<MessageRow>`
         SELECT * FROM messages
         WHERE channel_id = ${channelId}
           AND id < ${before}
@@ -441,7 +524,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       result = result.reverse(); // Return in chronological order
     } else if (newestFirst) {
       // Get newest messages first (for initial sync), then reverse for chronological order
-      result = await sql<MessageRow[]>`
+      result = await sql<MessageRow>`
         SELECT * FROM messages
         WHERE channel_id = ${channelId}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
@@ -452,7 +535,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       `;
       result = result.reverse(); // Return in chronological order
     } else {
-      result = await sql<MessageRow[]>`
+      result = await sql<MessageRow>`
         SELECT * FROM messages
         WHERE channel_id = ${channelId}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
@@ -480,7 +563,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const updateObj: Record<string, unknown> = {};
 
     if (update.content !== undefined) {
-      updateObj.content = sql.json(update.content as JSONValue);
+      updateObj.content = JSON.stringify(update.content);
     }
     if (update.isComplete !== undefined) {
       updateObj.is_complete = update.isComplete;
@@ -489,17 +572,17 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       updateObj.addressed_agents = update.addressedAgents;
     }
     if (update.metadata !== undefined) {
-      updateObj.metadata = sql.json(update.metadata as JSONValue);
+      updateObj.metadata = JSON.stringify(update.metadata);
     }
 
     if (Object.keys(updateObj).length === 0) return;
 
-    // Use postgres.js dynamic column updates
-    await sql`
-      UPDATE messages
-      SET ${sql(updateObj, ...Object.keys(updateObj))}
-      WHERE space_id = ${spaceId} AND id = ${messageId}
-    `;
+    // Build dynamic SET clause for Neon driver
+    const [setClauses, values, nextIdx] = buildSetClause(updateObj);
+    await sql.query(
+      `UPDATE messages SET ${setClauses} WHERE space_id = $${nextIdx} AND id = $${nextIdx + 1}`,
+      [...values, spaceId, messageId]
+    );
   }
 
   async function deleteMessage(spaceId: string, messageId: string): Promise<void> {
@@ -517,7 +600,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const id = input.id ?? ulid();
     const now = new Date();
 
-    const result = await sql<ChannelRow[]>`
+    const result = await sql<ChannelRow>`
       INSERT INTO channels (
         id, space_id, name, tagline, mission, archived, created_at, updated_at, last_active_at
       )
@@ -542,7 +625,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     spaceId: string,
     channelId: string
   ): Promise<StoredChannel | null> {
-    const result = await sql<ChannelRow[]>`
+    const result = await sql<ChannelRow>`
       SELECT * FROM channels
       WHERE space_id = ${spaceId} AND id = ${channelId}
     `;
@@ -552,7 +635,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function getChannelById(channelId: string): Promise<StoredChannel | null> {
-    const result = await sql<ChannelRow[]>`
+    const result = await sql<ChannelRow>`
       SELECT * FROM channels
       WHERE id = ${channelId}
     `;
@@ -565,7 +648,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     spaceId: string,
     name: string
   ): Promise<StoredChannel | null> {
-    const result = await sql<ChannelRow[]>`
+    const result = await sql<ChannelRow>`
       SELECT * FROM channels
       WHERE space_id = ${spaceId} AND name = ${name}
     `;
@@ -580,7 +663,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   ): Promise<StoredChannel | null> {
     // Single query that matches either ID or name
     // ID match takes priority (checked first via CASE in ORDER BY)
-    const result = await sql<ChannelRow[]>`
+    const result = await sql<ChannelRow>`
       SELECT * FROM channels
       WHERE space_id = ${spaceId}
         AND (id = ${idOrName} OR name = ${idOrName})
@@ -597,7 +680,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     channelId: string
   ): Promise<{ channel: StoredChannel; roster: RosterEntry[] } | null> {
     // Use a single query with LEFT JOIN to get channel and roster together
-    const result = await sql<(ChannelRow & {
+    const result = await sql<ChannelRow & {
       roster_id: string | null;
       roster_callsign: string | null;
       roster_agent_type: string | null;
@@ -606,7 +689,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       roster_callback_url: string | null;
       roster_readmark: string | null;
       roster_tunnel_hash: string | null;
-    })[]>`
+    }>`
       SELECT
         c.id, c.space_id, c.name, c.tagline, c.mission, c.archived, c.created_at, c.updated_at, c.last_active_at,
         r.id as roster_id, r.callsign as roster_callsign, r.agent_type as roster_agent_type,
@@ -647,7 +730,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     idOrName: string
   ): Promise<{ channel: StoredChannel; roster: RosterEntry[] } | null> {
     // Combined resolution + roster fetch in one query
-    const result = await sql<(ChannelRow & {
+    const result = await sql<ChannelRow & {
       roster_id: string | null;
       roster_callsign: string | null;
       roster_agent_type: string | null;
@@ -656,7 +739,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       roster_callback_url: string | null;
       roster_readmark: string | null;
       roster_tunnel_hash: string | null;
-    })[]>`
+    }>`
       SELECT
         c.id, c.space_id, c.name, c.tagline, c.mission, c.archived, c.created_at, c.updated_at, c.last_active_at,
         r.id as roster_id, r.callsign as roster_callsign, r.agent_type as roster_agent_type,
@@ -703,14 +786,14 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     let result: ChannelRow[];
 
     if (includeArchived) {
-      result = await sql<ChannelRow[]>`
+      result = await sql<ChannelRow>`
         SELECT * FROM channels
         WHERE space_id = ${spaceId}
         ORDER BY last_active_at DESC
         LIMIT ${limit}
       `;
     } else {
-      result = await sql<ChannelRow[]>`
+      result = await sql<ChannelRow>`
         SELECT * FROM channels
         WHERE space_id = ${spaceId} AND archived = false
         ORDER BY last_active_at DESC
@@ -746,11 +829,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       updateObj.last_active_at = new Date(update.lastActiveAt);
     }
 
-    await sql`
-      UPDATE channels
-      SET ${sql(updateObj, ...Object.keys(updateObj))}
-      WHERE space_id = ${spaceId} AND id = ${channelId}
-    `;
+    // Build dynamic SET clause for Neon driver
+    const [setClauses, values, nextIdx] = buildSetClause(updateObj);
+    await sql.query(
+      `UPDATE channels SET ${setClauses} WHERE space_id = $${nextIdx} AND id = $${nextIdx + 1}`,
+      [...values, spaceId, channelId]
+    );
   }
 
   async function archiveChannel(spaceId: string, channelId: string): Promise<void> {
@@ -774,7 +858,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     // Used as subdomain for HTTP tunnel access: {tunnelHash}.containers.domain.com
     const tunnelHash = crypto.randomBytes(16).toString('hex');
 
-    const result = await sql<RosterRow[]>`
+    const result = await sql<RosterRow>`
       INSERT INTO roster (
         id, channel_id, callsign, agent_type, status, created_at, tunnel_hash, runtime_id
       )
@@ -798,7 +882,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     channelId: string,
     entryId: string
   ): Promise<RosterEntry | null> {
-    const result = await sql<RosterRow[]>`
+    const result = await sql<RosterRow>`
       SELECT * FROM roster
       WHERE channel_id = ${channelId} AND id = ${entryId}
     `;
@@ -811,7 +895,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     channelId: string,
     callsign: string
   ): Promise<RosterEntry | null> {
-    const result = await sql<RosterRow[]>`
+    const result = await sql<RosterRow & { runtime_name: string | null; runtime_status: string | null }>`
       SELECT r.*, rt.name as runtime_name, rt.status as runtime_status
       FROM roster r
       LEFT JOIN runtimes rt ON r.runtime_id = rt.id
@@ -823,7 +907,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function listRoster(channelId: string): Promise<RosterEntry[]> {
-    const result = await sql<RosterRow[]>`
+    const result = await sql<RosterRow & { runtime_name: string | null; runtime_status: string | null }>`
       SELECT r.*, rt.name as runtime_name, rt.status as runtime_status
       FROM roster r
       LEFT JOIN runtimes rt ON r.runtime_id = rt.id
@@ -836,7 +920,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function listArchivedRoster(channelId: string): Promise<RosterEntry[]> {
-    const result = await sql<RosterRow[]>`
+    const result = await sql<RosterRow & { runtime_name: string | null; runtime_status: string | null }>`
       SELECT r.*, rt.name as runtime_name, rt.status as runtime_status
       FROM roster r
       LEFT JOIN runtimes rt ON r.runtime_id = rt.id
@@ -851,7 +935,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   async function getAgentsByRuntime(
     runtimeId: string
   ): Promise<Array<RosterEntry & { channelName: string }>> {
-    const result = await sql<(RosterRow & { channel_name: string })[]>`
+    const result = await sql<RosterRow & { channel_name: string }>`
       SELECT r.*, rt.name as runtime_name, rt.status as runtime_status, c.name as channel_name
       FROM roster r
       LEFT JOIN runtimes rt ON r.runtime_id = rt.id
@@ -892,12 +976,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     }
     if (update.routeHints !== undefined) {
       // routeHints can be null (to clear) or an object
-      updateObj.route_hints = update.routeHints ? sql.json(update.routeHints as JSONValue) : null;
+      updateObj.route_hints = update.routeHints ? JSON.stringify(update.routeHints) : null;
     }
     if (update.current !== undefined) {
       // Merge current object - use JSONB merge to preserve other keys
       // For now, we replace the entire object. Can add merge logic later if needed.
-      updateObj.current = sql.json(update.current as unknown as JSONValue);
+      updateObj.current = JSON.stringify(update.current);
     }
     if (update.lastMessageRoutedAt !== undefined) {
       updateObj.last_message_routed_at = new Date(update.lastMessageRoutedAt);
@@ -908,12 +992,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
     if (Object.keys(updateObj).length === 0) return;
 
-    // Use postgres.js dynamic column updates (same pattern as updateChannel)
-    await sql`
-      UPDATE roster
-      SET ${sql(updateObj, ...Object.keys(updateObj))}
-      WHERE channel_id = ${channelId} AND id = ${entryId}
-    `;
+    // Build dynamic SET clause for Neon driver
+    const [setClauses, values, nextIdx] = buildSetClause(updateObj);
+    await sql.query(
+      `UPDATE roster SET ${setClauses} WHERE channel_id = $${nextIdx} AND id = $${nextIdx + 1}`,
+      [...values, channelId, entryId]
+    );
   }
 
   async function removeFromRoster(channelId: string, entryId: string): Promise<void> {
@@ -953,7 +1037,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const id = input.id ?? ulid();
     const now = new Date();
 
-    const result = await sql<UserRow[]>`
+    const result = await sql<UserRow>`
       INSERT INTO users (
         id, external_id, callsign, email, avatar_url, created_at, updated_at
       )
@@ -973,7 +1057,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function getUser(userId: string): Promise<StoredUser | null> {
-    const result = await sql<UserRow[]>`
+    const result = await sql<UserRow>`
       SELECT * FROM users WHERE id = ${userId}
     `;
 
@@ -982,7 +1066,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function getUserByExternalId(externalId: string): Promise<StoredUser | null> {
-    const result = await sql<UserRow[]>`
+    const result = await sql<UserRow>`
       SELECT * FROM users WHERE external_id = ${externalId}
     `;
 
@@ -998,7 +1082,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const id = input.id ?? ulid();
     const now = new Date();
 
-    const result = await sql<SpaceRow[]>`
+    const result = await sql<SpaceRow>`
       INSERT INTO spaces (
         id, owner_id, name, created_at, updated_at
       )
@@ -1016,7 +1100,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function getSpace(spaceId: string): Promise<StoredSpace | null> {
-    const result = await sql<SpaceRow[]>`
+    const result = await sql<SpaceRow>`
       SELECT * FROM spaces WHERE id = ${spaceId}
     `;
 
@@ -1025,7 +1109,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function getSpacesByOwner(ownerId: string): Promise<StoredSpace[]> {
-    const result = await sql<SpaceRow[]>`
+    const result = await sql<SpaceRow>`
       SELECT * FROM spaces
       WHERE owner_id = ${ownerId}
       ORDER BY created_at DESC
@@ -1035,7 +1119,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function listSpacesWithOwners(): Promise<Array<{ space: StoredSpace; owner: StoredUser }>> {
-    const result = await sql<(SpaceRow & { user_id: string; user_external_id: string; user_callsign: string; user_email: string | null; user_avatar_url: string | null; user_created_at: Date; user_updated_at: Date })[]>`
+    const result = await sql<SpaceRow & { user_id: string; user_external_id: string; user_callsign: string; user_email: string | null; user_avatar_url: string | null; user_created_at: Date; user_updated_at: Date }>`
       SELECT
         s.id, s.owner_id, s.name, s.created_at, s.updated_at,
         u.id as user_id, u.external_id as user_external_id, u.callsign as user_callsign,
@@ -1084,7 +1168,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     }
 
     // Get parent's path
-    const parent = await sql<{ path: string }[]>`
+    const parent = await sql<{ path: string }>`
       SELECT path FROM artifacts
       WHERE channel_id = ${channelId} AND slug = ${parentSlug}
     `;
@@ -1107,14 +1191,14 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     // Get existing siblings' order keys
     let siblings: { order_key: string }[];
     if (parentSlug) {
-      siblings = await sql<{ order_key: string }[]>`
+      siblings = await sql<{ order_key: string }>`
         SELECT order_key FROM artifacts
         WHERE channel_id = ${channelId} AND parent_slug = ${parentSlug}
         ORDER BY order_key DESC
         LIMIT 1
       `;
     } else {
-      siblings = await sql<{ order_key: string }[]>`
+      siblings = await sql<{ order_key: string }>`
         SELECT order_key FROM artifacts
         WHERE channel_id = ${channelId} AND parent_slug IS NULL
         ORDER BY order_key DESC
@@ -1144,15 +1228,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       }
     }
 
-    // Parse props if it comes back as a string (JSONB sometimes does this)
-    let props = row.props;
-    if (typeof props === 'string') {
-      try {
-        props = JSON.parse(props);
-      } catch {
-        props = null;
-      }
-    }
+    const props = parseJsonbField<Record<string, unknown>>(row.props, `artifact props slug=${row.slug}`);
 
     return {
       id: row.id,
@@ -1183,15 +1259,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   function rowToArtifactSummary(row: ArtifactRow): ArtifactSummary {
-    // Parse props if it comes back as a string (JSONB sometimes does this)
-    let props = row.props;
-    if (typeof props === 'string') {
-      try {
-        props = JSON.parse(props);
-      } catch {
-        props = null;
-      }
-    }
+    const props = parseJsonbField<Record<string, unknown>>(row.props, `artifact props slug=${row.slug}`);
 
     return {
       slug: row.slug,
@@ -1220,7 +1288,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const status = input.status ?? getDefaultArtifactStatus(input.type);
 
     try {
-      const result = await sql<ArtifactRow[]>`
+      const result = await sql<ArtifactRow>`
         INSERT INTO artifacts (
           id, channel_id, slug, type, title, tldr, content, parent_slug, path,
           order_key, status, assignees, labels, refs, props,
@@ -1239,10 +1307,10 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           ${path},
           ${orderKey},
           ${status},
-          ${sql.array(input.assignees ?? [])},
-          ${sql.array(input.labels ?? [])},
-          ${sql.array(refs)},
-          ${input.props ? sql.json(input.props as JSONValue) : null},
+          ${(input.assignees ?? [])},
+          ${(input.labels ?? [])},
+          ${(refs)},
+          ${input.props ? JSON.stringify(input.props) : null},
           ${input.contentType ?? null},
           ${input.fileSize ?? null},
           ${input.attachedToMessageId ?? null},
@@ -1267,7 +1335,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     channelId: string,
     slug: string
   ): Promise<StoredArtifact | null> {
-    const result = await sql<ArtifactRow[]>`
+    const result = await sql<ArtifactRow>`
       SELECT * FROM artifacts
       WHERE channel_id = ${channelId} AND slug = ${slug}
     `;
@@ -1372,9 +1440,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         status = ${status},
         parent_slug = ${parentSlug},
         path = ${path},
-        assignees = ${sql.array(assignees)},
-        labels = ${sql.array(labels)},
-        props = ${propsValue ? sql.json(propsValue as JSONValue) : null},
+        assignees = ${(assignees)},
+        labels = ${(labels)},
+        props = ${propsValue ? JSON.stringify(propsValue) : null},
         order_key = ${orderKey},
         version = version + 1,
         updated_by = ${updatedBy},
@@ -1414,7 +1482,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       UPDATE artifacts
       SET
         content = ${newContent},
-        refs = ${sql.array(newRefs)},
+        refs = ${(newRefs)},
         version = version + 1,
         updated_by = ${edit.updatedBy},
         updated_at = ${now}
@@ -1467,7 +1535,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     // Find all artifacts that are descendants (path starts with this artifact's path)
     // Using ltree path for efficient hierarchical query
     // Also include the artifact itself
-    const toArchive = await sql<{ slug: string; status: string }[]>`
+    const toArchive = await sql<{ slug: string; status: string }>`
       SELECT slug, status
       FROM artifacts
       WHERE channel_id = ${channelId}
@@ -1513,7 +1581,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     `;
 
     // Then delete all artifacts in the channel
-    const result = await sql`
+    const result = await sql<MessageRow>`
       DELETE FROM artifacts
       WHERE channel_id = ${channelId}
       RETURNING id
@@ -1582,7 +1650,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       LIMIT $${paramIndex++} OFFSET $${paramIndex}
     `;
 
-    const result = await sql.unsafe(query, values as (string | number | boolean | null)[]) as ArtifactRow[];
+    const result = await sql.query<ArtifactRow>(query, values);
     return result.map(rowToArtifactSummary);
   }
 
@@ -1615,7 +1683,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     let result: (ArtifactRow & { parent_slug: string | null })[];
 
     if (isRootOnly) {
-      result = await sql<(ArtifactRow & { parent_slug: string | null })[]>`
+      result = await sql<ArtifactRow & { parent_slug: string | null }>`
         SELECT slug, path, type, title, status, assignees, parent_slug, order_key
         FROM artifacts
         WHERE channel_id = ${channelId}
@@ -1625,7 +1693,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ORDER BY order_key ASC
       `;
     } else if (ltreeQuery === '*') {
-      result = await sql<(ArtifactRow & { parent_slug: string | null })[]>`
+      result = await sql<ArtifactRow & { parent_slug: string | null }>`
         SELECT slug, path, type, title, status, assignees, parent_slug, order_key
         FROM artifacts
         WHERE channel_id = ${channelId}
@@ -1634,7 +1702,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ORDER BY path ASC, order_key ASC
       `;
     } else {
-      result = await sql<(ArtifactRow & { parent_slug: string | null })[]>`
+      result = await sql<ArtifactRow & { parent_slug: string | null }>`
         SELECT slug, path, type, title, status, assignees, parent_slug, order_key
         FROM artifacts
         WHERE channel_id = ${channelId}
@@ -1739,7 +1807,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     slug: string,
     versionName: string
   ): Promise<ArtifactVersion | null> {
-    const result = await sql<ArtifactVersionRow[]>`
+    const result = await sql<ArtifactVersionRow>`
       SELECT slug, channel_id, version_name, version_message,
              version_created_at, version_created_by, tldr, content
       FROM artifact_versions
@@ -1767,7 +1835,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     channelId: string,
     slug: string
   ): Promise<ArtifactVersion[]> {
-    const result = await sql<ArtifactVersionRow[]>`
+    const result = await sql<ArtifactVersionRow>`
       SELECT slug, channel_id, version_name, version_message,
              version_created_at, version_created_by, tldr, content
       FROM artifact_versions
@@ -2459,7 +2527,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function close(): Promise<void> {
-    await sql.end();
+    // HTTP mode - no persistent connection to close
   }
 
   // ---------------------------------------------------------------------------
@@ -2556,7 +2624,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     };
 
     // Get current secrets (need to fetch raw from DB to preserve encrypted values)
-    const currentSecrets = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+    const currentSecrets = await sql<{ secrets: Record<string, StoredSecret> | null }>`
       SELECT secrets FROM artifacts
       WHERE channel_id = ${channelId} AND slug = ${slug}
     `;
@@ -2567,7 +2635,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     // Update the artifact with new secrets
     await sql`
       UPDATE artifacts
-      SET secrets = ${sql.json(secrets as unknown as JSONValue)},
+      SET secrets = ${JSON.stringify(secrets)},
           version = version + 1,
           updated_at = NOW()
       WHERE channel_id = ${channelId} AND slug = ${slug}
@@ -2580,7 +2648,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     key: string
   ): Promise<void> {
     // Get current secrets
-    const currentSecrets = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+    const currentSecrets = await sql<{ secrets: Record<string, StoredSecret> | null }>`
       SELECT secrets FROM artifacts
       WHERE channel_id = ${channelId} AND slug = ${slug}
     `;
@@ -2601,7 +2669,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
     await sql`
       UPDATE artifacts
-      SET secrets = ${secretsValue ? sql.json(secretsValue as unknown as JSONValue) : null},
+      SET secrets = ${secretsValue ? JSON.stringify(secretsValue) : null},
           version = version + 1,
           updated_at = NOW()
       WHERE channel_id = ${channelId} AND slug = ${slug}
@@ -2615,7 +2683,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     key: string
   ): Promise<string | null> {
     // Get the raw secrets from DB
-    const result = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+    const result = await sql<{ secrets: Record<string, StoredSecret> | null }>`
       SELECT secrets FROM artifacts
       WHERE channel_id = ${channelId} AND slug = ${slug}
     `;
@@ -2647,7 +2715,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     slug: string,
     key: string
   ): Promise<SecretMetadata | null> {
-    const result = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+    const result = await sql<{ secrets: Record<string, StoredSecret> | null }>`
       SELECT secrets FROM artifacts
       WHERE channel_id = ${channelId} AND slug = ${slug}
     `;
@@ -2691,7 +2759,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     };
 
     // Get current secrets
-    const currentSecrets = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+    const currentSecrets = await sql<{ secrets: Record<string, StoredSecret> | null }>`
       SELECT secrets FROM spaces WHERE id = ${spaceId}
     `;
 
@@ -2705,7 +2773,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     // Update the space with new secrets
     await sql`
       UPDATE spaces
-      SET secrets = ${sql.json(secrets as unknown as JSONValue)},
+      SET secrets = ${JSON.stringify(secrets)},
           updated_at = NOW()
       WHERE id = ${spaceId}
     `;
@@ -2716,7 +2784,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     key: string
   ): Promise<void> {
     // Get current secrets
-    const currentSecrets = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+    const currentSecrets = await sql<{ secrets: Record<string, StoredSecret> | null }>`
       SELECT secrets FROM spaces WHERE id = ${spaceId}
     `;
 
@@ -2736,7 +2804,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
     await sql`
       UPDATE spaces
-      SET secrets = ${secretsValue ? sql.json(secretsValue as unknown as JSONValue) : null},
+      SET secrets = ${secretsValue ? JSON.stringify(secretsValue) : null},
           updated_at = NOW()
       WHERE id = ${spaceId}
     `;
@@ -2746,7 +2814,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     spaceId: string,
     key: string
   ): Promise<string | null> {
-    const result = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+    const result = await sql<{ secrets: Record<string, StoredSecret> | null }>`
       SELECT secrets FROM spaces WHERE id = ${spaceId}
     `;
 
@@ -2776,7 +2844,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     spaceId: string,
     key: string
   ): Promise<SecretMetadata | null> {
-    const result = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+    const result = await sql<{ secrets: Record<string, StoredSecret> | null }>`
       SELECT secrets FROM spaces WHERE id = ${spaceId}
     `;
 
@@ -2799,7 +2867,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   async function listSpaceSecrets(
     spaceId: string
   ): Promise<Record<string, SecretMetadata>> {
-    const result = await sql<{ secrets: Record<string, StoredSecret> | null }[]>`
+    const result = await sql<{ secrets: Record<string, StoredSecret> | null }>`
       SELECT secrets FROM spaces WHERE id = ${spaceId}
     `;
 
@@ -2825,25 +2893,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   // ---------------------------------------------------------------------------
 
   function rowToMessage(row: MessageRow): StoredMessage {
-    // Parse JSONB content if it comes back as a string
-    let content = row.content;
-    if (typeof content === 'string') {
-      try {
-        content = JSON.parse(content);
-      } catch {
-        // Keep as string if not valid JSON
-      }
-    }
-
-    // Parse metadata if it comes back as a string
-    let metadata = row.metadata;
-    if (typeof metadata === 'string') {
-      try {
-        metadata = JSON.parse(metadata);
-      } catch {
-        metadata = null;
-      }
-    }
+    const content = parseJsonbField<unknown>(row.content, `message content id=${row.id}`) ?? row.content;
+    const metadata = parseJsonbField<Record<string, unknown>>(row.metadata, `message metadata id=${row.id}`);
 
     return {
       id: row.id,
@@ -2916,7 +2967,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   ): Promise<StoredLocalAgentServer> {
     const now = new Date();
 
-    const result = await sql<LocalAgentServerRow[]>`
+    const result = await sql<LocalAgentServerRow>`
       INSERT INTO local_agent_servers (
         server_id, space_id, user_id, secret, created_at
       )
@@ -2936,7 +2987,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   async function getLocalAgentServer(
     serverId: string
   ): Promise<StoredLocalAgentServer | null> {
-    const result = await sql<LocalAgentServerRow[]>`
+    const result = await sql<LocalAgentServerRow>`
       SELECT * FROM local_agent_servers
       WHERE server_id = ${serverId}
     `;
@@ -2948,7 +2999,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   async function getLocalAgentServerBySecret(
     secret: string
   ): Promise<StoredLocalAgentServer | null> {
-    const result = await sql<LocalAgentServerRow[]>`
+    const result = await sql<LocalAgentServerRow>`
       SELECT * FROM local_agent_servers
       WHERE secret = ${secret} AND revoked_at IS NULL
     `;
@@ -2960,7 +3011,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   async function getLocalAgentServersByUser(
     userId: string
   ): Promise<StoredLocalAgentServer[]> {
-    const result = await sql<LocalAgentServerRow[]>`
+    const result = await sql<LocalAgentServerRow>`
       SELECT * FROM local_agent_servers
       WHERE user_id = ${userId} AND revoked_at IS NULL
       ORDER BY created_at DESC
@@ -2972,7 +3023,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   async function revokeLocalAgentServer(serverId: string): Promise<boolean> {
     const now = new Date();
 
-    const result = await sql`
+    const result = await sql<MessageRow>`
       UPDATE local_agent_servers
       SET revoked_at = ${now}
       WHERE server_id = ${serverId} AND revoked_at IS NULL
@@ -3002,7 +3053,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   ): Promise<StoredBootstrapToken> {
     const now = new Date();
 
-    const result = await sql<BootstrapTokenRow[]>`
+    const result = await sql<BootstrapTokenRow>`
       INSERT INTO bootstrap_tokens (
         token, space_id, user_id, expires_at, consumed, created_at
       )
@@ -3026,7 +3077,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const now = new Date();
 
     // Only return if not consumed and not expired
-    const result = await sql<BootstrapTokenRow[]>`
+    const result = await sql<BootstrapTokenRow>`
       SELECT * FROM bootstrap_tokens
       WHERE token = ${token}
         AND consumed = FALSE
@@ -3041,7 +3092,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const now = new Date();
 
     // Only consume if not already consumed and not expired
-    const result = await sql`
+    const result = await sql<MessageRow>`
       UPDATE bootstrap_tokens
       SET consumed = TRUE
       WHERE token = ${token}
@@ -3056,7 +3107,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   async function cleanupExpiredBootstrapTokens(): Promise<number> {
     const now = new Date();
 
-    const result = await sql`
+    const result = await sql<MessageRow>`
       DELETE FROM bootstrap_tokens
       WHERE expires_at < ${now} OR consumed = TRUE
       RETURNING token
@@ -3103,7 +3154,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const id = ulid();
     const now = new Date();
 
-    const result = await sql<CostRecordRow[]>`
+    const result = await sql<CostRecordRow>`
       INSERT INTO cost_records (
         id, space_id, channel_id, callsign, cost_usd, duration_ms, num_turns, usage, model_usage, created_at
       )
@@ -3115,8 +3166,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ${input.costUsd},
         ${input.durationMs},
         ${input.numTurns},
-        ${sql.json(input.usage as unknown as JSONValue)},
-        ${input.modelUsage ? sql.json(input.modelUsage as unknown as JSONValue) : null},
+        ${JSON.stringify(input.usage)},
+        ${input.modelUsage ? JSON.stringify(input.modelUsage) : null},
         ${now}
       )
       RETURNING *
@@ -3133,7 +3184,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function getChannelCostTally(channelId: string): Promise<CostTally[]> {
-    const result = await sql<CostTallyRow[]>`
+    const result = await sql<CostTallyRow>`
       SELECT
         callsign,
         SUM(cost_usd)::float8 as total_cost_usd,
@@ -3221,7 +3272,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function getConnection(connectionId: string): Promise<StoredConnection | null> {
-    const result = await sql<ConnectionRow[]>`
+    const result = await sql<ConnectionRow>`
       SELECT * FROM ws_connections
       WHERE connection_id = ${connectionId}
     `;
@@ -3260,7 +3311,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function getConnectionsByChannel(channelId: string): Promise<StoredConnection[]> {
-    const result = await sql<ConnectionRow[]>`
+    const result = await sql<ConnectionRow>`
       SELECT * FROM ws_connections
       WHERE channel_id = ${channelId}
     `;
@@ -3292,9 +3343,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const config = input.config ?? null;
     const serverId = input.serverId ?? null;
 
-    const [row] = await sql<RuntimeRow[]>`
+    const [row] = await sql<RuntimeRow>`
       INSERT INTO runtimes (id, space_id, server_id, name, type, status, config)
-      VALUES (${id}, ${input.spaceId}, ${serverId}, ${input.name}, ${input.type}, ${status}, ${config ? sql.json(config as unknown as JSONValue) : null})
+      VALUES (${id}, ${input.spaceId}, ${serverId}, ${input.name}, ${input.type}, ${status}, ${config ? JSON.stringify(config) : null})
       RETURNING *
     `;
 
@@ -3302,21 +3353,21 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function getRuntime(runtimeId: string): Promise<StoredRuntime | null> {
-    const [row] = await sql<RuntimeRow[]>`
+    const [row] = await sql<RuntimeRow>`
       SELECT * FROM runtimes WHERE id = ${runtimeId}
     `;
     return row ? rowToRuntime(row) : null;
   }
 
   async function getRuntimeByName(spaceId: string, name: string): Promise<StoredRuntime | null> {
-    const [row] = await sql<RuntimeRow[]>`
+    const [row] = await sql<RuntimeRow>`
       SELECT * FROM runtimes WHERE space_id = ${spaceId} AND name = ${name}
     `;
     return row ? rowToRuntime(row) : null;
   }
 
   async function getRuntimesBySpace(spaceId: string): Promise<StoredRuntime[]> {
-    const rows = await sql<RuntimeRow[]>`
+    const rows = await sql<RuntimeRow>`
       SELECT * FROM runtimes
       WHERE space_id = ${spaceId}
       ORDER BY
@@ -3337,7 +3388,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       updateObj.status = update.status;
     }
     if (update.config !== undefined) {
-      updateObj.config = update.config ? sql.json(update.config as unknown as JSONValue) : null;
+      updateObj.config = update.config ? JSON.stringify(update.config) : null;
     }
     if (update.lastSeenAt !== undefined) {
       updateObj.last_seen_at = update.lastSeenAt ? new Date(update.lastSeenAt) : null;
@@ -3345,12 +3396,12 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
 
     if (Object.keys(updateObj).length === 0) return;
 
-    // Use postgres.js safe dynamic column updates
-    await sql`
-      UPDATE runtimes
-      SET ${sql(updateObj, ...Object.keys(updateObj))}
-      WHERE id = ${runtimeId}
-    `;
+    // Build dynamic SET clause for Neon driver
+    const [setClauses, values, nextIdx] = buildSetClause(updateObj);
+    await sql.query(
+      `UPDATE runtimes SET ${setClauses} WHERE id = $${nextIdx}`,
+      [...values, runtimeId]
+    );
   }
 
   async function deleteRuntime(runtimeId: string): Promise<void> {
