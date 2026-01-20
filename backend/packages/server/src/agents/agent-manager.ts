@@ -61,6 +61,19 @@ export interface AppSecrets {
 }
 
 /**
+ * Environment artifact data for resolveEnvironment().
+ */
+export interface EnvironmentArtifact {
+  slug: string;
+  channelId: string;
+  props: {
+    variables: Record<string, string>;
+  };
+  /** Secret keys (values retrieved separately via getSecretValue) */
+  secretKeys: string[];
+}
+
+/**
  * Agent definition artifact (system.agent from #root)
  */
 export interface AgentDefinition {
@@ -112,6 +125,12 @@ export interface AgentManagerConfig {
   getFocusType?: (spaceId: string, focusSlug: string) => Promise<FocusType | null>;
   /** Platform MCP URL for built-in powpow tools (e.g., "http://localhost:8080" or "https://api.cast.dev") */
   platformMcpUrl?: string;
+  /** Get system.environment artifacts for a channel */
+  getEnvironmentArtifacts?: (spaceId: string, channelId: string) => Promise<EnvironmentArtifact[]>;
+  /** Get root channel ID for a space */
+  getRootChannelId?: (spaceId: string) => Promise<string | null>;
+  /** Get decrypted secret value */
+  getSecretValue?: (spaceId: string, channelId: string, slug: string, key: string) => Promise<string | null>;
 }
 
 // =============================================================================
@@ -493,6 +512,87 @@ export class AgentManager {
 
     console.log(`[AgentManager] Total MCP configs for channelId ${channelId}: ${configs.length}`);
     return configs;
+  }
+
+  /**
+   * Resolve environment variables and secrets for an agent.
+   *
+   * Hierarchy (specificity first - channel wins over root):
+   * 1. Channel system.environment artifacts (most specific, highest priority)
+   * 2. Root system.environment artifacts (fallback)
+   *
+   * Within each scope, multiple environment artifacts merge alphabetically by slug.
+   *
+   * @param spaceId - Space ID
+   * @param channelId - Channel ID
+   * @returns Flat Record<string, string> of resolved environment variables + secrets
+   */
+  async resolveEnvironment(
+    spaceId: string,
+    channelId: string
+  ): Promise<Record<string, string>> {
+    const { getEnvironmentArtifacts, getRootChannelId, getSecretValue } = this.config;
+
+    // Skip if environment resolution not configured
+    if (!getEnvironmentArtifacts || !getRootChannelId || !getSecretValue) {
+      console.log('[AgentManager] Environment resolution not configured, returning empty');
+      return {};
+    }
+
+    const result: Record<string, string> = {};
+
+    try {
+      // Get root channel ID
+      const rootChannelId = await getRootChannelId(spaceId);
+
+      // 1. Root first (base layer)
+      if (rootChannelId && rootChannelId !== channelId) {
+        const rootEnvs = await getEnvironmentArtifacts(spaceId, rootChannelId);
+        // Sort alphabetically by slug for deterministic ordering
+        rootEnvs.sort((a, b) => a.slug.localeCompare(b.slug));
+
+        for (const env of rootEnvs) {
+          // Merge variables
+          if (env.props?.variables) {
+            Object.assign(result, env.props.variables);
+          }
+          // Resolve secrets
+          for (const key of env.secretKeys) {
+            const value = await getSecretValue(spaceId, rootChannelId, env.slug, key);
+            if (value !== null) {
+              result[key] = value;
+            }
+          }
+        }
+        console.log(`[AgentManager] Resolved ${rootEnvs.length} root environment artifacts`);
+      }
+
+      // 2. Channel overlays (specificity wins)
+      const channelEnvs = await getEnvironmentArtifacts(spaceId, channelId);
+      // Sort alphabetically by slug for deterministic ordering
+      channelEnvs.sort((a, b) => a.slug.localeCompare(b.slug));
+
+      for (const env of channelEnvs) {
+        // Merge variables (overwrites root)
+        if (env.props?.variables) {
+          Object.assign(result, env.props.variables);
+        }
+        // Resolve secrets (overwrites root)
+        for (const key of env.secretKeys) {
+          const value = await getSecretValue(spaceId, channelId, env.slug, key);
+          if (value !== null) {
+            result[key] = value;
+          }
+        }
+      }
+      console.log(`[AgentManager] Resolved ${channelEnvs.length} channel environment artifacts`);
+      console.log(`[AgentManager] Total resolved env vars: ${Object.keys(result).length}`);
+    } catch (error) {
+      console.error('[AgentManager] Error resolving environment:', error);
+      // Don't fail activation if environment resolution fails
+    }
+
+    return result;
   }
 
   /**
