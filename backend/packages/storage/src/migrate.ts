@@ -504,13 +504,25 @@ async function migrate(): Promise<void> {
   `;
 }
 
-// Run migration
-migrate()
-  .then(() => {
-    console.log('Migration completed successfully!');
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error('Migration failed:', error);
-    process.exit(1);
-  });
+// Run migration with retry
+async function runWithRetry(maxRetries = 3, delayMs = 2000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await migrate();
+      console.log('Migration completed successfully!');
+      process.exit(0);
+    } catch (error) {
+      console.error(`Migration attempt ${attempt}/${maxRetries} failed:`, error);
+      if (attempt < maxRetries) {
+        console.log(`Retrying in ${delayMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        delayMs *= 2; // Exponential backoff
+      } else {
+        console.error('All migration attempts failed');
+        process.exit(1);
+      }
+    }
+  }
+}
+
+runWithRetry();
