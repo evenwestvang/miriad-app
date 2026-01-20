@@ -71,8 +71,8 @@ async function main() {
   }
 
   const storage = createPostgresStorage({ connectionString });
-  await storage.initialize();
-  console.log('✅ Storage initialized');
+  // Note: Database migrations are run separately via: pnpm --filter @cast/storage migrate
+  console.log('✅ Storage connected');
 
   // ---------------------------------------------------------------------------
   // Initialize WebSocket Connection Manager with sync handler

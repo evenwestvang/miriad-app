@@ -12,14 +12,17 @@
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "migrate": "tsx src/migrate.ts"
   },
   "dependencies": {
     "@cast/core": "workspace:*",
+    "dotenv": "^17.2.3",
     "postgres": "^3.4.7",
     "ulid": "^3.0.2"
   },
   "devDependencies": {
+    "tsx": "^4.7.0",
     "typescript": "^5.3.0"
   }
 }
