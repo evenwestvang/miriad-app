@@ -304,7 +304,7 @@ export class AgentManager {
    * Auto-activates the agent if it doesn't exist (local runtime is always-on).
    */
   async deliverMessage(message: DeliverMessageMessage): Promise<void> {
-    const { agentId, systemPrompt, mcpServers } = message;
+    const { agentId, systemPrompt, mcpServers, environment } = message;
     let instance = this.agents.get(agentId);
 
     const { callsign } = parseAgentId(agentId);
@@ -336,6 +336,12 @@ export class AgentManager {
     if (mcpServers && instance) {
       console.log(`[AgentManager] Updating mcpServers for online agent @${callsign} (count: ${mcpServers.length})`);
       instance.state.mcpServers = mcpServers;
+    }
+
+    // Update environment if provided (per-request injection)
+    if (environment && instance) {
+      console.log(`[AgentManager] Updating environment for @${callsign} (count: ${Object.keys(environment).length})`);
+      instance.state.environment = environment;
     }
 
     // Format message with sender header
@@ -471,6 +477,8 @@ export class AgentManager {
         ...Object.fromEntries(
           Object.entries(process.env).filter(([key]) => !['PWD', 'OLDPWD'].includes(key))
         ),
+        // Per-request environment variables and secrets (from system.environment artifacts)
+        ...state.environment,
         CLAUDE_CONFIG_DIR: claudeConfigDir,
       },
     };

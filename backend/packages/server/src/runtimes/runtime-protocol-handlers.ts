@@ -51,6 +51,8 @@ export interface DeliverMessageMessage {
   sender: string;
   systemPrompt?: string;
   mcpServers?: McpServerConfig[];
+  /** Resolved environment variables and secrets for this request */
+  environment?: Record<string, string>;
 }
 
 export interface SuspendAgentMessage {
