@@ -27,6 +27,7 @@ const ARTIFACT_TYPES: { value: ArtifactType; label: string }[] = [
   { value: 'knowledgebase', label: 'Knowledge Base' },
   { value: 'system.mcp', label: 'MCP Server' },
   { value: 'system.agent', label: 'Agent' },
+  { value: 'system.environment', label: 'Environment' },
   { value: 'system.focus', label: 'Focus' },
   { value: 'system.playbook', label: 'Playbook' },
   { value: 'system.app', label: 'App' },
