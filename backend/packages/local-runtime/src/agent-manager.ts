@@ -472,13 +472,18 @@ export class AgentManager {
       includePartialMessages: true,
       continue: shouldContinue,
       cwd: workspace,
+      // Don't load settings from filesystem - prevents stored API keys from overriding env vars
+      // The SDK docs say: "When omitted or empty, no filesystem settings are loaded (SDK isolation mode)"
+      settingSources: [],
       env: {
-        // Filter out PWD/OLDPWD to prevent parent's cwd from leaking into subprocess
+        // Per-request environment variables and secrets (from system.environment artifacts)
+        // Applied first so process.env can override sensitive keys
+        ...state.environment,
+        // Process env takes precedence - filter out PWD/OLDPWD to prevent parent's cwd from leaking
+        // This ensures platform-configured keys (ANTHROPIC_API_KEY, etc.) cannot be overridden by artifacts
         ...Object.fromEntries(
           Object.entries(process.env).filter(([key]) => !['PWD', 'OLDPWD'].includes(key))
         ),
-        // Per-request environment variables and secrets (from system.environment artifacts)
-        ...state.environment,
         CLAUDE_CONFIG_DIR: claudeConfigDir,
       },
     };
