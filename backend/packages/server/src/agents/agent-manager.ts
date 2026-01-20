@@ -474,8 +474,43 @@ export class AgentManager {
   }
 
   /**
+   * Expand ${VAR} references in an MCP server config.
+   *
+   * Resolution order (specificity first - MCP's own wins):
+   * 1. MCP's own env values
+   * 2. Shared environment (from system.environment artifacts)
+   *
+   * Expands in: env values, args, url, headers
+   */
+  private expandMcpConfig(
+    config: McpServerConfig,
+    sharedEnv: Record<string, string>
+  ): McpServerConfig {
+    // Expand ${VAR} references - MCP's own env takes precedence over shared
+    const expand = (str: string): string =>
+      str.replace(/\$\{(\w+)\}/g, (_, name) => config.env?.[name] ?? sharedEnv[name] ?? '');
+
+    return {
+      ...config,
+      env: config.env
+        ? Object.fromEntries(
+            Object.entries(config.env).map(([k, v]) => [k, expand(v)])
+          )
+        : undefined,
+      args: config.args?.map(expand),
+      url: config.url ? expand(config.url) : undefined,
+      headers: config.headers
+        ? Object.fromEntries(
+            Object.entries(config.headers).map(([k, v]) => [k, expand(v)])
+          )
+        : undefined,
+    };
+  }
+
+  /**
    * Get MCP server configurations for an agent.
    * Returns both the built-in platform MCP (powpow) and user-configured app MCPs.
+   * Expands ${VAR} references using resolved environment.
    *
    * @param spaceId - Space ID
    * @param channelId - Channel ID
@@ -487,6 +522,10 @@ export class AgentManager {
     authToken?: string
   ): Promise<McpServerConfig[]> {
     console.log(`[AgentManager] getMcpConfigsForAgent - channelId: ${channelId}, platformMcpUrl: ${this.config.platformMcpUrl ? 'configured' : 'missing'}, authToken: ${authToken ? 'present' : 'missing'}`);
+
+    // Resolve shared environment for ${VAR} expansion
+    const sharedEnv = await this.resolveEnvironment(spaceId, channelId);
+
     const configs: McpServerConfig[] = [];
 
     // Add built-in platform MCP (cast) if configured
@@ -510,8 +549,13 @@ export class AgentManager {
     console.log(`[AgentManager] App MCPs: ${appConfigs.length} configured`);
     configs.push(...appConfigs);
 
-    console.log(`[AgentManager] Total MCP configs for channelId ${channelId}: ${configs.length}`);
-    return configs;
+    // Expand ${VAR} references in all configs (except cast which has no vars)
+    const expandedConfigs = configs.map((config) =>
+      config.name === 'cast' ? config : this.expandMcpConfig(config, sharedEnv)
+    );
+
+    console.log(`[AgentManager] Total MCP configs for channelId ${channelId}: ${expandedConfigs.length}`);
+    return expandedConfigs;
   }
 
   /**
