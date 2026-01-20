@@ -856,12 +856,18 @@ const toolHandlers: Record<string, ToolHandler> = {
       throw new Error('content is required and must be a string');
     }
 
-    // Get roster for routing
+    // Get roster for routing (including human users for valid @mentions)
     const rosterEntries = await storage.listRoster(channelId);
     const leaderEntry = rosterEntries.find((e: RosterEntry) => e.agentType.toLowerCase().includes('lead'));
+
+    // Get space owner's callsign (human user)
+    const space = await storage.getSpace(spaceId);
+    const owner = space ? await storage.getUser(space.ownerId) : null;
+
     const roster: ChannelRoster = {
       agents: rosterEntries.map((e: RosterEntry) => e.callsign),
       leader: leaderEntry?.callsign ?? rosterEntries[0]?.callsign ?? '',
+      users: owner?.callsign ? [owner.callsign] : [],
     };
 
     // Parse @mentions and determine routing targets
@@ -901,8 +907,9 @@ const toolHandlers: Record<string, ToolHandler> = {
       await connectionManager.broadcast(channelId, frame);
     }
 
-    // Invoke mentioned agents (this is the explicit send, so we DO route)
-    if (agentInvoker && routing.targets.length > 0) {
+    // Invoke mentioned agents (filter out human users - they're valid targets but not agents to invoke)
+    const agentTargets = routing.targets.filter((t) => !roster.users?.includes(t));
+    if (agentInvoker && agentTargets.length > 0) {
       const message: Message = {
         id: messageId,
         channelId,
@@ -912,9 +919,9 @@ const toolHandlers: Record<string, ToolHandler> = {
         content,
         timestamp: now,
         isComplete: true,
-        addressedAgents: routing.targets,
+        addressedAgents: agentTargets,
       };
-      await agentInvoker.invokeAgents(channelId, routing.targets, message);
+      await agentInvoker.invokeAgents(channelId, agentTargets, message);
     }
 
     const response: Record<string, unknown> = {
@@ -990,7 +997,7 @@ const toolHandlers: Record<string, ToolHandler> = {
   // Channel Awareness Tools
   // ---------------------------------------------------------------------------
 
-  async get_roster(_args, { storage, channelId, channelName }) {
+  async get_roster(_args, { storage, spaceId, channelId, channelName }) {
     // Get all roster entries for this channel
     const rosterEntries = await storage.listRoster(channelId);
 
@@ -1021,6 +1028,29 @@ const toolHandlers: Record<string, ToolHandler> = {
       return agent;
     });
 
+    // Get space owner (human user) and add to roster
+    const space = await storage.getSpace(spaceId);
+    const owner = space ? await storage.getUser(space.ownerId) : null;
+
+    // Build members list: user first, then agents
+    const members: Array<Record<string, unknown>> = [];
+
+    if (owner?.callsign) {
+      members.push({
+        callsign: owner.callsign,
+        type: 'user',
+        title: 'User',
+      });
+    }
+
+    // Add agents with type: 'agent'
+    for (const agent of agents) {
+      members.push({
+        ...agent,
+        type: 'agent',
+      });
+    }
+
     // Build hint
     const activeCount = agents.filter((a) => a.status === 'active').length;
     const pausedCount = agents.filter((a) => a.status === 'paused').length;
@@ -1042,7 +1072,8 @@ const toolHandlers: Record<string, ToolHandler> = {
 
     return JSON.stringify({
       channel: channelName,
-      agents,
+      members,
+      agents, // Keep for backwards compatibility
       hint,
     }, null, 2);
   },

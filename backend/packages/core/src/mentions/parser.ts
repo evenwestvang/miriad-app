@@ -29,6 +29,8 @@ export interface ChannelRoster {
   agents: string[];
   /** The channel leader (receives unaddressed human messages) */
   leader: string;
+  /** Human user callsigns (for valid @mention targets, but not invoked as agents) */
+  users?: string[];
 }
 
 // =============================================================================
@@ -112,9 +114,11 @@ export function determineRouting(
 
   // Specific @mentions
   if (parsed.mentions.length > 0) {
-    // Filter to only agents that exist in the roster (and exclude sender)
+    // Filter to agents and users that exist in the roster (and exclude sender)
+    // Users are valid mention targets but won't be invoked as agents
+    const allMembers = [...roster.agents, ...(roster.users ?? [])];
     const validTargets = parsed.mentions.filter(
-      (m) => roster.agents.includes(m) && m !== senderCallsign
+      (m) => allMembers.includes(m) && m !== senderCallsign
     );
     return {
       targets: validTargets,

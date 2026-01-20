@@ -269,9 +269,10 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
       });
       await connectionManager.broadcast(channelId, frame);
 
-      // Invoke agents if configured
-      if (agentInvoker && addressedAgents.length > 0) {
-        await agentInvoker.invokeAgents(channelId, addressedAgents, message);
+      // Invoke agents if configured (filter out human users - they're valid targets but not agents to invoke)
+      const agentTargets = addressedAgents.filter((t) => !roster.users?.includes(t));
+      if (agentInvoker && agentTargets.length > 0) {
+        await agentInvoker.invokeAgents(channelId, agentTargets, message);
       }
 
       return c.json({ message }, 201);

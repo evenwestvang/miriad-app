@@ -120,10 +120,15 @@ function createRosterProviderAdapter(storage: Storage): {
         // Find leader (first agent with 'lead' in type)
         const leaderEntry = rosterEntries.find((e: RosterEntry) => e.agentType.toLowerCase().includes('lead'));
 
-        // ChannelRoster expects { agents: string[], leader: string }
+        // Get space owner's callsign (human user) for valid @mentions
+        const space = await storage.getSpace(spaceId);
+        const owner = space ? await storage.getUser(space.ownerId) : null;
+
+        // ChannelRoster expects { agents: string[], leader: string, users?: string[] }
         const roster: ChannelRoster = {
           agents: rosterEntries.map((e: RosterEntry) => e.callsign),
           leader: leaderEntry?.callsign ?? rosterEntries[0]?.callsign ?? '',
+          users: owner?.callsign ? [owner.callsign] : [],
         };
 
         return roster;
@@ -1195,6 +1200,13 @@ export function createApp(options: AppOptions): Hono {
     // Get decrypted secret value
     getSecretValue: async (sid, cid, slug, key) => {
       return storage.getSecretValue(sid, cid, slug, key);
+    },
+    // Get space owner's callsign (human user)
+    getSpaceOwnerCallsign: async (sid) => {
+      const space = await storage.getSpace(sid);
+      if (!space) return null;
+      const user = await storage.getUser(space.ownerId);
+      return user?.callsign ?? null;
     },
   });
 

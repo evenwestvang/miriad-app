@@ -131,6 +131,8 @@ export interface AgentManagerConfig {
   getRootChannelId?: (spaceId: string) => Promise<string | null>;
   /** Get decrypted secret value */
   getSecretValue?: (spaceId: string, channelId: string, slug: string, key: string) => Promise<string | null>;
+  /** Get space owner's callsign */
+  getSpaceOwnerCallsign?: (spaceId: string) => Promise<string | null>;
 }
 
 // =============================================================================
@@ -146,6 +148,8 @@ export interface PromptContext {
   callsign: string;
   agentDefinition?: AgentDefinition;
   focusType?: FocusType;
+  /** Human user's callsign (space owner) */
+  userCallsign?: string;
 }
 
 /**
@@ -190,7 +194,20 @@ You are "${callsign}", an AI agent participating in #${channel.name}.`);
   }
 
   // 4. Team Roster (with titles from agent definitions if available)
-  const rosterLines = roster.map((r) => `- @${r.callsign} (${r.agentType})`);
+  // Include the human user first, then agents
+  const { userCallsign } = ctx;
+  const rosterLines: string[] = [];
+
+  // Add human user first
+  if (userCallsign) {
+    rosterLines.push(`- @${userCallsign} (user)`);
+  }
+
+  // Add agents
+  for (const r of roster) {
+    rosterLines.push(`- @${r.callsign} (${r.agentType})`);
+  }
+
   if (rosterLines.length > 0) {
     sections.push(`---
 
@@ -358,6 +375,16 @@ export class AgentManager {
       }
     }
 
+    // Fetch space owner's callsign (human user)
+    let userCallsign: string | undefined;
+    if (this.config.getSpaceOwnerCallsign) {
+      try {
+        userCallsign = (await this.config.getSpaceOwnerCallsign(spaceId)) ?? undefined;
+      } catch (err) {
+        console.error(`[AgentManager] Error loading space owner:`, err);
+      }
+    }
+
     // Build and return the full system prompt
     return buildSystemPrompt({
       channel,
@@ -365,6 +392,7 @@ export class AgentManager {
       callsign,
       agentDefinition,
       focusType,
+      userCallsign,
     });
   }
 
