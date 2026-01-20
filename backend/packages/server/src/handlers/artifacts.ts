@@ -82,6 +82,7 @@ const ArtifactTypeSchema = z.enum([
   'asset',
   'system.mcp',
   'system.agent',
+  'system.environment',
   'system.focus',
   'system.playbook',
   'system.app',
