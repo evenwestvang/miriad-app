@@ -20,6 +20,7 @@ import {
   Library,
   Plug,
   Plug2,
+  KeyRound,
   type LucideIcon
 } from 'lucide-react'
 
@@ -41,6 +42,7 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   'system.playbook': BookOpen,
   'system.focus': Target,
   'system.mcp': Plug,
+  'system.environment': KeyRound,
   'system.app': Plug2,
 }
 
@@ -177,6 +179,7 @@ export function getArtifactTypeLabel(artifact: {
     'system.playbook': 'Playbook',
     'system.focus': 'Focus',
     'system.mcp': 'MCP Server',
+    'system.environment': 'Environment',
     'system.app': 'App',
   }
   return labels[artifact.type] || artifact.type
