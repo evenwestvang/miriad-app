@@ -556,22 +556,22 @@ export class AgentManager {
 
     const configs: McpServerConfig[] = [];
 
-    // Add built-in platform MCP (cast) if configured
+    // Add built-in platform MCP (miriad) if configured
     if (this.config.platformMcpUrl && authToken) {
-      const castMcp = {
-        name: 'cast',
+      const miriadMcp = {
+        name: 'miriad',
         transport: 'http' as const,
         url: `${this.config.platformMcpUrl}/mcp/${channelId}`,
         headers: {
           Authorization: `Container ${authToken}`,
         },
       };
-      console.log(`[AgentManager] Adding cast MCP:`, JSON.stringify(castMcp));
-      configs.push(castMcp);
+      console.log(`[AgentManager] Adding miriad MCP:`, JSON.stringify(miriadMcp));
+      configs.push(miriadMcp);
 
-      // Add assets-mcp for file upload/download (stdio-based, requires filesystem access)
-      const assetsMcp = {
-        name: 'assets',
+      // Add miriad-files MCP for file upload/download (stdio-based, requires filesystem access)
+      const miriadFilesMcp = {
+        name: 'miriad-files',
         transport: 'stdio' as const,
         command: 'npx',
         args: ['--yes', '@miriad-systems/assets-mcp'],
@@ -581,10 +581,10 @@ export class AgentManager {
           CAST_CONTAINER_TOKEN: authToken,
         },
       };
-      console.log(`[AgentManager] Adding assets MCP`);
-      configs.push(assetsMcp);
+      console.log(`[AgentManager] Adding miriad-files MCP`);
+      configs.push(miriadFilesMcp);
     } else {
-      console.warn(`[AgentManager] Cast MCP NOT added - platformMcpUrl: ${this.config.platformMcpUrl ? 'present' : 'missing'}, authToken: ${authToken ? 'present' : 'missing'}`);
+      console.warn(`[AgentManager] Miriad MCP NOT added - platformMcpUrl: ${this.config.platformMcpUrl ? 'present' : 'missing'}, authToken: ${authToken ? 'present' : 'missing'}`);
     }
 
     // Add user-configured app MCPs
@@ -594,7 +594,7 @@ export class AgentManager {
 
     // Expand ${VAR} references in all configs (except built-in MCPs which have no vars)
     const expandedConfigs = configs.map((config) =>
-      config.name === 'cast' || config.name === 'assets'
+      config.name === 'miriad' || config.name === 'miriad-files'
         ? config
         : this.expandMcpConfig(config, sharedEnv)
     );

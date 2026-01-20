@@ -64,9 +64,9 @@ RUN git.real config --system credential.helper '!f() { echo "username=x-access-t
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
 
-# Install cast-tunnel CLI
-COPY agents/miriad-cloud/scripts/cast-tunnel /usr/local/bin/cast-tunnel
-RUN chmod +x /usr/local/bin/cast-tunnel
+# Install miriad-tunnel CLI
+COPY agents/miriad-cloud/scripts/miriad-tunnel /usr/local/bin/miriad-tunnel
+RUN chmod +x /usr/local/bin/miriad-tunnel
 
 # Install entrypoint script (ensures workspace dirs exist on volume mount)
 COPY agents/miriad-cloud/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
