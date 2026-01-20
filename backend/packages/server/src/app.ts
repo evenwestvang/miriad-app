@@ -17,6 +17,7 @@ import { createMessageRoutes, type MessageStorage, type RosterProvider, type Mes
 import { createCheckinRoutes, broadcastAgentState } from './handlers/checkin.js';
 import { createMcpRoutes } from './handlers/mcp-http.js';
 import { createArtifactRoutes } from './handlers/artifacts.js';
+import { createAssetsApiRoutes } from './handlers/assets-api.js';
 import { createAssetStorage } from './assets/index.js';
 import type { ConnectionManager } from './websocket/index.js';
 import { AgentManager, createAgentInvokerAdapter } from './agents/index.js';
@@ -1648,6 +1649,14 @@ export function createApp(options: AppOptions): Hono {
     },
   });
   app.route('/mcp', mcpRoutes);
+
+  // Assets API routes (container auth for agents)
+  // Used by @miriad-systems/assets-mcp for agent file upload/download
+  const assetsApiRoutes = createAssetsApiRoutes({
+    storage,
+    assetStorage,
+  });
+  app.route('/api/assets', assetsApiRoutes);
 
   // Artifact routes (REST API for frontend)
   // spaceId extracted from session context (auth middleware already applied to /channels/*)
