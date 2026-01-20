@@ -1167,6 +1167,35 @@ export function createApp(options: AppOptions): Hono {
     },
     // Platform MCP URL for built-in powpow tools
     platformMcpUrl: apiUrl,
+    // Environment resolution: get system.environment artifacts for a channel
+    getEnvironmentArtifacts: async (sid, cid) => {
+      // First list to get slugs, then fetch full artifacts to get secrets
+      const summaries = await storage.listArtifacts(cid, { type: 'system.environment' });
+      const results = [];
+      for (const summary of summaries) {
+        const artifact = await storage.getArtifact(cid, summary.slug);
+        if (artifact) {
+          results.push({
+            slug: artifact.slug,
+            channelId: artifact.channelId,
+            props: {
+              variables: ((artifact.props as Record<string, unknown> | undefined)?.variables as Record<string, string>) ?? {},
+            },
+            secretKeys: artifact.secrets ? Object.keys(artifact.secrets) : [],
+          });
+        }
+      }
+      return results;
+    },
+    // Get root channel ID for a space
+    getRootChannelId: async (sid) => {
+      const rootChannel = await storage.getChannelByName(sid, 'root');
+      return rootChannel?.id ?? null;
+    },
+    // Get decrypted secret value
+    getSecretValue: async (sid, cid, slug, key) => {
+      return storage.getSecretValue(sid, cid, slug, key);
+    },
   });
 
   // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Shield } from 'lucide-react'
 import { EditableField } from '../ui/editable-field'
+import { EnvEditor, type SecretMetadata } from '../ui/env-editor'
 import { KeyValueEditor, KeyValuePair } from '../ui/key-value-editor'
 import { SegmentedControl } from '../ui/segmented-control'
 import { StringListEditor } from '../ui/string-list-editor'
@@ -35,13 +36,15 @@ export interface McpProps {
 interface McpPropsEditorProps {
   props: McpProps
   onChange: (updates: Partial<McpProps>) => void
-  /** Channel containing this MCP artifact (for OAuth) */
+  /** Channel containing this MCP artifact (for OAuth and secrets) */
   channel?: string
-  /** MCP artifact slug (for OAuth) */
+  /** MCP artifact slug (for OAuth and secrets) */
   mcpSlug?: string
+  /** Secrets metadata for this MCP artifact */
+  secrets?: Record<string, SecretMetadata>
 }
 
-export function McpPropsEditor({ props, onChange, channel, mcpSlug }: McpPropsEditorProps) {
+export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: McpPropsEditorProps) {
   const transport = props.transport || 'stdio'
   const [oauthExpanded, setOauthExpanded] = useState(props.auth?.type === 'oauth')
 
@@ -104,14 +107,25 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug }: McpPropsEd
             placeholder="/path/to/working/dir"
           />
 
-          {/* Environment Variables */}
-          <KeyValueEditor
-            label="Environment Variables"
-            entries={envToEntries(props.env)}
-            onChange={(entries) => onChange({ env: entriesToEnv(entries) })}
-            keyPlaceholder="VARIABLE_NAME"
-            valuePlaceholder="value or ${ENV_REF}"
-          />
+          {/* Environment Variables and Secrets */}
+          {channel && mcpSlug ? (
+            <EnvEditor
+              variables={props.env || {}}
+              secrets={secrets || {}}
+              artifactSlug={mcpSlug}
+              channelId={channel}
+              onVariablesChange={(variables) => onChange({ env: Object.keys(variables).length > 0 ? variables : undefined })}
+              showExpansionHint
+            />
+          ) : (
+            <KeyValueEditor
+              label="Environment Variables"
+              entries={envToEntries(props.env)}
+              onChange={(entries) => onChange({ env: entriesToEnv(entries) })}
+              keyPlaceholder="VARIABLE_NAME"
+              valuePlaceholder="value or ${ENV_REF}"
+            />
+          )}
         </div>
       )}
 
@@ -134,6 +148,26 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug }: McpPropsEd
             keyPlaceholder="Header-Name"
             valuePlaceholder="value or ${ENV_REF}"
           />
+
+          {/* Environment Variables and Secrets */}
+          {channel && mcpSlug ? (
+            <EnvEditor
+              variables={props.env || {}}
+              secrets={secrets || {}}
+              artifactSlug={mcpSlug}
+              channelId={channel}
+              onVariablesChange={(variables) => onChange({ env: Object.keys(variables).length > 0 ? variables : undefined })}
+              showExpansionHint
+            />
+          ) : (
+            <KeyValueEditor
+              label="Environment Variables"
+              entries={envToEntries(props.env)}
+              onChange={(entries) => onChange({ env: entriesToEnv(entries) })}
+              keyPlaceholder="VARIABLE_NAME"
+              valuePlaceholder="value or ${ENV_REF}"
+            />
+          )}
 
           {/* OAuth Authentication Section */}
           <div className="rounded-md border bg-secondary/10">

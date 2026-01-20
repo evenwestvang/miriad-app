@@ -137,6 +137,9 @@ export function createAgentInvokerAdapter(
               const mcpServers = await agentManager.getMcpConfigsForAgent(spaceId, channelId, authToken);
               console.log(`[AgentInvoker] @${callsign} MCP configs:`, JSON.stringify(mcpServers));
 
+              // Resolve environment variables and secrets for this channel
+              const environment = await agentManager.resolveEnvironment(spaceId, channelId);
+
               const deliverMessage: DeliverMessageMessage = {
                 type: 'message',
                 agentId,
@@ -145,6 +148,7 @@ export function createAgentInvokerAdapter(
                 sender: message.sender,
                 systemPrompt,
                 mcpServers,
+                environment: Object.keys(environment).length > 0 ? environment : undefined,
               };
 
               try {

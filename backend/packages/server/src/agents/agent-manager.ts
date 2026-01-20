@@ -61,6 +61,19 @@ export interface AppSecrets {
 }
 
 /**
+ * Environment artifact data for resolveEnvironment().
+ */
+export interface EnvironmentArtifact {
+  slug: string;
+  channelId: string;
+  props: {
+    variables: Record<string, string>;
+  };
+  /** Secret keys (values retrieved separately via getSecretValue) */
+  secretKeys: string[];
+}
+
+/**
  * Agent definition artifact (system.agent from #root)
  */
 export interface AgentDefinition {
@@ -112,6 +125,12 @@ export interface AgentManagerConfig {
   getFocusType?: (spaceId: string, focusSlug: string) => Promise<FocusType | null>;
   /** Platform MCP URL for built-in powpow tools (e.g., "http://localhost:8080" or "https://api.cast.dev") */
   platformMcpUrl?: string;
+  /** Get system.environment artifacts for a channel */
+  getEnvironmentArtifacts?: (spaceId: string, channelId: string) => Promise<EnvironmentArtifact[]>;
+  /** Get root channel ID for a space */
+  getRootChannelId?: (spaceId: string) => Promise<string | null>;
+  /** Get decrypted secret value */
+  getSecretValue?: (spaceId: string, channelId: string, slug: string, key: string) => Promise<string | null>;
 }
 
 // =============================================================================
@@ -455,8 +474,43 @@ export class AgentManager {
   }
 
   /**
+   * Expand ${VAR} references in an MCP server config.
+   *
+   * Resolution order (specificity first - MCP's own wins):
+   * 1. MCP's own env values
+   * 2. Shared environment (from system.environment artifacts)
+   *
+   * Expands in: env values, args, url, headers
+   */
+  private expandMcpConfig(
+    config: McpServerConfig,
+    sharedEnv: Record<string, string>
+  ): McpServerConfig {
+    // Expand ${VAR} references - MCP's own env takes precedence over shared
+    const expand = (str: string): string =>
+      str.replace(/\$\{(\w+)\}/g, (_, name) => config.env?.[name] ?? sharedEnv[name] ?? '');
+
+    return {
+      ...config,
+      env: config.env
+        ? Object.fromEntries(
+            Object.entries(config.env).map(([k, v]) => [k, expand(v)])
+          )
+        : undefined,
+      args: config.args?.map(expand),
+      url: config.url ? expand(config.url) : undefined,
+      headers: config.headers
+        ? Object.fromEntries(
+            Object.entries(config.headers).map(([k, v]) => [k, expand(v)])
+          )
+        : undefined,
+    };
+  }
+
+  /**
    * Get MCP server configurations for an agent.
    * Returns both the built-in platform MCP (powpow) and user-configured app MCPs.
+   * Expands ${VAR} references using resolved environment.
    *
    * @param spaceId - Space ID
    * @param channelId - Channel ID
@@ -468,6 +522,10 @@ export class AgentManager {
     authToken?: string
   ): Promise<McpServerConfig[]> {
     console.log(`[AgentManager] getMcpConfigsForAgent - channelId: ${channelId}, platformMcpUrl: ${this.config.platformMcpUrl ? 'configured' : 'missing'}, authToken: ${authToken ? 'present' : 'missing'}`);
+
+    // Resolve shared environment for ${VAR} expansion
+    const sharedEnv = await this.resolveEnvironment(spaceId, channelId);
+
     const configs: McpServerConfig[] = [];
 
     // Add built-in platform MCP (cast) if configured
@@ -491,8 +549,94 @@ export class AgentManager {
     console.log(`[AgentManager] App MCPs: ${appConfigs.length} configured`);
     configs.push(...appConfigs);
 
-    console.log(`[AgentManager] Total MCP configs for channelId ${channelId}: ${configs.length}`);
-    return configs;
+    // Expand ${VAR} references in all configs (except cast which has no vars)
+    const expandedConfigs = configs.map((config) =>
+      config.name === 'cast' ? config : this.expandMcpConfig(config, sharedEnv)
+    );
+
+    console.log(`[AgentManager] Total MCP configs for channelId ${channelId}: ${expandedConfigs.length}`);
+    return expandedConfigs;
+  }
+
+  /**
+   * Resolve environment variables and secrets for an agent.
+   *
+   * Hierarchy (specificity first - channel wins over root):
+   * 1. Channel system.environment artifacts (most specific, highest priority)
+   * 2. Root system.environment artifacts (fallback)
+   *
+   * Within each scope, multiple environment artifacts merge alphabetically by slug.
+   *
+   * @param spaceId - Space ID
+   * @param channelId - Channel ID
+   * @returns Flat Record<string, string> of resolved environment variables + secrets
+   */
+  async resolveEnvironment(
+    spaceId: string,
+    channelId: string
+  ): Promise<Record<string, string>> {
+    const { getEnvironmentArtifacts, getRootChannelId, getSecretValue } = this.config;
+
+    // Skip if environment resolution not configured
+    if (!getEnvironmentArtifacts || !getRootChannelId || !getSecretValue) {
+      console.log('[AgentManager] Environment resolution not configured, returning empty');
+      return {};
+    }
+
+    const result: Record<string, string> = {};
+
+    try {
+      // Get root channel ID
+      const rootChannelId = await getRootChannelId(spaceId);
+
+      // 1. Root first (base layer)
+      if (rootChannelId && rootChannelId !== channelId) {
+        const rootEnvs = await getEnvironmentArtifacts(spaceId, rootChannelId);
+        // Sort alphabetically by slug for deterministic ordering
+        rootEnvs.sort((a, b) => a.slug.localeCompare(b.slug));
+
+        for (const env of rootEnvs) {
+          // Merge variables
+          if (env.props?.variables) {
+            Object.assign(result, env.props.variables);
+          }
+          // Resolve secrets
+          for (const key of env.secretKeys) {
+            const value = await getSecretValue(spaceId, rootChannelId, env.slug, key);
+            if (value !== null) {
+              result[key] = value;
+            }
+          }
+        }
+        console.log(`[AgentManager] Resolved ${rootEnvs.length} root environment artifacts`);
+      }
+
+      // 2. Channel overlays (specificity wins)
+      const channelEnvs = await getEnvironmentArtifacts(spaceId, channelId);
+      // Sort alphabetically by slug for deterministic ordering
+      channelEnvs.sort((a, b) => a.slug.localeCompare(b.slug));
+
+      for (const env of channelEnvs) {
+        // Merge variables (overwrites root)
+        if (env.props?.variables) {
+          Object.assign(result, env.props.variables);
+        }
+        // Resolve secrets (overwrites root)
+        for (const key of env.secretKeys) {
+          const value = await getSecretValue(spaceId, channelId, env.slug, key);
+          if (value !== null) {
+            result[key] = value;
+          }
+        }
+      }
+      console.log(`[AgentManager] Resolved ${channelEnvs.length} channel environment artifacts`);
+      console.log(`[AgentManager] Total resolved env vars: ${Object.keys(result).length}`);
+    } catch (error) {
+      console.error('[AgentManager] Error resolving environment:', error);
+      // Don't fail activation if environment resolution fails
+    }
+
+    return result;
   }
 
   /**

@@ -22,6 +22,7 @@ import { McpPropsEditor, type McpProps } from './McpPropsEditor'
 import { AgentPropsEditor, type AgentProps } from './AgentPropsEditor'
 import { FocusPropsEditor, type FocusProps } from './FocusPropsEditor'
 import { AppPropsDisplay, type AppProps } from './AppPropsDisplay'
+import { EnvEditor, type SecretMetadata } from '../ui/env-editor'
 import { SpaRenderer } from './SpaRenderer'
 import { highlightMentions, type ArtifactInfo } from '../../utils'
 import { useIsDarkMode } from '../../hooks/useIsDarkMode'
@@ -660,6 +661,7 @@ export function ArtifactDetail({
             }}
             channel={channelId}
             mcpSlug={artifact.slug}
+            secrets={artifact.secrets as Record<string, SecretMetadata>}
           />
         </div>
       )}
@@ -693,6 +695,23 @@ export function ArtifactDetail({
               handlePropsUpdate({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
             }}
             apiHost={apiHost}
+          />
+        </div>
+      )}
+
+      {artifact.type === 'system.environment' && (
+        <div className="px-3 py-3 border-b border-border">
+          {saving && (
+            <div className="text-xs text-muted-foreground mb-2">Saving...</div>
+          )}
+          <EnvEditor
+            variables={((artifact.props as { variables?: Record<string, string> })?.variables) || {}}
+            secrets={(artifact.secrets as Record<string, SecretMetadata>) || {}}
+            artifactSlug={artifact.slug}
+            channelId={channelId}
+            onVariablesChange={(variables) => {
+              handlePropsUpdate({ variables })
+            }}
           />
         </div>
       )}

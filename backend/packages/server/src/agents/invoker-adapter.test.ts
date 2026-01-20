@@ -40,6 +40,7 @@ function createMockAgentManager(): AgentManager & {
     }),
     buildPromptForAgent: vi.fn(async () => 'mock system prompt'),
     getMcpConfigsForAgent: vi.fn(async () => []),
+    resolveEnvironment: vi.fn(async () => ({})),
     spawn: vi.fn(),
     stop: vi.fn(),
     shutdown: vi.fn(),

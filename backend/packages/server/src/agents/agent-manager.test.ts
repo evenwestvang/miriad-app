@@ -244,3 +244,197 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('artifact_update');
   });
 });
+
+describe('resolveEnvironment', () => {
+  it('merges root and channel environments with channel taking precedence', async () => {
+    const runtime = createMockRuntime();
+    const getEnvironmentArtifacts = vi.fn(async (spaceId: string, channelId: string) => {
+      if (channelId === 'root-channel') {
+        return [
+          {
+            slug: 'root-env',
+            channelId: 'root-channel',
+            props: { variables: { APP_NAME: 'TestApp', LOG_LEVEL: 'debug' } },
+            secretKeys: ['API_KEY'],
+          },
+        ];
+      }
+      return [
+        {
+          slug: 'channel-env',
+          channelId: 'test-channel',
+          props: { variables: { LOG_LEVEL: 'info' } },
+          secretKeys: ['API_KEY'],
+        },
+      ];
+    });
+    const getRootChannelId = vi.fn(async () => 'root-channel');
+    const getSecretValue = vi.fn(async (spaceId: string, channelId: string, slug: string, key: string) => {
+      if (channelId === 'root-channel') return 'root-secret-123';
+      return 'channel-secret-456';
+    });
+
+    const config: AgentManagerConfig = {
+      runtime,
+      broadcast: vi.fn(),
+      getChannel: vi.fn(async () => ({ id: 'test-channel', name: 'test' })),
+      getRoster: vi.fn(async () => []),
+      getEnvironmentArtifacts,
+      getRootChannelId,
+      getSecretValue,
+    };
+
+    const manager = new AgentManager(config);
+    const env = await manager.resolveEnvironment('space-1', 'test-channel');
+
+    // APP_NAME from root (not overridden)
+    expect(env.APP_NAME).toBe('TestApp');
+    // LOG_LEVEL from channel (overrides root's "debug")
+    expect(env.LOG_LEVEL).toBe('info');
+    // API_KEY from channel (overrides root's secret)
+    expect(env.API_KEY).toBe('channel-secret-456');
+  });
+
+  it('returns empty object when not configured', async () => {
+    const runtime = createMockRuntime();
+    const config: AgentManagerConfig = {
+      runtime,
+      broadcast: vi.fn(),
+      getChannel: vi.fn(async () => ({ id: 'test-channel', name: 'test' })),
+      getRoster: vi.fn(async () => []),
+      // No environment config
+    };
+
+    const manager = new AgentManager(config);
+    const env = await manager.resolveEnvironment('space-1', 'test-channel');
+
+    expect(env).toEqual({});
+  });
+
+  it('only uses channel environment when channel is root', async () => {
+    const runtime = createMockRuntime();
+    const getEnvironmentArtifacts = vi.fn(async () => [
+      {
+        slug: 'env',
+        channelId: 'root-channel',
+        props: { variables: { VAR: 'value' } },
+        secretKeys: [],
+      },
+    ]);
+    const getRootChannelId = vi.fn(async () => 'root-channel');
+    const getSecretValue = vi.fn(async () => null);
+
+    const config: AgentManagerConfig = {
+      runtime,
+      broadcast: vi.fn(),
+      getChannel: vi.fn(async () => ({ id: 'root-channel', name: 'root' })),
+      getRoster: vi.fn(async () => []),
+      getEnvironmentArtifacts,
+      getRootChannelId,
+      getSecretValue,
+    };
+
+    const manager = new AgentManager(config);
+    const env = await manager.resolveEnvironment('space-1', 'root-channel');
+
+    expect(env.VAR).toBe('value');
+    // Should only call getEnvironmentArtifacts once (for root-channel which IS the channel)
+    expect(getEnvironmentArtifacts).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('expandMcpConfig', () => {
+  it('expands ${VAR} in args, url, headers, and env', async () => {
+    const runtime = createMockRuntime();
+    const config: AgentManagerConfig = {
+      runtime,
+      broadcast: vi.fn(),
+      getChannel: vi.fn(async () => ({ id: 'test-channel', name: 'test' })),
+      getRoster: vi.fn(async () => []),
+    };
+
+    const manager = new AgentManager(config);
+
+    // Access private method via any cast for testing
+    const expandMcpConfig = (manager as any).expandMcpConfig.bind(manager);
+
+    const mcpConfig = {
+      name: 'test-mcp',
+      transport: 'stdio' as const,
+      command: 'echo',
+      args: ['${APP_NAME}', '${LOG_LEVEL}'],
+      url: 'https://${HOST}/api',
+      headers: { Authorization: 'Bearer ${TOKEN}' },
+      env: { AUTH: '${API_KEY}', CUSTOM: 'literal' },
+    };
+
+    const sharedEnv = {
+      APP_NAME: 'TestApp',
+      LOG_LEVEL: 'info',
+      HOST: 'example.com',
+      TOKEN: 'my-token',
+      API_KEY: 'secret-key',
+    };
+
+    const expanded = expandMcpConfig(mcpConfig, sharedEnv);
+
+    expect(expanded.args).toEqual(['TestApp', 'info']);
+    expect(expanded.url).toBe('https://example.com/api');
+    expect(expanded.headers).toEqual({ Authorization: 'Bearer my-token' });
+    expect(expanded.env).toEqual({ AUTH: 'secret-key', CUSTOM: 'literal' });
+  });
+
+  it('MCP own env takes precedence over shared env', async () => {
+    const runtime = createMockRuntime();
+    const config: AgentManagerConfig = {
+      runtime,
+      broadcast: vi.fn(),
+      getChannel: vi.fn(async () => ({ id: 'test-channel', name: 'test' })),
+      getRoster: vi.fn(async () => []),
+    };
+
+    const manager = new AgentManager(config);
+    const expandMcpConfig = (manager as any).expandMcpConfig.bind(manager);
+
+    const mcpConfig = {
+      name: 'test-mcp',
+      transport: 'stdio' as const,
+      command: 'echo',
+      args: ['${VAR}'],
+      env: { VAR: 'mcp-value', OTHER: '${VAR}' },
+    };
+
+    const sharedEnv = { VAR: 'shared-value' };
+
+    const expanded = expandMcpConfig(mcpConfig, sharedEnv);
+
+    // MCP's own VAR takes precedence
+    expect(expanded.args).toEqual(['mcp-value']);
+    // OTHER references VAR which is mcp-value
+    expect(expanded.env?.OTHER).toBe('mcp-value');
+  });
+
+  it('replaces unresolved vars with empty string', async () => {
+    const runtime = createMockRuntime();
+    const config: AgentManagerConfig = {
+      runtime,
+      broadcast: vi.fn(),
+      getChannel: vi.fn(async () => ({ id: 'test-channel', name: 'test' })),
+      getRoster: vi.fn(async () => []),
+    };
+
+    const manager = new AgentManager(config);
+    const expandMcpConfig = (manager as any).expandMcpConfig.bind(manager);
+
+    const mcpConfig = {
+      name: 'test-mcp',
+      transport: 'stdio' as const,
+      command: 'echo',
+      args: ['${UNDEFINED_VAR}'],
+    };
+
+    const expanded = expandMcpConfig(mcpConfig, {});
+
+    expect(expanded.args).toEqual(['']);
+  });
+});
