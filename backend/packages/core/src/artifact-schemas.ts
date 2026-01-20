@@ -41,10 +41,10 @@ export const SystemMcpPropsSchema = z
       .array(z.string())
       .optional()
       .describe('Arguments to pass to the command'),
-    env: z
+    variables: z
       .record(z.string())
       .optional()
-      .describe('Environment variables. Use ${VAR_NAME} syntax to reference server env vars'),
+      .describe('Environment variables. Use ${VAR_NAME} syntax to reference shared environment'),
     cwd: z
       .string()
       .optional()
