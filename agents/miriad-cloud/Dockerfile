@@ -31,10 +31,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     openssh-client \
     python3 \
+    python3-pip \
+    python3-venv \
     build-essential \
     unzip \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast Python package management
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    mv /root/.local/bin/uv /usr/local/bin/uv && \
+    mv /root/.local/bin/uvx /usr/local/bin/uvx
 
 # Install rathole client for HTTP tunneling
 ARG RATHOLE_VERSION=0.5.0
@@ -75,6 +82,11 @@ RUN useradd -m -s /bin/bash agent && chown -R agent:agent /app /workspace
 
 USER agent
 WORKDIR /workspace
+
+# Configure package installs to use workspace (persists on volume)
+# Note: Python enforces venv usage (EXTERNALLY-MANAGED) - this is intentional
+ENV NPM_CONFIG_PREFIX=/workspace/.npm-global
+ENV PATH="/workspace/.npm-global/bin:$PATH"
 
 # Environment variables set at runtime:
 #   MIRIAD_CONFIG      - JSON config with credentials (RuntimeConfig)
