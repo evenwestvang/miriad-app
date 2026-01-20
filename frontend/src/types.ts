@@ -237,6 +237,7 @@ export type ArtifactType =
   | 'asset'
   | 'system.mcp'
   | 'system.agent'
+  | 'system.environment'
   | 'system.focus'
   | 'system.playbook'
   | 'system.app'

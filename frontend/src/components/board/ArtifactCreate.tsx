@@ -43,6 +43,7 @@ const DEFAULT_STATUS: Record<ArtifactType, ArtifactStatus> = {
   asset: 'published',
   'system.mcp': 'published',
   'system.agent': 'published',
+  'system.environment': 'published',
   'system.focus': 'published',
   'system.playbook': 'published',
   'system.app': 'published',
