@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
-import { Monitor, RefreshCw, ChevronDown, ChevronRight, Bot, Cloud, Play, Settings } from 'lucide-react'
+import { Monitor, RefreshCw, ChevronDown, ChevronRight, Bot, Cloud, Play, Settings, Square } from 'lucide-react'
 import { apiFetch, apiPost, apiJson } from '../lib/api'
+
+// Runtime is considered stale if no heartbeat in this many milliseconds
+const STALE_TIMEOUT_MS = 2 * 60 * 1000 // 2 minutes
 
 const ANTHROPIC_API_KEY = 'anthropic_api_key'
 
@@ -54,6 +57,14 @@ function isMiriadCloud(runtime: Runtime): boolean {
   return runtime.name === 'Miriad Cloud'
 }
 
+// Check if runtime is stale (no heartbeat in STALE_TIMEOUT_MS)
+function isRuntimeStale(runtime: Runtime): boolean {
+  if (!runtime.lastSeenAt) return true
+  const lastSeen = new Date(runtime.lastSeenAt).getTime()
+  const now = Date.now()
+  return now - lastSeen > STALE_TIMEOUT_MS
+}
+
 export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settingsOpen, onRuntimeStatusChange, onDisconnectedStateChange }: RuntimeStatusDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [runtimes, setRuntimes] = useState<Runtime[]>([])
@@ -62,6 +73,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   const [runtimeAgents, setRuntimeAgents] = useState<Record<string, RuntimeAgent[]>>({})
   const [loadingAgents, setLoadingAgents] = useState<Set<string>>(new Set())
   const [startingCloud, setStartingCloud] = useState(false)
+  const [stoppingCloud, setStoppingCloud] = useState(false)
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null)
   const [hasCheckedRuntimes, setHasCheckedRuntimes] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -69,7 +81,8 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   const prevRuntimeStatusesRef = useRef<Map<string, 'online' | 'offline'>>(new Map())
 
   // Determine overall status (computed early so it can be used in effects)
-  const onlineRuntimes = runtimes.filter(r => r.status === 'online')
+  // A runtime is considered "effectively online" if status is online AND not stale
+  const onlineRuntimes = runtimes.filter(r => r.status === 'online' && !isRuntimeStale(r))
   const hasAnyOnline = onlineRuntimes.length > 0
   const totalOnline = onlineRuntimes.length
 
@@ -199,6 +212,20 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
     } catch (err) {
       console.error('Failed to start Miriad Cloud:', err)
       setStartingCloud(false)
+    }
+  }
+
+  async function stopMiriadCloud() {
+    setStoppingCloud(true)
+    try {
+      await apiPost(`${apiHost}/api/runtimes/miriad-cloud/stop`, {})
+      await fetchRuntimes()
+      // Reset startingCloud in case user stopped before the 30s timeout elapsed
+      setStartingCloud(false)
+    } catch (err) {
+      console.error('Failed to stop Miriad Cloud:', err)
+    } finally {
+      setStoppingCloud(false)
     }
   }
 
@@ -358,6 +385,9 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                   const agents = runtimeAgents[runtime.id] || []
                   const isLoadingAgents = loadingAgents.has(runtime.id)
                   const isCloud = isMiriadCloud(runtime)
+                  const isStale = isRuntimeStale(runtime)
+                  // Effective status: online only if status is online AND not stale
+                  const isEffectivelyOnline = runtime.status === 'online' && !isStale
 
                   return (
                     <div key={runtime.id} className="border-b border-border last:border-b-0">
@@ -384,17 +414,37 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium truncate">{runtime.name}</span>
                             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                              runtime.status === 'online' ? 'bg-green-500' : 'bg-gray-400'
+                              isEffectivelyOnline ? 'bg-green-500' : 'bg-gray-400'
                             }`} />
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {runtime.agentCount} agent{runtime.agentCount !== 1 ? 's' : ''}
                             {' • '}
-                            {runtime.status === 'online'
+                            {isEffectivelyOnline
                               ? formatRelativeTime(runtime.lastSeenAt)
-                              : 'Offline'}
+                              : isStale && runtime.status === 'online'
+                                ? 'Stale'
+                                : 'Offline'}
                           </div>
                         </div>
+                        {/* Stop button for online Miriad Cloud */}
+                        {isCloud && runtime.status === 'online' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              stopMiriadCloud()
+                            }}
+                            disabled={stoppingCloud}
+                            className="flex items-center gap-1.5 px-2 py-1 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/80 disabled:opacity-50"
+                          >
+                            {stoppingCloud ? (
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Square className="w-3 h-3" />
+                            )}
+                            Stop
+                          </button>
+                        )}
                         {/* Start/Configure button for offline Miriad Cloud */}
                         {isCloud && runtime.status === 'offline' && (
                           hasApiKey === false ? (
