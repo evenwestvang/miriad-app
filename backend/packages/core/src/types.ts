@@ -588,6 +588,7 @@ export type ArtifactType =
   | 'asset'
   | 'system.mcp'
   | 'system.agent'
+  | 'system.environment'
   | 'system.focus'
   | 'system.playbook'
   | 'system.app';
@@ -944,6 +945,7 @@ export function isArtifactType(value: unknown): value is ArtifactType {
       'asset',
       'system.mcp',
       'system.agent',
+      'system.environment',
       'system.focus',
       'system.playbook',
       'system.app',

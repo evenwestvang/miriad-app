@@ -153,6 +153,23 @@ export const SystemFocusPropsSchema = z.object({
 export type SystemFocusProps = z.infer<typeof SystemFocusPropsSchema>;
 
 // =============================================================================
+// system.environment props schema
+// =============================================================================
+
+/**
+ * Schema for system.environment artifact props.
+ * Defines environment variables for agents. Secrets use the existing
+ * artifact secrets facility (stored encrypted, values never returned).
+ */
+export const SystemEnvironmentPropsSchema = z.object({
+  variables: z
+    .record(z.string())
+    .describe('Plaintext environment variables (key-value pairs)'),
+});
+
+export type SystemEnvironmentProps = z.infer<typeof SystemEnvironmentPropsSchema>;
+
+// =============================================================================
 // Schema Registry
 // =============================================================================
 
@@ -164,6 +181,7 @@ export const ARTIFACT_PROPS_SCHEMAS: Record<string, z.ZodSchema> = {
   'system.mcp': SystemMcpPropsSchema,
   'system.agent': SystemAgentPropsSchema,
   'system.focus': SystemFocusPropsSchema,
+  'system.environment': SystemEnvironmentPropsSchema,
 };
 
 /**
@@ -175,7 +193,7 @@ export const SYSTEM_ARTIFACT_TYPES = Object.keys(ARTIFACT_PROPS_SCHEMAS);
  * All artifact types that have props schemas defined.
  * For full artifact type list, see ArtifactType in types.ts.
  */
-export const PROPS_SCHEMA_TYPES = ['system.agent', 'system.focus', 'system.mcp'] as const;
+export const PROPS_SCHEMA_TYPES = ['system.agent', 'system.environment', 'system.focus', 'system.mcp'] as const;
 
 export type PropsSchemaType = (typeof PROPS_SCHEMA_TYPES)[number];
 
