@@ -29,6 +29,8 @@ export interface DeliverMessageMessage {
   sender: string;
   systemPrompt?: string;
   mcpServers?: McpServerConfig[];
+  /** Resolved environment variables and secrets for this request */
+  environment?: Record<string, string>;
 }
 
 export interface SuspendAgentMessage {
@@ -254,6 +256,8 @@ export interface AgentState {
   workspacePath: string;
   systemPrompt: string;
   mcpServers?: McpServerConfig[];
+  /** Per-request environment variables and secrets */
+  environment?: Record<string, string>;
   activatedAt: string;
   lastActivity: string;
 }
