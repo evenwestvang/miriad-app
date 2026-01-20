@@ -149,6 +149,26 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
             valuePlaceholder="value or ${ENV_REF}"
           />
 
+          {/* Environment Variables and Secrets */}
+          {channel && mcpSlug ? (
+            <EnvEditor
+              variables={props.env || {}}
+              secrets={secrets || {}}
+              artifactSlug={mcpSlug}
+              channelId={channel}
+              onVariablesChange={(variables) => onChange({ env: Object.keys(variables).length > 0 ? variables : undefined })}
+              showExpansionHint
+            />
+          ) : (
+            <KeyValueEditor
+              label="Environment Variables"
+              entries={envToEntries(props.env)}
+              onChange={(entries) => onChange({ env: entriesToEnv(entries) })}
+              keyPlaceholder="VARIABLE_NAME"
+              valuePlaceholder="value or ${ENV_REF}"
+            />
+          )}
+
           {/* OAuth Authentication Section */}
           <div className="rounded-md border bg-secondary/10">
             {/* OAuth header with toggle */}
