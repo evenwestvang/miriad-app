@@ -187,10 +187,16 @@ async function handleRuntimeMessage(
         await handlers.handleFrame(state, message);
         return { statusCode: 200, body: 'OK' };
 
-      case 'pong':
-        // Pong is just a heartbeat acknowledgment - no action needed in Lambda
-        // (API Gateway handles the ping/pong at transport level)
+      case 'pong': {
+        // Update lastSeenAt on pong so frontend staleness check works
+        if (state.runtimeId) {
+          const storageInstance = await getStorage();
+          await storageInstance.updateRuntime(state.runtimeId, {
+            lastSeenAt: new Date().toISOString(),
+          });
+        }
         return { statusCode: 200, body: 'OK' };
+      }
 
       default:
         console.warn(`[WebSocket] Unknown runtime message type: ${(message as { type: string }).type}`);

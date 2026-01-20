@@ -46,19 +46,8 @@ interface AgentSummonPickerProps {
 
 type PickerState = 'browse' | 'configure'
 
-// Local storage key for remembering the last used runtime
+// Local storage key for remembering the last used runtime (fallback)
 const LAST_RUNTIME_KEY = 'cast:lastUsedRuntime'
-
-/**
- * Get the last used runtime ID from local storage.
- */
-function getLastUsedRuntime(): string | null {
-  try {
-    return localStorage.getItem(LAST_RUNTIME_KEY)
-  } catch {
-    return null
-  }
-}
 
 /**
  * Save the last used runtime ID to local storage.
@@ -118,7 +107,7 @@ export function AgentSummonPicker({
 
   // Runtime state
   const [runtimes, setRuntimes] = useState<RuntimeOption[]>([])
-  const [selectedRuntimeId, setSelectedRuntimeId] = useState<string>('cloud')
+  const [selectedRuntimeId, setSelectedRuntimeId] = useState<string>('')
   const [isLoadingRuntimes, setIsLoadingRuntimes] = useState(false)
 
   // Refs
@@ -259,18 +248,28 @@ export function AgentSummonPicker({
       )
       setRuntimes(onlineRuntimes)
 
-      // Select the last used runtime if available, otherwise fall back to first available
-      const lastUsed = getLastUsedRuntime()
-      const availableIds = ['cloud', ...onlineRuntimes.map((r: RuntimeOption) => r.id)]
+      // Priority for default runtime selection:
+      // 1. Runtime of existing agents in the channel roster (sticky per-channel)
+      // 2. Miriad Cloud if available
+      // 3. First available runtime
+      const availableIds = onlineRuntimes.map((r: RuntimeOption) => r.id)
+      const miriadCloud = onlineRuntimes.find((r: RuntimeOption) => r.name === 'Miriad Cloud')
 
-      if (lastUsed && availableIds.includes(lastUsed)) {
-        setSelectedRuntimeId(lastUsed)
+      // Check if any roster agent has a runtime that's still online
+      const rosterRuntimeId = roster.find(a => a.runtimeId && availableIds.includes(a.runtimeId))?.runtimeId
+
+      if (rosterRuntimeId) {
+        // Use the same runtime as existing agents in this channel
+        setSelectedRuntimeId(rosterRuntimeId)
+      } else if (miriadCloud) {
+        // Prefer Miriad Cloud as the default for new channels
+        setSelectedRuntimeId(miriadCloud.id)
       } else if (onlineRuntimes.length > 0) {
         // Fall back to first available runtime
         setSelectedRuntimeId(onlineRuntimes[0].id)
       } else {
-        // Fall back to cloud
-        setSelectedRuntimeId('cloud')
+        // No runtimes available
+        setSelectedRuntimeId('')
       }
     } catch (err) {
       console.warn('Failed to load runtimes:', err)
@@ -278,7 +277,7 @@ export function AgentSummonPicker({
     } finally {
       setIsLoadingRuntimes(false)
     }
-  }, [apiHost, spaceId])
+  }, [apiHost, spaceId, roster])
 
   // Validate callsign
   const validateCallsign = (value: string): string | null => {
@@ -331,13 +330,11 @@ export function AgentSummonPicker({
     setCallsignError(null)
 
     try {
-      // Build request body - only include runtimeId if not using cloud
+      // Build request body with required runtimeId
       const requestBody: Record<string, string> = {
         agentType: selectedAgent.slug,
         callsign,
-      }
-      if (selectedRuntimeId !== 'cloud') {
-        requestBody.runtimeId = selectedRuntimeId
+        runtimeId: selectedRuntimeId,
       }
 
       const response = await apiFetch(`${apiHost}/channels/${channelId}/agents`, {
@@ -533,7 +530,6 @@ export function AgentSummonPicker({
                   disabled={isSubmitting || isLoadingRuntimes}
                   className="w-full px-2 py-1.5 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary appearance-none pr-8"
                 >
-                  <option value="cloud">Legacy Miriad Cloud</option>
                   {runtimes.map((runtime) => (
                     <option key={runtime.id} value={runtime.id}>
                       {runtime.name}
@@ -543,8 +539,8 @@ export function AgentSummonPicker({
                 <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
               </div>
               {runtimes.length === 0 && !isLoadingRuntimes && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  No local runtimes connected
+                <p className="text-xs text-destructive mt-1">
+                  No runtimes online. Start Miriad Cloud or connect a local runtime.
                 </p>
               )}
             </div>
@@ -560,10 +556,10 @@ export function AgentSummonPicker({
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={isSubmitting || !!callsignError || !callsign}
+                disabled={isSubmitting || !!callsignError || !callsign || !selectedRuntimeId}
                 className={cn(
                   "px-3 py-1.5 text-xs rounded font-medium flex items-center gap-1",
-                  isSubmitting || callsignError || !callsign
+                  isSubmitting || callsignError || !callsign || !selectedRuntimeId
                     ? "bg-secondary text-muted-foreground cursor-not-allowed"
                     : "bg-primary text-primary-foreground hover:bg-primary/90"
                 )}

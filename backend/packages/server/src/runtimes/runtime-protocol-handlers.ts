@@ -476,10 +476,16 @@ export function createRuntimeProtocolHandlers(
         // Parse agent ID to get channel and callsign
         const { channelId, callsign } = parseAgentId(agentId);
 
+        const now = new Date().toISOString();
+
+        // Update runtime lastSeenAt so frontend staleness check works
+        await storage.updateRuntime(state.runtimeId, {
+          lastSeenAt: now,
+        });
+
         // Update roster lastHeartbeat
         const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
         if (rosterEntry) {
-          const now = new Date().toISOString();
           await storage.updateRosterEntry(channelId, rosterEntry.id, {
             lastHeartbeat: now,
           });

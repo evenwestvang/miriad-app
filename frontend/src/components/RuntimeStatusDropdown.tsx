@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { Monitor, RefreshCw, ChevronDown, ChevronRight, Bot, Cloud, Play, Settings, Square } from 'lucide-react'
-import { apiFetch, apiPost, apiJson } from '../lib/api'
+import { Monitor, RefreshCw, ChevronDown, ChevronRight, Bot, Cloud, Play, Settings, Square, Trash2 } from 'lucide-react'
+import { apiFetch, apiPost, apiJson, apiDelete } from '../lib/api'
 
 // Runtime is considered stale if no heartbeat in this many milliseconds
 const STALE_TIMEOUT_MS = 2 * 60 * 1000 // 2 minutes
@@ -74,6 +74,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   const [loadingAgents, setLoadingAgents] = useState<Set<string>>(new Set())
   const [startingCloud, setStartingCloud] = useState(false)
   const [stoppingCloud, setStoppingCloud] = useState(false)
+  const [deletingRuntime, setDeletingRuntime] = useState<string | null>(null)
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null)
   const [hasCheckedRuntimes, setHasCheckedRuntimes] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -226,6 +227,18 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
       console.error('Failed to stop Miriad Cloud:', err)
     } finally {
       setStoppingCloud(false)
+    }
+  }
+
+  async function deleteRuntime(runtimeId: string) {
+    setDeletingRuntime(runtimeId)
+    try {
+      await apiDelete(`${apiHost}/api/spaces/${spaceId}/runtimes/${runtimeId}`)
+      await fetchRuntimes()
+    } catch (err) {
+      console.error('Failed to delete runtime:', err)
+    } finally {
+      setDeletingRuntime(null)
     }
   }
 
@@ -475,6 +488,24 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                               Start
                             </button>
                           )
+                        )}
+                        {/* Delete button for stale non-Miriad Cloud runtimes */}
+                        {!isCloud && isStale && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              deleteRuntime(runtime.id)
+                            }}
+                            disabled={deletingRuntime === runtime.id}
+                            className="flex items-center gap-1.5 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 rounded disabled:opacity-50"
+                            title="Remove stale runtime"
+                          >
+                            {deletingRuntime === runtime.id ? (
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-3 h-3" />
+                            )}
+                          </button>
                         )}
                       </div>
 

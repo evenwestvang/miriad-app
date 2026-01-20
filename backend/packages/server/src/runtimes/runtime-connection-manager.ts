@@ -325,9 +325,18 @@ export function createRuntimeConnectionManager(
 
   /**
    * Handle pong - local dev only (ping/pong heartbeat)
+   * Updates both in-memory lastPong and persists lastSeenAt to DB
+   * so the frontend staleness check works correctly.
    */
-  function handlePong(connection: RuntimeConnection, _message: PongMessage): void {
+  async function handlePong(connection: RuntimeConnection, _message: PongMessage): Promise<void> {
     connection.lastPong = new Date();
+
+    // Persist lastSeenAt to DB so frontend staleness check works
+    if (connection.runtimeId) {
+      await storage.updateRuntime(connection.runtimeId, {
+        lastSeenAt: new Date().toISOString(),
+      });
+    }
   }
 
   // ==========================================================================
@@ -496,7 +505,7 @@ export function createRuntimeConnectionManager(
               break;
 
             case 'pong':
-              handlePong(connection, message);
+              await handlePong(connection, message);
               break;
 
             default:
