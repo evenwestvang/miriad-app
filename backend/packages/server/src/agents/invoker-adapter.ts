@@ -140,6 +140,12 @@ export function createAgentInvokerAdapter(
               // Resolve environment variables and secrets for this channel
               const environment = await agentManager.resolveEnvironment(spaceId, channelId);
 
+              // Add tunnel credentials to environment (per-agent, for cast-tunnel script)
+              if (rosterEntry.tunnelHash) {
+                environment.TUNNEL_HASH = rosterEntry.tunnelHash;
+              }
+              environment.CAST_AUTH_TOKEN = authToken;
+
               const deliverMessage: DeliverMessageMessage = {
                 type: 'message',
                 agentId,
