@@ -496,11 +496,20 @@ export class AgentManager {
       const mcpServers: Record<string, unknown> = {};
       for (const server of state.mcpServers) {
         if (server.transport === 'stdio') {
+          // Rewrite localhost URLs in env vars for Docker compatibility
+          const rewrittenEnv = server.env
+            ? Object.fromEntries(
+                Object.entries(server.env).map(([key, value]) => [
+                  key,
+                  typeof value === 'string' ? rewriteUrlForDocker(value) : value,
+                ])
+              )
+            : undefined;
           mcpServers[server.name] = {
             type: 'stdio' as const,
             command: server.command,
             args: server.args,
-            env: server.env,
+            env: rewrittenEnv,
             cwd: server.cwd,
           };
         } else if ((server.transport === 'sse' || server.transport === 'http') && server.url) {

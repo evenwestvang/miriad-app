@@ -68,6 +68,10 @@ RUN npm install -g @anthropic-ai/claude-code
 COPY agents/miriad-cloud/scripts/cast-tunnel /usr/local/bin/cast-tunnel
 RUN chmod +x /usr/local/bin/cast-tunnel
 
+# Install entrypoint script (ensures workspace dirs exist on volume mount)
+COPY agents/miriad-cloud/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Create workspace and app directories
 RUN mkdir -p /workspace /app
 WORKDIR /app
@@ -109,4 +113,5 @@ ENV PATH="/workspace/.npm-global/bin:$PATH"
 
 # Run local-runtime CLI with 15 minute idle timeout
 # Container will exit after 15 minutes of inactivity
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["node", "/app/dist/cli.js", "start", "--idle-timeout", "15"]

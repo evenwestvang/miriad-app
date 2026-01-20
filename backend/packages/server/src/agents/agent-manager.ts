@@ -568,6 +568,21 @@ export class AgentManager {
       };
       console.log(`[AgentManager] Adding cast MCP:`, JSON.stringify(castMcp));
       configs.push(castMcp);
+
+      // Add assets-mcp for file upload/download (stdio-based, requires filesystem access)
+      const assetsMcp = {
+        name: 'assets',
+        transport: 'stdio' as const,
+        command: 'npx',
+        args: ['--yes', '@miriad-systems/assets-mcp'],
+        env: {
+          CAST_API_URL: this.config.platformMcpUrl,
+          CAST_CHANNEL_ID: channelId,
+          CAST_CONTAINER_TOKEN: authToken,
+        },
+      };
+      console.log(`[AgentManager] Adding assets MCP`);
+      configs.push(assetsMcp);
     } else {
       console.warn(`[AgentManager] Cast MCP NOT added - platformMcpUrl: ${this.config.platformMcpUrl ? 'present' : 'missing'}, authToken: ${authToken ? 'present' : 'missing'}`);
     }
@@ -577,9 +592,11 @@ export class AgentManager {
     console.log(`[AgentManager] App MCPs: ${appConfigs.length} configured`);
     configs.push(...appConfigs);
 
-    // Expand ${VAR} references in all configs (except cast which has no vars)
+    // Expand ${VAR} references in all configs (except built-in MCPs which have no vars)
     const expandedConfigs = configs.map((config) =>
-      config.name === 'cast' ? config : this.expandMcpConfig(config, sharedEnv)
+      config.name === 'cast' || config.name === 'assets'
+        ? config
+        : this.expandMcpConfig(config, sharedEnv)
     );
 
     console.log(`[AgentManager] Total MCP configs for channelId ${channelId}: ${expandedConfigs.length}`);
