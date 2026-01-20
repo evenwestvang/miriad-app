@@ -127,6 +127,14 @@ export function EnvEditor({
     setEditingIndex(null)
     setEditKey('')
     setEditValue('')
+
+    // Flush immediately after committing
+    const validEntries = newEntries.filter(e => e.key.trim() !== '' && isValidEnvKey(e.key))
+    const newVars = validEntries.reduce((acc, { key, value }) => {
+      acc[key] = value
+      return acc
+    }, {} as Record<string, string>)
+    onVariablesChange(newVars)
   }
 
   const handleStartEdit = (index: number) => {
