@@ -164,6 +164,7 @@ export type SystemFocusProps = z.infer<typeof SystemFocusPropsSchema>;
 export const SystemEnvironmentPropsSchema = z.object({
   variables: z
     .record(z.string())
+    .default({})
     .describe('Plaintext environment variables (key-value pairs)'),
 });
 
