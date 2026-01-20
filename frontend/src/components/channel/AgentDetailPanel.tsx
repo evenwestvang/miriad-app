@@ -198,8 +198,63 @@ export function AgentDetailPanel({
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Kebab menu for actions */}
-          <div className="relative" ref={menuRef}>
+          {/* Desktop: inline action buttons */}
+          <div className="hidden sm:flex items-center gap-1">
+            {agent.isPaused ? (
+              <button
+                onClick={handleResume}
+                disabled={actionLoading !== null}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1 text-sm",
+                  "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
+              >
+                {actionLoading === 'resume' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Bot className="w-4 h-4" />
+                )}
+                Unmute
+              </button>
+            ) : (
+              <button
+                onClick={handlePause}
+                disabled={actionLoading !== null}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1 text-sm",
+                  "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
+              >
+                {actionLoading === 'pause' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <BotOff className="w-4 h-4" />
+                )}
+                Mute
+              </button>
+            )}
+            <button
+              onClick={handleDismiss}
+              disabled={actionLoading !== null}
+              className={cn(
+                "flex items-center gap-1.5 px-2 py-1 text-sm",
+                "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]",
+                "disabled:opacity-50 disabled:cursor-not-allowed"
+              )}
+            >
+              {actionLoading === 'dismiss' ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Bed className="w-4 h-4" />
+              )}
+              Dismiss
+            </button>
+          </div>
+
+          {/* Mobile: kebab menu */}
+          <div className="relative sm:hidden" ref={menuRef}>
             <button
               onClick={() => setMenuOpen(!menuOpen)}
               className="p-1 text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]"
