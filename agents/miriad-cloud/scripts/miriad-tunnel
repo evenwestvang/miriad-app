@@ -1,8 +1,8 @@
 #!/bin/bash
-# cast-tunnel - Expose your HTTP services to the internet
+# miriad-tunnel - Expose your HTTP services to the internet
 #
 # This tool lets you make local web servers accessible via public URLs.
-# When you run a web server inside your container, use cast-tunnel to
+# When you run a web server inside your container, use miriad-tunnel to
 # create a public URL that anyone can access.
 
 set -e
@@ -212,7 +212,7 @@ cmd_map() {
 
     # Validate port
     if [ -z "$local_port" ]; then
-        log_error "Usage: cast-tunnel map <port> [service-name]"
+        log_error "Usage: miriad-tunnel map <port> [service-name]"
         return 1
     fi
 
@@ -320,8 +320,8 @@ cmd_unmap() {
     local service_name="$1"
 
     if [ -z "$service_name" ]; then
-        log_error "Usage: cast-tunnel unmap <service-name>"
-        log_error "Use 'cast-tunnel unmap-all' to unmap all services"
+        log_error "Usage: miriad-tunnel unmap <service-name>"
+        log_error "Use 'miriad-tunnel unmap-all' to unmap all services"
         return 1
     fi
 
@@ -403,7 +403,7 @@ cmd_status() {
     if [ -z "$services" ]; then
         echo "Services: (none mapped)"
         echo ""
-        echo "Use 'cast-tunnel map <port> [name]' to expose a service"
+        echo "Use 'miriad-tunnel map <port> [name]' to expose a service"
     else
         echo "Services:"
         for service_id in $services; do
@@ -458,15 +458,15 @@ cmd_down() {
 
 cmd_help() {
     cat << 'EOF'
-cast-tunnel - Expose your HTTP services to the internet
+miriad-tunnel - Expose your HTTP services to the internet
 
 This tool lets you make local web servers accessible via public URLs.
-When you run a web server inside your container, use cast-tunnel to
+When you run a web server inside your container, use miriad-tunnel to
 create a public URL that anyone can access.
 
 Commands:
   map <port> [name]   Expose a local port as a public URL
-                      Example: cast-tunnel map 8080 web
+                      Example: miriad-tunnel map 8080 web
                       Creates: https://web-{hash}.cast-stack.site
 
   unmap <name>        Stop exposing a service
@@ -480,12 +480,12 @@ Commands:
 
 Quick Start:
   1. Start your web server:  python3 -m http.server 8080
-  2. Expose it:              cast-tunnel map 8080
+  2. Expose it:              miriad-tunnel map 8080
   3. Share the URL shown in the output
 
 Multiple Services:
-  cast-tunnel map 8080 web    # -> https://web-{hash}.cast-stack.site
-  cast-tunnel map 3000 api    # -> https://api-{hash}.cast-stack.site
+  miriad-tunnel map 8080 web    # -> https://web-{hash}.cast-stack.site
+  miriad-tunnel map 3000 api    # -> https://api-{hash}.cast-stack.site
 
 Service names must be alphanumeric lowercase, max 20 characters.
 Maximum 10 services per container.
