@@ -234,7 +234,7 @@ function AttachmentCard({ attachment, blobUrl, icon: Icon, subtitle }: Attachmen
     <div className="flex items-center gap-3 py-2.5 px-3 bg-[#fafafa] dark:bg-[var(--cast-bg-active)] border border-[var(--cast-border-default)] hover:border-[#ccc] transition-colors">
       <Icon className="w-5 h-5 text-[var(--cast-text-secondary)] flex-shrink-0" />
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium truncate text-[var(--cast-text-primary)]">{attachment.filename}</div>
+        <div className="text-base font-medium truncate text-[var(--cast-text-primary)]">{attachment.filename}</div>
         <div className="text-xs text-[var(--cast-text-muted)]">
           {subtitle || formatFileSize(attachment.size)}
         </div>
@@ -273,7 +273,7 @@ function AttachmentLoading({ attachment }: { attachment: Attachment }) {
     <div className="flex items-center gap-3 py-2.5 px-3 bg-[#fafafa] dark:bg-[var(--cast-bg-active)] border border-[var(--cast-border-default)] animate-pulse">
       <Icon className="w-5 h-5 text-[var(--cast-text-secondary)] flex-shrink-0" />
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium truncate text-[var(--cast-text-primary)]">{attachment.filename}</div>
+        <div className="text-base font-medium truncate text-[var(--cast-text-primary)]">{attachment.filename}</div>
         <div className="text-xs text-[var(--cast-text-muted)] flex items-center gap-1">
           <Loader2 className="w-3 h-3 animate-spin" />
           Loading...
@@ -294,7 +294,7 @@ function AttachmentError({ attachment, error }: { attachment: Attachment; error:
     <div className="flex items-center gap-3 py-2.5 px-3 bg-destructive/10 border border-destructive/30">
       <Icon className="w-5 h-5 text-destructive flex-shrink-0" />
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium truncate">{attachment.filename}</div>
+        <div className="text-base font-medium truncate">{attachment.filename}</div>
         <div className="text-xs text-destructive flex items-center gap-1">
           <AlertCircle className="w-3 h-3" />
           {error}

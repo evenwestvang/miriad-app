@@ -57,7 +57,7 @@ function SpawnDialog({ agents, isOpen, onClose, onCreate }: SpawnDialogProps) {
         className="relative bg-card border border-border rounded-lg p-4 w-80 shadow-lg"
         onKeyDown={handleKeyDown}
       >
-        <h3 className="text-sm font-semibold text-foreground mb-4">New Thread</h3>
+        <h3 className="text-base font-semibold text-foreground mb-4">New Thread</h3>
 
         <div className="space-y-4">
           <div>
@@ -65,7 +65,7 @@ function SpawnDialog({ agents, isOpen, onClose, onCreate }: SpawnDialogProps) {
               Agent Type
             </label>
             <select
-              className="w-full px-3 py-2 bg-secondary text-foreground text-sm rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full px-3 py-2 bg-secondary text-foreground text-base rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-primary"
               value={selectedAgentId}
               onChange={(e) => setSelectedAgentId(e.target.value)}
               autoFocus
@@ -85,7 +85,7 @@ function SpawnDialog({ agents, isOpen, onClose, onCreate }: SpawnDialogProps) {
             </label>
             <input
               type="text"
-              className="w-full px-3 py-2 bg-secondary text-foreground text-sm rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground"
+              className="w-full px-3 py-2 bg-secondary text-foreground text-base rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground"
               placeholder="e.g., My Assistant"
               value={threadName}
               onChange={(e) => setThreadName(e.target.value)}
@@ -95,14 +95,14 @@ function SpawnDialog({ agents, isOpen, onClose, onCreate }: SpawnDialogProps) {
 
         <div className="flex justify-end gap-2 mt-4">
           <button
-            className="px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="px-3 py-1.5 text-base text-muted-foreground hover:text-foreground transition-colors"
             onClick={onClose}
           >
             Cancel
           </button>
           <button
             className={cn(
-              'px-3 py-1.5 text-sm rounded-md transition-colors',
+              'px-3 py-1.5 text-base rounded-md transition-colors',
               selectedAgentId
                 ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                 : 'bg-secondary text-muted-foreground cursor-not-allowed'
@@ -147,7 +147,7 @@ export function ThreadList({
       <div className="px-4 pt-4 pb-2">
         <button
           ref={newChannelButtonRef}
-          className="flex items-center gap-1.5 px-0 py-1.5 text-sm text-[#8c8c8c] hover:text-[#1a1a1a] dark:hover:text-[#f5f5f5] transition-colors mb-2"
+          className="flex items-center gap-1.5 px-0 py-1.5 text-base text-[#8c8c8c] hover:text-[#1a1a1a] dark:hover:text-[#f5f5f5] transition-colors mb-2"
           onClick={handleNewClick}
           title="New channel"
         >
@@ -163,9 +163,9 @@ export function ThreadList({
       <div className="flex-1 overflow-y-auto py-1">
         {threads.length === 0 && !isCreatingThread ? (
           <div className="flex flex-col items-center justify-center h-40 text-center px-4">
-            <p className="text-muted-foreground text-sm mb-2">No threads yet</p>
+            <p className="text-muted-foreground text-base mb-2">No threads yet</p>
             <button
-              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-border rounded-md hover:bg-secondary/50 transition-colors"
+              className="flex items-center gap-1 px-3 py-1.5 text-base border border-border rounded-md hover:bg-secondary/50 transition-colors"
               onClick={handleNewClick}
             >
               <Plus className="w-4 h-4" />
@@ -179,7 +179,7 @@ export function ThreadList({
               {isCreatingThread && (
                 <li className="flex items-center gap-2 px-4 py-1.5 bg-[var(--cast-bg-hover)]">
                   <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-                  <span className="text-sm text-[var(--cast-text-muted)]">Creating...</span>
+                  <span className="text-base text-[var(--cast-text-muted)]">Creating...</span>
                 </li>
               )}
               {threads.filter(t => t.agentName !== 'root').map((thread) => (
@@ -195,7 +195,7 @@ export function ThreadList({
                     onClick={() => onSelectThread(thread.id)}
                   >
                     <span className="text-[var(--cast-text-subtle)]">#</span>
-                    <span className="text-sm truncate">
+                    <span className="text-base truncate">
                       {thread.agentName}
                     </span>
                   </button>
@@ -222,7 +222,7 @@ export function ThreadList({
                     onClick={() => onSelectThread(thread.id)}
                   >
                     <Radical className="w-3 h-3 text-[var(--cast-text-subtle)]" />
-                    <span className="text-sm truncate">
+                    <span className="text-base truncate">
                       {thread.agentName}
                     </span>
                   </button>

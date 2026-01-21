@@ -16,7 +16,7 @@ interface AgentAvatarProps {
 
 const sizeClasses = {
   sm: 'w-6 h-6 text-xs',
-  md: 'w-10 h-10 text-sm',
+  md: 'w-10 h-10 text-base',
   lg: 'w-12 h-12 text-base',
 }
 

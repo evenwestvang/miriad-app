@@ -64,7 +64,7 @@ export function BoardHeader({ onCreateClick, onUploadClick, onClose, canCreate =
 
   return (
     <div className="flex items-center justify-between h-10 px-3 border-b border-border">
-      <span className="font-medium text-sm text-foreground">Board</span>
+      <span className="font-medium text-base text-foreground">Board</span>
       <div className="flex items-center gap-1">
         {/* Create dropdown */}
         <div className="relative" ref={dropdownRef}>
@@ -91,7 +91,7 @@ export function BoardHeader({ onCreateClick, onUploadClick, onClose, canCreate =
                 return (
                   <button
                     key={t.value}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-secondary/50 transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-base text-foreground hover:bg-secondary/50 transition-colors"
                     onClick={() => handleTypeSelect(t.value)}
                   >
                     <Icon className="w-4 h-4 text-muted-foreground" />

@@ -118,14 +118,14 @@ export function LoginPage({ onLogin, apiHost }: LoginPageProps) {
 
         {/* Error display */}
         {error && (
-          <div className="p-3 bg-destructive/10 text-destructive rounded-lg text-sm">
+          <div className="p-3 bg-destructive/10 text-destructive rounded-lg text-base">
             {error}
           </div>
         )}
 
         {/* Existing spaces */}
         <div className="space-y-3">
-          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+          <h2 className="text-base font-medium text-muted-foreground uppercase tracking-wide">
             Existing Spaces
           </h2>
 
@@ -134,7 +134,7 @@ export function LoginPage({ onLogin, apiHost }: LoginPageProps) {
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             </div>
           ) : spaces.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground text-sm">
+            <div className="text-center py-8 text-muted-foreground text-base">
               No spaces yet. Create your first one below.
             </div>
           ) : (
@@ -153,7 +153,7 @@ export function LoginPage({ onLogin, apiHost }: LoginPageProps) {
                       <div className="font-medium text-foreground truncate">
                         {space.name}
                       </div>
-                      <div className="text-sm text-muted-foreground">
+                      <div className="text-base text-muted-foreground">
                         @{owner.callsign}
                       </div>
                     </div>
@@ -182,7 +182,7 @@ export function LoginPage({ onLogin, apiHost }: LoginPageProps) {
         {/* Create new space form */}
         <form onSubmit={handleCreate} className="space-y-4">
           <div className="space-y-2">
-            <label htmlFor="callsign" className="block text-sm font-medium text-foreground">
+            <label htmlFor="callsign" className="block text-base font-medium text-foreground">
               Your Callsign
             </label>
             <input
@@ -200,7 +200,7 @@ export function LoginPage({ onLogin, apiHost }: LoginPageProps) {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="spaceName" className="block text-sm font-medium text-foreground">
+            <label htmlFor="spaceName" className="block text-base font-medium text-foreground">
               Space Name
             </label>
             <input
@@ -215,7 +215,7 @@ export function LoginPage({ onLogin, apiHost }: LoginPageProps) {
           </div>
 
           {createError && (
-            <div className="p-3 bg-destructive/10 text-destructive rounded-lg text-sm">
+            <div className="p-3 bg-destructive/10 text-destructive rounded-lg text-base">
               {createError}
             </div>
           )}

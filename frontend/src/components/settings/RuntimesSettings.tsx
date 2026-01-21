@@ -62,7 +62,7 @@ export function RuntimesSettings({ apiHost, spaceId: _spaceId }: RuntimesSetting
     <div className="space-y-6">
       {/* Error display */}
       {error && (
-        <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md text-sm text-destructive">
+        <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md text-base text-destructive">
           {error}
         </div>
       )}
@@ -70,7 +70,7 @@ export function RuntimesSettings({ apiHost, spaceId: _spaceId }: RuntimesSetting
       {/* Header */}
       <div>
         <h3 className="text-lg font-medium text-foreground">Connect Local Runtime</h3>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="text-base text-muted-foreground mt-1">
           Run agents on your own hardware by connecting a local runtime.
         </p>
       </div>
@@ -80,7 +80,7 @@ export function RuntimesSettings({ apiHost, spaceId: _spaceId }: RuntimesSetting
         <button
           onClick={generateBootstrapToken}
           disabled={generatingToken}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 px-3 py-1.5 text-base bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {generatingToken ? (
             <>
@@ -98,11 +98,11 @@ export function RuntimesSettings({ apiHost, spaceId: _spaceId }: RuntimesSetting
         {/* Generated command display */}
         {generatedCommand && (
           <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-base text-muted-foreground">
               Run this command on your machine:
             </p>
             <div className="relative">
-              <div className="p-3 pr-12 bg-secondary/50 border border-border rounded-md font-mono text-sm break-all">
+              <div className="p-3 pr-12 bg-secondary/50 border border-border rounded-md font-mono text-base break-all">
                 {generatedCommand}
               </div>
               <button

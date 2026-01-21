@@ -15,7 +15,7 @@ export function AssetUploadProgress({ fileName, progress, onCancel }: AssetUploa
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-        <span className="font-medium text-sm flex items-center gap-2">
+        <span className="font-medium text-base flex items-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin" />
           Uploading...
         </span>
@@ -31,7 +31,7 @@ export function AssetUploadProgress({ fileName, progress, onCancel }: AssetUploa
       {/* Progress content */}
       <div className="flex-1 flex flex-col items-center justify-center p-4">
         {/* File name */}
-        <p className="text-sm font-medium mb-4 text-center truncate max-w-full px-4">
+        <p className="text-base font-medium mb-4 text-center truncate max-w-full px-4">
           {fileName}
         </p>
 
@@ -46,14 +46,14 @@ export function AssetUploadProgress({ fileName, progress, onCancel }: AssetUploa
         </div>
 
         {/* Percentage */}
-        <p className="text-xs text-muted-foreground">
+        <p className="text-base text-muted-foreground">
           {progress}%
         </p>
 
         {/* Cancel button */}
         <button
           onClick={onCancel}
-          className="mt-4 px-3 py-1.5 text-xs rounded-md hover:bg-secondary/50 text-muted-foreground"
+          className="mt-4 px-3 py-1.5 text-base rounded-md hover:bg-secondary/50 text-muted-foreground"
         >
           Cancel
         </button>

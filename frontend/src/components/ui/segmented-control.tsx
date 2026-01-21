@@ -52,7 +52,7 @@ export function SegmentedControl<T extends string>({
             onClick={() => onChange(option.value)}
             onKeyDown={(e) => handleKeyDown(e, index)}
             className={cn(
-              'px-3 py-1.5 text-sm font-medium rounded transition-colors',
+              'px-3 py-1.5 text-base font-medium rounded transition-colors',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
               value === option.value
                 ? 'bg-primary text-primary-foreground shadow-sm'

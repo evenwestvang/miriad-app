@@ -143,7 +143,7 @@ export function KeyValueEditor({
     }
   }
 
-  const inputClasses = 'flex-1 h-8 px-2 text-sm font-mono bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary'
+  const inputClasses = 'flex-1 h-8 px-2 text-base font-mono bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary'
 
   return (
     <div
@@ -157,7 +157,7 @@ export function KeyValueEditor({
 
       <div className="rounded-md border bg-secondary/30">
         {localEntries.length === 0 ? (
-          <div className="px-3 py-2 text-sm text-muted-foreground italic">
+          <div className="px-3 py-2 text-base text-muted-foreground italic">
             No {label.toLowerCase()} configured
           </div>
         ) : (
@@ -199,14 +199,14 @@ export function KeyValueEditor({
                   // Display mode
                   <>
                     <div
-                      className="flex-1 px-2 py-1 text-sm font-mono cursor-pointer hover:bg-secondary/50 rounded truncate"
+                      className="flex-1 px-2 py-1 text-base font-mono cursor-pointer hover:bg-secondary/50 rounded truncate"
                       onClick={() => handleStartEdit(index)}
                     >
                       {entry.key || <span className="text-muted-foreground italic">{keyPlaceholder}</span>}
                     </div>
                     <div
                       className={cn(
-                        "flex-1 px-2 py-1 text-sm font-mono cursor-pointer hover:bg-secondary/50 rounded truncate",
+                        "flex-1 px-2 py-1 text-base font-mono cursor-pointer hover:bg-secondary/50 rounded truncate",
                         hasEnvReference(entry.value) && "bg-blue-500/10 text-blue-300"
                       )}
                       onClick={() => handleStartEdit(index)}
@@ -231,7 +231,7 @@ export function KeyValueEditor({
         <div className="border-t border-border">
           <button
             onClick={handleAddNew}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 w-full transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 text-base text-muted-foreground hover:text-foreground hover:bg-secondary/50 w-full transition-colors"
           >
             <Plus className="h-3.5 w-3.5" />
             Add {label.toLowerCase().replace(/s$/, '')}

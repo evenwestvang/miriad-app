@@ -65,7 +65,7 @@ export function MobileMenu({
         <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border rounded-lg shadow-lg py-1 z-50">
           {/* User callsign */}
           <div className="px-4 py-2 border-b border-border">
-            <span className="text-sm font-medium text-foreground">@{currentUser}</span>
+            <span className="text-base font-medium text-foreground">@{currentUser}</span>
           </div>
 
           {/* Settings */}
@@ -74,7 +74,7 @@ export function MobileMenu({
               onOpenSettings()
               setIsOpen(false)
             }}
-            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-foreground hover:bg-[var(--cast-bg-hover)] transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-3 text-base text-foreground hover:bg-[var(--cast-bg-hover)] transition-colors"
           >
             <Settings className="w-4 h-4 text-[var(--cast-text-muted)]" />
             Settings
@@ -86,7 +86,7 @@ export function MobileMenu({
               onToggleTheme()
               setIsOpen(false)
             }}
-            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-foreground hover:bg-[var(--cast-bg-hover)] transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-3 text-base text-foreground hover:bg-[var(--cast-bg-hover)] transition-colors"
           >
             {theme === 'light' ? (
               <>
@@ -107,7 +107,7 @@ export function MobileMenu({
               onLogout()
               setIsOpen(false)
             }}
-            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-foreground hover:bg-[var(--cast-bg-hover)] transition-colors border-t border-border"
+            className="w-full flex items-center gap-3 px-4 py-3 text-base text-foreground hover:bg-[var(--cast-bg-hover)] transition-colors border-t border-border"
           >
             <LogOut className="w-4 h-4 text-[var(--cast-text-muted)]" />
             Log Out

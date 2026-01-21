@@ -282,7 +282,7 @@ export function EnvEditor({
     }
   }
 
-  const inputClasses = 'flex-1 h-8 px-2 text-sm font-mono bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary'
+  const inputClasses = 'flex-1 h-8 px-2 text-base font-mono bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary'
 
   return (
     <div className={cn('space-y-6', className)}>
@@ -308,7 +308,7 @@ export function EnvEditor({
 
         <div className="rounded-md border bg-secondary/30">
           {localEntries.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground italic">
+            <div className="px-3 py-2 text-base text-muted-foreground italic">
               No variables configured
             </div>
           ) : (
@@ -348,14 +348,14 @@ export function EnvEditor({
                   ) : (
                     <>
                       <div
-                        className="flex-1 px-2 py-1 text-sm font-mono cursor-pointer hover:bg-secondary/50 rounded truncate"
+                        className="flex-1 px-2 py-1 text-base font-mono cursor-pointer hover:bg-secondary/50 rounded truncate"
                         onClick={() => handleStartEdit(index)}
                       >
                         {entry.key || <span className="text-muted-foreground italic">VARIABLE_NAME</span>}
                       </div>
                       <div
                         className={cn(
-                          'flex-1 px-2 py-1 text-sm font-mono cursor-pointer hover:bg-secondary/50 rounded truncate',
+                          'flex-1 px-2 py-1 text-base font-mono cursor-pointer hover:bg-secondary/50 rounded truncate',
                           hasEnvReference(entry.value) && 'bg-blue-500/10 text-blue-300'
                         )}
                         onClick={() => handleStartEdit(index)}
@@ -379,7 +379,7 @@ export function EnvEditor({
           <div className="border-t border-border">
             <button
               onClick={handleAddVariable}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 w-full transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 text-base text-muted-foreground hover:text-foreground hover:bg-secondary/50 w-full transition-colors"
             >
               <Plus className="h-3.5 w-3.5" />
               Add variable
@@ -399,7 +399,7 @@ export function EnvEditor({
 
         <div className="rounded-md border bg-secondary/30">
           {secretsList.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground italic">
+            <div className="px-3 py-2 text-base text-muted-foreground italic">
               No secrets configured
             </div>
           ) : (
@@ -409,7 +409,7 @@ export function EnvEditor({
                   key={key}
                   className="flex items-center gap-2 px-2 py-1.5 group"
                 >
-                  <div className="flex-1 px-2 py-1 text-sm font-mono truncate">
+                  <div className="flex-1 px-2 py-1 text-base font-mono truncate">
                     {key}
                   </div>
                   <div className="flex-1 px-2 py-1 text-xs text-muted-foreground truncate">
@@ -437,7 +437,7 @@ export function EnvEditor({
           <div className="border-t border-border">
             <button
               onClick={handleAddSecret}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 w-full transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 text-base text-muted-foreground hover:text-foreground hover:bg-secondary/50 w-full transition-colors"
             >
               <Plus className="h-3.5 w-3.5" />
               Add secret
@@ -451,7 +451,7 @@ export function EnvEditor({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-background border rounded-lg shadow-xl w-full max-w-md mx-4">
             <div className="px-4 py-3 border-b">
-              <h3 className="text-sm font-medium">
+              <h3 className="text-base font-medium">
                 {secretModalMode === 'add' ? 'Add Secret' : `Update Secret: ${secretModalKey}`}
               </h3>
             </div>
@@ -468,7 +468,7 @@ export function EnvEditor({
                     onChange={(e) => setSecretModalKey(e.target.value)}
                     placeholder="SECRET_NAME"
                     className={cn(
-                      'w-full h-9 px-3 text-sm font-mono bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary',
+                      'w-full h-9 px-3 text-base font-mono bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary',
                       !isValidEnvKey(secretModalKey) && secretModalKey && 'border-red-500'
                     )}
                   />
@@ -485,7 +485,7 @@ export function EnvEditor({
                     value={secretModalValue}
                     onChange={(e) => setSecretModalValue(e.target.value)}
                     placeholder="Enter secret value"
-                    className="w-full h-9 px-3 pr-10 text-sm font-mono bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="w-full h-9 px-3 pr-10 text-base font-mono bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                   <button
                     type="button"
@@ -511,7 +511,7 @@ export function EnvEditor({
             <div className="px-4 py-3 border-t flex justify-end gap-2">
               <button
                 onClick={() => setSecretModalOpen(false)}
-                className="px-3 py-1.5 text-sm rounded border border-border hover:bg-secondary transition-colors"
+                className="px-3 py-1.5 text-base rounded border border-border hover:bg-secondary transition-colors"
                 disabled={secretSaving}
               >
                 Cancel
@@ -519,7 +519,7 @@ export function EnvEditor({
               <button
                 onClick={handleSaveSecret}
                 disabled={secretSaving}
-                className="px-3 py-1.5 text-sm rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                className="px-3 py-1.5 text-base rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
                 {secretSaving ? 'Saving...' : 'Save'}
               </button>

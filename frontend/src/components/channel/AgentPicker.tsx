@@ -168,7 +168,7 @@ export function AgentPicker({
     >
       <div className="p-3 border-b border-border">
         <div className="flex items-center justify-between">
-          <span className="font-medium text-sm">Add Agent</span>
+          <span className="font-medium text-base">Add Agent</span>
           <button
             onClick={onClose}
             className="p-1 rounded hover:bg-secondary/50 text-muted-foreground"
@@ -185,7 +185,7 @@ export function AgentPicker({
           <select
             value={selectedType}
             onChange={(e) => setSelectedType(e.target.value)}
-            className="w-full px-2 py-1.5 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+            className="w-full px-2 py-1.5 text-base bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
             disabled={isLoading}
           >
             {agentTypes.map((type) => (
@@ -216,7 +216,7 @@ export function AgentPicker({
             }}
             placeholder="e.g., owl"
             className={cn(
-              "w-full px-2 py-1.5 text-sm bg-background border rounded focus:outline-none focus:ring-1",
+              "w-full px-2 py-1.5 text-base bg-background border rounded focus:outline-none focus:ring-1",
               error
                 ? "border-destructive focus:ring-destructive"
                 : "border-border focus:ring-primary"

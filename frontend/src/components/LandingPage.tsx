@@ -34,7 +34,7 @@ export function LandingPage({ onLogin }: LandingPageProps) {
 
         {/* Placeholder for marketing content */}
         <div className="space-y-4 py-8">
-          <div className="text-sm text-muted-foreground">
+          <div className="text-base text-muted-foreground">
             Orchestrate AI agents to work together on complex tasks.
           </div>
         </div>

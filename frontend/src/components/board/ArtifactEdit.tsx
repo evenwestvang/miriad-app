@@ -202,10 +202,10 @@ export function ArtifactEdit({
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-        <span className="font-medium text-sm text-foreground">Edit: {artifact.slug}</span>
+        <span className="font-medium text-base text-foreground">Edit: {artifact.slug}</span>
         <div className="flex items-center gap-2">
           <button
-            className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="px-2 py-1 text-base text-muted-foreground hover:text-foreground transition-colors"
             onClick={onCancel}
             disabled={saving}
           >
@@ -213,7 +213,7 @@ export function ArtifactEdit({
           </button>
           <button
             className={cn(
-              "px-2 py-1 text-xs rounded transition-colors",
+              "px-2 py-1 text-base rounded transition-colors",
               hasChanges && !saving
                 ? "bg-primary text-primary-foreground hover:bg-primary/90"
                 : "bg-secondary text-muted-foreground cursor-not-allowed"
@@ -228,7 +228,7 @@ export function ArtifactEdit({
 
       {/* Error display */}
       {error && (
-        <div className="px-3 py-2 bg-red-100 text-red-700 text-sm">
+        <div className="px-3 py-2 bg-red-100 text-red-700 text-base">
           {error}
         </div>
       )}
@@ -239,25 +239,25 @@ export function ArtifactEdit({
           <div className="flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <div className="font-medium text-sm text-yellow-800">Edit Conflict</div>
-              <div className="text-xs text-yellow-700 mt-1">
+              <div className="font-medium text-base text-yellow-800">Edit Conflict</div>
+              <div className="text-base text-yellow-700 mt-1">
                 The field "{conflict.field}" was modified by someone else while you were editing.
               </div>
               <div className="flex gap-2 mt-2">
                 <button
-                  className="px-2 py-1 text-xs bg-yellow-200 text-yellow-800 rounded hover:bg-yellow-300"
+                  className="px-2 py-1 text-base bg-yellow-200 text-yellow-800 rounded hover:bg-yellow-300"
                   onClick={handleOverwrite}
                 >
                   Overwrite
                 </button>
                 <button
-                  className="px-2 py-1 text-xs text-yellow-700 hover:text-yellow-900"
+                  className="px-2 py-1 text-base text-yellow-700 hover:text-yellow-900"
                   onClick={() => window.location.reload()}
                 >
                   Reload
                 </button>
                 <button
-                  className="px-2 py-1 text-xs text-yellow-700 hover:text-yellow-900"
+                  className="px-2 py-1 text-base text-yellow-700 hover:text-yellow-900"
                   onClick={() => setConflict(null)}
                 >
                   Continue Editing
@@ -272,10 +272,10 @@ export function ArtifactEdit({
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
         {/* Title */}
         <div>
-          <label className="block text-xs text-muted-foreground mb-1">Title</label>
+          <label className="block text-base text-muted-foreground mb-1">Title</label>
           <input
             type="text"
-            className="w-full px-2 py-1.5 text-sm bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+            className="w-full px-2 py-1.5 text-base bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
             placeholder="Optional display name"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -284,9 +284,9 @@ export function ArtifactEdit({
 
         {/* Type */}
         <div>
-          <label className="block text-xs text-muted-foreground mb-1">Type</label>
+          <label className="block text-base text-muted-foreground mb-1">Type</label>
           <select
-            className="w-full px-2 py-1.5 text-sm bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+            className="w-full px-2 py-1.5 text-base bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
             value={type}
             onChange={(e) => {
               const newType = e.target.value as ArtifactType
@@ -307,9 +307,9 @@ export function ArtifactEdit({
 
         {/* Status */}
         <div>
-          <label className="block text-xs text-muted-foreground mb-1">Status</label>
+          <label className="block text-base text-muted-foreground mb-1">Status</label>
           <select
-            className="w-full px-2 py-1.5 text-sm bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+            className="w-full px-2 py-1.5 text-base bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
             value={status}
             onChange={(e) => setStatus(e.target.value as ArtifactStatus)}
           >
@@ -321,9 +321,9 @@ export function ArtifactEdit({
 
         {/* TLDR */}
         <div>
-          <label className="block text-xs text-muted-foreground mb-1">TLDR (required)</label>
+          <label className="block text-base text-muted-foreground mb-1">TLDR (required)</label>
           <textarea
-            className="w-full px-2 py-1.5 text-sm bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            className="w-full px-2 py-1.5 text-base bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary resize-none"
             rows={2}
             placeholder="Brief summary (1-3 sentences)"
             value={tldr}
@@ -333,9 +333,9 @@ export function ArtifactEdit({
 
         {/* Content */}
         <div>
-          <label className="block text-xs text-muted-foreground mb-1">Content</label>
+          <label className="block text-base text-muted-foreground mb-1">Content</label>
           <textarea
-            className="w-full px-2 py-1.5 text-sm bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary font-mono resize-none"
+            className="w-full px-2 py-1.5 text-base bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary font-mono resize-none"
             rows={10}
             placeholder="Markdown content..."
             value={content}
@@ -345,9 +345,9 @@ export function ArtifactEdit({
 
         {/* Parent */}
         <div>
-          <label className="block text-xs text-muted-foreground mb-1">Parent</label>
+          <label className="block text-base text-muted-foreground mb-1">Parent</label>
           <select
-            className="w-full px-2 py-1.5 text-sm bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+            className="w-full px-2 py-1.5 text-base bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
             value={parentSlug}
             onChange={(e) => setParentSlug(e.target.value)}
           >

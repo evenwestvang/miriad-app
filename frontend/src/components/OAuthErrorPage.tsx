@@ -53,7 +53,7 @@ export function OAuthErrorPage() {
               <h1 className="text-lg font-semibold text-foreground">
                 Connection Failed
               </h1>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-base text-muted-foreground mt-1">
                 {description}
               </p>
             </div>
@@ -70,7 +70,7 @@ export function OAuthErrorPage() {
           <div className="flex justify-end">
             <button
               onClick={handleClose}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded bg-secondary hover:bg-secondary/80 text-foreground transition-colors"
+              className="flex items-center gap-2 px-4 py-2 text-base font-medium rounded bg-secondary hover:bg-secondary/80 text-foreground transition-colors"
             >
               <X className="w-4 h-4" />
               Close

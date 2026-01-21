@@ -67,7 +67,7 @@ export function InitializeRootChannelPage({ onComplete }: InitializeRootChannelP
 
         {/* Warning */}
         <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-          <p className="text-sm text-yellow-600 dark:text-yellow-400">
+          <p className="text-base text-yellow-600 dark:text-yellow-400">
             <strong>Warning:</strong> This action will permanently delete all system artifacts (agents, MCP servers, playbooks)
             and create new ones from the current Sanity content. Use this for testing onboarding flows.
           </p>
@@ -75,7 +75,7 @@ export function InitializeRootChannelPage({ onComplete }: InitializeRootChannelP
 
         {/* Error display */}
         {error && (
-          <div className="p-4 bg-destructive/10 text-destructive rounded-lg text-sm">
+          <div className="p-4 bg-destructive/10 text-destructive rounded-lg text-base">
             {error}
           </div>
         )}
@@ -83,7 +83,7 @@ export function InitializeRootChannelPage({ onComplete }: InitializeRootChannelP
         {/* Success display */}
         {result && (
           <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
-            <p className="text-sm text-green-600 dark:text-green-400">
+            <p className="text-base text-green-600 dark:text-green-400">
               <strong>Success!</strong> Deleted {result.deletedCount} artifacts,
               created {result.createdCount} new artifacts. Redirecting...
             </p>

@@ -47,12 +47,12 @@ export function EmptyStateChannelCreation({ onCreate, apiHost = '' }: EmptyState
         <div className="space-y-6">
           {/* Channel name input */}
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
+            <label className="block text-base font-medium text-foreground mb-2">
               Channel name
             </label>
             <input
               type="text"
-              className="w-full px-3 py-2 bg-secondary text-foreground text-sm rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground"
+              className="w-full px-3 py-2 bg-secondary text-foreground text-base rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground"
               placeholder="my-project"
               value={channelName}
               onChange={(e) => setChannelName(e.target.value)}
@@ -62,7 +62,7 @@ export function EmptyStateChannelCreation({ onCreate, apiHost = '' }: EmptyState
 
           {/* Focus picker */}
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
+            <label className="block text-base font-medium text-foreground mb-2">
               What's the focus?
             </label>
             <FocusPicker
@@ -74,7 +74,7 @@ export function EmptyStateChannelCreation({ onCreate, apiHost = '' }: EmptyState
 
           {/* Error message */}
           {error && (
-            <div className="text-sm text-destructive">
+            <div className="text-base text-destructive">
               {error}
             </div>
           )}
@@ -85,7 +85,7 @@ export function EmptyStateChannelCreation({ onCreate, apiHost = '' }: EmptyState
           <button
             type="button"
             className={cn(
-              'w-full px-4 py-2 text-sm rounded-md transition-colors',
+              'w-full px-4 py-2 text-base rounded-md transition-colors',
               channelName.trim() && !isCreating
                 ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                 : 'bg-secondary text-muted-foreground cursor-not-allowed'

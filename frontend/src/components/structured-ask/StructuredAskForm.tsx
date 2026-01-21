@@ -73,7 +73,7 @@ export function StructuredAskForm({ message, myName, onSubmit }: StructuredAskFo
       )}
     >
       {/* Prompt */}
-      <p className="text-sm font-medium mb-4">{prompt}</p>
+      <p className="text-base font-medium mb-4">{prompt}</p>
 
       {/* Targeted indicator */}
       {to.length > 0 && !isSubmitted && (
@@ -105,7 +105,7 @@ export function StructuredAskForm({ message, myName, onSubmit }: StructuredAskFo
               type="submit"
               disabled={isSubmitting}
               className={cn(
-                'flex items-center gap-2 px-4 py-2 text-sm font-medium',
+                'flex items-center gap-2 px-4 py-2 text-base font-medium',
                 'bg-primary text-primary-foreground hover:bg-primary/90',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
                 'transition-colors'
@@ -252,7 +252,7 @@ function SubmittedFieldValue({ field, value }: SubmittedFieldValueProps) {
   return (
     <div className="space-y-1">
       <label className="text-xs font-medium text-muted-foreground">{field.label}</label>
-      <p className="text-sm">{displayValue || <span className="text-muted-foreground italic">No response</span>}</p>
+      <p className="text-base">{displayValue || <span className="text-muted-foreground italic">No response</span>}</p>
     </div>
   )
 }

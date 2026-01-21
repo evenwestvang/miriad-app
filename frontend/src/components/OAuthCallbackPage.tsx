@@ -51,7 +51,7 @@ export function OAuthCallbackPage() {
               <CheckCircle className="w-12 h-12 text-emerald-500" />
             </div>
             <h1 className="text-lg font-semibold text-foreground">Connected!</h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-base text-muted-foreground">
               This window will close automatically...
             </p>
             <div className="flex justify-center">
@@ -63,7 +63,7 @@ export function OAuthCallbackPage() {
             <div className="flex justify-center">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-base text-muted-foreground">
               Completing connection...
             </p>
           </>

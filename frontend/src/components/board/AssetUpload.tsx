@@ -257,7 +257,7 @@ export function AssetUpload({ channelId, apiHost, onComplete, onCancel }: AssetU
       {/* Header */}
       {uploads.length > 0 && (
         <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-          <span className="font-medium text-sm">
+          <span className="font-medium text-base">
             Uploading {uploads.length} file{uploads.length !== 1 ? 's' : ''}
           </span>
           <button
@@ -290,8 +290,8 @@ export function AssetUpload({ channelId, apiHost, onComplete, onCancel }: AssetU
 
               {/* File info */}
               <div className="flex-1 min-w-0">
-                <p className="text-sm truncate">{item.file.name}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-base truncate">{item.file.name}</p>
+                <p className="text-base text-muted-foreground">
                   {item.state === 'error' ? (
                     <span className="text-destructive">{item.error}</span>
                   ) : item.state === 'success' ? (
@@ -320,12 +320,12 @@ export function AssetUpload({ channelId, apiHost, onComplete, onCancel }: AssetU
       {allDone && (
         <div className="px-3 py-2 border-t border-border">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">
+            <span className="text-base text-muted-foreground">
               {successCount} succeeded{errorCount > 0 ? `, ${errorCount} failed` : ''}
             </span>
             <button
               onClick={handleDone}
-              className="px-3 py-1.5 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+              className="px-3 py-1.5 text-base rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
             >
               Done
             </button>
@@ -336,7 +336,7 @@ export function AssetUpload({ channelId, apiHost, onComplete, onCancel }: AssetU
       {/* Loading state while waiting for file picker */}
       {uploads.length === 0 && (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-muted-foreground">Select files to upload...</p>
+          <p className="text-base text-muted-foreground">Select files to upload...</p>
         </div>
       )}
     </div>

@@ -119,7 +119,7 @@ export function OnboardingPage({
 
         {/* Error display */}
         {error && (
-          <div className="p-3 bg-destructive/10 text-destructive rounded-lg text-sm">
+          <div className="p-3 bg-destructive/10 text-destructive rounded-lg text-base">
             {error}
           </div>
         )}
@@ -128,7 +128,7 @@ export function OnboardingPage({
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Callsign input */}
           <div className="space-y-2">
-            <label htmlFor="callsign" className="block text-sm font-medium text-foreground">
+            <label htmlFor="callsign" className="block text-base font-medium text-foreground">
               Your Callsign
             </label>
             <div className="relative">
@@ -159,7 +159,7 @@ export function OnboardingPage({
 
           {/* Space name input */}
           <div className="space-y-2">
-            <label htmlFor="spaceName" className="block text-sm font-medium text-foreground">
+            <label htmlFor="spaceName" className="block text-base font-medium text-foreground">
               Space Name
             </label>
             <input
@@ -187,7 +187,7 @@ export function OnboardingPage({
                   <div className="font-medium text-foreground">
                     @{callsign}
                   </div>
-                  <div className="text-sm text-muted-foreground truncate">
+                  <div className="text-base text-muted-foreground truncate">
                     {spaceName || 'Your workspace'}
                   </div>
                 </div>

@@ -201,11 +201,11 @@ export function AddAppModal({
         <div className="p-4">
           {/* Error display */}
           {error && (
-            <div className="flex items-start gap-2 p-3 mb-4 bg-destructive/10 border border-destructive/20 rounded-md text-sm text-destructive">
+            <div className="flex items-start gap-2 p-3 mb-4 bg-destructive/10 border border-destructive/20 rounded-md text-base text-destructive">
               <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
               <div>
                 <p className="font-medium">Error</p>
-                <p className="text-xs mt-0.5">{error}</p>
+                <p className="text-base mt-0.5">{error}</p>
               </div>
             </div>
           )}
@@ -214,7 +214,7 @@ export function AddAppModal({
           {state === 'loading' && (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-sm text-muted-foreground">
+              <span className="ml-2 text-base text-muted-foreground">
                 Loading available apps...
               </span>
             </div>
@@ -224,7 +224,7 @@ export function AddAppModal({
           {state === 'error' && (
             <div className="flex flex-col items-center justify-center py-12">
               <AlertTriangle className="w-8 h-8 text-destructive mb-2" />
-              <p className="text-sm text-muted-foreground">Failed to load apps</p>
+              <p className="text-base text-muted-foreground">Failed to load apps</p>
               <button
                 onClick={() => {
                   setState('loading')
@@ -239,7 +239,7 @@ export function AddAppModal({
                       setState('error')
                     })
                 }}
-                className="mt-3 px-3 py-1.5 text-xs rounded bg-secondary text-foreground hover:bg-secondary/80"
+                className="mt-3 px-3 py-1.5 text-base rounded bg-secondary text-foreground hover:bg-secondary/80"
               >
                 Retry
               </button>
@@ -250,10 +250,10 @@ export function AddAppModal({
           {state === 'connecting' && selectedApp && (
             <div className="flex flex-col items-center justify-center py-12">
               <Loader2 className="w-6 h-6 animate-spin text-primary mb-3" />
-              <p className="text-sm font-medium text-foreground">
+              <p className="text-base font-medium text-foreground">
                 Connecting to {selectedApp.name}
               </p>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-base text-muted-foreground mt-1">
                 Complete authorization in the popup window
               </p>
               <button
@@ -261,7 +261,7 @@ export function AddAppModal({
                   setState('selecting')
                   setSelectedApp(null)
                 }}
-                className="mt-4 px-3 py-1.5 text-xs rounded bg-secondary text-muted-foreground hover:text-foreground"
+                className="mt-4 px-3 py-1.5 text-base rounded bg-secondary text-muted-foreground hover:text-foreground"
               >
                 Cancel
               </button>
@@ -271,7 +271,7 @@ export function AddAppModal({
           {/* App selection */}
           {state === 'selecting' && (
             <>
-              <p className="text-sm text-muted-foreground mb-4">
+              <p className="text-base text-muted-foreground mb-4">
                 Connect an external service to give your agents new capabilities.
               </p>
 
@@ -295,14 +295,14 @@ export function AddAppModal({
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-sm text-foreground">
+                      <h3 className="font-medium text-base text-foreground">
                         {app.name}
                       </h3>
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                      <p className="text-base text-muted-foreground mt-0.5 line-clamp-2">
                         {app.description}
                       </p>
                       {app.scopes.length > 0 && (
-                        <p className="text-xs text-muted-foreground/60 mt-1">
+                        <p className="text-base text-muted-foreground/60 mt-1">
                           Scopes: {app.scopes.join(', ')}
                         </p>
                       )}
@@ -311,7 +311,7 @@ export function AddAppModal({
                 ))}
 
                 {apps.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-8">
+                  <p className="text-base text-muted-foreground text-center py-8">
                     No apps available yet.
                   </p>
                 )}

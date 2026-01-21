@@ -582,11 +582,11 @@ export function BoardPanel({
               />
             ) : !channelId ? (
               <div className="flex flex-col items-center justify-center h-40 px-4 text-center">
-                <p className="text-muted-foreground text-sm">Select a channel to view artifacts</p>
+                <p className="text-muted-foreground text-base">Select a channel to view artifacts</p>
               </div>
             ) : treeLoading ? (
               <div className="flex items-center justify-center h-20">
-                <span className="text-sm text-muted-foreground">Loading...</span>
+                <span className="text-base text-muted-foreground">Loading...</span>
               </div>
             ) : tree.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full px-6 text-center">
@@ -627,7 +627,7 @@ export function BoardPanel({
                   </div>
                 </div>
                 <h3 className="text-xl font-semibold text-foreground mb-3">Board</h3>
-                <p className="text-muted-foreground text-sm leading-relaxed max-w-[260px]">
+                <p className="text-muted-foreground text-base leading-relaxed max-w-[260px]">
                   A shared space to organize documents, files, tasks, and plans while working in the channel.
                 </p>
               </div>

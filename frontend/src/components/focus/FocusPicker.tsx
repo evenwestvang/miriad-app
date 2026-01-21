@@ -51,7 +51,7 @@ export function FocusPicker({ apiHost = '', selected, onSelect }: FocusPickerPro
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+      <div className="flex items-center justify-center py-8 text-base text-muted-foreground">
         Loading focus options...
       </div>
     )
@@ -59,7 +59,7 @@ export function FocusPicker({ apiHost = '', selected, onSelect }: FocusPickerPro
 
   if (error || focusTypes.length === 0) {
     return (
-      <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+      <div className="flex items-center justify-center py-8 text-base text-muted-foreground">
         {error || 'No focus types available'}
       </div>
     )
@@ -85,7 +85,7 @@ export function FocusPicker({ apiHost = '', selected, onSelect }: FocusPickerPro
               <Check className="w-4 h-4 text-primary" />
             </div>
           )}
-          <span className="font-medium text-sm text-foreground">
+          <span className="font-medium text-base text-foreground">
             {focus.title}
           </span>
           <span className="text-xs text-muted-foreground line-clamp-2 mt-1">

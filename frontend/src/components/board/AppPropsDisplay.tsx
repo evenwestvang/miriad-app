@@ -153,16 +153,16 @@ export function AppPropsDisplay({
     <div className="space-y-3">
       {/* Provider info */}
       <div>
-        <label className="block text-xs text-muted-foreground mb-1">Provider</label>
-        <span className="text-sm font-medium text-foreground">{props.provider}</span>
+        <label className="block text-base text-muted-foreground mb-1">Provider</label>
+        <span className="text-base font-medium text-foreground">{props.provider}</span>
       </div>
 
       {/* Status badge */}
       <div>
-        <label className="block text-xs text-muted-foreground mb-1">Status</label>
+        <label className="block text-base text-muted-foreground mb-1">Status</label>
         <div
           className={cn(
-            'inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded',
+            'inline-flex items-center gap-1.5 px-2 py-1 text-base rounded',
             isConnected && !expiringSoon && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
             isConnected && expiringSoon && 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
             isExpired && 'bg-red-500/10 text-red-600 dark:text-red-400',
@@ -191,7 +191,7 @@ export function AppPropsDisplay({
 
       {/* Error message */}
       {error && (
-        <div className="flex items-start gap-2 p-2 bg-destructive/10 border border-destructive/20 rounded text-xs text-destructive">
+        <div className="flex items-start gap-2 p-2 bg-destructive/10 border border-destructive/20 rounded text-base text-destructive">
           <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
           <span>{error}</span>
         </div>
@@ -205,7 +205,7 @@ export function AppPropsDisplay({
             onClick={handleConnect}
             disabled={isLoading}
             className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 text-xs rounded font-medium transition-colors',
+              'flex items-center gap-1.5 px-3 py-1.5 text-base rounded font-medium transition-colors',
               isLoading
                 ? 'bg-secondary text-muted-foreground cursor-not-allowed'
                 : 'bg-primary text-primary-foreground hover:bg-primary/90'
@@ -235,7 +235,7 @@ export function AppPropsDisplay({
           <button
             onClick={() => setShowDisconnectConfirm(true)}
             disabled={isLoading}
-            className="flex items-center gap-1 px-2 py-1.5 text-xs rounded hover:bg-secondary/50 text-muted-foreground transition-colors"
+            className="flex items-center gap-1 px-2 py-1.5 text-base rounded hover:bg-secondary/50 text-muted-foreground transition-colors"
           >
             <Unlink className="w-3.5 h-3.5" />
             Disconnect
@@ -245,11 +245,11 @@ export function AppPropsDisplay({
         {/* Disconnect confirmation */}
         {showDisconnectConfirm && (
           <div className="flex items-center gap-1">
-            <span className="text-xs text-muted-foreground mr-1">Disconnect?</span>
+            <span className="text-base text-muted-foreground mr-1">Disconnect?</span>
             <button
               onClick={handleDisconnect}
               disabled={isLoading}
-              className="px-2 py-1 text-xs rounded font-medium bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="px-2 py-1 text-base rounded font-medium bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {uiState === 'disconnecting' ? (
                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -260,7 +260,7 @@ export function AppPropsDisplay({
             <button
               onClick={() => setShowDisconnectConfirm(false)}
               disabled={isLoading}
-              className="px-2 py-1 text-xs rounded hover:bg-secondary/50 text-muted-foreground"
+              className="px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground"
             >
               Cancel
             </button>

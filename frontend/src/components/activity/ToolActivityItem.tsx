@@ -81,7 +81,7 @@ export function ToolActivityItem({ tool, onToggleExpand }: ToolActivityItemProps
         {/* Tool name */}
         <span
           className={cn(
-            "font-mono text-sm",
+            "font-mono text-base",
             tool.status === 'running' && "text-blue-500",
             tool.status === 'complete' && "text-muted-foreground",
             tool.status === 'error' && "text-red-500"
@@ -91,7 +91,7 @@ export function ToolActivityItem({ tool, onToggleExpand }: ToolActivityItemProps
         </span>
 
         {/* Tool arguments (truncated) */}
-        <span className="text-sm text-muted-foreground truncate flex-1" title={tool.args}>
+        <span className="text-base text-muted-foreground truncate flex-1" title={tool.args}>
           {truncate(tool.args, 40)}
         </span>
 

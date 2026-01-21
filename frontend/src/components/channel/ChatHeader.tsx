@@ -71,7 +71,7 @@ export function ChatHeader({
         {isThinking && (
           <span className="w-2 h-2 rounded-full flex-shrink-0 bg-blue-500 animate-pulse" />
         )}
-        <span className="font-medium text-sm text-foreground">Thread</span>
+        <span className="font-medium text-base text-foreground">Thread</span>
       </div>
       <div className="flex items-center gap-2">
         {/* Channel cost total */}

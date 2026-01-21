@@ -277,7 +277,7 @@ export function OAuthConnectButton({
         {(status === 'not_connected' || status === 'error') && (
           <button
             onClick={handleConnect}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded font-medium bg-primary text-primary-foreground hover:bg-primary/90"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-base rounded font-medium bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Link2 className="w-3.5 h-3.5" />
             Connect
@@ -288,7 +288,7 @@ export function OAuthConnectButton({
         {status === 'connecting' && (
           <button
             disabled
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded font-medium bg-secondary text-muted-foreground cursor-not-allowed"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-base rounded font-medium bg-secondary text-muted-foreground cursor-not-allowed"
           >
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
             Connecting...
@@ -300,7 +300,7 @@ export function OAuthConnectButton({
           <div className="flex items-center gap-2">
             <span
               className={cn(
-                'flex items-center gap-1.5 px-2 py-1 text-xs rounded',
+                'flex items-center gap-1.5 px-2 py-1 text-base rounded',
                 status === 'expiring_soon'
                   ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
                   : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
@@ -324,13 +324,13 @@ export function OAuthConnectButton({
               <div className="flex items-center gap-1">
                 <button
                   onClick={handleDisconnect}
-                  className="px-2 py-1 text-xs rounded font-medium bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  className="px-2 py-1 text-base rounded font-medium bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >
                   Confirm
                 </button>
                 <button
                   onClick={() => setShowDisconnectConfirm(false)}
-                  className="px-2 py-1 text-xs rounded hover:bg-secondary/50 text-muted-foreground"
+                  className="px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground"
                 >
                   Cancel
                 </button>
@@ -338,7 +338,7 @@ export function OAuthConnectButton({
             ) : (
               <button
                 onClick={() => setShowDisconnectConfirm(true)}
-                className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-secondary/50 text-muted-foreground"
+                className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground"
                 title="Disconnect OAuth"
               >
                 <Unlink className="w-3.5 h-3.5" />
@@ -350,7 +350,7 @@ export function OAuthConnectButton({
 
       {/* Error message */}
       {error && (
-        <div className="flex items-start gap-2 p-2 bg-destructive/10 border border-destructive/20 rounded text-xs text-destructive">
+        <div className="flex items-start gap-2 p-2 bg-destructive/10 border border-destructive/20 rounded text-base text-destructive">
           <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
           <span>{error}</span>
         </div>
@@ -358,7 +358,7 @@ export function OAuthConnectButton({
 
       {/* Expiring soon warning */}
       {status === 'expiring_soon' && !error && (
-        <div className="flex items-start gap-2 p-2 bg-amber-500/10 border border-amber-500/20 rounded text-xs text-amber-600 dark:text-amber-400">
+        <div className="flex items-start gap-2 p-2 bg-amber-500/10 border border-amber-500/20 rounded text-base text-amber-600 dark:text-amber-400">
           <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
           <span>
             Token expiring soon. Click "Connect" to refresh your authorization.

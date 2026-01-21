@@ -104,7 +104,7 @@ export function NewChannelModal({ isOpen, onClose, onCreate, anchorRef }: NewCha
     >
       {/* Header with title and close button */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-medium text-foreground">
+        <h2 className="text-base font-medium text-foreground">
           Create channel
         </h2>
         <button
@@ -121,7 +121,7 @@ export function NewChannelModal({ isOpen, onClose, onCreate, anchorRef }: NewCha
       <div className="flex gap-2">
         <input
           type="text"
-          className="flex-1 px-3 py-2 bg-secondary text-foreground text-sm rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground"
+          className="flex-1 px-3 py-2 bg-secondary text-foreground text-base rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground"
           placeholder="channel-name"
           value={channelName}
           onChange={handleNameChange}
@@ -130,7 +130,7 @@ export function NewChannelModal({ isOpen, onClose, onCreate, anchorRef }: NewCha
         <button
           type="button"
           className={cn(
-            'px-4 py-2 text-sm rounded-md transition-colors whitespace-nowrap',
+            'px-4 py-2 text-base rounded-md transition-colors whitespace-nowrap',
             channelName.trim() && !isCreating
               ? 'bg-primary text-primary-foreground hover:bg-primary/90'
               : 'bg-secondary text-muted-foreground cursor-not-allowed'

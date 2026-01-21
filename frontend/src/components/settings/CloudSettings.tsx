@@ -110,14 +110,14 @@ export function CloudSettings({ apiHost, spaceId }: CloudSettingsProps) {
     <div className="space-y-6">
       {/* Error display */}
       {error && (
-        <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md text-sm text-destructive">
+        <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md text-base text-destructive">
           {error}
         </div>
       )}
 
       {/* Success display */}
       {saved && (
-        <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-md text-sm text-green-600">
+        <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-md text-base text-green-600">
           API key saved successfully
         </div>
       )}
@@ -125,14 +125,14 @@ export function CloudSettings({ apiHost, spaceId }: CloudSettingsProps) {
       {/* Header */}
       <div>
         <h3 className="text-lg font-medium text-foreground">Miriad Cloud</h3>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="text-base text-muted-foreground mt-1">
           Configure your Claude API key to run agents in Miriad Cloud.
         </p>
       </div>
 
       {/* API Key input */}
       <div className="space-y-2">
-        <label htmlFor="claude-api-key" className="block text-sm font-medium text-foreground">
+        <label htmlFor="claude-api-key" className="block text-base font-medium text-foreground">
           Claude API Key
         </label>
 
@@ -140,7 +140,7 @@ export function CloudSettings({ apiHost, spaceId }: CloudSettingsProps) {
           <div className="space-y-3">
             <div className="flex items-center gap-3 p-3 bg-secondary/30 border border-border rounded-md">
               <div className="flex-1">
-                <div className="font-mono text-sm">••••••••••••••••••••</div>
+                <div className="font-mono text-base">••••••••••••••••••••</div>
                 <div className="text-xs text-muted-foreground mt-1">
                   Set on {formatDate(existingKeySetAt)}
                 </div>
@@ -148,7 +148,7 @@ export function CloudSettings({ apiHost, spaceId }: CloudSettingsProps) {
               <button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-base text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
                 title="Remove API key"
               >
                 {deleting ? (
@@ -172,7 +172,7 @@ export function CloudSettings({ apiHost, spaceId }: CloudSettingsProps) {
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="sk-ant-..."
-                className="w-full px-3 py-2 pr-10 bg-secondary/30 border border-border rounded-md text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                className="w-full px-3 py-2 pr-10 bg-secondary/30 border border-border rounded-md text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
               />
               <button
                 type="button"
@@ -203,7 +203,7 @@ export function CloudSettings({ apiHost, spaceId }: CloudSettingsProps) {
             <button
               onClick={handleSave}
               disabled={saving || !apiKey.trim()}
-              className="flex items-center gap-2 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-4 py-2 text-base bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? (
                 <>

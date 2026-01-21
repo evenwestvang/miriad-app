@@ -91,7 +91,7 @@ export function WebSearchRenderer({ args, output, error, isSuccess }: ToolRender
                 href={result.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm font-medium text-primary hover:underline flex items-center gap-1"
+                className="text-base font-medium text-primary hover:underline flex items-center gap-1"
               >
                 {result.title}
                 <ExternalLink className="w-3 h-3" />

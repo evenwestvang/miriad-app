@@ -30,7 +30,7 @@ export function ToolActivityPanel({
     <div className="border border-border rounded-lg my-2 bg-card/50">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
         <Activity className="w-4 h-4 text-muted-foreground" />
-        <span className="text-sm font-medium">Agent Activity</span>
+        <span className="text-base font-medium">Agent Activity</span>
         {isComplete && summary && (
           <span className="text-xs text-muted-foreground ml-auto">
             {formatDuration(summary.durationMs)}

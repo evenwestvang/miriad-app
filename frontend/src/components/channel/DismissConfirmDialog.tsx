@@ -77,7 +77,7 @@ export function DismissConfirmDialog({
     >
       <div className="p-3 border-b border-border">
         <div className="flex items-center justify-between">
-          <span className="font-medium text-sm flex items-center gap-2">
+          <span className="font-medium text-base flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-500" />
             Dismiss agent?
           </span>
@@ -91,7 +91,7 @@ export function DismissConfirmDialog({
       </div>
 
       <div className="p-3 space-y-3">
-        <p className="text-sm text-muted-foreground">
+        <p className="text-base text-muted-foreground">
           Dismiss{' '}
           <span className={cn("font-medium", getSenderColor(callsign))}>
             @{callsign}

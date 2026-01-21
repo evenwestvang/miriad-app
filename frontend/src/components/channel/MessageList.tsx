@@ -128,7 +128,7 @@ function MessageMenu({
         <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-md shadow-lg z-50 whitespace-nowrap">
           <button
             onClick={handleCopy}
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-secondary/50 transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-2 text-base hover:bg-secondary/50 transition-colors"
           >
             {copied ? (
               <>
@@ -504,7 +504,7 @@ export function MessageList({
               // Show spinner after 500ms delay
               <div className="flex flex-col items-center justify-center h-full text-center px-4">
                 <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin mb-4" />
-                <p className="text-muted-foreground text-sm">
+                <p className="text-muted-foreground text-base">
                   Loading messages...
                 </p>
               </div>
@@ -526,7 +526,7 @@ export function MessageList({
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
                 <span className="text-2xl">💬</span>
               </div>
-              <p className="text-muted-foreground text-sm mb-1">
+              <p className="text-muted-foreground text-base mb-1">
                 Start a conversation with {threadName}
               </p>
               {threadAgentType && (
@@ -955,7 +955,7 @@ function MessageItem({
   // Error messages
   if (message.type === "error") {
     return (
-      <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md">
+      <div className="flex items-center gap-2 text-base text-destructive bg-destructive/10 px-3 py-2 rounded-md">
         <AlertCircle size={14} className="flex-shrink-0" />
         <span>
           {highlightMentions(getTextContent(message.content), {
@@ -988,7 +988,7 @@ function MessageItem({
     // Render summon action with coffee icon
     if (statusContent?.action === "summon" && statusContent.callsign) {
       return (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-2">
+        <div className="flex items-center gap-2 text-base text-muted-foreground px-3 py-2">
           <Coffee size={14} className="flex-shrink-0" />
           <span>
             Summoning{" "}
@@ -1001,7 +1001,7 @@ function MessageItem({
     // Render dismiss action with bed icon
     if (statusContent?.action === "dismiss" && statusContent.callsign) {
       return (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-2">
+        <div className="flex items-center gap-2 text-base text-muted-foreground px-3 py-2">
           <Bed size={14} className="flex-shrink-0" />
           <span>
             <span className="font-medium">{statusContent.callsign}</span> has
@@ -1027,7 +1027,7 @@ function MessageItem({
               isHuman={false}
             />
           )}
-          <div className="flex items-center gap-1.5 text-sm text-[var(--cast-text-muted)]">
+          <div className="flex items-center gap-1.5 text-base text-[var(--cast-text-muted)]">
             <ArrowRight size={14} className="flex-shrink-0" />
             <span>{statusText}</span>
           </div>
@@ -1037,7 +1037,7 @@ function MessageItem({
 
     // Fallback for plain text status messages (system messages)
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-2">
+      <div className="flex items-center gap-2 text-base text-muted-foreground px-3 py-2">
         <CirclePlus size={14} className="flex-shrink-0" />
         <span>
           {highlightMentions(getTextContent(message.content), {
@@ -1073,7 +1073,7 @@ function MessageItem({
 
     if (!attachmentData) {
       return (
-        <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md">
+        <div className="flex items-center gap-2 text-base text-destructive bg-destructive/10 px-3 py-2 rounded-md">
           <AlertCircle size={14} className="flex-shrink-0" />
           <span>Invalid attachment data</span>
         </div>
@@ -1110,7 +1110,7 @@ function MessageItem({
           {/* Title - show prominently if provided */}
           {attachmentData.title && (
             <div className="px-3 py-2 border-b border-border bg-secondary/30">
-              <div className="font-medium text-sm">{attachmentData.title}</div>
+              <div className="font-medium text-base">{attachmentData.title}</div>
             </div>
           )}
           {/* Attachment preview */}
@@ -1124,7 +1124,7 @@ function MessageItem({
           {/* Description - show below if provided */}
           {attachmentData.description && (
             <div className="px-3 py-2 border-t border-border bg-secondary/20">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-base text-muted-foreground">
                 {attachmentData.description}
               </p>
             </div>
@@ -1226,7 +1226,7 @@ function createMarkdownComponents(
         // Inline code - render as styled span
         return (
           <code
-            className="bg-secondary px-1.5 py-0.5 text-sm font-mono rounded"
+            className="bg-secondary px-1.5 py-0.5 text-base font-mono rounded"
             {...props}
           >
             {children}
@@ -1287,7 +1287,7 @@ function renderMessageContent(
 
   // Base prose classes
   const proseClasses =
-    "prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
+    "prose prose-base dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
   // For contextual messages, override prose text color to muted
   const contextualClasses = isContextual
     ? "[&_*]:!text-[var(--cast-text-muted)]"

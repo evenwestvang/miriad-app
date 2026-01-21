@@ -74,15 +74,15 @@ export function ArtifactPreview({ artifact, onEdit, onLinkClick, apiHost, channe
       {/* Header */}
       <div className="flex items-start justify-between px-3 py-2 border-b border-border">
         <div className="min-w-0 flex-1">
-          <div className="font-medium text-sm text-foreground truncate">
+          <div className="font-medium text-base text-foreground truncate">
             {artifact.title || artifact.slug}
           </div>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-muted-foreground">
+            <span className="text-base text-muted-foreground">
               {artifact.type}
             </span>
             <span className={cn(
-              "text-xs px-1.5 py-0.5 rounded",
+              "text-base px-1.5 py-0.5 rounded",
               STATUS_COLORS[artifact.status] || STATUS_COLORS.draft
             )}>
               {artifact.status}
@@ -90,7 +90,7 @@ export function ArtifactPreview({ artifact, onEdit, onLinkClick, apiHost, channe
           </div>
         </div>
         <button
-          className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground"
+          className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground"
           onClick={onEdit}
         >
           <Pencil className="w-3 h-3" />
@@ -100,14 +100,14 @@ export function ArtifactPreview({ artifact, onEdit, onLinkClick, apiHost, channe
 
       {/* TLDR */}
       <div className="px-3 py-2 border-b border-border bg-secondary/20">
-        <p className="text-sm text-muted-foreground">{artifact.tldr}</p>
+        <p className="text-base text-muted-foreground">{artifact.tldr}</p>
       </div>
 
       {/* MCP Props Editor - shown for system.mcp artifacts */}
       {artifact.type === 'system.mcp' && onPropsUpdate && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
-            <div className="text-xs text-muted-foreground mb-2">Saving...</div>
+            <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <McpPropsEditor
             props={(artifact.props as unknown as McpProps) || { transport: 'stdio' as const }}
@@ -138,7 +138,7 @@ export function ArtifactPreview({ artifact, onEdit, onLinkClick, apiHost, channe
 
       {/* Metadata footer */}
       {((artifact.assignees?.length ?? 0) > 0 || (artifact.labels?.length ?? 0) > 0) && (
-        <div className="px-3 py-2 border-t border-border text-xs text-muted-foreground">
+        <div className="px-3 py-2 border-t border-border text-base text-muted-foreground">
           {(artifact.assignees?.length ?? 0) > 0 && (
             <div>Assignees: {artifact.assignees?.join(', ')}</div>
           )}
@@ -195,7 +195,7 @@ function ArtifactContent({ content, onLinkClick, artifacts }: ArtifactContentPro
 
   return (
     <Markdown
-      className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+      className="prose prose-base dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
       components={markdownComponents}
       remarkPlugins={[remarkGfm]}
     >
@@ -229,7 +229,7 @@ function AssetPreview({ slug, url, isImage, isPdf }: AssetPreviewProps) {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
+            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
           >
             <ExternalLink className="w-3 h-3" />
             Open
@@ -237,7 +237,7 @@ function AssetPreview({ slug, url, isImage, isPdf }: AssetPreviewProps) {
           <a
             href={url}
             download={slug}
-            className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
+            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
           >
             <Download className="w-3 h-3" />
             Download
@@ -255,7 +255,7 @@ function AssetPreview({ slug, url, isImage, isPdf }: AssetPreviewProps) {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
+            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
           >
             <ExternalLink className="w-3 h-3" />
             Open PDF
@@ -263,7 +263,7 @@ function AssetPreview({ slug, url, isImage, isPdf }: AssetPreviewProps) {
           <a
             href={url}
             download={slug}
-            className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
+            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
           >
             <Download className="w-3 h-3" />
             Download

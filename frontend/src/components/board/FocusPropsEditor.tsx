@@ -69,18 +69,18 @@ export function FocusPropsEditor({ props, onChange, apiHost }: FocusPropsEditorP
     <div className="space-y-4">
       {/* Starting Agents */}
       <div className="space-y-2">
-        <label className="block text-xs font-medium text-muted-foreground uppercase">
+        <label className="block text-base font-medium text-muted-foreground uppercase">
           Starting Agents
           <span className="text-destructive ml-1">*</span>
         </label>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-base text-muted-foreground">
           Select which agent types are available when creating a channel with this focus
         </p>
 
         {agentsLoading ? (
-          <div className="text-xs text-muted-foreground py-2">Loading agents...</div>
+          <div className="text-base text-muted-foreground py-2">Loading agents...</div>
         ) : availableAgents.length === 0 ? (
-          <div className="text-xs text-muted-foreground py-2">
+          <div className="text-base text-muted-foreground py-2">
             No agent definitions found in #root
           </div>
         ) : (
@@ -103,7 +103,7 @@ export function FocusPropsEditor({ props, onChange, apiHost }: FocusPropsEditorP
                         : `Add ${agent.title || agent.slug}`
                   }
                   className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md border transition-colors",
+                    "flex items-center gap-1.5 px-2.5 py-1.5 text-base rounded-md border transition-colors",
                     isSelected
                       ? "bg-primary text-primary-foreground border-primary"
                       : "bg-secondary/30 text-foreground border-border hover:border-primary/50 hover:bg-secondary/50",
@@ -123,7 +123,7 @@ export function FocusPropsEditor({ props, onChange, apiHost }: FocusPropsEditorP
         )}
 
         {selectedAgents.length > 0 && (
-          <div className="text-xs text-muted-foreground">
+          <div className="text-base text-muted-foreground">
             {selectedAgents.length} agent{selectedAgents.length === 1 ? '' : 's'} selected
           </div>
         )}

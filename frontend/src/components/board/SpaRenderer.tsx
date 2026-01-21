@@ -267,7 +267,7 @@ export function SpaRenderer({ content, channel, slug }: SpaRendererProps) {
     <div className="flex flex-col flex-1 min-h-0 p-2">
       {/* Error display */}
       {error && (
-        <div className="flex items-center gap-2 p-2 mb-2 rounded bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-xs">
+        <div className="flex items-center gap-2 p-2 mb-2 rounded bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-base">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span className="font-mono flex-1 break-all">{error}</span>
           <button
@@ -288,7 +288,7 @@ export function SpaRenderer({ content, channel, slug }: SpaRendererProps) {
         />
         {/* Loading state */}
         {!running && !error && !stopped && (
-          <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm bg-black rounded">
+          <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-base bg-black rounded">
             Loading...
           </div>
         )}
@@ -297,7 +297,7 @@ export function SpaRenderer({ content, channel, slug }: SpaRendererProps) {
           <div className="absolute inset-0 flex items-center justify-center bg-black rounded">
             <button
               onClick={runApp}
-              className="flex items-center gap-1 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-white text-sm"
+              className="flex items-center gap-1 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-white text-base"
             >
               <Play className="h-3 w-3" />
               Run
@@ -311,24 +311,24 @@ export function SpaRenderer({ content, channel, slug }: SpaRendererProps) {
         <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border">
           <button
             onClick={() => stopApp(true)}
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
+            className="flex items-center gap-1 px-2 py-1 rounded text-base hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
           >
             <Square className="h-3 w-3" />
             Stop
           </button>
           <button
             onClick={runApp}
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
+            className="flex items-center gap-1 px-2 py-1 rounded text-base hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
           >
             <RefreshCw className="h-3 w-3" />
             Restart
           </button>
-          <span className="text-[10px] text-muted-foreground ml-auto">
+          <span className="text-base text-muted-foreground ml-auto">
             {dimensions.width} × {dimensions.height}
           </span>
           <button
             onClick={toggleFullscreen}
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
+            className="flex items-center gap-1 px-2 py-1 rounded text-base hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
             title="Expand (ESC to close)"
           >
             <Maximize2 className="h-3 w-3" />
@@ -350,25 +350,25 @@ export function SpaRenderer({ content, channel, slug }: SpaRendererProps) {
           <div className="flex items-center justify-center gap-4 p-3 bg-gray-900/80">
             <button
               onClick={() => stopApp(true)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded text-sm hover:bg-gray-700 text-gray-300 hover:text-white"
+              className="flex items-center gap-1 px-3 py-1.5 rounded text-base hover:bg-gray-700 text-gray-300 hover:text-white"
             >
               <Square className="h-4 w-4" />
               Stop
             </button>
             <button
               onClick={runApp}
-              className="flex items-center gap-1 px-3 py-1.5 rounded text-sm hover:bg-gray-700 text-gray-300 hover:text-white"
+              className="flex items-center gap-1 px-3 py-1.5 rounded text-base hover:bg-gray-700 text-gray-300 hover:text-white"
             >
               <RefreshCw className="h-4 w-4" />
               Restart
             </button>
-            <span className="text-xs text-gray-500 flex-1 text-center">
+            <span className="text-base text-gray-500 flex-1 text-center">
               {dimensions.width} × {dimensions.height}
             </span>
             {/* Close button */}
             <button
               onClick={() => setIsFullscreen(false)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded text-sm hover:bg-gray-700 text-gray-300 hover:text-white"
+              className="flex items-center gap-1 px-3 py-1.5 rounded text-base hover:bg-gray-700 text-gray-300 hover:text-white"
               title="Close (ESC)"
             >
               <X className="h-4 w-4" />

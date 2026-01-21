@@ -317,7 +317,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
         <div className="absolute right-0 top-full mt-1 w-72 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-secondary/20">
-            <span className="text-sm font-medium">Runtimes</span>
+            <span className="text-base font-medium">Runtimes</span>
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -348,7 +348,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                   <div className="flex items-center gap-2">
                     <Cloud className="w-4 h-4 text-muted-foreground" />
                     <div>
-                      <div className="text-sm font-medium">Miriad Cloud</div>
+                      <div className="text-base font-medium">Miriad Cloud</div>
                       <div className="text-xs text-muted-foreground">
                         {hasApiKey === false ? 'Not configured' : startingCloud ? 'Starting...' : 'Not running'}
                       </div>
@@ -388,7 +388,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
 
             {/* Runtime list */}
             {runtimes.length === 0 && hasMiriadCloudRecord ? (
-              <div className="p-4 text-center text-sm text-muted-foreground">
+              <div className="p-4 text-center text-base text-muted-foreground">
                 No runtimes connected
               </div>
             ) : runtimes.length > 0 ? (
@@ -425,7 +425,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                         )}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium truncate">{runtime.name}</span>
+                            <span className="text-base font-medium truncate">{runtime.name}</span>
                             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                               isEffectivelyOnline ? 'bg-green-500' : 'bg-gray-400'
                             }`} />

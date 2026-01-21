@@ -17,7 +17,7 @@ interface FieldProps<T> {
 function FieldLabel({ field }: { field: { label: string; description?: string; required?: boolean } }) {
   return (
     <div className="mb-2">
-      <label className="text-sm font-medium text-foreground">
+      <label className="text-base font-medium text-foreground">
         {field.label}
         {field.required && <span className="text-destructive ml-1">*</span>}
       </label>
@@ -50,7 +50,7 @@ export function RadioField({ field, value, onChange, disabled }: FieldProps<Radi
               disabled={disabled}
               className="h-4 w-4 text-primary border-border focus:ring-primary"
             />
-            <span className="text-sm">{option.label}</span>
+            <span className="text-base">{option.label}</span>
           </label>
         ))}
       </div>
@@ -89,7 +89,7 @@ export function CheckboxField({ field, value, onChange, disabled }: FieldProps<C
               disabled={disabled}
               className="h-4 w-4 rounded text-primary border-border focus:ring-primary"
             />
-            <span className="text-sm">{option.label}</span>
+            <span className="text-base">{option.label}</span>
           </label>
         ))}
       </div>
@@ -106,7 +106,7 @@ export function SelectField({ field, value, onChange, disabled }: FieldProps<Sel
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         className={cn(
-          'w-full px-3 py-2 text-sm rounded-md border border-border bg-background',
+          'w-full px-3 py-2 text-base rounded-md border border-border bg-background',
           'focus:outline-none focus:ring-1 focus:ring-primary',
           disabled && 'cursor-not-allowed opacity-50'
         )}
@@ -133,7 +133,7 @@ export function TextField({ field, value, onChange, disabled }: FieldProps<TextF
         placeholder={field.placeholder}
         disabled={disabled}
         className={cn(
-          'w-full px-3 py-2 text-sm rounded-md border border-border bg-background',
+          'w-full px-3 py-2 text-base rounded-md border border-border bg-background',
           'focus:outline-none focus:ring-1 focus:ring-primary',
           disabled && 'cursor-not-allowed opacity-50'
         )}
@@ -153,7 +153,7 @@ export function TextareaField({ field, value, onChange, disabled }: FieldProps<T
         disabled={disabled}
         rows={3}
         className={cn(
-          'w-full px-3 py-2 text-sm rounded-md border border-border bg-background resize-y',
+          'w-full px-3 py-2 text-base rounded-md border border-border bg-background resize-y',
           'focus:outline-none focus:ring-1 focus:ring-primary',
           disabled && 'cursor-not-allowed opacity-50'
         )}

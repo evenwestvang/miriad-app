@@ -105,7 +105,7 @@ export function AgentDetailPopup({
       {/* Header */}
       <div className="p-3 border-b border-border">
         <div className="flex items-center justify-between">
-          <span className={cn("font-medium text-sm", getSenderColor(agent.callsign))}>
+          <span className={cn("font-medium text-base", getSenderColor(agent.callsign))}>
             @{agent.callsign}
           </span>
           <button
@@ -120,7 +120,7 @@ export function AgentDetailPopup({
       {/* Content */}
       <div className="p-3 space-y-3">
         {/* Agent Status */}
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex items-center gap-2 text-base">
           <span className={cn("w-2 h-2 rounded-full flex-shrink-0", status.color)} />
           <span className="text-muted-foreground">Status:</span>
           <span>{status.label}</span>
@@ -128,7 +128,7 @@ export function AgentDetailPopup({
 
         {/* Session Cost */}
         {agent.sessionCost !== undefined && agent.sessionCost > 0 && (
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 text-base">
             <span className="text-muted-foreground">Session cost:</span>
             <span className="font-mono">
               ${agent.sessionCost < 0.01 ? agent.sessionCost.toFixed(4) : agent.sessionCost.toFixed(2)}

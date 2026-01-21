@@ -375,7 +375,7 @@ export function ArtifactTree({
       onClick={handleContainerClick}
     >
       {sortedNodes.length === 0 && filterText ? (
-        <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+        <div className="px-4 py-6 text-center text-base text-muted-foreground">
           No matches for "{filterText}"
         </div>
       ) : (

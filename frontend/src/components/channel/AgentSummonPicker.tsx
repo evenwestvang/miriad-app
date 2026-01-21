@@ -407,7 +407,7 @@ export function AgentSummonPicker({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search agents..."
-                className="w-full pl-8 pr-8 py-1.5 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-full pl-8 pr-8 py-1.5 text-base bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
               />
               {searchQuery && (
                 <button
@@ -428,7 +428,7 @@ export function AgentSummonPicker({
               </div>
             ) : loadError ? (
               <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
-                <p className="text-sm text-destructive">{loadError}</p>
+                <p className="text-base text-destructive">{loadError}</p>
                 <button
                   onClick={fetchAvailableAgents}
                   className="mt-2 text-xs text-primary hover:underline"
@@ -439,7 +439,7 @@ export function AgentSummonPicker({
             ) : filteredAgents.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
                 <CircleDashed className="w-8 h-8 text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground">
+                <p className="text-base text-muted-foreground">
                   {searchQuery ? 'No matching agents' : 'No agents defined in your space'}
                 </p>
               </div>
@@ -458,7 +458,7 @@ export function AgentSummonPicker({
                     )}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm">
+                      <span className="font-medium text-base">
                         {agent.title || agent.slug}
                       </span>
                       {agent.source === 'local' && (
@@ -487,7 +487,7 @@ export function AgentSummonPicker({
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="font-medium text-sm">
+              <span className="font-medium text-base">
                 Summon {selectedAgent?.title || selectedAgent?.slug}
               </span>
             </div>
@@ -506,7 +506,7 @@ export function AgentSummonPicker({
                 onChange={(e) => handleCallsignChange(e.target.value)}
                 placeholder="e.g., fox"
                 className={cn(
-                  "w-full px-2 py-1.5 text-sm bg-background border rounded focus:outline-none focus:ring-1",
+                  "w-full px-2 py-1.5 text-base bg-background border rounded focus:outline-none focus:ring-1",
                   callsignError
                     ? "border-destructive focus:ring-destructive"
                     : "border-border focus:ring-primary"
@@ -528,7 +528,7 @@ export function AgentSummonPicker({
                   value={selectedRuntimeId}
                   onChange={(e) => setSelectedRuntimeId(e.target.value)}
                   disabled={isSubmitting || isLoadingRuntimes}
-                  className="w-full px-2 py-1.5 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary appearance-none pr-8"
+                  className="w-full px-2 py-1.5 text-base bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary appearance-none pr-8"
                 >
                   {runtimes.map((runtime) => (
                     <option key={runtime.id} value={runtime.id}>

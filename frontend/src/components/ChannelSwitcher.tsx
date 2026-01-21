@@ -198,7 +198,7 @@ export function ChannelSwitcher({
               setSelectedIndex(0)
             }}
             placeholder="Search channels..."
-            className="flex-1 bg-transparent text-foreground placeholder:text-muted-foreground outline-none text-sm"
+            className="flex-1 bg-transparent text-foreground placeholder:text-muted-foreground outline-none text-base"
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
@@ -215,7 +215,7 @@ export function ChannelSwitcher({
           className="max-h-[300px] overflow-y-auto py-2"
         >
           {filteredChannels.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            <div className="px-4 py-8 text-center text-base text-muted-foreground">
               No channels found
             </div>
           ) : (
@@ -234,7 +234,7 @@ export function ChannelSwitcher({
               >
                 <Hash className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">
+                  <div className="text-base font-medium truncate">
                     {channel.agentName}
                   </div>
                 </div>

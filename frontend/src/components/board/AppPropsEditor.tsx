@@ -50,18 +50,18 @@ export function AppPropsEditor({ props, onChange }: AppPropsEditorProps) {
     return (
       <div className="flex items-center gap-2 py-4 text-muted-foreground">
         <Loader2 className="w-4 h-4 animate-spin" />
-        <span className="text-sm">Loading available apps...</span>
+        <span className="text-base">Loading available apps...</span>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive">
+      <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded text-base text-destructive">
         <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
         <div>
           <p className="font-medium">Failed to load apps</p>
-          <p className="text-xs mt-0.5">{error}</p>
+          <p className="text-base mt-0.5">{error}</p>
         </div>
       </div>
     )
@@ -69,7 +69,7 @@ export function AppPropsEditor({ props, onChange }: AppPropsEditorProps) {
 
   if (apps.length === 0) {
     return (
-      <div className="py-4 text-sm text-muted-foreground text-center">
+      <div className="py-4 text-base text-muted-foreground text-center">
         No apps available in the registry yet.
       </div>
     )
@@ -79,11 +79,11 @@ export function AppPropsEditor({ props, onChange }: AppPropsEditorProps) {
     <div className="space-y-4">
       {/* Provider select */}
       <div>
-        <label className="block text-xs text-muted-foreground mb-1">
+        <label className="block text-base text-muted-foreground mb-1">
           Provider <span className="text-red-500">*</span>
         </label>
         <select
-          className="w-full px-2 py-1.5 text-sm bg-background rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+          className="w-full px-2 py-1.5 text-base bg-background rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
           value={props.provider}
           onChange={(e) => onChange({ provider: e.target.value })}
         >
@@ -99,10 +99,10 @@ export function AppPropsEditor({ props, onChange }: AppPropsEditorProps) {
       {/* Selected app info */}
       {selectedApp && (
         <div className="p-3 bg-secondary/30 rounded-md">
-          <p className="text-sm font-medium text-foreground">{selectedApp.name}</p>
-          <p className="text-xs text-muted-foreground mt-1">{selectedApp.description}</p>
+          <p className="text-base font-medium text-foreground">{selectedApp.name}</p>
+          <p className="text-base text-muted-foreground mt-1">{selectedApp.description}</p>
           {selectedApp.scopes.length > 0 && (
-            <p className="text-xs text-muted-foreground/60 mt-2">
+            <p className="text-base text-muted-foreground/60 mt-2">
               <span className="font-medium">Scopes:</span> {selectedApp.scopes.join(', ')}
             </p>
           )}
@@ -110,7 +110,7 @@ export function AppPropsEditor({ props, onChange }: AppPropsEditorProps) {
       )}
 
       {/* Note about OAuth */}
-      <p className="text-xs text-muted-foreground">
+      <p className="text-base text-muted-foreground">
         After creating this artifact, you'll need to connect your account via OAuth to enable the integration.
       </p>
     </div>

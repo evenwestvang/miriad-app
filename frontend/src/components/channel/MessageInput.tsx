@@ -610,7 +610,7 @@ export function MessageInput({
                   key={cmd.name}
                   data-selected={index === slashSelectedIndex}
                   className={cn(
-                    "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
+                    "w-full flex items-center gap-2 px-3 py-2 text-base text-left",
                     "hover:bg-[var(--cast-bg-secondary)] transition-colors",
                     index === slashSelectedIndex && "bg-[var(--cast-bg-secondary)]"
                   )}
@@ -663,7 +663,7 @@ export function MessageInput({
         {/* Dormant/dismissed agents notice - superimposed over roster area */}
         {(dormantAgents.length > 0 || mentionedDismissedAgents.length > 0) && !showAgentPicker && !showSlashMenu && (
           <div
-            className="absolute z-40 bg-card border border-border rounded-lg shadow-sm px-3 py-2 text-sm"
+            className="absolute z-40 bg-card border border-border rounded-lg shadow-sm px-3 py-2 text-base"
             style={{ bottom: '100%', left: 0, marginBottom: 8 }}
           >
             <div className="flex items-center gap-2 flex-wrap">
@@ -748,7 +748,7 @@ export function MessageInput({
             className={cn(
               "w-full min-h-[44px] max-h-[200px] resize-none p-3",
               "bg-transparent border-none",
-              "text-sm text-foreground placeholder:text-[#a0a0a0]",
+              "text-base text-foreground placeholder:text-[#a0a0a0]",
               "focus:outline-none focus:ring-0",
               "disabled:opacity-50 disabled:cursor-not-allowed"
             )}
@@ -775,7 +775,7 @@ export function MessageInput({
               <button
                 type="button"
                 onClick={onSummon}
-                className="flex items-center gap-1 px-1 text-[#8c8c8c] hover:text-[#1a1a1a] transition-colors text-sm"
+                className="flex items-center gap-1 px-1 text-[#8c8c8c] hover:text-[#1a1a1a] transition-colors text-base"
                 title="Summon agent"
               >
                 <Plus className="w-[18px] h-[18px]" />
@@ -879,7 +879,7 @@ function AgentActionPicker({
     >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-        <span className="text-sm font-medium">
+        <span className="text-base font-medium">
           {action === 'pause' ? 'Pause Agent' : 'Resume Agent'}
         </span>
         <button
@@ -901,7 +901,7 @@ function AgentActionPicker({
             onChange={(e) => onQueryChange(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={`Search ${action === 'pause' ? 'active' : 'paused'} agents...`}
-            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground"
           />
         </div>
       </div>
@@ -909,7 +909,7 @@ function AgentActionPicker({
       {/* Agent list */}
       <div className="max-h-[180px] overflow-y-auto py-1">
         {agents.length === 0 ? (
-          <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+          <div className="px-3 py-4 text-center text-base text-muted-foreground">
             {allAgents.length === 0
               ? `No ${action === 'pause' ? 'active' : 'paused'} agents`
               : 'No matching agents'
@@ -921,7 +921,7 @@ function AgentActionPicker({
               key={agent.callsign}
               data-selected={index === selectedIndex}
               className={cn(
-                "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
+                "w-full flex items-center gap-2 px-3 py-2 text-base text-left",
                 "hover:bg-secondary/50 transition-colors",
                 index === selectedIndex && "bg-secondary"
               )}

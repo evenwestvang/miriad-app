@@ -44,14 +44,14 @@ export function SettingsModal({ isOpen, onClose, apiHost, spaceId, initialSectio
         <div className="w-48 border-r border-border bg-secondary/20 p-2 flex-shrink-0">
           <div className="flex items-center gap-2 px-3 py-2 mb-2">
             <Settings className="w-4 h-4 text-muted-foreground" />
-            <span className="font-medium text-sm">Settings</span>
+            <span className="font-medium text-base">Settings</span>
           </div>
           <nav className="space-y-1">
             {sections.map(section => (
               <button
                 key={section.id}
                 onClick={() => setActiveSection(section.id)}
-                className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                className={`w-full flex items-center gap-2 px-3 py-2 text-base rounded-md transition-colors ${
                   activeSection === section.id
                     ? 'bg-primary/10 text-primary'
                     : 'text-muted-foreground hover:bg-secondary/50'

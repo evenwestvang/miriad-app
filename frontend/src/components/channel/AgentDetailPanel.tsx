@@ -205,7 +205,7 @@ export function AgentDetailPanel({
                 onClick={handleResume}
                 disabled={actionLoading !== null}
                 className={cn(
-                  "flex items-center gap-1.5 px-2 py-1 text-sm",
+                  "flex items-center gap-1.5 px-2 py-1 text-base",
                   "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]",
                   "disabled:opacity-50 disabled:cursor-not-allowed"
                 )}
@@ -222,7 +222,7 @@ export function AgentDetailPanel({
                 onClick={handlePause}
                 disabled={actionLoading !== null}
                 className={cn(
-                  "flex items-center gap-1.5 px-2 py-1 text-sm",
+                  "flex items-center gap-1.5 px-2 py-1 text-base",
                   "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]",
                   "disabled:opacity-50 disabled:cursor-not-allowed"
                 )}
@@ -239,7 +239,7 @@ export function AgentDetailPanel({
               onClick={handleDismiss}
               disabled={actionLoading !== null}
               className={cn(
-                "flex items-center gap-1.5 px-2 py-1 text-sm",
+                "flex items-center gap-1.5 px-2 py-1 text-base",
                 "text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]",
                 "disabled:opacity-50 disabled:cursor-not-allowed"
               )}
@@ -272,7 +272,7 @@ export function AgentDetailPanel({
                     onClick={() => { handleResume(); setMenuOpen(false) }}
                     disabled={actionLoading !== null}
                     className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
+                      "w-full flex items-center gap-2 px-3 py-2 text-base text-left",
                       "text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]",
                       "disabled:opacity-50 disabled:cursor-not-allowed"
                     )}
@@ -289,7 +289,7 @@ export function AgentDetailPanel({
                     onClick={() => { handlePause(); setMenuOpen(false) }}
                     disabled={actionLoading !== null}
                     className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
+                      "w-full flex items-center gap-2 px-3 py-2 text-base text-left",
                       "text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]",
                       "disabled:opacity-50 disabled:cursor-not-allowed"
                     )}
@@ -306,7 +306,7 @@ export function AgentDetailPanel({
                   onClick={() => { handleDismiss(); setMenuOpen(false) }}
                   disabled={actionLoading !== null}
                   className={cn(
-                    "w-full flex items-center gap-2 px-3 py-2 text-sm text-left",
+                    "w-full flex items-center gap-2 px-3 py-2 text-base text-left",
                     "text-[var(--cast-text-primary)] hover:bg-[var(--cast-bg-secondary)]",
                     "disabled:opacity-50 disabled:cursor-not-allowed"
                   )}
@@ -333,7 +333,7 @@ export function AgentDetailPanel({
         </div>
 
         {/* Bottom row: status, cost, tunnel, env */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[var(--cast-text-muted)]">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base text-[var(--cast-text-muted)]">
           <span>{getStatusDescription()}</span>
           <span>·</span>
           <span className="font-mono">{costDisplay}</span>

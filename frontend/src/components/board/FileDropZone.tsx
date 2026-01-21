@@ -437,7 +437,7 @@ export function FileDropZone({
             <FolderUp className="w-10 h-10 text-primary" />
             <div className="text-center">
               <p className="font-medium text-foreground">Drop files here</p>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-base text-muted-foreground">
                 Folders will preserve their structure
               </p>
             </div>
@@ -454,7 +454,7 @@ export function FileDropZone({
                 <>
                   <CheckCircle className="w-10 h-10 text-green-500" />
                   <p className="font-medium text-foreground">Upload complete!</p>
-                  <p className="text-sm text-muted-foreground text-center">
+                  <p className="text-base text-muted-foreground text-center">
                     {progress.uploadedFiles} file{progress.uploadedFiles !== 1 ? 's' : ''} uploaded
                     {progress.totalFolders > 0 && ` in ${progress.totalFolders} folder${progress.totalFolders !== 1 ? 's' : ''}`}
                   </p>
@@ -463,17 +463,17 @@ export function FileDropZone({
                 <>
                   <AlertCircle className="w-10 h-10 text-amber-500" />
                   <p className="font-medium text-foreground">Upload completed with errors</p>
-                  <p className="text-sm text-muted-foreground text-center">
+                  <p className="text-base text-muted-foreground text-center">
                     {progress.uploadedFiles - progress.errors.length} of {progress.uploadedFiles} succeeded
                   </p>
-                  <div className="max-h-32 overflow-y-auto text-xs text-destructive">
+                  <div className="max-h-32 overflow-y-auto text-base text-destructive">
                     {progress.errors.map((err, i) => (
                       <div key={i}>Failed: {err}</div>
                     ))}
                   </div>
                   <button
                     onClick={dismissProgress}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90"
+                    className="flex items-center gap-1 px-3 py-1.5 text-base bg-primary text-primary-foreground rounded hover:bg-primary/90"
                   >
                     <X className="w-3 h-3" />
                     Dismiss
@@ -493,7 +493,7 @@ export function FileDropZone({
                   )}
                 </p>
                 {progress.currentFile && (
-                  <p className="text-xs text-muted-foreground truncate max-w-full">
+                  <p className="text-base text-muted-foreground truncate max-w-full">
                     {progress.currentFile}
                   </p>
                 )}

@@ -487,7 +487,7 @@ export function ArtifactDetail({
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
               placeholder="Title (optional)"
-              className="flex-1 min-w-0 px-2 py-1 text-sm font-medium bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+              className="flex-1 min-w-0 px-2 py-1 text-base font-medium bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
             />
           ) : (
             <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -495,7 +495,7 @@ export function ArtifactDetail({
                 const Icon = getArtifactIcon(artifact)
                 return <Icon className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
               })()}
-              <span className="font-semibold text-sm text-foreground truncate">
+              <span className="font-semibold text-base text-foreground truncate">
                 {artifact.title || artifact.slug}
               </span>
             </div>
@@ -521,7 +521,7 @@ export function ArtifactDetail({
         {/* Row 2: Path + Action icons */}
         <div className="flex items-center gap-2">
           {/* Path breadcrumb */}
-          <div className="flex-1 min-w-0 text-xs text-muted-foreground truncate">
+          <div className="flex-1 min-w-0 text-base text-muted-foreground truncate">
             {(() => {
               const pathSegments = getArtifactPath(tree, artifact.slug) || [artifact.slug]
               return pathSegments.join(' / ')
@@ -532,7 +532,7 @@ export function ArtifactDetail({
             {isEditing ? (
               <>
                 <button
-                  className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  className="px-2 py-1 text-base text-muted-foreground hover:text-foreground transition-colors"
                   onClick={cancelEditing}
                   disabled={saving}
                 >
@@ -540,7 +540,7 @@ export function ArtifactDetail({
                 </button>
                 <button
                   className={cn(
-                    "flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors",
+                    "flex items-center gap-1 px-2 py-1 text-base rounded transition-colors",
                     hasChanges && !saving
                       ? "bg-primary text-primary-foreground hover:bg-primary/90"
                       : "bg-secondary text-muted-foreground cursor-not-allowed"
@@ -607,7 +607,7 @@ export function ArtifactDetail({
 
       {/* Error display */}
       {error && (
-        <div className="px-3 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-sm">
+        <div className="px-3 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-base">
           {error}
         </div>
       )}
@@ -637,11 +637,11 @@ export function ArtifactDetail({
             value={editTldr}
             onChange={(e) => setEditTldr(e.target.value)}
             placeholder="Brief summary (required)"
-            className="w-full px-2 py-1.5 text-sm bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            className="w-full px-2 py-1.5 text-base bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary resize-none"
             rows={2}
           />
         ) : (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-base text-muted-foreground">
             {isViewingHistory ? versionData!.tldr : artifact.tldr}
           </p>
         )}
@@ -651,7 +651,7 @@ export function ArtifactDetail({
       {artifact.type === 'system.mcp' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
-            <div className="text-xs text-muted-foreground mb-2">Saving...</div>
+            <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <McpPropsEditor
             props={(artifact.props as unknown as McpProps) || { transport: 'stdio' as const }}
@@ -669,7 +669,7 @@ export function ArtifactDetail({
       {artifact.type === 'system.agent' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
-            <div className="text-xs text-muted-foreground mb-2">Saving...</div>
+            <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <AgentPropsEditor
             props={(artifact.props as unknown as AgentProps) || { engine: 'claude' }}
@@ -686,7 +686,7 @@ export function ArtifactDetail({
       {artifact.type === 'system.focus' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
-            <div className="text-xs text-muted-foreground mb-2">Saving...</div>
+            <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <FocusPropsEditor
             props={(artifact.props as unknown as FocusProps) || { agents: [] }}
@@ -702,7 +702,7 @@ export function ArtifactDetail({
       {artifact.type === 'system.environment' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
-            <div className="text-xs text-muted-foreground mb-2">Saving...</div>
+            <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <EnvEditor
             variables={((artifact.props as { variables?: Record<string, string> })?.variables) || {}}
@@ -719,7 +719,7 @@ export function ArtifactDetail({
       {artifact.type === 'system.app' && spaceId && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
-            <div className="text-xs text-muted-foreground mb-2">Saving...</div>
+            <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <AppPropsDisplay
             props={(artifact.props as unknown as AppProps) || { provider: '' }}
@@ -741,11 +741,11 @@ export function ArtifactDetail({
       {/* Parent selection (edit mode only) */}
       {isEditing && (
         <div className="px-3 py-2 border-b border-border">
-          <label className="block text-xs text-muted-foreground mb-1">Parent</label>
+          <label className="block text-base text-muted-foreground mb-1">Parent</label>
           <select
             value={editParentSlug}
             onChange={(e) => setEditParentSlug(e.target.value)}
-            className="w-full px-2 py-1.5 text-sm bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+            className="w-full px-2 py-1.5 text-base bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
           >
             <option value="">(root level)</option>
             {parentOptions.map((opt) => (
@@ -761,7 +761,7 @@ export function ArtifactDetail({
       <div className={cn("flex-1 min-h-0", isInteractiveApp ? "overflow-hidden flex flex-col" : "overflow-y-auto")}>
         {versionLoading ? (
           <div className="flex items-center justify-center h-20">
-            <span className="text-sm text-muted-foreground">Loading version...</span>
+            <span className="text-base text-muted-foreground">Loading version...</span>
           </div>
         ) : isEditing ? (
           <div className="h-full p-3">
@@ -770,7 +770,7 @@ export function ArtifactDetail({
               onChange={(e) => setEditContent(e.target.value)}
               placeholder={isCodeArtifact ? 'Code content...' : 'Markdown content...'}
               className={cn(
-                "w-full h-full px-3 py-2 text-sm bg-secondary rounded border border-border",
+                "w-full h-full px-3 py-2 text-base bg-secondary rounded border border-border",
                 "focus:outline-none focus:ring-1 focus:ring-primary resize-none",
                 isCodeArtifact && "font-mono"
               )}
@@ -809,7 +809,7 @@ export function ArtifactDetail({
 
       {/* Metadata footer */}
       {!isEditing && (
-        <div className="px-3 py-2 border-t border-border text-xs text-muted-foreground space-y-1">
+        <div className="px-3 py-2 border-t border-border text-base text-muted-foreground space-y-1">
           {/* Created/Updated info */}
           <div className="flex flex-wrap gap-x-3 gap-y-0.5">
             <span>Created by <span className="text-foreground">@{artifact.createdBy}</span> · {formatRelativeTime(artifact.createdAt)}</span>
@@ -857,7 +857,7 @@ function StatusDropdown({
         onClick={() => !disabled && setOpen(!open)}
         disabled={disabled}
         className={cn(
-          "flex items-center gap-1 px-2 py-0.5 text-xs rounded transition-colors",
+          "flex items-center gap-1 px-2 py-0.5 text-base rounded transition-colors",
           STATUS_COLORS[status] || STATUS_COLORS.draft,
           disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:opacity-80"
         )}
@@ -884,7 +884,7 @@ function StatusDropdown({
                   setOpen(false)
                 }}
                 className={cn(
-                  "w-full px-3 py-1.5 text-xs text-left hover:bg-secondary transition-colors flex items-center gap-2",
+                  "w-full px-3 py-1.5 text-base text-left hover:bg-secondary transition-colors flex items-center gap-2",
                   opt === status && "bg-secondary/50"
                 )}
               >
@@ -925,7 +925,7 @@ function VersionDropdown({
         onClick={() => setOpen(!open)}
         disabled={loading}
         className={cn(
-          "flex items-center gap-1 px-2 py-0.5 text-xs rounded transition-colors",
+          "flex items-center gap-1 px-2 py-0.5 text-base rounded transition-colors",
           selectedVersion
             ? "bg-amber-200/50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
             : "text-muted-foreground hover:text-foreground hover:bg-secondary/50",
@@ -955,7 +955,7 @@ function VersionDropdown({
                 setOpen(false)
               }}
               className={cn(
-                "w-full px-3 py-1.5 text-xs text-left hover:bg-secondary transition-colors flex items-center gap-2",
+                "w-full px-3 py-1.5 text-base text-left hover:bg-secondary transition-colors flex items-center gap-2",
                 !selectedVersion && "bg-secondary/50"
               )}
             >
@@ -972,7 +972,7 @@ function VersionDropdown({
                   setOpen(false)
                 }}
                 className={cn(
-                  "w-full px-3 py-1.5 text-xs text-left hover:bg-secondary transition-colors",
+                  "w-full px-3 py-1.5 text-base text-left hover:bg-secondary transition-colors",
                   version === selectedVersion && "bg-secondary/50"
                 )}
               >
@@ -1002,13 +1002,13 @@ function HistoricalVersionBanner({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
           <History className="w-4 h-4 flex-shrink-0" />
-          <span className="text-sm">
+          <span className="text-base">
             Viewing <span className="font-medium">{versionName}</span> (not current)
           </span>
         </div>
         <button
           onClick={onViewCurrent}
-          className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-amber-200/50 dark:hover:bg-amber-800/50 text-amber-700 dark:text-amber-300 transition-colors"
+          className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-amber-200/50 dark:hover:bg-amber-800/50 text-amber-700 dark:text-amber-300 transition-colors"
         >
           <RotateCcw className="w-3 h-3" />
           View Current
@@ -1034,25 +1034,25 @@ function ConflictDialog({
       <div className="flex items-start gap-2">
         <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
         <div className="flex-1">
-          <div className="font-medium text-sm text-yellow-800 dark:text-yellow-200">Edit Conflict</div>
-          <div className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
+          <div className="font-medium text-base text-yellow-800 dark:text-yellow-200">Edit Conflict</div>
+          <div className="text-base text-yellow-700 dark:text-yellow-300 mt-1">
             The field "{conflict.field}" was modified by someone else while you were editing.
           </div>
           <div className="flex gap-2 mt-2">
             <button
-              className="px-2 py-1 text-xs bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 rounded hover:bg-yellow-300 dark:hover:bg-yellow-700"
+              className="px-2 py-1 text-base bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 rounded hover:bg-yellow-300 dark:hover:bg-yellow-700"
               onClick={onOverwrite}
             >
               Overwrite
             </button>
             <button
-              className="px-2 py-1 text-xs text-yellow-700 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-100"
+              className="px-2 py-1 text-base text-yellow-700 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-100"
               onClick={onReload}
             >
               Reload
             </button>
             <button
-              className="px-2 py-1 text-xs text-yellow-700 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-100"
+              className="px-2 py-1 text-base text-yellow-700 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-100"
               onClick={onContinue}
             >
               Continue Editing
@@ -1076,8 +1076,8 @@ function ValidationErrorDisplay({
       <div className="flex items-start gap-2">
         <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
         <div className="flex-1">
-          <div className="font-medium text-sm text-red-800 dark:text-red-200">Validation Error</div>
-          <ul className="text-xs text-red-700 dark:text-red-300 mt-1 space-y-1">
+          <div className="font-medium text-base text-red-800 dark:text-red-200">Validation Error</div>
+          <ul className="text-base text-red-700 dark:text-red-300 mt-1 space-y-1">
             {violations.map((v, i) => (
               <li key={i}>
                 <span className="font-mono">{v.path}</span>: {v.message}
@@ -1085,7 +1085,7 @@ function ValidationErrorDisplay({
             ))}
           </ul>
           <button
-            className="px-2 py-1 mt-2 text-xs text-red-700 dark:text-red-300 hover:text-red-900 dark:hover:text-red-100"
+            className="px-2 py-1 mt-2 text-base text-red-700 dark:text-red-300 hover:text-red-900 dark:hover:text-red-100"
             onClick={onDismiss}
           >
             Dismiss
@@ -1100,7 +1100,7 @@ function CodeContent({ content, language, isDarkMode }: { content: string; langu
   const codeTheme = isDarkMode ? oneDark : oneLight
 
   return (
-    <div className="text-sm">
+    <div className="text-base">
       <SyntaxHighlighter
         language={language}
         style={codeTheme}
@@ -1162,7 +1162,7 @@ function ArtifactContent({ content, onLinkClick, artifacts, isDarkMode }: Artifa
       if (!isCodeBlock) {
         // Inline code - render as styled span
         return (
-          <code className="bg-secondary px-1.5 py-0.5 text-sm font-mono rounded" {...props}>
+          <code className="bg-secondary px-1.5 py-0.5 text-base font-mono rounded" {...props}>
             {children}
           </code>
         )
@@ -1195,7 +1195,7 @@ function ArtifactContent({ content, onLinkClick, artifacts, isDarkMode }: Artifa
 
   return (
     <Markdown
-      className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+      className="prose prose-base dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
       components={markdownComponents}
       remarkPlugins={[remarkGfm]}
     >
@@ -1219,7 +1219,7 @@ function AssetPreview({ slug, url, isImage, isPdf, isAudio, isVideo }: { slug: s
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
+            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
           >
             <ExternalLink className="w-3 h-3" />
             Open
@@ -1227,7 +1227,7 @@ function AssetPreview({ slug, url, isImage, isPdf, isAudio, isVideo }: { slug: s
           <a
             href={url}
             download={slug}
-            className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
+            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
           >
             <Download className="w-3 h-3" />
             Download
@@ -1245,7 +1245,7 @@ function AssetPreview({ slug, url, isImage, isPdf, isAudio, isVideo }: { slug: s
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
+            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
           >
             <ExternalLink className="w-3 h-3" />
             Open PDF
@@ -1253,7 +1253,7 @@ function AssetPreview({ slug, url, isImage, isPdf, isAudio, isVideo }: { slug: s
           <a
             href={url}
             download={slug}
-            className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
+            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
           >
             <Download className="w-3 h-3" />
             Download
@@ -1283,7 +1283,7 @@ function AssetPreview({ slug, url, isImage, isPdf, isAudio, isVideo }: { slug: s
           <a
             href={url}
             download={slug}
-            className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
+            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
           >
             <Download className="w-3 h-3" />
             Download
@@ -1309,7 +1309,7 @@ function AssetPreview({ slug, url, isImage, isPdf, isAudio, isVideo }: { slug: s
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
+            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
           >
             <ExternalLink className="w-3 h-3" />
             Open
@@ -1317,7 +1317,7 @@ function AssetPreview({ slug, url, isImage, isPdf, isAudio, isVideo }: { slug: s
           <a
             href={url}
             download={slug}
-            className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
+            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
           >
             <Download className="w-3 h-3" />
             Download

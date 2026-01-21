@@ -29,7 +29,7 @@ export function SummonRequestField({ field, value, onChange, disabled }: SummonR
   return (
     <div className="space-y-2">
       <div className="mb-2">
-        <label className="text-sm font-medium text-foreground">
+        <label className="text-base font-medium text-foreground">
           {field.label}
           {field.required && <span className="text-destructive ml-1">*</span>}
         </label>
@@ -79,7 +79,7 @@ function AgentCard({ agent, isSelected, onReject, onRestore, disabled }: AgentCa
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-sm">@{agent.callsign}</span>
+          <span className="font-medium text-base">@{agent.callsign}</span>
           <span className="text-xs text-muted-foreground">({agent.definitionSlug})</span>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
@@ -113,7 +113,7 @@ interface SummonRequestSubmittedProps {
 export function SummonRequestSubmitted({ field, approvedCallsigns }: SummonRequestSubmittedProps) {
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium text-foreground">{field.label}</label>
+      <label className="text-base font-medium text-foreground">{field.label}</label>
       <div className="space-y-1.5">
         {field.agents.map((agent) => {
           const isApproved = approvedCallsigns.includes(agent.callsign)
@@ -121,7 +121,7 @@ export function SummonRequestSubmitted({ field, approvedCallsigns }: SummonReque
             <div
               key={agent.callsign}
               className={cn(
-                'flex items-center gap-2 text-sm',
+                'flex items-center gap-2 text-base',
                 isApproved ? 'text-foreground' : 'text-muted-foreground line-through'
               )}
             >

@@ -87,7 +87,7 @@ export function ArtifactCreateRenderer({ args, error, isSuccess }: ToolRendererP
 
       {/* Title if provided */}
       {title && (
-        <div className="text-sm font-medium text-foreground">
+        <div className="text-base font-medium text-foreground">
           {title}
         </div>
       )}

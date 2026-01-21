@@ -16,14 +16,14 @@ export function RootChannelEmptyState() {
         Root Channel
       </h2>
 
-      <p className="text-muted-foreground text-sm leading-relaxed mb-6">
+      <p className="text-muted-foreground text-base leading-relaxed mb-6">
         This is your workspace's root channel. Everything defined on this channel's board
         is available across all other channels.
       </p>
 
       <div className="space-y-2 text-left w-full max-w-md">
         <div className="py-1">
-          <div className="font-medium text-sm text-foreground">
+          <div className="font-medium text-base text-foreground">
             Agent Definitions
           </div>
           <p className="text-xs text-muted-foreground">
@@ -32,7 +32,7 @@ export function RootChannelEmptyState() {
         </div>
 
         <div className="py-1">
-          <div className="font-medium text-sm text-foreground">
+          <div className="font-medium text-base text-foreground">
             MCP Servers
           </div>
           <p className="text-xs text-muted-foreground">
@@ -41,7 +41,7 @@ export function RootChannelEmptyState() {
         </div>
 
         <div className="py-1">
-          <div className="font-medium text-sm text-foreground">
+          <div className="font-medium text-base text-foreground">
             Playbooks
           </div>
           <p className="text-xs text-muted-foreground">

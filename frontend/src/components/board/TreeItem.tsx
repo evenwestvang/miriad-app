@@ -193,13 +193,13 @@ export function TreeItem({
       <Icon className="w-4 h-4 text-[var(--cast-text-subtle)] flex-shrink-0" />
 
       {/* Name */}
-      <span className="text-[13px] truncate flex-1 text-[var(--cast-text-secondary)]">
+      <span className="text-base truncate flex-1 text-[var(--cast-text-secondary)]">
         {title || slug}
       </span>
 
       {/* Status indicator for tasks */}
       {statusIndicator && (
-        <span className={cn("text-xs flex-shrink-0", statusIndicator.className)}>
+        <span className={cn("text-base flex-shrink-0", statusIndicator.className)}>
           {statusIndicator.icon}
         </span>
       )}

@@ -91,7 +91,7 @@ export function EditableField({
   }
 
   const inputClasses = cn(
-    'w-full px-2 py-1.5 text-sm bg-secondary rounded border border-border',
+    'w-full px-2 py-1.5 text-base bg-secondary rounded border border-border',
     'focus:outline-none focus:ring-1 focus:ring-primary',
     multiline && 'font-mono resize-none overflow-hidden',
     minHeight,
@@ -168,12 +168,12 @@ export function EditableField({
         >
           {value ? (
             multiline ? (
-              <pre className="text-sm whitespace-pre-wrap font-mono">{value}</pre>
+              <pre className="text-base whitespace-pre-wrap font-mono">{value}</pre>
             ) : (
-              <span className="text-sm">{value}</span>
+              <span className="text-base">{value}</span>
             )
           ) : (
-            <span className="text-muted-foreground text-sm italic">{placeholder}</span>
+            <span className="text-muted-foreground text-base italic">{placeholder}</span>
           )}
         </div>
       )}

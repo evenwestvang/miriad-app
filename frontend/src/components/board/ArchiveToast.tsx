@@ -57,7 +57,7 @@ export function ArchiveToast({
         <Archive className="w-4 h-4 text-muted-foreground flex-shrink-0" />
 
         {/* Message */}
-        <span className="flex-1 text-sm text-foreground truncate">
+        <span className="flex-1 text-base text-foreground truncate">
           {displayText}
         </span>
 
@@ -66,7 +66,7 @@ export function ArchiveToast({
           onClick={handleUndo}
           disabled={isUndoing}
           className={cn(
-            "flex items-center gap-1 px-2 py-1 text-xs rounded",
+            "flex items-center gap-1 px-2 py-1 text-base rounded",
             "text-primary hover:bg-primary/10 transition-colors",
             isUndoing && "opacity-50 cursor-not-allowed"
           )}

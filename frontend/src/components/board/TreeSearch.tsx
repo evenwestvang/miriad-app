@@ -61,7 +61,7 @@ export function TreeSearch({
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         className={cn(
-          "w-full h-8 pl-8 pr-8 text-sm",
+          "w-full h-8 pl-8 pr-8 text-base",
           "bg-[var(--cast-bg-input)] border border-[var(--cast-border-default)]",
           "placeholder:text-muted-foreground",
           "focus:outline-none focus:ring-1 focus:ring-primary/50",

@@ -181,7 +181,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
 
       {/* MCP Servers */}
       <div className="space-y-2">
-        <label className="block text-xs font-medium text-muted-foreground uppercase">
+        <label className="block text-base font-medium text-muted-foreground uppercase">
           MCP Servers
         </label>
 
@@ -194,7 +194,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
                 className="flex items-center gap-2 px-2 py-1.5 bg-secondary/30 rounded border border-border"
               >
                 <Server className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                <span className="text-sm flex-1 truncate">{getMcpDisplay(ref)}</span>
+                <span className="text-base flex-1 truncate">{getMcpDisplay(ref)}</span>
                 <button
                   type="button"
                   onClick={() => removeMcp(index)}
@@ -212,19 +212,19 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
         {showMcpPicker ? (
           <div className="rounded border border-border bg-secondary/20 p-2 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Select MCP Server</span>
+              <span className="text-base font-medium text-muted-foreground">Select MCP Server</span>
               <button
                 type="button"
                 onClick={() => setShowMcpPicker(false)}
-                className="text-xs text-muted-foreground hover:text-foreground"
+                className="text-base text-muted-foreground hover:text-foreground"
               >
                 Cancel
               </button>
             </div>
             {mcpLoading ? (
-              <div className="text-xs text-muted-foreground py-2">Loading...</div>
+              <div className="text-base text-muted-foreground py-2">Loading...</div>
             ) : selectableMcps.length === 0 ? (
-              <div className="text-xs text-muted-foreground py-2">
+              <div className="text-base text-muted-foreground py-2">
                 No MCP servers available
               </div>
             ) : (
@@ -235,7 +235,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
                     type="button"
                     onClick={() => addMcp(mcp)}
                     className={cn(
-                      "w-full text-left px-2 py-1.5 rounded text-sm",
+                      "w-full text-left px-2 py-1.5 rounded text-base",
                       "hover:bg-secondary/50 transition-colors"
                     )}
                   >
@@ -249,7 +249,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
                       </span>
                     </div>
                     {mcp.tldr && (
-                      <div className="text-xs text-muted-foreground truncate ml-5.5 mt-0.5">
+                      <div className="text-base text-muted-foreground truncate ml-5.5 mt-0.5">
                         {mcp.tldr}
                       </div>
                     )}
@@ -263,7 +263,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
             type="button"
             onClick={() => setShowMcpPicker(true)}
             className={cn(
-              "flex items-center gap-1.5 px-2 py-1.5 text-xs rounded border border-dashed",
+              "flex items-center gap-1.5 px-2 py-1.5 text-base rounded border border-dashed",
               "border-border text-muted-foreground hover:text-foreground hover:border-primary/50",
               "transition-colors"
             )}
@@ -283,11 +283,11 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
           onChange={(e) => onChange({ featuredChannelStarter: e.target.checked || undefined })}
           className="w-4 h-4 rounded border-border text-primary focus:ring-primary focus:ring-offset-0"
         />
-        <label htmlFor="featuredChannelStarter" className="text-sm text-foreground">
+        <label htmlFor="featuredChannelStarter" className="text-base text-foreground">
           Featured channel starter
         </label>
       </div>
-      <p className="text-xs text-muted-foreground -mt-2">
+      <p className="text-base text-muted-foreground -mt-2">
         Show this agent as a suggested starter when creating new channels
       </p>
     </div>

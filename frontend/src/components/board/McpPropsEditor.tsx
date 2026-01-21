@@ -182,9 +182,9 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
             >
               <div className="flex items-center gap-2">
                 <Shield className="w-4 h-4 text-muted-foreground" />
-                <span className="text-xs font-medium">OAuth 2.1 Authentication</span>
+                <span className="text-base font-medium">OAuth 2.1 Authentication</span>
                 {hasOAuth && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                  <span className="text-base px-1.5 py-0.5 rounded bg-primary/10 text-primary">
                     Enabled
                   </span>
                 )}
@@ -197,7 +197,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
                 )
               )}
               {!hasOAuth && (
-                <span className="text-xs text-muted-foreground">Click to enable</span>
+                <span className="text-base text-muted-foreground">Click to enable</span>
               )}
             </button>
 
@@ -207,7 +207,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
                 {/* Connection status and button */}
                 {channel && mcpSlug && (
                   <div>
-                    <div className="text-xs font-medium text-muted-foreground mb-1.5">
+                    <div className="text-base font-medium text-muted-foreground mb-1.5">
                       Connection Status
                     </div>
                     <OAuthConnectButton
@@ -286,7 +286,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
                   <button
                     type="button"
                     onClick={() => toggleOAuth(false)}
-                    className="text-xs text-destructive hover:text-destructive/80"
+                    className="text-base text-destructive hover:text-destructive/80"
                   >
                     Disable OAuth
                   </button>

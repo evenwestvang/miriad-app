@@ -127,7 +127,7 @@ export function AssetUploadForm({
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-        <span className="font-medium text-sm">Upload Asset</span>
+        <span className="font-medium text-base">Upload Asset</span>
         <button
           onClick={onCancel}
           className="p-1 rounded hover:bg-secondary/50 text-muted-foreground"
@@ -142,14 +142,14 @@ export function AssetUploadForm({
         <div className="flex items-start gap-3 p-3 bg-secondary/30 rounded-lg">
           <FileIcon mimeType={file.type} />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{file.name}</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-base font-medium truncate">{file.name}</p>
+            <p className="text-base text-muted-foreground">
               {formatSize(file.size)}
             </p>
           </div>
           <button
             onClick={onChangeFile}
-            className="text-xs text-primary hover:underline"
+            className="text-base text-primary hover:underline"
           >
             Change
           </button>
@@ -157,7 +157,7 @@ export function AssetUploadForm({
 
         {/* Slug field */}
         <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
+          <label className="block text-base font-medium text-muted-foreground mb-1">
             Slug
           </label>
           <input
@@ -166,23 +166,23 @@ export function AssetUploadForm({
             onChange={(e) => handleSlugChange(e.target.value)}
             placeholder="e.g., screenshot.png"
             className={cn(
-              "w-full px-2 py-1.5 text-sm bg-background border rounded focus:outline-none focus:ring-1",
+              "w-full px-2 py-1.5 text-base bg-background border rounded focus:outline-none focus:ring-1",
               slugError
                 ? "border-destructive focus:ring-destructive"
                 : "border-border focus:ring-primary"
             )}
           />
           {slugError && (
-            <p className="text-xs text-destructive mt-1">{slugError}</p>
+            <p className="text-base text-destructive mt-1">{slugError}</p>
           )}
           {isValidating && (
-            <p className="text-xs text-muted-foreground mt-1">Checking...</p>
+            <p className="text-base text-muted-foreground mt-1">Checking...</p>
           )}
         </div>
 
         {/* Description field */}
         <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
+          <label className="block text-base font-medium text-muted-foreground mb-1">
             Description <span className="text-muted-foreground/60">(optional)</span>
           </label>
           <textarea
@@ -190,7 +190,7 @@ export function AssetUploadForm({
             onChange={(e) => setTldr(e.target.value)}
             placeholder="Brief description of this file"
             rows={2}
-            className="w-full px-2 py-1.5 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            className="w-full px-2 py-1.5 text-base bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary resize-none"
           />
         </div>
       </div>
@@ -199,7 +199,7 @@ export function AssetUploadForm({
       <div className="flex justify-end gap-2 px-3 py-2 border-t border-border">
         <button
           onClick={onCancel}
-          className="px-3 py-1.5 text-xs rounded-md hover:bg-secondary/50 text-muted-foreground"
+          className="px-3 py-1.5 text-base rounded-md hover:bg-secondary/50 text-muted-foreground"
         >
           Cancel
         </button>
@@ -207,7 +207,7 @@ export function AssetUploadForm({
           onClick={handleSubmit}
           disabled={!!slugError || isValidating || !slug}
           className={cn(
-            "px-3 py-1.5 text-xs rounded-md font-medium",
+            "px-3 py-1.5 text-base rounded-md font-medium",
             slugError || isValidating || !slug
               ? "bg-secondary text-muted-foreground cursor-not-allowed"
               : "bg-primary text-primary-foreground hover:bg-primary/90"

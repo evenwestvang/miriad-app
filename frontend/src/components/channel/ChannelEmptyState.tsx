@@ -55,7 +55,7 @@ export function ChannelEmptyState({
         Welcome to your channel
       </h2>
 
-      <p className="text-muted-foreground text-sm leading-relaxed mb-8">
+      <p className="text-muted-foreground text-base leading-relaxed mb-8">
         Channels are spaces where you and AI agents collaborate on projects together.
         Whether it's coding, data analysis, research, or creative exploration —
         summon the agents you need and start working.
@@ -65,13 +65,13 @@ export function ChannelEmptyState({
       {isLoading ? (
         <div className="flex items-center gap-2 text-muted-foreground">
           <Loader2 className="w-4 h-4 animate-spin" />
-          <span className="text-sm">Loading agents...</span>
+          <span className="text-base">Loading agents...</span>
         </div>
       ) : starterAgents.length > 0 ? (
         <div className="w-full">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Coffee className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium text-foreground">
+            <span className="text-base font-medium text-foreground">
               Recommended starters
             </span>
           </div>
@@ -83,7 +83,7 @@ export function ChannelEmptyState({
                 onClick={() => onSelectAgent(agent.slug)}
                 className="group p-4 text-left bg-card border border-border rounded-lg hover:border-primary/50 hover:bg-secondary/30 transition-colors"
               >
-                <div className="font-medium text-sm text-foreground group-hover:text-primary transition-colors">
+                <div className="font-medium text-base text-foreground group-hover:text-primary transition-colors">
                   {agent.title || agent.slug}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 line-clamp-2">

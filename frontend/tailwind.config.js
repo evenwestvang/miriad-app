@@ -7,7 +7,7 @@ export default {
   ],
   theme: {
     extend: {
-      fontFamily: {
+fontFamily: {
         mono: ['Fira Code', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
       },
       colors: {

@@ -101,7 +101,7 @@ export function ToolGroup({ messages, firehoseMode = false }: ToolGroupProps) {
       {/* Collapsed header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        className="flex items-center gap-2 text-base text-muted-foreground hover:text-foreground transition-colors"
       >
         {expanded ? (
           <ChevronDown className="w-3 h-3 flex-shrink-0" />
@@ -162,7 +162,7 @@ function ToolItem({ pair }: ToolItemProps) {
     <div className="py-0.5">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 text-sm hover:text-foreground transition-colors w-full text-left"
+        className="flex items-center gap-2 text-base hover:text-foreground transition-colors w-full text-left"
       >
         {expanded ? (
           <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
@@ -244,7 +244,7 @@ function SingleToolItem({ pair }: { pair: ToolPair }) {
     <div className="my-4">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 text-sm hover:text-foreground transition-colors text-left"
+        className="flex items-center gap-2 text-base hover:text-foreground transition-colors text-left"
       >
         {expanded ? (
           <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
