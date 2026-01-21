@@ -1007,14 +1007,16 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
   });
 
   // ---------------------------------------------------------------------------
-  // GET /channels/:channelId/assets/:slug - Serve asset file
-  // Uses streaming when available to handle large files without memory pressure
+  // GET /channels/:channelId/assets/:slug - Serve artifact content
+  //
+  // Serves different artifact types:
+  // - asset: Binary file from asset storage (images, PDFs, etc.)
+  // - code: Text content with MIME type from extension (.js, .json, etc.)
+  // - other: Text content as text/plain (doc, task, decision, etc.)
+  //
+  // Uses streaming when available for assets to handle large files.
   // ---------------------------------------------------------------------------
   app.get('/:channelId/assets/:slug', async (c) => {
-    if (!assetStorage) {
-      return c.json({ error: 'Asset storage not configured' }, 501);
-    }
-
     const channelId = c.req.param('channelId');
     const slug = c.req.param('slug');
 
@@ -1027,49 +1029,69 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
         return c.json({ error: 'Channel not found' }, 404);
       }
 
-      // Check artifact exists and is an asset
       const artifact = await storage.getArtifact(channel.id, slug);
       if (!artifact) {
-        return c.json({ error: `Asset not found: ${slug}` }, 404);
-      }
-      if (artifact.type !== 'asset') {
-        return c.json({ error: `Not an asset artifact: ${slug}` }, 400);
+        return c.json({ error: `Artifact not found: ${slug}` }, 404);
       }
 
-      const mimeType = artifact.contentType || getMimeType(slug);
-
-      // Use streaming if available (S3 backend) to handle large files
-      if (assetStorage.readAssetStream) {
-        const { stream, contentLength, contentType } = await assetStorage.readAssetStream(channel.id, slug);
-
-        const headers: Record<string, string> = {
-          'Content-Type': contentType || mimeType,
-          'Cache-Control': 'public, max-age=31536000, immutable',
-        };
-
-        if (contentLength !== undefined) {
-          headers['Content-Length'] = contentLength.toString();
+      // Asset artifacts: serve binary from asset storage
+      if (artifact.type === 'asset') {
+        if (!assetStorage) {
+          return c.json({ error: 'Asset storage not configured' }, 501);
         }
 
-        return new Response(stream, { headers });
+        const mimeType = artifact.contentType || getMimeType(slug);
+
+        // Use streaming if available (S3 backend) to handle large files
+        if (assetStorage.readAssetStream) {
+          const { stream, contentLength, contentType } = await assetStorage.readAssetStream(channel.id, slug);
+
+          const headers: Record<string, string> = {
+            'Content-Type': contentType || mimeType,
+            'Cache-Control': 'public, max-age=31536000, immutable',
+          };
+
+          if (contentLength !== undefined) {
+            headers['Content-Length'] = contentLength.toString();
+          }
+
+          return new Response(stream, { headers });
+        }
+
+        // Fallback to buffered read for filesystem backend
+        const data = await assetStorage.readAsset(channel.id, slug);
+
+        return new Response(data, {
+          headers: {
+            'Content-Type': mimeType,
+            'Content-Length': data.length.toString(),
+            'Cache-Control': 'public, max-age=31536000, immutable',
+          },
+        });
       }
 
-      // Fallback to buffered read for filesystem backend
-      const data = await assetStorage.readAsset(channel.id, slug);
+      // Code and other artifacts: serve content as text
+      const content = artifact.content || '';
+      const contentBuffer = new TextEncoder().encode(content);
 
-      return new Response(data, {
+      // Code artifacts get MIME type from extension, others get text/plain
+      const mimeType = artifact.type === 'code' ? getMimeType(slug) : 'text/plain';
+      // Fall back to text/plain if no extension match (getMimeType returns application/octet-stream)
+      const finalMimeType = mimeType === 'application/octet-stream' ? 'text/plain' : mimeType;
+
+      return new Response(contentBuffer, {
         headers: {
-          'Content-Type': mimeType,
-          'Content-Length': data.length.toString(),
-          'Cache-Control': 'public, max-age=31536000, immutable',
+          'Content-Type': finalMimeType + '; charset=utf-8',
+          'Content-Length': contentBuffer.length.toString(),
+          'Cache-Control': 'no-cache', // Text artifacts can change, don't cache aggressively
         },
       });
     } catch (error) {
       if (error instanceof Error && error.message.includes('not found')) {
         return c.json({ error: error.message }, 404);
       }
-      console.error('[Artifacts] Error serving asset:', error);
-      return c.json({ error: 'Failed to serve asset' }, 500);
+      console.error('[Artifacts] Error serving artifact:', error);
+      return c.json({ error: 'Failed to serve artifact' }, 500);
     }
   });
 

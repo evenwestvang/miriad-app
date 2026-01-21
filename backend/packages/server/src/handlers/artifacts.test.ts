@@ -1070,19 +1070,35 @@ describe('Artifact Routes', () => {
       expect(res.status).toBe(404);
     });
 
-    it('returns 400 for non-file artifact', async () => {
+    it('serves non-asset artifacts as text/plain', async () => {
       vi.mocked(mockStorage.getArtifact).mockResolvedValueOnce(createMockArtifact({
         type: 'doc',
+        content: '# Hello World\n\nThis is a document.',
       }));
 
-      const res = await app.request(`/channels/${TEST_CHANNEL_ID}/assets/not-a-file`);
+      const res = await app.request(`/channels/${TEST_CHANNEL_ID}/assets/readme`);
 
-      expect(res.status).toBe(400);
-      const json = await res.json();
-      expect(json.error).toContain('Not an asset artifact');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+      const text = await res.text();
+      expect(text).toBe('# Hello World\n\nThis is a document.');
     });
 
-    it('returns 501 when assetStorage not configured', async () => {
+    it('serves code artifacts with MIME type from extension', async () => {
+      vi.mocked(mockStorage.getArtifact).mockResolvedValueOnce(createMockArtifact({
+        type: 'code',
+        content: '{"key": "value"}',
+      }));
+
+      const res = await app.request(`/channels/${TEST_CHANNEL_ID}/assets/data.json`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('application/json; charset=utf-8');
+      const text = await res.text();
+      expect(text).toBe('{"key": "value"}');
+    });
+
+    it('returns 501 for asset type when assetStorage not configured', async () => {
       const routesWithoutAssets = createArtifactRoutes({
         storage: mockStorage,
         spaceId: TEST_SPACE_ID,
@@ -1091,9 +1107,36 @@ describe('Artifact Routes', () => {
       const testApp = new Hono();
       testApp.route('/channels', routesWithoutAssets);
 
+      // Mock returns an asset type - should fail without storage
+      vi.mocked(mockStorage.getArtifact).mockResolvedValueOnce(createMockArtifact({
+        type: 'asset',
+        encoding: 'file',
+      }));
+
       const res = await testApp.request(`/channels/${TEST_CHANNEL_ID}/assets/test.png`);
 
       expect(res.status).toBe(501);
+    });
+
+    it('serves code artifacts without assetStorage configured', async () => {
+      const routesWithoutAssets = createArtifactRoutes({
+        storage: mockStorage,
+        spaceId: TEST_SPACE_ID,
+        connectionManager: mockConnectionManager,
+      });
+      const testApp = new Hono();
+      testApp.route('/channels', routesWithoutAssets);
+
+      // Mock returns a code artifact - should work without asset storage
+      vi.mocked(mockStorage.getArtifact).mockResolvedValueOnce(createMockArtifact({
+        type: 'code',
+        content: 'console.log("hello")',
+      }));
+
+      const res = await testApp.request(`/channels/${TEST_CHANNEL_ID}/assets/script.js`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('text/javascript; charset=utf-8');
     });
 
     it('falls back to MIME type from slug if contentType not stored', async () => {
