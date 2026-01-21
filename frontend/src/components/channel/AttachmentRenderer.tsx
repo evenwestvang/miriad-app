@@ -1,46 +1,139 @@
 /**
  * MessageAttachments - Renders asset artifacts attached to messages
  *
- * Uses extension-based detection (same as board) to determine preview type.
- * Assets are fetched with credentials via blob URLs.
+ * Fetches artifact metadata to get contentType (MIME type) for proper rendering.
+ * Uses shared AssetPreview component for actual rendering.
  */
 
 import { useState, useEffect } from 'react'
-import { Download, ExternalLink, FileText, Image, File, Loader2, AlertCircle } from 'lucide-react'
+import {
+  Download,
+  ExternalLink,
+  FileText,
+  Image,
+  FileCode,
+  File,
+  Loader2,
+  AlertCircle,
+} from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { apiFetch } from '../../lib/api'
+import {
+  AssetPreview,
+  isImageMime,
+  isPdfMime,
+  isPreviewableMime,
+} from '../ui/asset-preview'
+import type { Artifact } from '../../types'
 
 // =============================================================================
-// Extension-based type detection (matches board/ArtifactDetail.tsx)
+// Types
 // =============================================================================
 
-const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp']
-const PDF_EXTENSION = '.pdf'
-
-function getAssetType(slug: string): { isImage: boolean; isPdf: boolean } {
-  const lower = slug.toLowerCase()
-  const isImage = IMAGE_EXTENSIONS.some(ext => lower.endsWith(ext))
-  const isPdf = lower.endsWith(PDF_EXTENSION)
-  return { isImage, isPdf }
+interface AssetMetadata {
+  slug: string
+  contentType: string | null
+  title?: string
+  tldr?: string
 }
 
-function getIcon(slug: string) {
-  const { isImage, isPdf } = getAssetType(slug)
-  if (isImage) return Image
-  if (isPdf) return FileText
-  return File
-}
+type MetadataState =
+  | { status: 'loading' }
+  | { status: 'success'; metadata: AssetMetadata }
+  | { status: 'error'; error: string }
 
-// =============================================================================
-// Blob URL Hook (authenticated fetch)
-// =============================================================================
-
-type FetchState =
+type BlobState =
   | { status: 'loading' }
   | { status: 'success'; blobUrl: string }
   | { status: 'error'; error: string }
 
-function useAuthenticatedBlobUrl(url: string): FetchState {
-  const [state, setState] = useState<FetchState>({ status: 'loading' })
+// =============================================================================
+// MIME-type icon selection
+// =============================================================================
+
+function isCodeMime(mimeType: string | null): boolean {
+  if (!mimeType) return false
+  return (
+    mimeType.startsWith('text/') ||
+    mimeType === 'application/json' ||
+    mimeType === 'application/javascript' ||
+    mimeType === 'application/typescript' ||
+    mimeType === 'application/xml'
+  )
+}
+
+function getIconForMime(mimeType: string | null) {
+  if (isImageMime(mimeType)) return Image
+  if (isPdfMime(mimeType)) return FileText
+  if (isCodeMime(mimeType)) return FileCode
+  return File
+}
+
+// =============================================================================
+// Hooks
+// =============================================================================
+
+/**
+ * Fetch artifact metadata to get contentType and other info.
+ */
+function useAssetMetadata(
+  slug: string,
+  channelId: string,
+  apiHost: string
+): MetadataState {
+  const [state, setState] = useState<MetadataState>({ status: 'loading' })
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function fetchMetadata() {
+      try {
+        const response = await apiFetch(
+          `${apiHost}/channels/${channelId}/artifacts/${slug}`
+        )
+
+        if (!response.ok) {
+          throw new Error(`Failed to load metadata (${response.status})`)
+        }
+
+        const artifact: Artifact = await response.json()
+
+        if (cancelled) return
+
+        setState({
+          status: 'success',
+          metadata: {
+            slug: artifact.slug,
+            contentType: artifact.contentType ?? null,
+            title: artifact.title,
+            tldr: artifact.tldr,
+          },
+        })
+      } catch (err) {
+        if (cancelled) return
+        setState({
+          status: 'error',
+          error: err instanceof Error ? err.message : 'Failed to load metadata',
+        })
+      }
+    }
+
+    setState({ status: 'loading' })
+    fetchMetadata()
+
+    return () => {
+      cancelled = true
+    }
+  }, [slug, channelId, apiHost])
+
+  return state
+}
+
+/**
+ * Fetch asset binary with credentials and create blob URL.
+ */
+function useAuthenticatedBlobUrl(url: string): BlobState {
+  const [state, setState] = useState<BlobState>({ status: 'loading' })
 
   useEffect(() => {
     let cancelled = false
@@ -70,7 +163,7 @@ function useAuthenticatedBlobUrl(url: string): FetchState {
         if (cancelled) return
         setState({
           status: 'error',
-          error: err instanceof Error ? err.message : 'Failed to load'
+          error: err instanceof Error ? err.message : 'Failed to load',
         })
       }
     }
@@ -90,40 +183,65 @@ function useAuthenticatedBlobUrl(url: string): FetchState {
 }
 
 // =============================================================================
-// Shared Components
+// Loading/Error/Card Components
 // =============================================================================
 
-function AssetActions({ blobUrl, slug }: { blobUrl: string; slug: string }) {
+function AssetLoading({ slug }: { slug: string }) {
   return (
-    <div className="flex gap-2">
-      <a
-        href={blobUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex items-center gap-1 px-2 py-1 text-xs hover:bg-[var(--cast-bg-hover)] text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] border border-[var(--cast-border-default)] transition-colors"
-      >
-        <ExternalLink className="w-3 h-3" />
-        Open
-      </a>
-      <a
-        href={blobUrl}
-        download={slug}
-        className="flex items-center gap-1 px-2 py-1 text-xs hover:bg-[var(--cast-bg-hover)] text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] border border-[var(--cast-border-default)] transition-colors"
-      >
-        <Download className="w-3 h-3" />
-        Download
-      </a>
+    <div className="flex items-center gap-3 py-2.5 px-3 bg-[#fafafa] dark:bg-[var(--cast-bg-active)] border border-[var(--cast-border-default)] animate-pulse">
+      <File className="w-5 h-5 text-[var(--cast-text-secondary)] flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="text-base font-medium truncate text-[var(--cast-text-primary)]">
+          {slug}
+        </div>
+        <div className="text-xs text-[var(--cast-text-muted)] flex items-center gap-1">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          Loading...
+        </div>
+      </div>
     </div>
   )
 }
 
-function AssetCard({ slug, blobUrl }: { slug: string; blobUrl: string }) {
-  const Icon = getIcon(slug)
+function AssetError({ slug, error }: { slug: string; error: string }) {
+  return (
+    <div className="flex items-center gap-3 py-2.5 px-3 bg-destructive/10 border border-destructive/30">
+      <File className="w-5 h-5 text-destructive flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="text-base font-medium truncate">{slug}</div>
+        <div className="text-xs text-destructive flex items-center gap-1">
+          <AlertCircle className="w-3 h-3" />
+          {error}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface AssetCardProps {
+  metadata: AssetMetadata
+  blobUrl: string
+}
+
+/**
+ * Card view for non-previewable assets or compact mode fallback.
+ */
+function AssetCard({ metadata, blobUrl }: AssetCardProps) {
+  const Icon = getIconForMime(metadata.contentType)
+  const displayName = metadata.title || metadata.slug
+
   return (
     <div className="flex items-center gap-3 py-2.5 px-3 bg-[#fafafa] dark:bg-[var(--cast-bg-active)] border border-[var(--cast-border-default)] hover:border-[#ccc] transition-colors">
       <Icon className="w-5 h-5 text-[var(--cast-text-secondary)] flex-shrink-0" />
       <div className="flex-1 min-w-0">
-        <div className="text-base font-medium truncate text-[var(--cast-text-primary)]">{slug}</div>
+        <div className="text-base font-medium truncate text-[var(--cast-text-primary)]">
+          {displayName}
+        </div>
+        {metadata.tldr && (
+          <div className="text-xs text-[var(--cast-text-muted)] truncate">
+            {metadata.tldr}
+          </div>
+        )}
       </div>
       <div className="flex gap-1">
         <a
@@ -137,44 +255,12 @@ function AssetCard({ slug, blobUrl }: { slug: string; blobUrl: string }) {
         </a>
         <a
           href={blobUrl}
-          download={slug}
+          download={metadata.slug}
           className="p-1.5 hover:bg-[var(--cast-bg-hover)] text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] transition-colors"
           title="Download"
         >
           <Download className="w-4 h-4" />
         </a>
-      </div>
-    </div>
-  )
-}
-
-function AssetLoading({ slug }: { slug: string }) {
-  const Icon = getIcon(slug)
-  return (
-    <div className="flex items-center gap-3 py-2.5 px-3 bg-[#fafafa] dark:bg-[var(--cast-bg-active)] border border-[var(--cast-border-default)] animate-pulse">
-      <Icon className="w-5 h-5 text-[var(--cast-text-secondary)] flex-shrink-0" />
-      <div className="flex-1 min-w-0">
-        <div className="text-base font-medium truncate text-[var(--cast-text-primary)]">{slug}</div>
-        <div className="text-xs text-[var(--cast-text-muted)] flex items-center gap-1">
-          <Loader2 className="w-3 h-3 animate-spin" />
-          Loading...
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function AssetError({ slug, error }: { slug: string; error: string }) {
-  const Icon = getIcon(slug)
-  return (
-    <div className="flex items-center gap-3 py-2.5 px-3 bg-destructive/10 border border-destructive/30">
-      <Icon className="w-5 h-5 text-destructive flex-shrink-0" />
-      <div className="flex-1 min-w-0">
-        <div className="text-base font-medium truncate">{slug}</div>
-        <div className="text-xs text-destructive flex items-center gap-1">
-          <AlertCircle className="w-3 h-3" />
-          {error}
-        </div>
       </div>
     </div>
   )
@@ -194,6 +280,7 @@ interface AssetRendererProps {
 
 /**
  * Renders a single asset attachment by slug.
+ * Fetches metadata first to determine content type, then loads the binary.
  */
 export function AssetRenderer({
   slug,
@@ -202,53 +289,49 @@ export function AssetRenderer({
   compact = false,
   className,
 }: AssetRendererProps) {
-  const url = `${apiHost}/channels/${channelId}/assets/${slug}`
-  const fetchState = useAuthenticatedBlobUrl(url)
-  const { isImage, isPdf } = getAssetType(slug)
+  const metadataState = useAssetMetadata(slug, channelId, apiHost)
+  const assetUrl = `${apiHost}/channels/${channelId}/assets/${slug}`
+  const blobState = useAuthenticatedBlobUrl(assetUrl)
 
-  if (fetchState.status === 'loading') {
+  // Show loading if either metadata or blob is loading
+  if (metadataState.status === 'loading' || blobState.status === 'loading') {
     return <AssetLoading slug={slug} />
   }
 
-  if (fetchState.status === 'error') {
-    return <AssetError slug={slug} error={fetchState.error} />
+  // Show error if either failed
+  if (metadataState.status === 'error') {
+    return <AssetError slug={slug} error={metadataState.error} />
+  }
+  if (blobState.status === 'error') {
+    return <AssetError slug={slug} error={blobState.error} />
   }
 
-  const { blobUrl } = fetchState
+  const { metadata } = metadataState
+  const { blobUrl } = blobState
+  const displayName = metadata.title || metadata.slug
 
-  // Image preview
-  if (isImage) {
-    return (
-      <div className={cn("space-y-2", compact && "max-w-xs", className)}>
-        <img
-          src={blobUrl}
-          alt={slug}
-          className={cn(
-            "border border-[var(--cast-border-default)]",
-            compact ? "max-h-48 max-w-full" : "max-w-full"
-          )}
-        />
-        {!compact && <AssetActions blobUrl={blobUrl} slug={slug} />}
-      </div>
+  // Try to render with shared AssetPreview for previewable types
+  if (isPreviewableMime(metadata.contentType)) {
+    const preview = (
+      <AssetPreview
+        url={blobUrl}
+        filename={metadata.slug}
+        contentType={metadata.contentType}
+        alt={displayName}
+        compact={compact}
+        className={className}
+      />
     )
+
+    // AssetPreview returns null for compact mode on non-image types
+    // Fall back to card view in that case
+    if (preview) {
+      return preview
+    }
   }
 
-  // PDF preview
-  if (isPdf && !compact) {
-    return (
-      <div className={cn("space-y-2", className)}>
-        <iframe
-          src={blobUrl}
-          title={slug}
-          className="w-full h-80 border border-[var(--cast-border-default)]"
-        />
-        <AssetActions blobUrl={blobUrl} slug={slug} />
-      </div>
-    )
-  }
-
-  // Card view (compact or non-previewable)
-  return <AssetCard slug={slug} blobUrl={blobUrl} />
+  // Card view for non-previewable types or when preview returns null
+  return <AssetCard metadata={metadata} blobUrl={blobUrl} />
 }
 
 interface MessageAttachmentsProps {
@@ -272,10 +355,12 @@ export function MessageAttachments({
   if (!slugs || slugs.length === 0) return null
 
   return (
-    <div className={cn(
-      compact ? "flex flex-wrap gap-2" : "space-y-3",
-      className
-    )}>
+    <div
+      className={cn(
+        compact ? 'flex flex-wrap gap-2' : 'space-y-3',
+        className
+      )}
+    >
       {slugs.map((slug) => (
         <AssetRenderer
           key={slug}

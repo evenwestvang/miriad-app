@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react'
-import { Pencil, Save, AlertTriangle, Download, ExternalLink, Copy, Check, ArrowLeft, ChevronDown, History, RotateCcw, Archive } from 'lucide-react'
+import { Pencil, Save, AlertTriangle, Copy, Check, ArrowLeft, ChevronDown, History, RotateCcw, Archive } from 'lucide-react'
 import Markdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -24,6 +24,7 @@ import { FocusPropsEditor, type FocusProps } from './FocusPropsEditor'
 import { AppPropsDisplay, type AppProps } from './AppPropsDisplay'
 import { EnvEditor, type SecretMetadata } from '../ui/env-editor'
 import { SpaRenderer } from './SpaRenderer'
+import { AssetPreview, isPreviewableMime } from '../ui/asset-preview'
 import { highlightMentions, type ArtifactInfo } from '../../utils'
 import { useIsDarkMode } from '../../hooks/useIsDarkMode'
 
@@ -123,11 +124,6 @@ const EXT_TO_LANG: Record<string, string> = {
   '.env': 'bash',
 }
 
-// File extensions that are viewable assets
-const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp']
-const PDF_EXTENSION = '.pdf'
-const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac']
-const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.avi', '.mkv']
 
 // =============================================================================
 // Helpers
@@ -231,8 +227,8 @@ export function ArtifactDetail({
   // Check if viewing a historical version
   const isViewingHistory = selectedVersion !== null && versionData !== null
 
-  // Asset detection
-  const { isAsset, isImage, isPdf, isAudio, isVideo } = isAssetSlug(artifact.slug)
+  // Asset detection - use contentType (MIME type) from artifact
+  const isAsset = isPreviewableMime(artifact.contentType)
   const assetUrl = `${apiHost}/channels/${channelId}/assets/${artifact.slug}`
 
   // Code detection
@@ -785,12 +781,10 @@ export function ArtifactDetail({
         ) : isAsset ? (
           <div className="p-3">
             <AssetPreview
-              slug={artifact.slug}
               url={assetUrl}
-              isImage={isImage}
-              isPdf={isPdf}
-              isAudio={isAudio}
-              isVideo={isVideo}
+              filename={artifact.slug}
+              contentType={artifact.contentType}
+              alt={artifact.title || artifact.slug}
             />
           </div>
         ) : isCodeArtifact ? (
@@ -1204,145 +1198,9 @@ function ArtifactContent({ content, onLinkClick, artifacts, isDarkMode }: Artifa
   )
 }
 
-function AssetPreview({ slug, url, isImage, isPdf, isAudio, isVideo }: { slug: string; url: string; isImage: boolean; isPdf: boolean; isAudio: boolean; isVideo: boolean }) {
-  if (isImage) {
-    return (
-      <div className="space-y-3">
-        <img
-          src={url}
-          alt={slug}
-          className="max-w-full rounded border border-border"
-          loading="lazy"
-        />
-        <div className="flex gap-2">
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
-          >
-            <ExternalLink className="w-3 h-3" />
-            Open
-          </a>
-          <a
-            href={url}
-            download={slug}
-            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
-          >
-            <Download className="w-3 h-3" />
-            Download
-          </a>
-        </div>
-      </div>
-    )
-  }
-
-  if (isPdf) {
-    return (
-      <div className="space-y-3">
-        <div className="flex gap-2">
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
-          >
-            <ExternalLink className="w-3 h-3" />
-            Open PDF
-          </a>
-          <a
-            href={url}
-            download={slug}
-            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
-          >
-            <Download className="w-3 h-3" />
-            Download
-          </a>
-        </div>
-        <iframe
-          src={url}
-          title={slug}
-          className="w-full h-80 border border-border rounded"
-        />
-      </div>
-    )
-  }
-
-  if (isAudio) {
-    return (
-      <div className="space-y-3">
-        <audio
-          src={url}
-          controls
-          className="w-full"
-          preload="metadata"
-        >
-          Your browser does not support the audio element.
-        </audio>
-        <div className="flex gap-2">
-          <a
-            href={url}
-            download={slug}
-            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
-          >
-            <Download className="w-3 h-3" />
-            Download
-          </a>
-        </div>
-      </div>
-    )
-  }
-
-  if (isVideo) {
-    return (
-      <div className="space-y-3">
-        <video
-          src={url}
-          controls
-          className="w-full max-h-96 rounded border border-border"
-          preload="metadata"
-        >
-          Your browser does not support the video element.
-        </video>
-        <div className="flex gap-2">
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
-          >
-            <ExternalLink className="w-3 h-3" />
-            Open
-          </a>
-          <a
-            href={url}
-            download={slug}
-            className="flex items-center gap-1 px-2 py-1 text-base rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground border border-border"
-          >
-            <Download className="w-3 h-3" />
-            Download
-          </a>
-        </div>
-      </div>
-    )
-  }
-
-  return null
-}
-
 // =============================================================================
 // Helper functions
 // =============================================================================
-
-function isAssetSlug(slug: string | undefined): { isAsset: boolean; isImage: boolean; isPdf: boolean; isAudio: boolean; isVideo: boolean } {
-  if (!slug) return { isAsset: false, isImage: false, isPdf: false, isAudio: false, isVideo: false }
-  const lower = slug.toLowerCase()
-  const isImage = IMAGE_EXTENSIONS.some(ext => lower.endsWith(ext))
-  const isPdf = lower.endsWith(PDF_EXTENSION)
-  const isAudio = AUDIO_EXTENSIONS.some(ext => lower.endsWith(ext))
-  const isVideo = VIDEO_EXTENSIONS.some(ext => lower.endsWith(ext))
-  return { isAsset: isImage || isPdf || isAudio || isVideo, isImage, isPdf, isAudio, isVideo }
-}
 
 function hasCodeExtension(slug: string): boolean {
   const lower = slug.toLowerCase()
