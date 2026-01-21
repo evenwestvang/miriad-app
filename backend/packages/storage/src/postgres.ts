@@ -1654,6 +1654,29 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     return result.map(rowToArtifactSummary);
   }
 
+  async function listPublishedKnowledgeBases(
+    spaceId: string
+  ): Promise<Array<{ name: string; title?: string; tldr?: string }>> {
+    // Single JOIN query - no N+1 channel loop
+    const result = await sql<{ name: string; title: string | null; tldr: string | null }>`
+      SELECT c.name, a.title, a.tldr
+      FROM artifacts a
+      JOIN channels c ON a.channel_id = c.id
+      WHERE c.space_id = ${spaceId}
+        AND a.type = 'knowledgebase'
+        AND a.slug = 'knowledgebase'
+        AND a.status = 'published'
+        AND c.archived = false
+      ORDER BY c.name ASC
+    `;
+
+    return result.map((row) => ({
+      name: row.name,
+      title: row.title ?? undefined,
+      tldr: row.tldr ?? undefined,
+    }));
+  }
+
   async function globArtifacts(
     channelId: string,
     pattern: string
@@ -3461,6 +3484,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     archiveArtifactRecursive,
     deleteAllArtifactsInChannel,
     listArtifacts,
+    listPublishedKnowledgeBases,
     globArtifacts,
     checkpointArtifact,
     getArtifactVersion,

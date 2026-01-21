@@ -1497,28 +1497,8 @@ const toolHandlers: Record<string, ToolHandler> = {
   // ---------------------------------------------------------------------------
 
   async kb_list(_args, { storage, spaceId }) {
-    // Get all channels in the space
-    const channels = await storage.listChannels(spaceId);
-
-    // For each channel, check if it has a published KB
-    const knowledgeBases: Array<{
-      channel: string;
-      channelId: string;
-      title?: string;
-      tldr?: string;
-    }> = [];
-
-    for (const channel of channels) {
-      const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
-      if (kbRoot && kbRoot.status === 'published') {
-        knowledgeBases.push({
-          channel: channel.name,
-          channelId: channel.id,
-          title: kbRoot.title,
-          tldr: kbRoot.tldr,
-        });
-      }
-    }
+    // Single JOIN query - no N+1 channel loop
+    const knowledgeBases = await storage.listPublishedKnowledgeBases(spaceId);
 
     const hint = knowledgeBases.length === 0
       ? 'No published knowledge bases found in this space.'
@@ -1539,7 +1519,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     // Check KB exists and is published
     const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
     if (!kbRoot) {
-      throw new Error(`Knowledge base not found in channel: ${kb}`);
+      throw new Error(`Knowledge base not found: ${kb}`);
     }
     if (kbRoot.status !== 'published') {
       throw new Error(`Knowledge base is not published: ${kb}`);
@@ -1591,7 +1571,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     // Check KB exists and is published
     const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
     if (!kbRoot) {
-      throw new Error(`Knowledge base not found in channel: ${kb}`);
+      throw new Error(`Knowledge base not found: ${kb}`);
     }
     if (kbRoot.status !== 'published') {
       throw new Error(`Knowledge base is not published: ${kb}`);
@@ -1640,7 +1620,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     const kbPath = '/' + artifact.path.replace(/^knowledgebase\.?/, '').replace(/\./g, '/');
 
     return JSON.stringify({
-      channel: channel.name,
+      name: channel.name,
       path: kbPath || '/',
       slug: artifact.slug,
       title: artifact.title,
@@ -1669,7 +1649,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     // Check KB exists and is published
     const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
     if (!kbRoot) {
-      throw new Error(`Knowledge base not found in channel: ${kb}`);
+      throw new Error(`Knowledge base not found: ${kb}`);
     }
     if (kbRoot.status !== 'published') {
       throw new Error(`Knowledge base is not published: ${kb}`);
@@ -1759,7 +1739,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     );
 
     return JSON.stringify({
-      channel: channel.name,
+      name: channel.name,
       query,
       mode: mode || 'keyword',
       results,

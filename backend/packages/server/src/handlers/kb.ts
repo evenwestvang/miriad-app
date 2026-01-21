@@ -41,29 +41,8 @@ export function createKBRoutes(options: KBHandlerOptions): Hono {
     const spaceId = getSpaceId(c);
 
     try {
-      // Get all channels in the space
-      const channels = await storage.listChannels(spaceId);
-
-      // For each channel, check if it has a published KB
-      const knowledgeBases: Array<{
-        channel: string;
-        channelId: string;
-        title?: string;
-        tldr?: string;
-      }> = [];
-
-      for (const channel of channels) {
-        const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
-        if (kbRoot && kbRoot.status === 'published') {
-          knowledgeBases.push({
-            channel: channel.name,
-            channelId: channel.id,
-            title: kbRoot.title,
-            tldr: kbRoot.tldr,
-          });
-        }
-      }
-
+      // Single JOIN query - no N+1 channel loop
+      const knowledgeBases = await storage.listPublishedKnowledgeBases(spaceId);
       return c.json({ knowledgeBases });
     } catch (error) {
       console.error('[KB] Error listing knowledge bases:', error);
@@ -89,7 +68,7 @@ export function createKBRoutes(options: KBHandlerOptions): Hono {
       // Check KB exists and is published
       const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
       if (!kbRoot) {
-        return c.json({ error: 'Knowledge base not found in this channel' }, 404);
+        return c.json({ error: 'Knowledge base not found' }, 404);
       }
       if (kbRoot.status !== 'published') {
         return c.json({ error: 'Knowledge base is not published' }, 404);
@@ -122,7 +101,7 @@ export function createKBRoutes(options: KBHandlerOptions): Hono {
         : filterPublished(fullTree);
 
       return c.json({
-        channel: channel.name,
+        name: channel.name,
         pattern,
         tree: kbTree,
       });
@@ -158,7 +137,7 @@ export function createKBRoutes(options: KBHandlerOptions): Hono {
       // Check KB exists and is published
       const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
       if (!kbRoot) {
-        return c.json({ error: 'Knowledge base not found in this channel' }, 404);
+        return c.json({ error: 'Knowledge base not found' }, 404);
       }
       if (kbRoot.status !== 'published') {
         return c.json({ error: 'Knowledge base is not published' }, 404);
@@ -212,7 +191,7 @@ export function createKBRoutes(options: KBHandlerOptions): Hono {
       const kbPath = '/' + doc.path.replace(/^knowledgebase\.?/, '').replace(/\./g, '/');
 
       return c.json({
-        channel: channel.name,
+        name: channel.name,
         path: kbPath || '/',
         slug: doc.slug,
         title: doc.title,
@@ -261,7 +240,7 @@ export function createKBRoutes(options: KBHandlerOptions): Hono {
       // Check KB exists and is published
       const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
       if (!kbRoot) {
-        return c.json({ error: 'Knowledge base not found in this channel' }, 404);
+        return c.json({ error: 'Knowledge base not found' }, 404);
       }
       if (kbRoot.status !== 'published') {
         return c.json({ error: 'Knowledge base is not published' }, 404);
@@ -354,7 +333,7 @@ export function createKBRoutes(options: KBHandlerOptions): Hono {
       );
 
       return c.json({
-        channel: channel.name,
+        name: channel.name,
         query,
         mode,
         results,
