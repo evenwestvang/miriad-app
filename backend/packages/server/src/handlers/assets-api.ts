@@ -11,7 +11,7 @@
 
 import { Hono } from 'hono';
 import type { Storage } from '@cast/storage';
-import { getMimeType } from '@cast/core';
+import { getMimeType, tymbal } from '@cast/core';
 import { z } from 'zod';
 import {
   requireContainerAuth,
@@ -19,6 +19,7 @@ import {
   type ContainerAuthVariables,
 } from '../auth/container-middleware.js';
 import type { AssetStorage } from '../assets/index.js';
+import type { ConnectionManager } from '../websocket/index.js';
 
 // =============================================================================
 // Types
@@ -27,6 +28,7 @@ import type { AssetStorage } from '../assets/index.js';
 export interface AssetsApiHandlerOptions {
   storage: Storage;
   assetStorage: AssetStorage;
+  connectionManager: ConnectionManager;
 }
 
 // =============================================================================
@@ -46,7 +48,7 @@ const SlugSchema = z
 // =============================================================================
 
 export function createAssetsApiRoutes(options: AssetsApiHandlerOptions): Hono<{ Variables: ContainerAuthVariables }> {
-  const { storage, assetStorage } = options;
+  const { storage, assetStorage, connectionManager } = options;
 
   const app = new Hono<{ Variables: ContainerAuthVariables }>();
 
@@ -173,16 +175,29 @@ export function createAssetsApiRoutes(options: AssetsApiHandlerOptions): Hono<{ 
         }
 
         attachedToMessageId = messages[0].id;
+        const originalMessage = messages[0];
 
         // Update the message's metadata to include this attachment slug
-        const existingMetadata = (messages[0].metadata || {}) as Record<string, unknown>;
+        const existingMetadata = (originalMessage.metadata || {}) as Record<string, unknown>;
         const existingSlugs = (existingMetadata.attachmentSlugs as string[]) || [];
+        const newAttachmentSlugs = [...existingSlugs, slug];
         await storage.updateMessage(container.spaceId, attachedToMessageId, {
           metadata: {
             ...existingMetadata,
-            attachmentSlugs: [...existingSlugs, slug],
+            attachmentSlugs: newAttachmentSlugs,
           },
         });
+
+        // Broadcast updated message via WebSocket so clients see the attachment immediately
+        // Tymbal will update the message in-place since the ULID matches
+        const frame = tymbal.set(attachedToMessageId, {
+          type: originalMessage.type,
+          sender: originalMessage.sender,
+          senderType: originalMessage.senderType,
+          content: originalMessage.content,
+          attachmentSlugs: newAttachmentSlugs,
+        });
+        await connectionManager.broadcast(channel.id, frame);
       }
 
       // Save asset to storage

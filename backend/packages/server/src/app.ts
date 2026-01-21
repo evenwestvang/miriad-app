@@ -1662,6 +1662,7 @@ export function createApp(options: AppOptions): Hono {
   const assetsApiRoutes = createAssetsApiRoutes({
     storage,
     assetStorage,
+    connectionManager,
   });
   app.route('/api/assets', assetsApiRoutes);
 
