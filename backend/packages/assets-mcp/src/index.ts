@@ -66,7 +66,7 @@ export function getConfigFromEnv(): AssetsMcpConfig {
 
   if (missing.length > 0) {
     throw new Error(
-      `Missing required environment variables: ${missing.join(", ")}`
+      `Missing required environment variables: ${missing.join(", ")}`,
     );
   }
 
@@ -82,7 +82,7 @@ export function getConfigFromEnv(): AssetsMcpConfig {
  */
 export async function uploadAsset(
   input: UploadAssetInput,
-  config: AssetsMcpConfig
+  config: AssetsMcpConfig,
 ): Promise<UploadAssetOutput> {
   // Validate input
   if (!input.path) throw new Error("path is required");
@@ -154,7 +154,7 @@ export async function uploadAsset(
  */
 export async function downloadAsset(
   input: DownloadAssetInput,
-  config: AssetsMcpConfig
+  config: AssetsMcpConfig,
 ): Promise<DownloadAssetOutput> {
   // Validate input
   if (!input.slug) throw new Error("slug is required");
@@ -168,7 +168,9 @@ export async function downloadAsset(
     try {
       await fs.access(filePath);
       // If we get here, file exists and overwrite is false
-      throw new Error(`File already exists: ${filePath}. Set overwrite=true to replace.`);
+      throw new Error(
+        `File already exists: ${filePath}. Set overwrite=true to replace.`,
+      );
     } catch (err: unknown) {
       const e = err as NodeJS.ErrnoException;
       // ENOENT means file doesn't exist - that's what we want
@@ -198,7 +200,8 @@ export async function downloadAsset(
     throw new Error(`Download failed (${response.status}): ${errorText}`);
   }
 
-  const contentType = response.headers.get("content-type") ?? "application/octet-stream";
+  const contentType =
+    response.headers.get("content-type") ?? "application/octet-stream";
   const buffer = await response.arrayBuffer();
 
   // Write to disk
@@ -224,7 +227,7 @@ export function createServer(config: AssetsMcpConfig): Server {
       capabilities: {
         tools: {},
       },
-    }
+    },
   );
 
   // List available tools
@@ -240,12 +243,13 @@ export function createServer(config: AssetsMcpConfig): Server {
           properties: {
             path: {
               type: "string",
-              description: "Absolute or relative path to the local file to upload",
+              description:
+                "Absolute or relative path to the local file to upload",
             },
             slug: {
               type: "string",
               description:
-                "Unique identifier for the asset (e.g., 'screenshot-login', 'design-v2.png')",
+                "Unique identifier for the asset. Always use appropriate file extension! (e.g., 'screenshot-login.jpg', 'design-v2.png')",
             },
             tldr: {
               type: "string",
@@ -257,7 +261,8 @@ export function createServer(config: AssetsMcpConfig): Server {
             },
             parentSlug: {
               type: "string",
-              description: "Optional parent artifact slug for tree organization",
+              description:
+                "Optional parent artifact slug for tree organization",
             },
           },
           required: ["path", "slug", "tldr"],
