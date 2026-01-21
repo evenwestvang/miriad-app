@@ -1515,6 +1515,11 @@ export function createApp(options: AppOptions): Hono {
             lastActiveAt: new Date().toISOString(),
           });
         },
+        artifactStorage: {
+          getArtifact: (channelId: string, slug: string) => storage.getArtifact(channelId, slug),
+          setArtifactAttachment: (channelId: string, slug: string, messageId: string, updatedBy: string) =>
+            storage.setArtifactAttachment(channelId, slug, messageId, updatedBy),
+        },
       });
 
       // Forward to message routes
@@ -1662,6 +1667,7 @@ export function createApp(options: AppOptions): Hono {
   const assetsApiRoutes = createAssetsApiRoutes({
     storage,
     assetStorage,
+    connectionManager,
   });
   app.route('/api/assets', assetsApiRoutes);
 

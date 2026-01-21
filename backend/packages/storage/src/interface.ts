@@ -340,6 +340,18 @@ export interface Storage {
   ): Promise<StoredArtifact>;
 
   /**
+   * Set the attachedToMessageId on an artifact.
+   * Used to link uploaded assets to messages after the fact.
+   * Throws if artifact doesn't exist.
+   */
+  setArtifactAttachment(
+    channelId: string,
+    slug: string,
+    messageId: string,
+    updatedBy: string
+  ): Promise<void>;
+
+  /**
    * Archive an artifact (soft delete).
    * Sets status to 'archived'.
    */

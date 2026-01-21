@@ -77,6 +77,8 @@ interface MessageValue {
   isError?: boolean
   // Method used to send the message (e.g., 'send_message' for intentional agent messages)
   method?: string
+  // Attachment slugs (asset artifact slugs attached to this message)
+  attachmentSlugs?: string[]
 }
 
 // Agent state info for UI
@@ -537,6 +539,7 @@ export function useTymbalConnection({
           senderType: value.senderType,
           timestamp: frame.t,
           method: value.method,
+          attachmentSlugs: value.attachmentSlugs,
         })
         return
       }

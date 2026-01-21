@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from './app.js';
 import type { Storage } from '@cast/storage';
-import type { ContainerOrchestrator } from '@cast/runtime';
+import type { AgentRuntime } from '@cast/runtime';
 import type { ConnectionManager } from './websocket/index.js';
 
-// Mock storage
-const mockStorage: Storage = {
+// Mock storage - implements Storage interface with no-op stubs
+const mockStorage = {
   saveMessage: async () => ({} as never),
   getMessage: async () => null,
   getMessages: async () => [],
@@ -13,7 +13,10 @@ const mockStorage: Storage = {
   deleteMessage: async () => {},
   createChannel: async () => ({} as never),
   getChannel: async () => null,
+  getChannelById: async () => null,
   getChannelByName: async () => null,
+  getChannelWithRoster: async () => null,
+  resolveChannel: async () => null,
   listChannels: async () => [],
   updateChannel: async () => {},
   archiveChannel: async () => {},
@@ -21,19 +24,46 @@ const mockStorage: Storage = {
   getRosterEntry: async () => null,
   getRosterByCallsign: async () => null,
   listRoster: async () => [],
+  listArchivedRoster: async () => [],
   updateRosterEntry: async () => {},
   removeFromRoster: async () => {},
   initialize: async () => {},
   close: async () => {},
-};
+  // Artifact methods
+  getArtifact: async () => null,
+  listArtifacts: async () => [],
+  setArtifactAttachment: async () => {},
+  // Space/User methods
+  getSpace: async () => null,
+  getUser: async () => null,
+  // Runtime methods
+  getRuntime: async () => null,
+  // Cost methods
+  saveCostRecord: async () => {},
+  getChannelCostTally: async () => [],
+  // Secret methods
+  getSecretValue: async () => null,
+  getSecretMetadata: async () => null,
+} as unknown as Storage;
 
-// Mock orchestrator
-const mockOrchestrator: ContainerOrchestrator = {
-  spawn: async () => ({ threadId: '', containerId: '', status: 'running' as const }),
+// Mock runtime - implements AgentRuntime interface
+const mockRuntime: AgentRuntime = {
+  activate: async () => ({
+    agentId: '',
+    container: null,
+    port: null,
+    status: 'offline' as const,
+    endpoint: null,
+    routeHints: null,
+    activatedAt: null,
+    lastActivityAt: null,
+  }),
   sendMessage: async () => {},
-  getState: async () => null,
-  stop: async () => {},
-  stopAll: async () => {},
+  suspend: async () => {},
+  getState: () => null,
+  isOnline: () => false,
+  getAllOnline: () => [],
+  shutdown: async () => {},
 };
 
 // Mock connection manager
@@ -52,9 +82,8 @@ const mockConnectionManager: ConnectionManager = {
 // Create app with mock dependencies
 const app = createApp({
   storage: mockStorage,
-  orchestrator: mockOrchestrator,
+  runtime: mockRuntime,
   connectionManager: mockConnectionManager,
-  spaceId: 'test-space',
 });
 
 describe('Cast Server', () => {

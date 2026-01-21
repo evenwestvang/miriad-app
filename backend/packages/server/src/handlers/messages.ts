@@ -66,6 +66,13 @@ export interface AgentInvoker {
   ) => Promise<void>;
 }
 
+export interface ArtifactStorage {
+  /** Get an artifact by slug */
+  getArtifact: (channelId: string, slug: string) => Promise<{ slug: string; type: string } | null>;
+  /** Set the attachedToMessageId on an artifact */
+  setArtifactAttachment: (channelId: string, slug: string, messageId: string, updatedBy: string) => Promise<void>;
+}
+
 export interface MessageHandlerOptions {
   /** Storage for messages */
   messageStorage: MessageStorage;
@@ -77,6 +84,8 @@ export interface MessageHandlerOptions {
   agentInvoker?: AgentInvoker;
   /** Optional: callback to update channel lastActiveAt when user sends a message */
   onUserMessage?: (channelId: string) => Promise<void>;
+  /** Optional: artifact storage for linking attachments to messages */
+  artifactStorage?: ArtifactStorage;
 }
 
 // =============================================================================
@@ -146,7 +155,7 @@ export function getAddressedAgents(
  * Create the /channels/:id/messages routes.
  */
 export function createMessageRoutes(options: MessageHandlerOptions): Hono {
-  const { messageStorage, rosterProvider, connectionManager, agentInvoker, onUserMessage } = options;
+  const { messageStorage, rosterProvider, connectionManager, agentInvoker, onUserMessage, artifactStorage } = options;
 
   const app = new Hono();
 
@@ -192,19 +201,24 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
    * POST /channels/:id/messages
    *
    * Send a message to a channel.
-   * Body: { content: string, sender?: string, senderType?: 'user' | 'agent' }
+   * Body: {
+   *   content: string,
+   *   sender?: string,
+   *   senderType?: 'user' | 'agent',
+   *   attachSlugs?: string[]  // Artifact slugs to attach to this message
+   * }
    */
   app.post('/:channelId/messages', async (c) => {
     const channelId = c.req.param('channelId');
 
-    let body: { content?: string; sender?: string; senderType?: 'user' | 'agent' };
+    let body: { content?: string; sender?: string; senderType?: 'user' | 'agent'; attachSlugs?: string[] };
     try {
       body = await c.req.json();
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
 
-    const { content, sender, senderType = 'user' } = body;
+    const { content, sender, senderType = 'user', attachSlugs } = body;
 
     if (!content) {
       return c.json({ error: 'Message content required' }, 400);
@@ -213,6 +227,23 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
     // Strict validation: senderType must be 'user' or 'agent' per spec
     if (senderType !== 'user' && senderType !== 'agent') {
       return c.json({ error: `Invalid senderType: ${senderType}. Must be 'user' or 'agent'` }, 400);
+    }
+
+    // Validate attachSlugs if provided
+    if (attachSlugs && attachSlugs.length > 0) {
+      if (!artifactStorage) {
+        return c.json({ error: 'Artifact storage not configured for attachments' }, 500);
+      }
+      // Validate all slugs exist
+      for (const slug of attachSlugs) {
+        const artifact = await artifactStorage.getArtifact(channelId, slug);
+        if (!artifact) {
+          return c.json({ error: `Artifact not found: ${slug}` }, 404);
+        }
+        if (artifact.type !== 'asset') {
+          return c.json({ error: `Artifact '${slug}' is not an asset (type: ${artifact.type})` }, 400);
+        }
+      }
     }
 
     // Get roster for routing
@@ -252,6 +283,16 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
       // Save message
       await messageStorage.saveMessage(channelId, message);
 
+      // Link attachments to message if provided
+      const attachmentSlugs: string[] = [];
+      if (attachSlugs && attachSlugs.length > 0 && artifactStorage) {
+        const senderName = sender || 'anonymous';
+        for (const slug of attachSlugs) {
+          await artifactStorage.setArtifactAttachment(channelId, slug, messageId, senderName);
+          attachmentSlugs.push(slug);
+        }
+      }
+
       // Update channel lastActiveAt when user sends a message
       if (senderType === 'user' && onUserMessage) {
         await onUserMessage(channelId);
@@ -266,6 +307,7 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
         timestamp: message.timestamp,
         ...(addressedAgents.length > 0 ? { mentions: addressedAgents } : {}),
         ...(isBroadcast ? { broadcast: true } : {}),
+        ...(attachmentSlugs.length > 0 ? { attachmentSlugs } : {}),
       });
       await connectionManager.broadcast(channelId, frame);
 
@@ -275,7 +317,7 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
         await agentInvoker.invokeAgents(channelId, agentTargets, message);
       }
 
-      return c.json({ message }, 201);
+      return c.json({ message, attachmentSlugs }, 201);
     } catch (error) {
       console.error('[Messages] Error sending message:', error);
       return c.json({ error: 'Failed to send message' }, 500);

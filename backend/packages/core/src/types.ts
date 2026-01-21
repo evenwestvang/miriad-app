@@ -1060,6 +1060,12 @@ export const ASSET_MIME_TYPES: Record<string, string> = {
 };
 
 /**
+ * Maximum file size for asset uploads (500 MB).
+ * Single source of truth used by all storage backends and frontend.
+ */
+export const MAX_ASSET_FILE_SIZE = 500 * 1024 * 1024;
+
+/**
  * Get MIME type from file extension or slug.
  * Returns 'application/octet-stream' for unknown types.
  */

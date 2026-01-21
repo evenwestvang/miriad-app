@@ -9,14 +9,31 @@ import {
   X,
   Loader2,
   Plus,
-  Coffee
+  Coffee,
+  File as FileIcon,
+  Image,
+  FileText,
+  FileCode,
+  FileArchive,
+  FileAudio,
+  FileVideo,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { MentionAutocomplete, useMentionAutocomplete, type RosterAgent } from './MentionAutocomplete'
 import { getSenderColor } from '../../utils'
 
+/** Maximum file size for attachments (500 MB) */
+const MAX_ATTACHMENT_SIZE = 500 * 1024 * 1024
+
+interface StagedFile {
+  id: string
+  file: File
+  preview?: string // Blob URL for image preview
+  error?: string
+}
+
 interface MessageInputProps {
-  onSend: (content: string) => void
+  onSend: (content: string, attachments?: File[]) => void
   disabled?: boolean
   placeholder?: string
   roster?: RosterAgent[]
@@ -120,6 +137,11 @@ export function MessageInput({
   const [dormantActionLoading, setDormantActionLoading] = useState<string | null>(null)
   // Loading state for re-summon actions for dismissed agents
   const [summonActionLoading, setSummonActionLoading] = useState<string | null>(null)
+
+  // File attachment state
+  const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
+  const [isDragOver, setIsDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { findMentionTrigger, getOptionsCount, getOptionAtIndex } = useMentionAutocomplete(roster)
 
@@ -293,6 +315,134 @@ export function MessageInput({
     )
   }, [apiHost, channelId, pausableAgents, resumableAgents])
 
+  // File attachment handlers
+  const addFiles = useCallback((files: FileList | File[]) => {
+    const fileArray = Array.from(files)
+    const newStagedFiles: StagedFile[] = []
+
+    for (const file of fileArray) {
+      // Validate file size
+      if (file.size > MAX_ATTACHMENT_SIZE) {
+        newStagedFiles.push({
+          id: crypto.randomUUID(),
+          file,
+          error: `File exceeds ${Math.round(MAX_ATTACHMENT_SIZE / 1024 / 1024)}MB limit`,
+        })
+        continue
+      }
+
+      const stagedFile: StagedFile = {
+        id: crypto.randomUUID(),
+        file,
+      }
+
+      // Create preview for images
+      if (file.type.startsWith('image/')) {
+        stagedFile.preview = URL.createObjectURL(file)
+      }
+
+      newStagedFiles.push(stagedFile)
+    }
+
+    setStagedFiles(prev => [...prev, ...newStagedFiles])
+  }, [])
+
+  const removeFile = useCallback((id: string) => {
+    setStagedFiles(prev => {
+      const file = prev.find(f => f.id === id)
+      // Revoke blob URL to prevent memory leak
+      if (file?.preview) {
+        URL.revokeObjectURL(file.preview)
+      }
+      return prev.filter(f => f.id !== id)
+    })
+  }, [])
+
+  const clearFiles = useCallback(() => {
+    // Revoke all blob URLs
+    stagedFiles.forEach(f => {
+      if (f.preview) URL.revokeObjectURL(f.preview)
+    })
+    setStagedFiles([])
+  }, [stagedFiles])
+
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      stagedFiles.forEach(f => {
+        if (f.preview) URL.revokeObjectURL(f.preview)
+      })
+    }
+  }, []) // Only on unmount
+
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      addFiles(e.target.files)
+    }
+    // Reset input so same file can be selected again
+    e.target.value = ''
+  }, [addFiles])
+
+  const handlePaperclipClick = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  // Drag and drop handlers
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Only set false if we're leaving the container (not entering a child)
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false)
+    }
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      addFiles(e.dataTransfer.files)
+    }
+  }, [addFiles])
+
+  // Paste handler for clipboard images/files
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    const files: File[] = []
+    for (const item of items) {
+      if (item.kind === 'file') {
+        const file = item.getAsFile()
+        if (file) {
+          // Generate a name for pasted images (they often have generic names like "image.png")
+          if (file.type.startsWith('image/') && file.name === 'image.png') {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+            const ext = file.type.split('/')[1] || 'png'
+            const renamedFile = new File([file], `pasted-image-${timestamp}.${ext}`, { type: file.type })
+            files.push(renamedFile)
+          } else {
+            files.push(file)
+          }
+        }
+      }
+    }
+
+    if (files.length > 0) {
+      // Don't prevent default if no files - let text paste through
+      e.preventDefault()
+      addFiles(files)
+    }
+  }, [addFiles])
+
   // Filter slash commands based on query
   const filteredCommands = useMemo(() => {
     if (!slashQuery) return SLASH_COMMANDS
@@ -326,15 +476,19 @@ export function MessageInput({
 
   const handleSubmit = useCallback(() => {
     const trimmed = content.trim()
-    if (!trimmed) return
+    const validFiles = stagedFiles.filter(f => !f.error).map(f => f.file)
+
+    // Need either text or files to send
+    if (!trimmed && validFiles.length === 0) return
 
     // Extract leading mentions for sticky behavior
     const leadingMentions = extractLeadingMentions(trimmed)
 
-    onSend(trimmed)
+    onSend(trimmed, validFiles.length > 0 ? validFiles : undefined)
     setContent(leadingMentions) // Pre-populate with sticky mentions
     setShowAutocomplete(false)
     setShowSlashMenu(false)
+    clearFiles()
 
     // Clear or update draft after sending
     if (channelId) {
@@ -345,7 +499,7 @@ export function MessageInput({
         clearMessageDraft(channelId)
       }
     }
-  }, [content, onSend, extractLeadingMentions, channelId])
+  }, [content, stagedFiles, onSend, extractLeadingMentions, channelId, clearFiles])
 
   // Insert mention at the trigger position
   const insertMention = useCallback((mention: string) => {
@@ -731,13 +885,33 @@ export function MessageInput({
           </div>
         )}
 
-        {/* Input box container */}
-        <div className="border border-[var(--cast-border-default)] focus-within:border-[#1a1a1a] transition-colors">
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          onChange={handleFileInputChange}
+          className="hidden"
+        />
+
+        {/* Input box container with drag-drop */}
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={cn(
+            "border transition-colors",
+            isDragOver
+              ? "border-primary bg-primary/5"
+              : "border-[var(--cast-border-default)] focus-within:border-[var(--cast-text-primary)]"
+          )}
+        >
           <textarea
             ref={textareaRef}
             value={content}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             onBlur={handleBlur}
             placeholder={showAgentPicker
               ? `Type to filter ${showAgentPicker === 'pause' ? 'active' : 'paused'} agents...`
@@ -753,12 +927,26 @@ export function MessageInput({
               "disabled:opacity-50 disabled:cursor-not-allowed"
             )}
           />
+
+          {/* Staged files display */}
+          {stagedFiles.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-3 pb-2">
+              {stagedFiles.map((staged) => (
+                <StagedFileChip
+                  key={staged.id}
+                  staged={staged}
+                  onRemove={() => removeFile(staged.id)}
+                />
+              ))}
+            </div>
+          )}
           {/* Input actions row */}
           <div className="flex items-center justify-between px-3 py-2 border-t border-[var(--cast-border-default)]">
             {/* Left side buttons */}
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                onClick={handlePaperclipClick}
                 className="p-1 text-[#8c8c8c] hover:text-[#1a1a1a] transition-colors"
                 title="Attach file"
               >
@@ -785,10 +973,10 @@ export function MessageInput({
             {/* Send button */}
             <button
               onClick={handleSubmit}
-              disabled={disabled || !content.trim()}
+              disabled={disabled || (!content.trim() && stagedFiles.filter(f => !f.error).length === 0)}
               className={cn(
                 "p-1 transition-colors",
-                content.trim() && !disabled
+                (content.trim() || stagedFiles.filter(f => !f.error).length > 0) && !disabled
                   ? "text-[#8c8c8c] hover:text-[#1a1a1a]"
                   : "text-[#c0c0c0] cursor-not-allowed"
               )}
@@ -799,6 +987,61 @@ export function MessageInput({
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Helper to get icon for file type
+function getFileIcon(mimeType: string) {
+  if (mimeType.startsWith('image/')) return Image
+  if (mimeType.startsWith('video/')) return FileVideo
+  if (mimeType.startsWith('audio/')) return FileAudio
+  if (mimeType.includes('pdf')) return FileText
+  if (mimeType.includes('zip') || mimeType.includes('tar') || mimeType.includes('rar') || mimeType.includes('7z')) return FileArchive
+  if (mimeType.includes('javascript') || mimeType.includes('typescript') || mimeType.includes('json') || mimeType.includes('xml') || mimeType.includes('html') || mimeType.includes('css')) return FileCode
+  if (mimeType.includes('text')) return FileText
+  return FileIcon
+}
+
+// Staged file chip component
+function StagedFileChip({ staged, onRemove }: { staged: StagedFile; onRemove: () => void }) {
+  const Icon = getFileIcon(staged.file.type)
+  const isImage = staged.file.type.startsWith('image/')
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1.5 px-2 py-1 rounded text-sm",
+        staged.error
+          ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+          : "bg-[var(--cast-bg-secondary)] text-[var(--cast-text-secondary)]"
+      )}
+    >
+      {isImage && staged.preview ? (
+        <img
+          src={staged.preview}
+          alt={staged.file.name}
+          className="w-5 h-5 object-cover rounded"
+        />
+      ) : (
+        <Icon className="w-4 h-4 flex-shrink-0" />
+      )}
+      <span className="truncate max-w-[120px]" title={staged.file.name}>
+        {staged.file.name}
+      </span>
+      {staged.error && (
+        <span className="text-xs truncate max-w-[100px]" title={staged.error}>
+          ({staged.error})
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="p-0.5 hover:bg-black/10 dark:hover:bg-white/10 rounded transition-colors"
+        title="Remove file"
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
     </div>
   )
 }

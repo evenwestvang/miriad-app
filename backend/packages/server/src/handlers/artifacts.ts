@@ -35,6 +35,7 @@ import {
   isArtifactType,
   isArtifactStatus,
   getMimeType,
+  tymbal,
 } from '@cast/core';
 import type { ConnectionManager } from '../websocket/index.js';
 import type { AssetStorage } from '../assets/index.js';
@@ -1017,6 +1018,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
       let sender: string;
       let title: string | undefined;
       let parentSlug: string | undefined;
+      let attachToMessageId: string | undefined;
       let source: { type: 'path'; path: string } | { type: 'base64'; data: string };
 
       if (contentType.includes('multipart/form-data')) {
@@ -1028,6 +1030,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
         sender = formData.get('sender') as string;
         title = (formData.get('title') as string) || undefined;
         parentSlug = (formData.get('parentSlug') as string) || undefined;
+        attachToMessageId = (formData.get('attachToMessageId') as string) || undefined;
 
         if (!file) {
           return c.json({ error: 'Missing file in form data' }, 400);
@@ -1048,6 +1051,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
         sender = body.sender;
         title = body.title;
         parentSlug = body.parentSlug;
+        attachToMessageId = body.attachToMessageId;
 
         if (!slug || !tldr || !sender) {
           return c.json({ error: 'Missing required fields: slug, tldr, sender' }, 400);
@@ -1068,16 +1072,45 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
         return c.json({ error: slugValidation.error.errors[0].message }, 400);
       }
 
+      // Validate message exists if attaching to message
+      let targetMessage: Awaited<ReturnType<typeof storage.getMessage>> | undefined;
+      if (attachToMessageId) {
+        targetMessage = await storage.getMessage(spaceId, attachToMessageId);
+        if (!targetMessage) {
+          return c.json({ error: 'Message not found' }, 404);
+        }
+        if (targetMessage.channelId !== channel.id) {
+          return c.json({ error: 'Message does not belong to this channel' }, 400);
+        }
+      }
+
+      // Auto-suffix slug on collision (for human uploads)
+      let finalSlug = slug;
+      const existingArtifact = await storage.getArtifact(channel.id, slug);
+      if (existingArtifact) {
+        // Extract base name and extension
+        const lastDot = slug.lastIndexOf('.');
+        const baseName = lastDot > 0 ? slug.slice(0, lastDot) : slug;
+        const ext = lastDot > 0 ? slug.slice(lastDot) : '';
+
+        // Find unique slug with counter suffix
+        let counter = 2;
+        while (await storage.getArtifact(channel.id, `${baseName}-${counter}${ext}`)) {
+          counter++;
+        }
+        finalSlug = `${baseName}-${counter}${ext}`;
+      }
+
       // Save asset to filesystem
       const result = await assetStorage.saveAsset({
         channelId: channel.id,
-        slug,
+        slug: finalSlug,
         source,
       });
 
       // Create artifact record
       const artifact = await storage.createArtifact(channel.id, {
-        slug,
+        slug: finalSlug,
         channelId: channel.id,
         type: 'asset',
         title,
@@ -1087,15 +1120,40 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
         status: 'published',
         contentType: result.contentType,
         fileSize: result.fileSize,
+        attachedToMessageId: attachToMessageId,
         createdBy: sender,
       });
+
+      // If attaching to message, update message metadata and broadcast
+      if (attachToMessageId && targetMessage) {
+        const existingMetadata = (targetMessage.metadata || {}) as Record<string, unknown>;
+        const existingSlugs = (existingMetadata.attachmentSlugs as string[]) || [];
+        const newAttachmentSlugs = [...existingSlugs, finalSlug];
+
+        await storage.updateMessage(spaceId, attachToMessageId, {
+          metadata: {
+            ...existingMetadata,
+            attachmentSlugs: newAttachmentSlugs,
+          },
+        });
+
+        // Broadcast updated message via WebSocket so clients see the attachment immediately
+        const frame = tymbal.set(attachToMessageId, {
+          type: targetMessage.type,
+          sender: targetMessage.sender,
+          senderType: targetMessage.senderType,
+          content: targetMessage.content,
+          attachmentSlugs: newAttachmentSlugs,
+        });
+        await connectionManager.broadcast(channel.id, frame);
+      }
 
       return c.json({
         slug: artifact.slug,
         type: artifact.type,
         contentType: result.contentType,
         fileSize: result.fileSize,
-        url: `/channels/${channelId}/assets/${slug}`,
+        url: `/channels/${channelId}/assets/${finalSlug}`,
       }, 201);
     } catch (error) {
       if (error instanceof Error) {
