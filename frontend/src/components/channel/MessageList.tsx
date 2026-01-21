@@ -434,7 +434,12 @@ export function MessageList({
 
   // Infinite scroll: Load older messages when scrolling near top or viewport not filled
   useEffect(() => {
-    if (!onRequestOlderMessages || !hasMoreMessages || isLoadingOlder || isSwitching) {
+    if (
+      !onRequestOlderMessages ||
+      !hasMoreMessages ||
+      isLoadingOlder ||
+      isSwitching
+    ) {
       return;
     }
 
@@ -444,8 +449,13 @@ export function MessageList({
     // Check if viewport needs to be filled (content doesn't fill the container)
     const checkViewportFill = () => {
       if (syncStateRef.current !== "ready") return;
-      if (container.scrollHeight <= container.clientHeight && messages.length > 0) {
-        console.log("[InfiniteScroll] Viewport not filled, requesting more messages");
+      if (
+        container.scrollHeight <= container.clientHeight &&
+        messages.length > 0
+      ) {
+        console.log(
+          "[InfiniteScroll] Viewport not filled, requesting more messages",
+        );
         onRequestOlderMessages();
       }
     };
@@ -471,180 +481,216 @@ export function MessageList({
       clearTimeout(fillTimeoutId);
       container.removeEventListener("scroll", handleScroll);
     };
-  }, [onRequestOlderMessages, hasMoreMessages, isLoadingOlder, isSwitching, messages.length]);
+  }, [
+    onRequestOlderMessages,
+    hasMoreMessages,
+    isLoadingOlder,
+    isSwitching,
+    messages.length,
+  ]);
 
   return (
-    <div className="flex-1 overflow-y-auto pt-6 px-6 pl-8 pb-2" ref={containerRef}>
+    <div
+      className="flex-1 overflow-y-auto pt-6 px-6 pl-8 pb-2"
+      ref={containerRef}
+    >
       {/* Spacer pushes content to bottom when thread is short */}
       <div className="flex flex-col min-h-full">
         <div className="flex-1" />
-      {messages.length === 0 ? (
-        isSwitching ? (
-          // Channel switch in progress
-          isLoading ? (
-            // Show spinner after 500ms delay
-            <div className="flex flex-col items-center justify-center h-full text-center px-4">
-              <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin mb-4" />
-              <p className="text-muted-foreground text-sm">
-                Loading messages...
-              </p>
-            </div>
-          ) : // Before 500ms - show nothing (blank screen feels faster)
-          null
-        ) : // Empty state - only show when NOT switching channels
-        threadName === "root" ? (
-          // Root channel has a special empty state
-          <RootChannelEmptyState />
-        ) : onSelectStarterAgent ? (
-          <ChannelEmptyState
-            channelId={channelId}
-            apiHost={apiHost}
-            onSelectAgent={onSelectStarterAgent}
-          />
-        ) : (
-          // Fallback simple empty state when no starter agent handler provided
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-              <span className="text-2xl">💬</span>
-            </div>
-            <p className="text-muted-foreground text-sm mb-1">
-              Start a conversation with {threadName}
-            </p>
-            {threadAgentType && (
-              <p className="text-xs text-muted-foreground">
-                This is a {threadAgentType} agent
-              </p>
-            )}
-          </div>
-        )
-      ) : (
-        <>
-          {/* Loading indicator for older messages */}
-          {isLoadingOlder && (
-            <div className="flex justify-center py-4">
-              <div className="w-5 h-5 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-            </div>
-          )}
-          {/* "No more messages" indicator */}
-          {!hasMoreMessages && messages.length > 0 && (
-            <div className="flex justify-center py-4">
-              <span className="text-xs text-muted-foreground">Beginning of conversation</span>
-            </div>
-          )}
-        {(() => {
-          const groupedItems = groupMessages(messages);
-
-          // Helper to get the last message of a grouped item (for sender comparison)
-          const getLastMessageOfItem = (item: MessageOrGroup): Message | null => {
-            if (item.type === "tool_group") {
-              return item.messages[item.messages.length - 1] || null;
-            }
-            return item.message;
-          };
-
-          // Helper to get the first message of a grouped item
-          const getFirstMessageOfItem = (item: MessageOrGroup): Message | null => {
-            if (item.type === "tool_group") {
-              return item.messages[0] || null;
-            }
-            return item.message;
-          };
-
-          return groupedItems.map((item, groupIndex) => {
-            const isLastItem = groupIndex === groupedItems.length - 1;
-            const prevItem = groupIndex > 0 ? groupedItems[groupIndex - 1] : null;
-            const nextItem = groupIndex < groupedItems.length - 1 ? groupedItems[groupIndex + 1] : null;
-
-            // Get the last message from the previous item (for header/margin decisions)
-            const prevLastMessage = prevItem ? getLastMessageOfItem(prevItem) : null;
-
-            if (item.type === "tool_group") {
-              // Render grouped tool messages
-              const firstMsg = item.messages[0];
-              const lastMsg = item.messages[item.messages.length - 1];
-
-              // Check if next item starts a new sender group (determines bottom margin)
-              const nextFirstMessage = nextItem ? getFirstMessageOfItem(nextItem) : null;
-              const isLastInGroup =
-                !nextFirstMessage ||
-                nextFirstMessage.sender !== lastMsg.sender ||
-                nextFirstMessage.senderType !== lastMsg.senderType ||
-                new Date(nextFirstMessage.timestamp).getTime() -
-                  new Date(lastMsg.timestamp).getTime() >
-                  20 * 60 * 1000;
-
-              // Within a group: small margin. End of group: large margin. Last item: no margin.
-              const marginClass = isLastItem ? "mb-0" : isLastInGroup ? "mb-8" : "mb-1";
-
-              return (
-                <div
-                  key={`tool-group-${firstMsg.id}`}
-                  data-message-id={firstMsg.id}
-                  className={marginClass}
-                >
-                  <ToolGroup messages={item.messages} firehoseMode={firehoseMode} />
-                </div>
-              );
-            }
-
-            // Regular message
-            const message = item.message;
-
-            // Check if this message should show the header
-            // Show header if: first message, different sender from previous, or >20 min gap
-            const showHeader =
-              !prevLastMessage ||
-              prevLastMessage.sender !== message.sender ||
-              prevLastMessage.senderType !== message.senderType ||
-              new Date(message.timestamp).getTime() -
-                new Date(prevLastMessage.timestamp).getTime() >
-                20 * 60 * 1000;
-
-            // Check if next item starts a new sender group (determines bottom margin)
-            const nextFirstMessage = nextItem ? getFirstMessageOfItem(nextItem) : null;
-            const isLastInGroup =
-              !nextFirstMessage ||
-              nextFirstMessage.sender !== message.sender ||
-              nextFirstMessage.senderType !== message.senderType ||
-              new Date(nextFirstMessage.timestamp).getTime() -
-                new Date(message.timestamp).getTime() >
-                20 * 60 * 1000;
-
-            // Within a group: small margin. End of group: large margin. Last item: no margin.
-            const marginClass = isLastItem ? "mb-0" : isLastInGroup ? "mb-8" : "mb-1";
-
-            return (
-              <div
-                key={message.id}
-                data-message-id={message.id}
-                className={marginClass}
-              >
-                <MessageItem
-                  message={message}
-                  threadName={threadName}
-                  myName={myName}
-                  apiHost={apiHost}
-                  artifacts={artifactMap}
-                  agentType={
-                    message.sender
-                      ? agentTypeMap.get(message.sender)
-                      : threadAgentType
-                  }
-                  channelId={channelId}
-                  rosterIndex={
-                    message.sender
-                      ? rosterIndexMap.get(message.sender)
-                      : undefined
-                  }
-                  onStructuredAskSubmit={onStructuredAskSubmit}
-                  showHeader={showHeader}
-                />
+        {messages.length === 0 ? (
+          isSwitching ? (
+            // Channel switch in progress
+            isLoading ? (
+              // Show spinner after 500ms delay
+              <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin mb-4" />
+                <p className="text-muted-foreground text-sm">
+                  Loading messages...
+                </p>
               </div>
-            );
-          });
-        })()}
-        </>
-      )}
+            ) : // Before 500ms - show nothing (blank screen feels faster)
+            null
+          ) : // Empty state - only show when NOT switching channels
+          threadName === "root" ? (
+            // Root channel has a special empty state
+            <RootChannelEmptyState />
+          ) : onSelectStarterAgent ? (
+            <ChannelEmptyState
+              channelId={channelId}
+              apiHost={apiHost}
+              onSelectAgent={onSelectStarterAgent}
+            />
+          ) : (
+            // Fallback simple empty state when no starter agent handler provided
+            <div className="flex flex-col items-center justify-center h-full text-center px-4">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                <span className="text-2xl">💬</span>
+              </div>
+              <p className="text-muted-foreground text-sm mb-1">
+                Start a conversation with {threadName}
+              </p>
+              {threadAgentType && (
+                <p className="text-xs text-muted-foreground">
+                  This is a {threadAgentType} agent
+                </p>
+              )}
+            </div>
+          )
+        ) : (
+          <>
+            {/* Loading indicator for older messages */}
+            {isLoadingOlder && (
+              <div className="flex justify-center py-4">
+                <div className="w-5 h-5 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+              </div>
+            )}
+            {/* "No more messages" indicator */}
+            {!hasMoreMessages && messages.length > 0 && (
+              <div className="flex justify-center py-4">
+                <span className="text-xs text-muted-foreground">
+                  Beginning of conversation
+                </span>
+              </div>
+            )}
+            {(() => {
+              const groupedItems = groupMessages(messages);
+
+              // Helper to get the last message of a grouped item (for sender comparison)
+              const getLastMessageOfItem = (
+                item: MessageOrGroup,
+              ): Message | null => {
+                if (item.type === "tool_group") {
+                  return item.messages[item.messages.length - 1] || null;
+                }
+                return item.message;
+              };
+
+              // Helper to get the first message of a grouped item
+              const getFirstMessageOfItem = (
+                item: MessageOrGroup,
+              ): Message | null => {
+                if (item.type === "tool_group") {
+                  return item.messages[0] || null;
+                }
+                return item.message;
+              };
+
+              return groupedItems.map((item, groupIndex) => {
+                const isLastItem = groupIndex === groupedItems.length - 1;
+                const prevItem =
+                  groupIndex > 0 ? groupedItems[groupIndex - 1] : null;
+                const nextItem =
+                  groupIndex < groupedItems.length - 1
+                    ? groupedItems[groupIndex + 1]
+                    : null;
+
+                // Get the last message from the previous item (for header/margin decisions)
+                const prevLastMessage = prevItem
+                  ? getLastMessageOfItem(prevItem)
+                  : null;
+
+                if (item.type === "tool_group") {
+                  // Render grouped tool messages
+                  const firstMsg = item.messages[0];
+                  const lastMsg = item.messages[item.messages.length - 1];
+
+                  // Check if next item starts a new sender group (determines bottom margin)
+                  const nextFirstMessage = nextItem
+                    ? getFirstMessageOfItem(nextItem)
+                    : null;
+                  const isLastInGroup =
+                    !nextFirstMessage ||
+                    nextFirstMessage.sender !== lastMsg.sender ||
+                    nextFirstMessage.senderType !== lastMsg.senderType ||
+                    new Date(nextFirstMessage.timestamp).getTime() -
+                      new Date(lastMsg.timestamp).getTime() >
+                      20 * 60 * 1000;
+
+                  // Within a group: small margin. End of group: large margin. Last item: no margin.
+                  const marginClass = isLastItem
+                    ? "mb-0"
+                    : isLastInGroup
+                      ? "mb-8"
+                      : "mb-1";
+
+                  return (
+                    <div
+                      key={`tool-group-${firstMsg.id}`}
+                      data-message-id={firstMsg.id}
+                      className={marginClass}
+                    >
+                      <ToolGroup
+                        messages={item.messages}
+                        firehoseMode={firehoseMode}
+                      />
+                    </div>
+                  );
+                }
+
+                // Regular message
+                const message = item.message;
+
+                // Check if this message should show the header
+                // Show header if: first message, different sender from previous, or >20 min gap
+                const showHeader =
+                  !prevLastMessage ||
+                  prevLastMessage.sender !== message.sender ||
+                  prevLastMessage.senderType !== message.senderType ||
+                  new Date(message.timestamp).getTime() -
+                    new Date(prevLastMessage.timestamp).getTime() >
+                    20 * 60 * 1000;
+
+                // Check if next item starts a new sender group (determines bottom margin)
+                const nextFirstMessage = nextItem
+                  ? getFirstMessageOfItem(nextItem)
+                  : null;
+                const isLastInGroup =
+                  !nextFirstMessage ||
+                  nextFirstMessage.sender !== message.sender ||
+                  nextFirstMessage.senderType !== message.senderType ||
+                  new Date(nextFirstMessage.timestamp).getTime() -
+                    new Date(message.timestamp).getTime() >
+                    20 * 60 * 1000;
+
+                // Within a group: small margin. End of group: large margin. Last item: no margin.
+                const marginClass = isLastItem
+                  ? "mb-0"
+                  : isLastInGroup
+                    ? "mb-8"
+                    : "mb-1";
+
+                return (
+                  <div
+                    key={message.id}
+                    data-message-id={message.id}
+                    className={marginClass}
+                  >
+                    <MessageItem
+                      message={message}
+                      threadName={threadName}
+                      myName={myName}
+                      apiHost={apiHost}
+                      artifacts={artifactMap}
+                      agentType={
+                        message.sender
+                          ? agentTypeMap.get(message.sender)
+                          : threadAgentType
+                      }
+                      channelId={channelId}
+                      rosterIndex={
+                        message.sender
+                          ? rosterIndexMap.get(message.sender)
+                          : undefined
+                      }
+                      onStructuredAskSubmit={onStructuredAskSubmit}
+                      showHeader={showHeader}
+                    />
+                  </div>
+                );
+              });
+            })()}
+          </>
+        )}
       </div>
     </div>
   );
@@ -718,18 +764,26 @@ function groupMessages(messages: Message[]): MessageOrGroup[] {
   const result: MessageOrGroup[] = [];
 
   // Filter out send_message and set_status tool calls (redundant - they echo into the thread)
-  const filteredMessages = messages.filter(msg => {
-    if (msg.type === "tool_call" &&
-        (msg.toolName === "mcp__cast__send_message" || msg.toolName === "mcp__cast__set_status")) {
+  const filteredMessages = messages.filter((msg) => {
+    if (
+      msg.type === "tool_call" &&
+      (msg.toolName === "mcp__miriad__send_message" ||
+        msg.toolName === "mcp__miriad__set_status")
+    ) {
       return false;
     }
     // Also filter out the corresponding results
     if (msg.type === "tool_result") {
-      const callMsg = messages.find(m =>
-        m.type === "tool_call" &&
-        (m.toolCallId === msg.toolResultCallId || m.id === msg.toolResultCallId)
+      const callMsg = messages.find(
+        (m) =>
+          m.type === "tool_call" &&
+          (m.toolCallId === msg.toolResultCallId ||
+            m.id === msg.toolResultCallId),
       );
-      if (callMsg?.toolName === "mcp__cast__send_message" || callMsg?.toolName === "mcp__cast__set_status") {
+      if (
+        callMsg?.toolName === "mcp__miriad__send_message" ||
+        callMsg?.toolName === "mcp__miriad__set_status"
+      ) {
         return false;
       }
     }
@@ -788,7 +842,11 @@ function groupMessages(messages: Message[]): MessageOrGroup[] {
         }
       }
 
-      result.push({ type: "tool_group", messages: groupMessages, startIndex: i });
+      result.push({
+        type: "tool_group",
+        messages: groupMessages,
+        startIndex: i,
+      });
       i = j;
     } else {
       result.push({ type: "message", message: msg, index: i });
@@ -816,7 +874,8 @@ function MessageItem({
   const hasAttachments = message.attachments && message.attachments.length > 0;
 
   // Contextual messages: agent messages not sent via send_message (thinking out loud)
-  const isContextual = message.senderType === "agent" && message.method !== "send_message";
+  const isContextual =
+    message.senderType === "agent" && message.method !== "send_message";
 
   // Get display name: use sender if available, fallback to myName/threadName
   const displayName =
@@ -911,14 +970,20 @@ function MessageItem({
   // Status messages (including agent lifecycle events and agent status updates)
   if (message.type === "status") {
     // Enforce: structured content must be an object, never JSON-stringified
-    if (typeof message.content === "string" && message.content.startsWith("{")) {
-      throw new Error(`Status message has JSON-stringified content - this is a bug. Content: ${message.content}`);
+    if (
+      typeof message.content === "string" &&
+      message.content.startsWith("{")
+    ) {
+      throw new Error(
+        `Status message has JSON-stringified content - this is a bug. Content: ${message.content}`,
+      );
     }
 
     // Extract structured content if present
-    const statusContent = typeof message.content === "object" && message.content !== null
-      ? (message.content as { action?: string; callsign?: string })
-      : null;
+    const statusContent =
+      typeof message.content === "object" && message.content !== null
+        ? (message.content as { action?: string; callsign?: string })
+        : null;
 
     // Render summon action with coffee icon
     if (statusContent?.action === "summon" && statusContent.callsign) {
@@ -926,7 +991,8 @@ function MessageItem({
         <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-2">
           <Coffee size={14} className="flex-shrink-0" />
           <span>
-            Summoning <span className="font-medium">{statusContent.callsign}</span>...
+            Summoning{" "}
+            <span className="font-medium">{statusContent.callsign}</span>...
           </span>
         </div>
       );
@@ -938,7 +1004,8 @@ function MessageItem({
         <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-2">
           <Bed size={14} className="flex-shrink-0" />
           <span>
-            <span className="font-medium">{statusContent.callsign}</span> has been dismissed
+            <span className="font-medium">{statusContent.callsign}</span> has
+            been dismissed
           </span>
         </div>
       );
@@ -1089,7 +1156,13 @@ function MessageItem({
         />
       )}
       <div className="message-content">
-        {renderMessageContent(message, myName, artifacts, isDarkMode, isContextual)}
+        {renderMessageContent(
+          message,
+          myName,
+          artifacts,
+          isDarkMode,
+          isContextual,
+        )}
       </div>
       {/* Render attachments below the message */}
       {hasAttachments && apiHost && (
@@ -1213,9 +1286,12 @@ function renderMessageContent(
   );
 
   // Base prose classes
-  const proseClasses = "prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
+  const proseClasses =
+    "prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
   // For contextual messages, override prose text color to muted
-  const contextualClasses = isContextual ? "[&_*]:!text-[var(--cast-text-muted)]" : "";
+  const contextualClasses = isContextual
+    ? "[&_*]:!text-[var(--cast-text-muted)]"
+    : "";
 
   // For user/assistant/thinking messages, render markdown
   return (
