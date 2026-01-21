@@ -78,6 +78,7 @@ export function createAssetsApiRoutes(options: AssetsApiHandlerOptions): Hono<{ 
       let tldr: string;
       let title: string | undefined;
       let parentSlug: string | undefined;
+      let attachToLatestMessage: boolean = false;
       let source: { type: 'path'; path: string } | { type: 'base64'; data: string };
 
       if (contentType.includes('multipart/form-data')) {
@@ -88,6 +89,7 @@ export function createAssetsApiRoutes(options: AssetsApiHandlerOptions): Hono<{ 
         tldr = formData.get('tldr') as string;
         title = (formData.get('title') as string) || undefined;
         parentSlug = (formData.get('parentSlug') as string) || undefined;
+        attachToLatestMessage = formData.get('attachToLatestMessage') === 'true';
 
         if (!file) {
           return c.json({ error: 'Missing file in form data' }, 400);
@@ -107,6 +109,7 @@ export function createAssetsApiRoutes(options: AssetsApiHandlerOptions): Hono<{ 
         tldr = body.tldr;
         title = body.title;
         parentSlug = body.parentSlug;
+        attachToLatestMessage = body.attachToLatestMessage === true;
 
         if (!slug || !tldr) {
           return c.json({ error: 'Missing required fields: slug, tldr' }, 400);
@@ -130,6 +133,59 @@ export function createAssetsApiRoutes(options: AssetsApiHandlerOptions): Hono<{ 
         return c.json({ error: slugValidation.error.errors[0].message }, 400);
       }
 
+      // Check for slug collision before uploading binary data
+      const existingArtifact = await storage.getArtifact(channel.id, slug);
+      if (existingArtifact) {
+        // Extract base name and extension for the suggestion
+        const lastDot = slug.lastIndexOf('.');
+        const baseName = lastDot > 0 ? slug.slice(0, lastDot) : slug;
+        const ext = lastDot > 0 ? slug.slice(lastDot) : '';
+        const suggestion = `${baseName}-descriptive${ext}`;
+        return c.json(
+          {
+            error: 'SLUG_EXISTS',
+            message: `An artifact with slug '${slug}' already exists. Choose a more descriptive name like '${suggestion}'.`,
+          },
+          409
+        );
+      }
+
+      // Find latest message if attaching to message
+      let attachedToMessageId: string | undefined;
+      if (attachToLatestMessage) {
+        // Get the agent's most recent message in this channel
+        const messages = await storage.getMessagesByChannelId(channel.id, {
+          sender: container.callsign,
+          senderType: 'agent',
+          newestFirst: true,
+          limit: 1,
+          includeToolCalls: false, // Only conversation messages
+        });
+
+        if (messages.length === 0) {
+          return c.json(
+            {
+              error: 'NO_MESSAGE_TO_ATTACH',
+              message:
+                'You must send a message before attaching files. Use send_message first, then upload with attachToLatestMessage: true.',
+            },
+            400
+          );
+        }
+
+        attachedToMessageId = messages[0].id;
+
+        // Update the message's metadata to include this attachment slug
+        const existingMetadata = (messages[0].metadata || {}) as Record<string, unknown>;
+        const existingSlugs = (existingMetadata.attachmentSlugs as string[]) || [];
+        await storage.updateMessage(container.spaceId, attachedToMessageId, {
+          metadata: {
+            ...existingMetadata,
+            attachmentSlugs: [...existingSlugs, slug],
+          },
+        });
+      }
+
       // Save asset to storage
       const result = await assetStorage.saveAsset({
         channelId: channel.id,
@@ -149,6 +205,7 @@ export function createAssetsApiRoutes(options: AssetsApiHandlerOptions): Hono<{ 
         status: 'published',
         contentType: result.contentType,
         fileSize: result.fileSize,
+        attachedToMessageId,
         createdBy: container.callsign,
       });
 

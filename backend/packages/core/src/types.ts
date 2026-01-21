@@ -105,6 +105,8 @@ export interface GetMessagesParams {
   search?: string;
   /** Filter by sender callsign (exact match) */
   sender?: string;
+  /** Filter by sender type (user, agent, system) */
+  senderType?: ParticipantType;
   /** If true, include tool call messages (default: false - only text messages) */
   includeToolCalls?: boolean;
 }

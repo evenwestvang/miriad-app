@@ -381,12 +381,14 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     params?: GetMessagesParams
   ): Promise<StoredMessage[]> {
     const limit = params?.limit ?? 50;
-    const { since, before, newestFirst, search, sender, includeToolCalls } = params ?? {};
+    const { since, before, newestFirst, search, sender, senderType, includeToolCalls } = params ?? {};
 
     // Build search pattern for ILIKE (null if no search)
     const searchPattern = search ? `%${search}%` : null;
     // Ensure sender is null not undefined for postgres.js type safety
     const senderFilter = sender ?? null;
+    // Ensure senderType is null not undefined for postgres.js type safety
+    const senderTypeFilter = senderType ?? null;
     // By default, only return conversation messages (user, agent, assistant, system, error)
     // Tool calls, tool results, status updates, idle markers, etc. are filtered out
     const conversationOnly = !includeToolCalls;
@@ -403,6 +405,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           AND id < ${before}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${senderTypeFilter}::text IS NULL OR sender_type = ${senderTypeFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}
@@ -416,6 +419,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           AND id > ${since}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${senderTypeFilter}::text IS NULL OR sender_type = ${senderTypeFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}
@@ -429,6 +433,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           AND id < ${before}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${senderTypeFilter}::text IS NULL OR sender_type = ${senderTypeFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id DESC
         LIMIT ${limit}
@@ -442,6 +447,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           AND channel_id = ${channelId}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${senderTypeFilter}::text IS NULL OR sender_type = ${senderTypeFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id DESC
         LIMIT ${limit}
@@ -455,6 +461,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           AND channel_id = ${channelId}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${senderTypeFilter}::text IS NULL OR sender_type = ${senderTypeFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}
@@ -473,13 +480,15 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     params?: GetMessagesParams
   ): Promise<StoredMessage[]> {
     const limit = params?.limit ?? 50;
-    const { since, before, newestFirst, search, sender, includeToolCalls } = params ?? {};
+    const { since, before, newestFirst, search, sender, senderType, includeToolCalls } = params ?? {};
     const t0 = performance.now();
 
     // Build search pattern for ILIKE (null if no search)
     const searchPattern = search ? `%${search}%` : null;
     // Ensure sender is null not undefined for postgres.js type safety
     const senderFilter = sender ?? null;
+    // Ensure senderType is null not undefined for postgres.js type safety
+    const senderTypeFilter = senderType ?? null;
     // By default, only return conversation messages (user, agent, assistant, system, error)
     // Tool calls, tool results, status updates, idle markers, etc. are filtered out
     const conversationOnly = !includeToolCalls;
@@ -494,6 +503,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           AND id < ${before}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${senderTypeFilter}::text IS NULL OR sender_type = ${senderTypeFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}
@@ -505,6 +515,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           AND id > ${since}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${senderTypeFilter}::text IS NULL OR sender_type = ${senderTypeFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}
@@ -517,6 +528,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           AND id < ${before}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${senderTypeFilter}::text IS NULL OR sender_type = ${senderTypeFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id DESC
         LIMIT ${limit}
@@ -529,6 +541,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         WHERE channel_id = ${channelId}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${senderTypeFilter}::text IS NULL OR sender_type = ${senderTypeFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id DESC
         LIMIT ${limit}
@@ -540,6 +553,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         WHERE channel_id = ${channelId}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${senderTypeFilter}::text IS NULL OR sender_type = ${senderTypeFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}

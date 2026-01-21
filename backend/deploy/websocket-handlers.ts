@@ -325,22 +325,25 @@ export async function defaultHandler(
 
       // Fetch messages
       const effectiveLimit = frame.limit ?? 25;
-      const messages = await storage.getMessagesByChannelId(requestedChannelId, {
+      const rawMessages = await storage.getMessagesByChannelId(requestedChannelId, {
         since: frame.since,
         before: frame.before,
         limit: effectiveLimit,
         newestFirst: !frame.since && !frame.before,
       });
 
+      const messages = rawMessages;
+
       // Build NDJSON payload with all messages + sync response
       const frames = messages.map(msg => {
-        const metadata = msg.metadata as { method?: string } | undefined;
+        const metadata = msg.metadata as { method?: string; attachmentSlugs?: string[] } | undefined;
         let frameValue: Record<string, unknown> = {
           type: msg.type,
           content: msg.content,
           sender: msg.sender,
           senderType: msg.senderType,
           ...(metadata?.method && { method: metadata.method }),
+          ...(metadata?.attachmentSlugs?.length && { attachmentSlugs: metadata.attachmentSlugs }),
         };
 
         // Parse tool_call and tool_result content

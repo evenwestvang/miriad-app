@@ -21,6 +21,7 @@ export interface UploadAssetInput {
   tldr: string;
   title?: string;
   parentSlug?: string;
+  attachToLatestMessage?: boolean;
 }
 
 export interface DownloadAssetInput {
@@ -119,6 +120,7 @@ export async function uploadAsset(
   formData.append("tldr", input.tldr);
   if (input.title) formData.append("title", input.title);
   if (input.parentSlug) formData.append("parentSlug", input.parentSlug);
+  if (input.attachToLatestMessage) formData.append("attachToLatestMessage", "true");
 
   // Upload via container-authenticated API endpoint
   const url = `${config.apiUrl}/api/assets/${config.channelId}`;
@@ -263,6 +265,13 @@ export function createServer(config: AssetsMcpConfig): Server {
               type: "string",
               description:
                 "Optional parent artifact slug for tree organization",
+            },
+            attachToLatestMessage: {
+              type: "boolean",
+              description:
+                "If true, attach this asset to your most recent message in the channel. " +
+                "You must send a message first using send_message, then upload with this flag. " +
+                "The asset will be hidden from the board and displayed inline with the message.",
             },
           },
           required: ["path", "slug", "tldr"],
