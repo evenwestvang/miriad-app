@@ -128,7 +128,7 @@ async function main() {
         // Fetch message history and send to client
         // Use provided limit, default to 25 for fast initial sync
         const effectiveLimit = limit ?? 25;
-        const rawMessages = await storage.getMessagesByChannelId(channelId, {
+        const messages = await storage.getMessagesByChannelId(channelId, {
           since,
           before,
           limit: effectiveLimit,
@@ -136,8 +136,6 @@ async function main() {
           newestFirst: !since && !before,
           includeToolCalls: true,
         });
-
-        const messages = rawMessages;
         const t1 = performance.now();
 
         // Build NDJSON payload with all messages + sync response

@@ -325,14 +325,12 @@ export async function defaultHandler(
 
       // Fetch messages
       const effectiveLimit = frame.limit ?? 25;
-      const rawMessages = await storage.getMessagesByChannelId(requestedChannelId, {
+      const messages = await storage.getMessagesByChannelId(requestedChannelId, {
         since: frame.since,
         before: frame.before,
         limit: effectiveLimit,
         newestFirst: !frame.since && !frame.before,
       });
-
-      const messages = rawMessages;
 
       // Build NDJSON payload with all messages + sync response
       const frames = messages.map(msg => {
