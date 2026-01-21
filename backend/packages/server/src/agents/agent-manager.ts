@@ -10,16 +10,16 @@ import type {
   ActivateOptions,
   AgentRuntimeState,
   McpServerConfig,
-} from '@cast/runtime';
-import type { ArtifactSummary } from '@cast/core';
-import { generateContainerToken } from '../auth/index.js';
-import { getAppDefinition, type TokenSet } from '../apps/index.js';
+} from "@cast/runtime";
+import type { ArtifactSummary } from "@cast/core";
+import { generateContainerToken } from "../auth/index.js";
+import { getAppDefinition, type TokenSet } from "../apps/index.js";
 
 // =============================================================================
 // Types
 // =============================================================================
 
-export type AgentState = 'starting' | 'idle' | 'thinking' | 'stopped' | 'error';
+export type AgentState = "starting" | "idle" | "thinking" | "stopped" | "error";
 
 export interface ManagedAgent {
   /** Agent callsign */
@@ -47,17 +47,29 @@ export interface RosterEntry {
   id: string;
   callsign: string;
   agentType: string;
-  status: 'active' | 'inactive';
+  status: "active" | "inactive";
   tunnelHash?: string;
 }
 
 export interface AppSecrets {
   /** Get decrypted access token */
-  getAccessToken: (spaceId: string, channelId: string, slug: string) => Promise<string | null>;
+  getAccessToken: (
+    spaceId: string,
+    channelId: string,
+    slug: string,
+  ) => Promise<string | null>;
   /** Get decrypted refresh token */
-  getRefreshToken: (spaceId: string, channelId: string, slug: string) => Promise<string | null>;
+  getRefreshToken: (
+    spaceId: string,
+    channelId: string,
+    slug: string,
+  ) => Promise<string | null>;
   /** Get secret metadata */
-  getMetadata: (channelId: string, slug: string, key: string) => Promise<{ expiresAt?: string } | null>;
+  getMetadata: (
+    channelId: string,
+    slug: string,
+    key: string,
+  ) => Promise<{ expiresAt?: string } | null>;
 }
 
 /**
@@ -108,11 +120,17 @@ export interface AgentManagerConfig {
   /** Broadcast function for WebSocket frames */
   broadcast: (channelId: string, frame: string) => Promise<void>;
   /** Get channel context for system prompt */
-  getChannel: (spaceId: string, channelId: string) => Promise<ChannelContext | null>;
+  getChannel: (
+    spaceId: string,
+    channelId: string,
+  ) => Promise<ChannelContext | null>;
   /** Get roster for channel */
   getRoster: (spaceId: string, channelId: string) => Promise<RosterEntry[]>;
   /** Get a specific roster entry by callsign */
-  getRosterByCallsign?: (channelId: string, callsign: string) => Promise<RosterEntry | null>;
+  getRosterByCallsign?: (
+    channelId: string,
+    callsign: string,
+  ) => Promise<RosterEntry | null>;
   /** Get system.app artifacts for a channel (includes root) */
   getApps?: (spaceId: string, channelId: string) => Promise<ArtifactSummary[]>;
   /** App secrets accessor */
@@ -120,17 +138,31 @@ export interface AgentManagerConfig {
   /** Tunnel server URL for HTTP tunnel access (e.g., "https://tunnel.clanker.is") */
   tunnelServerUrl?: string;
   /** Get agent definition by slug from #root */
-  getAgentDefinition?: (spaceId: string, agentSlug: string) => Promise<AgentDefinition | null>;
+  getAgentDefinition?: (
+    spaceId: string,
+    agentSlug: string,
+  ) => Promise<AgentDefinition | null>;
   /** Get focus type by slug from #root */
-  getFocusType?: (spaceId: string, focusSlug: string) => Promise<FocusType | null>;
+  getFocusType?: (
+    spaceId: string,
+    focusSlug: string,
+  ) => Promise<FocusType | null>;
   /** Platform MCP URL for built-in powpow tools (e.g., "http://localhost:8080" or "https://api.cast.dev") */
   platformMcpUrl?: string;
   /** Get system.environment artifacts for a channel */
-  getEnvironmentArtifacts?: (spaceId: string, channelId: string) => Promise<EnvironmentArtifact[]>;
+  getEnvironmentArtifacts?: (
+    spaceId: string,
+    channelId: string,
+  ) => Promise<EnvironmentArtifact[]>;
   /** Get root channel ID for a space */
   getRootChannelId?: (spaceId: string) => Promise<string | null>;
   /** Get decrypted secret value */
-  getSecretValue?: (spaceId: string, channelId: string, slug: string, key: string) => Promise<string | null>;
+  getSecretValue?: (
+    spaceId: string,
+    channelId: string,
+    slug: string,
+    key: string,
+  ) => Promise<string | null>;
   /** Get space owner's callsign */
   getSpaceOwnerCallsign?: (spaceId: string) => Promise<string | null>;
 }
@@ -170,8 +202,8 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   sections.push(`## Channel Context
 
 **Channel:** #${channel.name}
-**Tagline:** ${channel.tagline ?? 'Open workspace'}
-**Mission:** ${channel.mission ?? 'A flexible space for freeform collaboration and exploration.'}`);
+**Tagline:** ${channel.tagline ?? "Open workspace"}
+**Mission:** ${channel.mission ?? "A flexible space for freeform collaboration and exploration."}`);
 
   // 2. Focus Type Instructions (if channel has focus)
   if (focusType) {
@@ -214,7 +246,7 @@ You are "${callsign}", an AI agent participating in #${channel.name}.`);
 ## Team Roster
 
 Your teammates in this channel:
-${rosterLines.join('\n')}`);
+${rosterLines.join("\n")}`);
   }
 
   // 5. Channel Participation Instructions (CAST-adapted per @ax feedback)
@@ -227,14 +259,14 @@ You are "${callsign}", an AI agent in #${channel.name}.
 ## Communicating with Teammates
 
 CRITICAL: To talk to other agents, you MUST use the \`send_message\` tool.
-Plain text responses are NOT delivered to agents—only the human sees them.
+Plain text responses are NOT delivered to agents—only the human sees them (but not very prominently, hidden by default and looks like thinking).
 
 Example:
 ✗ Writing "@fox can you help?" in your response → fox will NOT see this
 ✓ Calling send_message with content "@fox can you help?" → fox receives it and will respond
 
 • @callsign in send_message → notifies that agent
-• @channel in send_message → broadcasts to all agents
+• @channel in send_message → broadcasts to all agents (use sparingly, leads to a lot of chatter)
 
 Use \`set_status\` frequently to show what you're working on.
 
@@ -249,6 +281,7 @@ The channel has a shared **Board** for persistent work products—things that ou
 - **task** — Work items with status tracking (pending → in_progress → done/blocked)
 - **decision** — Logged choices with rationale for future reference
 - **code** — Code snippets, file references (syntax highlighted)
+- **asset** – Images, documents, data files. read_instructions on \`binary-assets\`
 
 ### Structure
 Artifacts form a **tree** like a file system. Each has a slug and optional \`parentSlug\`, creating paths like \`/auth-system/api-spec\`. **Use the tree structure to organize work—don't dump everything into content.**
@@ -299,9 +332,22 @@ Playbooks contain valuable context and procedures—consult them before diving i
 - \`artifact_edit\` - Surgical find-replace on content
 - \`artifact_update\` - Atomic field updates (status, assignees, labels)
 - \`artifact_checkpoint\` - Snapshot a named version for review
-- \`artifact_list\` / \`artifact_glob\` - Browse and search`);
+- \`artifact_list\` / \`artifact_glob\` - Browse and search
 
-  return sections.join('\n\n');
+### Extended Capabilities
+
+Use \`read_instructions\` to learn about additional platform features:
+
+- **Sharing files** — Share images, diagrams, or documents with teammates via the board → \`binary-assets\`
+- **Interactive mini-apps** — Build visualizations, prototypes, or tools as runnable \`.app.js\` artifacts → \`interactive-artifacts\`
+- **Knowledge bases** — Create or query shared repositories of documentation → \`knowledge-bases\`
+- **MCP servers** — Configure external integrations when setting up agent definitions → \`system-mcp\`
+
+### Code Execution Environment
+
+You may be running on a user's local machine (be careful!) or in a shared container with other agents. If you have the \`miriad-tunnel\` tool, you're in a containerized environment—read \`coding-in-the-shared-container\` for workspace isolation rules, port etiquette, and tunneling.`);
+
+  return sections.join("\n\n");
 }
 
 // =============================================================================
@@ -316,13 +362,17 @@ export class AgentManager {
 
   constructor(config: AgentManagerConfig) {
     this.config = config;
-    console.log('[AgentManager] Initialized');
+    console.log("[AgentManager] Initialized");
   }
 
   /**
    * Build an agent ID from space, channel, and callsign.
    */
-  private buildAgentId(spaceId: string, channelId: string, callsign: string): string {
+  private buildAgentId(
+    spaceId: string,
+    channelId: string,
+    callsign: string,
+  ): string {
     return `${spaceId}:${channelId}:${callsign}`;
   }
 
@@ -334,7 +384,7 @@ export class AgentManager {
   async buildPromptForAgent(
     spaceId: string,
     channelId: string,
-    callsign: string
+    callsign: string,
   ): Promise<string> {
     // Get channel context and roster
     const channel = await this.config.getChannel(spaceId, channelId);
@@ -353,7 +403,9 @@ export class AgentManager {
     let agentDefinition: AgentDefinition | undefined;
     if (agentType && this.config.getAgentDefinition) {
       try {
-        agentDefinition = (await this.config.getAgentDefinition(spaceId, agentType)) ?? undefined;
+        agentDefinition =
+          (await this.config.getAgentDefinition(spaceId, agentType)) ??
+          undefined;
         if (agentDefinition) {
           console.log(`[AgentManager] Loaded agent definition: ${agentType}`);
         }
@@ -366,7 +418,9 @@ export class AgentManager {
     let focusType: FocusType | undefined;
     if (channel.focusSlug && this.config.getFocusType) {
       try {
-        focusType = (await this.config.getFocusType(spaceId, channel.focusSlug)) ?? undefined;
+        focusType =
+          (await this.config.getFocusType(spaceId, channel.focusSlug)) ??
+          undefined;
         if (focusType) {
           console.log(`[AgentManager] Loaded focus type: ${channel.focusSlug}`);
         }
@@ -379,7 +433,8 @@ export class AgentManager {
     let userCallsign: string | undefined;
     if (this.config.getSpaceOwnerCallsign) {
       try {
-        userCallsign = (await this.config.getSpaceOwnerCallsign(spaceId)) ?? undefined;
+        userCallsign =
+          (await this.config.getSpaceOwnerCallsign(spaceId)) ?? undefined;
       } catch (err) {
         console.error(`[AgentManager] Error loading space owner:`, err);
       }
@@ -402,7 +457,7 @@ export class AgentManager {
    */
   private async deriveMcpConfigsFromApps(
     spaceId: string,
-    channelId: string
+    channelId: string,
   ): Promise<McpServerConfig[]> {
     const { getApps, appSecrets } = this.config;
 
@@ -419,21 +474,30 @@ export class AgentManager {
 
       for (const app of apps) {
         // Get provider from props
-        const provider = (app.props as Record<string, unknown> | undefined)?.provider as string | undefined;
+        const provider = (app.props as Record<string, unknown> | undefined)
+          ?.provider as string | undefined;
         if (!provider) {
-          console.log(`[AgentManager] Skipping app ${app.slug}: no provider in props`);
+          console.log(
+            `[AgentManager] Skipping app ${app.slug}: no provider in props`,
+          );
           continue;
         }
 
         // Get app definition from registry
         const appDef = getAppDefinition(provider);
         if (!appDef) {
-          console.log(`[AgentManager] Skipping app ${app.slug}: unknown provider ${provider}`);
+          console.log(
+            `[AgentManager] Skipping app ${app.slug}: unknown provider ${provider}`,
+          );
           continue;
         }
 
         // Check if connected (has accessToken secret)
-        const accessTokenMeta = await appSecrets.getMetadata(app.channelId, app.slug, 'accessToken');
+        const accessTokenMeta = await appSecrets.getMetadata(
+          app.channelId,
+          app.slug,
+          "accessToken",
+        );
         if (!accessTokenMeta) {
           console.log(`[AgentManager] Skipping app ${app.slug}: not connected`);
           continue;
@@ -441,7 +505,8 @@ export class AgentManager {
 
         // Check if token expired (with 1 minute buffer)
         const bufferMs = 60 * 1000;
-        const isExpired = accessTokenMeta.expiresAt &&
+        const isExpired =
+          accessTokenMeta.expiresAt &&
           new Date(accessTokenMeta.expiresAt).getTime() < Date.now() + bufferMs;
 
         if (isExpired) {
@@ -452,14 +517,24 @@ export class AgentManager {
         }
 
         // Get the access token
-        const accessToken = await appSecrets.getAccessToken(spaceId, app.channelId, app.slug);
+        const accessToken = await appSecrets.getAccessToken(
+          spaceId,
+          app.channelId,
+          app.slug,
+        );
         if (!accessToken) {
-          console.log(`[AgentManager] Skipping app ${app.slug}: failed to get access token`);
+          console.log(
+            `[AgentManager] Skipping app ${app.slug}: failed to get access token`,
+          );
           continue;
         }
 
         // Get refresh token (optional)
-        const refreshToken = await appSecrets.getRefreshToken(spaceId, app.channelId, app.slug);
+        const refreshToken = await appSecrets.getRefreshToken(
+          spaceId,
+          app.channelId,
+          app.slug,
+        );
 
         // Build token set
         const tokens: TokenSet = {
@@ -471,9 +546,8 @@ export class AgentManager {
         };
 
         // Get app settings from props
-        const settings = (app.props as Record<string, unknown> | undefined)?.settings as
-          | Record<string, unknown>
-          | undefined;
+        const settings = (app.props as Record<string, unknown> | undefined)
+          ?.settings as Record<string, unknown> | undefined;
 
         // Derive MCP config
         const derivedConfig = appDef.deriveMcp(tokens, settings);
@@ -491,10 +565,15 @@ export class AgentManager {
         };
 
         mcpConfigs.push(mcpConfig);
-        console.log(`[AgentManager] Derived MCP config for ${app.slug} (${provider})`);
+        console.log(
+          `[AgentManager] Derived MCP config for ${app.slug} (${provider})`,
+        );
       }
     } catch (error) {
-      console.error('[AgentManager] Error deriving MCP configs from apps:', error);
+      console.error(
+        "[AgentManager] Error deriving MCP configs from apps:",
+        error,
+      );
       // Don't fail spawn if app derivation fails — just skip app MCPs
     }
 
@@ -512,24 +591,27 @@ export class AgentManager {
    */
   private expandMcpConfig(
     config: McpServerConfig,
-    sharedEnv: Record<string, string>
+    sharedEnv: Record<string, string>,
   ): McpServerConfig {
     // Expand ${VAR} references - MCP's own env takes precedence over shared
     const expand = (str: string): string =>
-      str.replace(/\$\{(\w+)\}/g, (_, name) => config.env?.[name] ?? sharedEnv[name] ?? '');
+      str.replace(
+        /\$\{(\w+)\}/g,
+        (_, name) => config.env?.[name] ?? sharedEnv[name] ?? "",
+      );
 
     return {
       ...config,
       env: config.env
         ? Object.fromEntries(
-            Object.entries(config.env).map(([k, v]) => [k, expand(v)])
+            Object.entries(config.env).map(([k, v]) => [k, expand(v)]),
           )
         : undefined,
       args: config.args?.map(expand),
       url: config.url ? expand(config.url) : undefined,
       headers: config.headers
         ? Object.fromEntries(
-            Object.entries(config.headers).map(([k, v]) => [k, expand(v)])
+            Object.entries(config.headers).map(([k, v]) => [k, expand(v)]),
           )
         : undefined,
     };
@@ -547,9 +629,11 @@ export class AgentManager {
   async getMcpConfigsForAgent(
     spaceId: string,
     channelId: string,
-    authToken?: string
+    authToken?: string,
   ): Promise<McpServerConfig[]> {
-    console.log(`[AgentManager] getMcpConfigsForAgent - channelId: ${channelId}, platformMcpUrl: ${this.config.platformMcpUrl ? 'configured' : 'missing'}, authToken: ${authToken ? 'present' : 'missing'}`);
+    console.log(
+      `[AgentManager] getMcpConfigsForAgent - channelId: ${channelId}, platformMcpUrl: ${this.config.platformMcpUrl ? "configured" : "missing"}, authToken: ${authToken ? "present" : "missing"}`,
+    );
 
     // Resolve shared environment for ${VAR} expansion
     const sharedEnv = await this.resolveEnvironment(spaceId, channelId);
@@ -559,22 +643,25 @@ export class AgentManager {
     // Add built-in platform MCP (miriad) if configured
     if (this.config.platformMcpUrl && authToken) {
       const miriadMcp = {
-        name: 'miriad',
-        transport: 'http' as const,
+        name: "miriad",
+        transport: "http" as const,
         url: `${this.config.platformMcpUrl}/mcp/${channelId}`,
         headers: {
           Authorization: `Container ${authToken}`,
         },
       };
-      console.log(`[AgentManager] Adding miriad MCP:`, JSON.stringify(miriadMcp));
+      console.log(
+        `[AgentManager] Adding miriad MCP:`,
+        JSON.stringify(miriadMcp),
+      );
       configs.push(miriadMcp);
 
       // Add miriad-files MCP for file upload/download (stdio-based, requires filesystem access)
       const miriadFilesMcp = {
-        name: 'miriad-files',
-        transport: 'stdio' as const,
-        command: 'npx',
-        args: ['--yes', '@miriad-systems/assets-mcp'],
+        name: "miriad-files",
+        transport: "stdio" as const,
+        command: "npx",
+        args: ["--yes", "@miriad-systems/assets-mcp"],
         env: {
           CAST_API_URL: this.config.platformMcpUrl,
           CAST_CHANNEL_ID: channelId,
@@ -584,7 +671,9 @@ export class AgentManager {
       console.log(`[AgentManager] Adding miriad-files MCP`);
       configs.push(miriadFilesMcp);
     } else {
-      console.warn(`[AgentManager] Miriad MCP NOT added - platformMcpUrl: ${this.config.platformMcpUrl ? 'present' : 'missing'}, authToken: ${authToken ? 'present' : 'missing'}`);
+      console.warn(
+        `[AgentManager] Miriad MCP NOT added - platformMcpUrl: ${this.config.platformMcpUrl ? "present" : "missing"}, authToken: ${authToken ? "present" : "missing"}`,
+      );
     }
 
     // Add user-configured app MCPs
@@ -594,12 +683,14 @@ export class AgentManager {
 
     // Expand ${VAR} references in all configs (except built-in MCPs which have no vars)
     const expandedConfigs = configs.map((config) =>
-      config.name === 'miriad' || config.name === 'miriad-files'
+      config.name === "miriad" || config.name === "miriad-files"
         ? config
-        : this.expandMcpConfig(config, sharedEnv)
+        : this.expandMcpConfig(config, sharedEnv),
     );
 
-    console.log(`[AgentManager] Total MCP configs for channelId ${channelId}: ${expandedConfigs.length}`);
+    console.log(
+      `[AgentManager] Total MCP configs for channelId ${channelId}: ${expandedConfigs.length}`,
+    );
     return expandedConfigs;
   }
 
@@ -618,13 +709,16 @@ export class AgentManager {
    */
   async resolveEnvironment(
     spaceId: string,
-    channelId: string
+    channelId: string,
   ): Promise<Record<string, string>> {
-    const { getEnvironmentArtifacts, getRootChannelId, getSecretValue } = this.config;
+    const { getEnvironmentArtifacts, getRootChannelId, getSecretValue } =
+      this.config;
 
     // Skip if environment resolution not configured
     if (!getEnvironmentArtifacts || !getRootChannelId || !getSecretValue) {
-      console.log('[AgentManager] Environment resolution not configured, returning empty');
+      console.log(
+        "[AgentManager] Environment resolution not configured, returning empty",
+      );
       return {};
     }
 
@@ -647,13 +741,20 @@ export class AgentManager {
           }
           // Resolve secrets
           for (const key of env.secretKeys) {
-            const value = await getSecretValue(spaceId, rootChannelId, env.slug, key);
+            const value = await getSecretValue(
+              spaceId,
+              rootChannelId,
+              env.slug,
+              key,
+            );
             if (value !== null) {
               result[key] = value;
             }
           }
         }
-        console.log(`[AgentManager] Resolved ${rootEnvs.length} root environment artifacts`);
+        console.log(
+          `[AgentManager] Resolved ${rootEnvs.length} root environment artifacts`,
+        );
       }
 
       // 2. Channel overlays (specificity wins)
@@ -674,10 +775,14 @@ export class AgentManager {
           }
         }
       }
-      console.log(`[AgentManager] Resolved ${channelEnvs.length} channel environment artifacts`);
-      console.log(`[AgentManager] Total resolved env vars: ${Object.keys(result).length}`);
+      console.log(
+        `[AgentManager] Resolved ${channelEnvs.length} channel environment artifacts`,
+      );
+      console.log(
+        `[AgentManager] Total resolved env vars: ${Object.keys(result).length}`,
+      );
     } catch (error) {
-      console.error('[AgentManager] Error resolving environment:', error);
+      console.error("[AgentManager] Error resolving environment:", error);
       // Don't fail activation if environment resolution fails
     }
 
@@ -692,7 +797,7 @@ export class AgentManager {
   async activate(
     spaceId: string,
     channelId: string,
-    callsign: string
+    callsign: string,
   ): Promise<ManagedAgent> {
     console.log(`[AgentManager] Activating agent ${callsign} in ${channelId}`);
 
@@ -706,21 +811,34 @@ export class AgentManager {
     const agentId = this.buildAgentId(spaceId, channelId, callsign);
 
     // Build system prompt using centralized method
-    const systemPrompt = await this.buildPromptForAgent(spaceId, channelId, callsign);
+    const systemPrompt = await this.buildPromptForAgent(
+      spaceId,
+      channelId,
+      callsign,
+    );
 
     // Generate auth token
     const authToken = generateContainerToken({ spaceId, channelId, callsign });
 
     // Get all MCP configs (platform + app MCPs)
-    const mcpConfigs = await this.getMcpConfigsForAgent(spaceId, channelId, authToken);
+    const mcpConfigs = await this.getMcpConfigsForAgent(
+      spaceId,
+      channelId,
+      authToken,
+    );
 
     // Get tunnel hash from roster entry (if available)
     let tunnelHash: string | undefined;
     if (this.config.getRosterByCallsign) {
-      const rosterEntry = await this.config.getRosterByCallsign(channelId, callsign);
+      const rosterEntry = await this.config.getRosterByCallsign(
+        channelId,
+        callsign,
+      );
       tunnelHash = rosterEntry?.tunnelHash;
       if (tunnelHash) {
-        console.log(`[AgentManager] Tunnel hash found for ${callsign}: ${tunnelHash.substring(0, 8)}...`);
+        console.log(
+          `[AgentManager] Tunnel hash found for ${callsign}: ${tunnelHash.substring(0, 8)}...`,
+        );
       }
     }
 
@@ -740,11 +858,13 @@ export class AgentManager {
       callsign,
       channelId,
       spaceId,
-      state: 'idle',
+      state: "idle",
       runtimeState,
     };
 
-    console.log(`[AgentManager] Agent ${callsign} activated, port ${runtimeState.port}`);
+    console.log(
+      `[AgentManager] Agent ${callsign} activated, port ${runtimeState.port}`,
+    );
 
     return agent;
   }
@@ -760,7 +880,7 @@ export class AgentManager {
     channelId: string,
     callsign: string,
     sender: string,
-    content: string
+    content: string,
   ): Promise<void> {
     // Activate container - it will checkin and receive pending messages
     await this.activate(spaceId, channelId, callsign);
@@ -768,16 +888,22 @@ export class AgentManager {
     // Note: We don't push the message here. The message is already saved to storage
     // by the message handler. The container will receive it via getPendingMessages
     // when it calls /agents/checkin.
-    console.log(`[AgentManager] Container activated for ${callsign}, will receive message via checkin`);
+    console.log(
+      `[AgentManager] Container activated for ${callsign}, will receive message via checkin`,
+    );
   }
 
   /**
    * Suspend an agent's container.
    * NOTE: With roster as source of truth, you should also clear callbackUrl in roster.
    */
-  async suspend(spaceId: string, channelId: string, callsign: string): Promise<void> {
+  async suspend(
+    spaceId: string,
+    channelId: string,
+    callsign: string,
+  ): Promise<void> {
     const agentId = this.buildAgentId(spaceId, channelId, callsign);
-    await this.config.runtime.suspend(agentId, 'manual');
+    await this.config.runtime.suspend(agentId, "manual");
     console.log(`[AgentManager] Agent ${callsign} suspended`);
     // Note: Caller should also clear callbackUrl in roster via storage.updateRosterEntry()
   }
@@ -786,7 +912,7 @@ export class AgentManager {
    * Shutdown all containers managed by the runtime.
    */
   async shutdown(): Promise<void> {
-    console.log('[AgentManager] Shutting down all agents...');
+    console.log("[AgentManager] Shutting down all agents...");
     await this.config.runtime.shutdown();
   }
 }
