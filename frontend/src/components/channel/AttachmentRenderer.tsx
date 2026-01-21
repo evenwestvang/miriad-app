@@ -202,7 +202,7 @@ export function AssetRenderer({
   compact = false,
   className,
 }: AssetRendererProps) {
-  const url = `${apiHost}/api/channels/${channelId}/assets/${slug}`
+  const url = `${apiHost}/channels/${channelId}/assets/${slug}`
   const fetchState = useAuthenticatedBlobUrl(url)
   const { isImage, isPdf } = getAssetType(slug)
 
