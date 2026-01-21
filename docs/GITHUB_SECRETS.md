@@ -30,6 +30,8 @@
 | `STAGING_SECURITY_GROUP_IDS` | Security group IDs |
 | `STAGING_FLY_API_TOKEN` | Fly.io API token for staging |
 | `STAGING_FLY_APP_NAME` | Fly.io app name (e.g., cast-agent-staging) |
+| `STAGING_TUNNEL_FLY_API_TOKEN` | Fly.io API token for staging tunnel server |
+| `STAGING_CONTAINER_SECRET` | Container auth secret (must match tunnel server) |
 | `VERCEL_TOKEN` | Vercel API token |
 
 ## Production Environment
@@ -56,9 +58,10 @@ Same pattern with `PROD_` prefix, plus:
 | `PROD_VPC_ID` | AWS VPC ID (for tunnel server) |
 | `PROD_CERT_ARN` | ACM certificate ARN (for tunnel server) |
 | `PROD_HOSTED_ZONE_ID` | Route53 hosted zone ID (for tunnel server) |
-| `PROD_CONTAINER_SECRET` | Container auth secret (for tunnel server) |
+| `PROD_CONTAINER_SECRET` | Container auth secret (must match tunnel server) |
 | `PROD_FLY_API_TOKEN` | Fly.io API token for production |
 | `PROD_FLY_APP_NAME` | Fly.io app name (e.g., cast-agent-prod) |
+| `PROD_TUNNEL_FLY_API_TOKEN` | Fly.io API token for production tunnel server |
 
 ## Migration from samconfig.toml
 
