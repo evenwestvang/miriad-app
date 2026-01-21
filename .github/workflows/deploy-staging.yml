@@ -115,7 +115,7 @@ jobs:
             "CastWsUrl=wss://ws.staging.caststack.ai",
             "GitHubClientId=${PARAM_GITHUB_CLIENT_ID}",
             "GitHubClientSecret=${PARAM_GITHUB_CLIENT_SECRET}",
-            "TunnelServerUrl=https://tunnel.caststack.site",
+            "TunnelServerUrl=https://tunnel.staging.caststack.site",
             "AgentImageUri=registry.fly.io/${PARAM_FLY_APP_NAME}:latest",
             "FlyApiToken=\"${PARAM_FLY_API_TOKEN}\"",
             "FlyAppName=${PARAM_FLY_APP_NAME}",
