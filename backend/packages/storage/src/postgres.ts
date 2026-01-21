@@ -1493,6 +1493,30 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     return updated!;
   }
 
+  async function setArtifactAttachment(
+    channelId: string,
+    slug: string,
+    messageId: string,
+    updatedBy: string
+  ): Promise<void> {
+    const artifact = await getArtifact(channelId, slug);
+    if (!artifact) {
+      throw new Error(`Artifact not found: ${slug}`);
+    }
+
+    const now = new Date();
+
+    await sql`
+      UPDATE artifacts
+      SET
+        attached_to_message_id = ${messageId},
+        version = version + 1,
+        updated_by = ${updatedBy},
+        updated_at = ${now}
+      WHERE channel_id = ${channelId} AND slug = ${slug}
+    `;
+  }
+
   async function archiveArtifact(
     channelId: string,
     slug: string,
@@ -3480,6 +3504,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     getArtifact,
     updateArtifactWithCAS,
     editArtifact,
+    setArtifactAttachment,
     archiveArtifact,
     archiveArtifactRecursive,
     deleteAllArtifactsInChannel,

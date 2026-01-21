@@ -11,6 +11,7 @@ export {
   type MessageStorage,
   type RosterProvider,
   type AgentInvoker,
+  type ArtifactStorage,
   type MessageHandlerOptions,
 } from './messages.js';
 export {
