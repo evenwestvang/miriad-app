@@ -67,6 +67,19 @@ const testMessages: StoredMessage[] = [
 
 function createMockStorage(): Storage {
   return {
+    // Space and User operations
+    getSpace: vi.fn(async () => ({
+      id: TEST_SPACE_ID,
+      name: 'Test Space',
+      ownerId: 'user-1',
+      createdAt: '2026-01-01T00:00:00Z',
+    })),
+    getUser: vi.fn(async () => ({
+      id: 'user-1',
+      callsign: 'simen',
+      email: 'simen@example.com',
+    })),
+
     // Channel operations
     getChannel: vi.fn(async (spaceId: string, channelId: string) => {
       if (channelId === TEST_CHANNEL_ID) return testChannel;
@@ -200,6 +213,7 @@ function createMockStorage(): Storage {
       updatedAt: '2026-01-01T00:01:00Z',
     })),
     listArtifacts: vi.fn(async () => []),
+    listPublishedKnowledgeBases: vi.fn(async () => []),
     globArtifacts: vi.fn(async () => []),
     checkpointArtifact: vi.fn(async () => ({
       slug: 'test-artifact',
@@ -440,7 +454,7 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
       expect(json.id).toBe(1);
       expect(json.result.tools).toBeDefined();
       expect(Array.isArray(json.result.tools)).toBe(true);
-      expect(json.result.tools.length).toBe(18); // 9 artifact + 2 message + 1 instructions + 2 communication + 4 channel awareness
+      expect(json.result.tools.length).toBe(22); // 9 artifact + 2 message + 1 instructions + 2 communication + 4 channel awareness + 4 knowledge base
 
       // Verify tool names
       const toolNames = json.result.tools.map((t: { name: string }) => t.name);
