@@ -1,322 +1,37 @@
 /**
- * AttachmentRenderer - Unified attachment preview with plugin/handler pattern
+ * MessageAttachments - Renders asset artifacts attached to messages
  *
- * Renders file attachments with appropriate previews based on MIME type.
- * Uses authenticated fetch + blob URLs to handle auth cookies properly.
- * Extensible architecture allows adding new handlers without changes to core component.
+ * Uses extension-based detection (same as board) to determine preview type.
+ * Assets are fetched with credentials via blob URLs.
  */
 
 import { useState, useEffect } from 'react'
-import { Download, ExternalLink, FileText, Image, FileCode, File, Loader2, AlertCircle } from 'lucide-react'
+import { Download, ExternalLink, FileText, Image, File, Loader2, AlertCircle } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import type { Attachment } from '../../types'
 
 // =============================================================================
-// Handler Interface
+// Extension-based type detection (matches board/ArtifactDetail.tsx)
 // =============================================================================
 
-/**
- * Handler interface for attachment rendering.
- * Implement this to add support for new file types.
- */
-export interface AttachmentHandler {
-  /** Unique handler identifier */
-  id: string
-  /** Check if this handler can render the attachment */
-  canHandle: (attachment: Attachment) => boolean
-  /** Render the attachment preview (receives blob URL, not original URL) */
-  render: (props: AttachmentRenderProps) => React.ReactNode
-  /** Icon component for this file type */
-  icon: React.ComponentType<{ className?: string }>
-  /** Priority (higher = checked first) */
-  priority: number
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp']
+const PDF_EXTENSION = '.pdf'
+
+function getAssetType(slug: string): { isImage: boolean; isPdf: boolean } {
+  const lower = slug.toLowerCase()
+  const isImage = IMAGE_EXTENSIONS.some(ext => lower.endsWith(ext))
+  const isPdf = lower.endsWith(PDF_EXTENSION)
+  return { isImage, isPdf }
 }
 
-export interface AttachmentRenderProps {
-  attachment: Attachment
-  /** Blob URL for authenticated access to the attachment */
-  blobUrl: string
-  /** Whether to show compact view (for inline in messages) */
-  compact?: boolean
+function getIcon(slug: string) {
+  const { isImage, isPdf } = getAssetType(slug)
+  if (isImage) return Image
+  if (isPdf) return FileText
+  return File
 }
 
 // =============================================================================
-// Built-in Handlers
-// =============================================================================
-
-/**
- * Image handler - inline preview for images
- */
-const imageHandler: AttachmentHandler = {
-  id: 'image',
-  priority: 100,
-  icon: Image,
-  canHandle: (attachment) => attachment.mimeType.startsWith('image/'),
-  render: ({ attachment, blobUrl, compact }) => (
-    <div className={cn("space-y-2", compact && "max-w-xs")}>
-      <img
-        src={blobUrl}
-        alt={attachment.filename}
-        className={cn(
-          "border border-[var(--cast-border-default)]",
-          compact ? "max-h-48 max-w-full" : "max-w-full"
-        )}
-      />
-      {!compact && (
-        <AttachmentActions blobUrl={blobUrl} filename={attachment.filename} />
-      )}
-    </div>
-  ),
-}
-
-/**
- * PDF handler - embed or link to PDF documents
- */
-const pdfHandler: AttachmentHandler = {
-  id: 'pdf',
-  priority: 90,
-  icon: FileText,
-  canHandle: (attachment) => attachment.mimeType === 'application/pdf',
-  render: ({ attachment, blobUrl, compact }) => (
-    <div className="space-y-2">
-      {compact ? (
-        <AttachmentCard
-          attachment={attachment}
-          blobUrl={blobUrl}
-          icon={FileText}
-        />
-      ) : (
-        <>
-          <iframe
-            src={blobUrl}
-            title={attachment.filename}
-            className="w-full h-80 border border-[var(--cast-border-default)]"
-          />
-          <AttachmentActions blobUrl={blobUrl} filename={attachment.filename} />
-        </>
-      )}
-    </div>
-  ),
-}
-
-/**
- * Code handler - syntax highlighted preview (stub for now)
- * TODO: Implement syntax highlighting with highlight.js or similar
- */
-const CODE_EXTENSIONS = [
-  '.ts', '.tsx', '.js', '.jsx', '.json', '.md', '.yaml', '.yml',
-  '.py', '.rb', '.go', '.rs', '.java', '.c', '.cpp', '.h', '.hpp',
-  '.css', '.scss', '.html', '.xml', '.sh', '.bash', '.sql'
-]
-
-const CODE_MIME_TYPES = [
-  'text/plain',
-  'text/javascript',
-  'text/typescript',
-  'application/json',
-  'text/markdown',
-  'text/yaml',
-  'text/x-python',
-  'text/x-ruby',
-]
-
-const codeHandler: AttachmentHandler = {
-  id: 'code',
-  priority: 80,
-  icon: FileCode,
-  canHandle: (attachment) => {
-    // Check MIME type
-    if (CODE_MIME_TYPES.some(mime => attachment.mimeType.startsWith(mime))) {
-      return true
-    }
-    // Check file extension
-    const filename = attachment.filename.toLowerCase()
-    return CODE_EXTENSIONS.some(ext => filename.endsWith(ext))
-  },
-  render: ({ attachment, blobUrl }) => (
-    <AttachmentCard
-      attachment={attachment}
-      blobUrl={blobUrl}
-      icon={FileCode}
-      subtitle="Code file"
-    />
-    // TODO: Fetch content and render with syntax highlighting
-    // For now, just show a download card
-  ),
-}
-
-/**
- * Fallback handler - generic file with download link
- */
-const fallbackHandler: AttachmentHandler = {
-  id: 'fallback',
-  priority: 0,
-  icon: File,
-  canHandle: () => true, // Always matches as last resort
-  render: ({ attachment, blobUrl }) => (
-    <AttachmentCard
-      attachment={attachment}
-      blobUrl={blobUrl}
-      icon={File}
-    />
-  ),
-}
-
-// =============================================================================
-// Handler Registry
-// =============================================================================
-
-/**
- * Registry of all attachment handlers, sorted by priority (descending)
- */
-const handlers: AttachmentHandler[] = [
-  imageHandler,
-  pdfHandler,
-  codeHandler,
-  fallbackHandler,
-].sort((a, b) => b.priority - a.priority)
-
-/**
- * Find the appropriate handler for an attachment
- */
-function getHandler(attachment: Attachment): AttachmentHandler {
-  return handlers.find(h => h.canHandle(attachment)) || fallbackHandler
-}
-
-// =============================================================================
-// Shared Components
-// =============================================================================
-
-interface AttachmentActionsProps {
-  blobUrl: string
-  filename: string
-}
-
-/**
- * Open and download buttons for attachments
- */
-function AttachmentActions({ blobUrl, filename }: AttachmentActionsProps) {
-  return (
-    <div className="flex gap-2">
-      <a
-        href={blobUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex items-center gap-1 px-2 py-1 text-xs hover:bg-[var(--cast-bg-hover)] text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] border border-[var(--cast-border-default)] transition-colors"
-      >
-        <ExternalLink className="w-3 h-3" />
-        Open
-      </a>
-      <a
-        href={blobUrl}
-        download={filename}
-        className="flex items-center gap-1 px-2 py-1 text-xs hover:bg-[var(--cast-bg-hover)] text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] border border-[var(--cast-border-default)] transition-colors"
-      >
-        <Download className="w-3 h-3" />
-        Download
-      </a>
-    </div>
-  )
-}
-
-interface AttachmentCardProps {
-  attachment: Attachment
-  blobUrl: string
-  icon: React.ComponentType<{ className?: string }>
-  subtitle?: string
-}
-
-/**
- * Compact card view for non-previewable attachments
- */
-function AttachmentCard({ attachment, blobUrl, icon: Icon, subtitle }: AttachmentCardProps) {
-  return (
-    <div className="flex items-center gap-3 py-2.5 px-3 bg-[#fafafa] dark:bg-[var(--cast-bg-active)] border border-[var(--cast-border-default)] hover:border-[#ccc] transition-colors">
-      <Icon className="w-5 h-5 text-[var(--cast-text-secondary)] flex-shrink-0" />
-      <div className="flex-1 min-w-0">
-        <div className="text-base font-medium truncate text-[var(--cast-text-primary)]">{attachment.filename}</div>
-        <div className="text-xs text-[var(--cast-text-muted)]">
-          {subtitle || formatFileSize(attachment.size)}
-        </div>
-      </div>
-      <div className="flex gap-1">
-        <a
-          href={blobUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="p-1.5 hover:bg-[var(--cast-bg-hover)] text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] transition-colors"
-          title="Open"
-        >
-          <ExternalLink className="w-4 h-4" />
-        </a>
-        <a
-          href={blobUrl}
-          download={attachment.filename}
-          className="p-1.5 hover:bg-[var(--cast-bg-hover)] text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] transition-colors"
-          title="Download"
-        >
-          <Download className="w-4 h-4" />
-        </a>
-      </div>
-    </div>
-  )
-}
-
-/**
- * Loading state while fetching attachment
- */
-function AttachmentLoading({ attachment }: { attachment: Attachment }) {
-  const handler = getHandler(attachment)
-  const Icon = handler.icon
-
-  return (
-    <div className="flex items-center gap-3 py-2.5 px-3 bg-[#fafafa] dark:bg-[var(--cast-bg-active)] border border-[var(--cast-border-default)] animate-pulse">
-      <Icon className="w-5 h-5 text-[var(--cast-text-secondary)] flex-shrink-0" />
-      <div className="flex-1 min-w-0">
-        <div className="text-base font-medium truncate text-[var(--cast-text-primary)]">{attachment.filename}</div>
-        <div className="text-xs text-[var(--cast-text-muted)] flex items-center gap-1">
-          <Loader2 className="w-3 h-3 animate-spin" />
-          Loading...
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/**
- * Error state when attachment fetch fails
- */
-function AttachmentError({ attachment, error }: { attachment: Attachment; error: string }) {
-  const handler = getHandler(attachment)
-  const Icon = handler.icon
-
-  return (
-    <div className="flex items-center gap-3 py-2.5 px-3 bg-destructive/10 border border-destructive/30">
-      <Icon className="w-5 h-5 text-destructive flex-shrink-0" />
-      <div className="flex-1 min-w-0">
-        <div className="text-base font-medium truncate">{attachment.filename}</div>
-        <div className="text-xs text-destructive flex items-center gap-1">
-          <AlertCircle className="w-3 h-3" />
-          {error}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/**
- * Format file size in human-readable format
- */
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
-}
-
-// =============================================================================
-// Blob URL Hook
+// Blob URL Hook (authenticated fetch)
 // =============================================================================
 
 type FetchState =
@@ -324,9 +39,6 @@ type FetchState =
   | { status: 'success'; blobUrl: string }
   | { status: 'error'; error: string }
 
-/**
- * Hook to fetch attachment with credentials and create blob URL
- */
 function useAuthenticatedBlobUrl(url: string): FetchState {
   const [state, setState] = useState<FetchState>({ status: 'loading' })
 
@@ -341,7 +53,6 @@ function useAuthenticatedBlobUrl(url: string): FetchState {
         })
 
         if (response.status === 401) {
-          // Session expired - auth will be handled by WorkOS later
           throw new Error('Authentication required')
         }
 
@@ -359,7 +70,7 @@ function useAuthenticatedBlobUrl(url: string): FetchState {
         if (cancelled) return
         setState({
           status: 'error',
-          error: err instanceof Error ? err.message : 'Failed to load attachment'
+          error: err instanceof Error ? err.message : 'Failed to load'
         })
       }
     }
@@ -379,78 +90,197 @@ function useAuthenticatedBlobUrl(url: string): FetchState {
 }
 
 // =============================================================================
-// Main Component
+// Shared Components
 // =============================================================================
 
-interface AttachmentRendererProps {
-  attachment: Attachment
-  /** API host for constructing URLs */
-  apiHost: string
-  /** Whether to show compact view */
-  compact?: boolean
-  className?: string
-}
-
-/**
- * Renders an attachment with appropriate preview based on file type.
- * Uses authenticated fetch + blob URLs to handle auth properly.
- */
-export function AttachmentRenderer({
-  attachment,
-  apiHost,
-  compact = false,
-  className,
-}: AttachmentRendererProps) {
-  const handler = getHandler(attachment)
-  const url = attachment.url.startsWith('http')
-    ? attachment.url
-    : `${apiHost}${attachment.url}`
-
-  const fetchState = useAuthenticatedBlobUrl(url)
-
+function AssetActions({ blobUrl, slug }: { blobUrl: string; slug: string }) {
   return (
-    <div className={cn("attachment-renderer", className)}>
-      {fetchState.status === 'loading' && (
-        <AttachmentLoading attachment={attachment} />
-      )}
-      {fetchState.status === 'error' && (
-        <AttachmentError attachment={attachment} error={fetchState.error} />
-      )}
-      {fetchState.status === 'success' && (
-        handler.render({ attachment, blobUrl: fetchState.blobUrl, compact })
-      )}
+    <div className="flex gap-2">
+      <a
+        href={blobUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-1 px-2 py-1 text-xs hover:bg-[var(--cast-bg-hover)] text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] border border-[var(--cast-border-default)] transition-colors"
+      >
+        <ExternalLink className="w-3 h-3" />
+        Open
+      </a>
+      <a
+        href={blobUrl}
+        download={slug}
+        className="flex items-center gap-1 px-2 py-1 text-xs hover:bg-[var(--cast-bg-hover)] text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] border border-[var(--cast-border-default)] transition-colors"
+      >
+        <Download className="w-3 h-3" />
+        Download
+      </a>
     </div>
   )
 }
 
-/**
- * Renders multiple attachments in a grid/list layout
- */
-interface AttachmentListProps {
-  attachments: Attachment[]
+function AssetCard({ slug, blobUrl }: { slug: string; blobUrl: string }) {
+  const Icon = getIcon(slug)
+  return (
+    <div className="flex items-center gap-3 py-2.5 px-3 bg-[#fafafa] dark:bg-[var(--cast-bg-active)] border border-[var(--cast-border-default)] hover:border-[#ccc] transition-colors">
+      <Icon className="w-5 h-5 text-[var(--cast-text-secondary)] flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="text-base font-medium truncate text-[var(--cast-text-primary)]">{slug}</div>
+      </div>
+      <div className="flex gap-1">
+        <a
+          href={blobUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-1.5 hover:bg-[var(--cast-bg-hover)] text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] transition-colors"
+          title="Open"
+        >
+          <ExternalLink className="w-4 h-4" />
+        </a>
+        <a
+          href={blobUrl}
+          download={slug}
+          className="p-1.5 hover:bg-[var(--cast-bg-hover)] text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] transition-colors"
+          title="Download"
+        >
+          <Download className="w-4 h-4" />
+        </a>
+      </div>
+    </div>
+  )
+}
+
+function AssetLoading({ slug }: { slug: string }) {
+  const Icon = getIcon(slug)
+  return (
+    <div className="flex items-center gap-3 py-2.5 px-3 bg-[#fafafa] dark:bg-[var(--cast-bg-active)] border border-[var(--cast-border-default)] animate-pulse">
+      <Icon className="w-5 h-5 text-[var(--cast-text-secondary)] flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="text-base font-medium truncate text-[var(--cast-text-primary)]">{slug}</div>
+        <div className="text-xs text-[var(--cast-text-muted)] flex items-center gap-1">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          Loading...
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AssetError({ slug, error }: { slug: string; error: string }) {
+  const Icon = getIcon(slug)
+  return (
+    <div className="flex items-center gap-3 py-2.5 px-3 bg-destructive/10 border border-destructive/30">
+      <Icon className="w-5 h-5 text-destructive flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="text-base font-medium truncate">{slug}</div>
+        <div className="text-xs text-destructive flex items-center gap-1">
+          <AlertCircle className="w-3 h-3" />
+          {error}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =============================================================================
+// Main Components
+// =============================================================================
+
+interface AssetRendererProps {
+  slug: string
+  channelId: string
   apiHost: string
   compact?: boolean
   className?: string
 }
 
-export function AttachmentList({
-  attachments,
+/**
+ * Renders a single asset attachment by slug.
+ */
+export function AssetRenderer({
+  slug,
+  channelId,
   apiHost,
   compact = false,
   className,
-}: AttachmentListProps) {
-  if (!attachments || attachments.length === 0) return null
+}: AssetRendererProps) {
+  const url = `${apiHost}/api/channels/${channelId}/assets/${slug}`
+  const fetchState = useAuthenticatedBlobUrl(url)
+  const { isImage, isPdf } = getAssetType(slug)
+
+  if (fetchState.status === 'loading') {
+    return <AssetLoading slug={slug} />
+  }
+
+  if (fetchState.status === 'error') {
+    return <AssetError slug={slug} error={fetchState.error} />
+  }
+
+  const { blobUrl } = fetchState
+
+  // Image preview
+  if (isImage) {
+    return (
+      <div className={cn("space-y-2", compact && "max-w-xs", className)}>
+        <img
+          src={blobUrl}
+          alt={slug}
+          className={cn(
+            "border border-[var(--cast-border-default)]",
+            compact ? "max-h-48 max-w-full" : "max-w-full"
+          )}
+        />
+        {!compact && <AssetActions blobUrl={blobUrl} slug={slug} />}
+      </div>
+    )
+  }
+
+  // PDF preview
+  if (isPdf && !compact) {
+    return (
+      <div className={cn("space-y-2", className)}>
+        <iframe
+          src={blobUrl}
+          title={slug}
+          className="w-full h-80 border border-[var(--cast-border-default)]"
+        />
+        <AssetActions blobUrl={blobUrl} slug={slug} />
+      </div>
+    )
+  }
+
+  // Card view (compact or non-previewable)
+  return <AssetCard slug={slug} blobUrl={blobUrl} />
+}
+
+interface MessageAttachmentsProps {
+  slugs: string[]
+  channelId: string
+  apiHost: string
+  compact?: boolean
+  className?: string
+}
+
+/**
+ * Renders multiple asset attachments for a message.
+ */
+export function MessageAttachments({
+  slugs,
+  channelId,
+  apiHost,
+  compact = false,
+  className,
+}: MessageAttachmentsProps) {
+  if (!slugs || slugs.length === 0) return null
 
   return (
     <div className={cn(
-      "attachment-list",
       compact ? "flex flex-wrap gap-2" : "space-y-3",
       className
     )}>
-      {attachments.map((attachment) => (
-        <AttachmentRenderer
-          key={attachment.id}
-          attachment={attachment}
+      {slugs.map((slug) => (
+        <AssetRenderer
+          key={slug}
+          slug={slug}
+          channelId={channelId}
           apiHost={apiHost}
           compact={compact}
         />
@@ -458,10 +288,3 @@ export function AttachmentList({
     </div>
   )
 }
-
-// =============================================================================
-// Exports
-// =============================================================================
-
-export { getHandler, handlers, formatFileSize }
-// Types are already exported at definition

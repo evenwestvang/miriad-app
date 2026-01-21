@@ -49,8 +49,8 @@ export interface Message {
   response?: Record<string, unknown>
   respondedBy?: string
   respondedAt?: string
-  // Attachments linked to this message
-  attachments?: Attachment[]
+  // Asset artifact slugs attached to this message
+  attachmentSlugs?: string[]
   // For attachment type messages (content is an object)
   attachmentData?: AttachmentMessageContent
   // Method used to send the message (e.g., 'send_message' for intentional agent messages)

@@ -28,10 +28,10 @@ import type { Message, StructuredAskMessage } from "../../types";
 import { highlightMentions, type ArtifactInfo } from "../../utils";
 import { ToolGroup } from "./ToolGroup";
 import { StructuredAskForm } from "../structured-ask";
-import { AttachmentList, AttachmentRenderer } from "./AttachmentRenderer";
+import { MessageAttachments, AssetRenderer } from "./AttachmentRenderer";
 import { ChannelEmptyState } from "./ChannelEmptyState";
 import { RootChannelEmptyState } from "./RootChannelEmptyState";
-import type { AttachmentMessageContent, Attachment } from "../../types";
+import type { AttachmentMessageContent } from "../../types";
 // Avatar components kept for potential future use
 // import { AgentAvatar, UserAvatar } from './AgentAvatar'
 import { Cartouche } from "./Cartouche";
@@ -871,7 +871,7 @@ function MessageItem({
 }: MessageItemProps) {
   const isDarkMode = useIsDarkMode();
   const isUser = message.senderType === "user";
-  const hasAttachments = message.attachments && message.attachments.length > 0;
+  const hasAttachments = message.attachmentSlugs && message.attachmentSlugs.length > 0;
 
   // Contextual messages: agent messages not sent via send_message (thinking out loud)
   const isContextual =
@@ -1080,18 +1080,8 @@ function MessageItem({
       );
     }
 
-    // Convert to Attachment type for the renderer
-    const attachment: Attachment = {
-      id: attachmentData.attachmentId,
-      channelId: message.channelId,
-      messageId: message.id,
-      filename: attachmentData.filename,
-      mimeType: attachmentData.mimeType,
-      size: attachmentData.size,
-      url: attachmentData.url,
-      uploadedBy: message.sender,
-      uploadedAt: message.timestamp,
-    };
+    // Extract slug from URL (last path segment) for asset rendering
+    const slug = attachmentData.url.split('/').pop() || attachmentData.filename;
 
     return (
       <div className="flex flex-col min-w-0 max-w-[80%] relative">
@@ -1115,8 +1105,9 @@ function MessageItem({
           )}
           {/* Attachment preview */}
           <div className="p-3">
-            <AttachmentRenderer
-              attachment={attachment}
+            <AssetRenderer
+              slug={slug}
+              channelId={message.channelId}
               apiHost={apiHost}
               compact={false}
             />
@@ -1166,8 +1157,9 @@ function MessageItem({
       </div>
       {/* Render attachments below the message */}
       {hasAttachments && apiHost && (
-        <AttachmentList
-          attachments={message.attachments!}
+        <MessageAttachments
+          slugs={message.attachmentSlugs!}
+          channelId={message.channelId}
           apiHost={apiHost}
           compact
           className="mt-2"

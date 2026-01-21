@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
-import type { Message, MessageType, AgentState, AgentOutput, Attachment } from '../types'
+import type { Message, MessageType, AgentState, AgentOutput } from '../types'
 import { apiFetch, API_HOST } from '../lib/api'
-import { getMimeType } from '../lib/utils'
 
 // Artifact event from WebSocket stream
 export interface ArtifactEvent {
@@ -78,7 +77,7 @@ interface MessageValue {
   isError?: boolean
   // Method used to send the message (e.g., 'send_message' for intentional agent messages)
   method?: string
-  // Attachment slugs (resolved to Attachment objects for rendering)
+  // Attachment slugs (asset artifact slugs attached to this message)
   attachmentSlugs?: string[]
 }
 
@@ -87,29 +86,6 @@ export interface AgentStateInfo {
   state: AgentState
   toolName?: string
   updatedAt: number
-}
-
-/**
- * Convert attachment slugs to Attachment objects for rendering.
- * MIME type is inferred from file extension for rendering hints.
- */
-function slugsToAttachments(
-  slugs: string[] | undefined,
-  channelId: string,
-  sender: string,
-  timestamp: string
-): Attachment[] | undefined {
-  if (!slugs || slugs.length === 0) return undefined
-  return slugs.map(slug => ({
-    id: slug, // Use slug as ID for React keys
-    channelId,
-    filename: slug,
-    mimeType: getMimeType(slug),
-    size: 0, // Unknown until fetched
-    url: `/api/channels/${channelId}/assets/${slug}`,
-    uploadedBy: sender,
-    uploadedAt: timestamp,
-  }))
 }
 
 // Type guards
@@ -563,7 +539,7 @@ export function useTymbalConnection({
           senderType: value.senderType,
           timestamp: frame.t,
           method: value.method,
-          attachments: slugsToAttachments(value.attachmentSlugs, currentChannelId!, value.sender, frame.t),
+          attachmentSlugs: value.attachmentSlugs,
         })
         return
       }
