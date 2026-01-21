@@ -772,26 +772,33 @@ export function useTymbalConnection({
   }, [])
 
   // Send a user message via HTTP POST (server assigns ID)
+  // Returns the message ID on success, or undefined on failure
+  // Optional attachSlugs: array of artifact slugs to attach to this message
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, attachSlugs?: string[]): Promise<string | undefined> => {
       if (!channelId) {
         console.error('No channel selected')
-        return
+        return undefined
       }
 
       setIsWaitingForResponse(true)
 
       try {
+        const body: Record<string, unknown> = {
+          content,
+          sender: currentUser,
+          senderType: 'user',
+        }
+        if (attachSlugs && attachSlugs.length > 0) {
+          body.attachSlugs = attachSlugs
+        }
+
         const response = await apiFetch(`/channels/${channelId}/messages`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            content,
-            sender: currentUser,
-            senderType: 'user',
-          }),
+          body: JSON.stringify(body),
         })
 
         if (!response.ok) {
@@ -800,9 +807,12 @@ export function useTymbalConnection({
         }
 
         // Message will arrive via WebSocket - response state will be cleared when we get a reply
+        const data = await response.json()
+        return data.id as string
       } catch (error) {
         console.error('Failed to send message:', error)
         setIsWaitingForResponse(false)
+        return undefined
       }
     },
     [channelId, currentUser]

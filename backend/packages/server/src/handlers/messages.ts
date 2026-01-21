@@ -30,6 +30,7 @@ export interface Message {
   timestamp: string;
   isComplete: boolean;
   addressedAgents?: string[];
+  metadata?: Record<string, unknown>;  // For attachmentSlugs and other extensible data
 }
 
 export interface MessageStorage {
@@ -267,6 +268,12 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
     // Determine message type based on sender type (per StoredMessageType spec)
     const messageType = senderType === 'user' ? 'user' : 'agent_message';
 
+    // Build metadata with attachmentSlugs if provided
+    const metadata: Record<string, unknown> | undefined =
+      attachSlugs && attachSlugs.length > 0
+        ? { attachmentSlugs: attachSlugs }
+        : undefined;
+
     const message: Message = {
       id: messageId,
       channelId,
@@ -277,19 +284,18 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
       timestamp: now,
       isComplete: true,
       ...(addressedAgents.length > 0 ? { addressedAgents } : {}),
+      ...(metadata ? { metadata } : {}),
     };
 
     try {
-      // Save message
+      // Save message (includes attachmentSlugs in metadata)
       await messageStorage.saveMessage(channelId, message);
 
-      // Link attachments to message if provided
-      const attachmentSlugs: string[] = [];
+      // Link attachments to message (set attachedToMessageId on artifacts)
       if (attachSlugs && attachSlugs.length > 0 && artifactStorage) {
         const senderName = sender || 'anonymous';
         for (const slug of attachSlugs) {
           await artifactStorage.setArtifactAttachment(channelId, slug, messageId, senderName);
-          attachmentSlugs.push(slug);
         }
       }
 
@@ -307,7 +313,7 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
         timestamp: message.timestamp,
         ...(addressedAgents.length > 0 ? { mentions: addressedAgents } : {}),
         ...(isBroadcast ? { broadcast: true } : {}),
-        ...(attachmentSlugs.length > 0 ? { attachmentSlugs } : {}),
+        ...(attachSlugs && attachSlugs.length > 0 ? { attachmentSlugs: attachSlugs } : {}),
       });
       await connectionManager.broadcast(channelId, frame);
 
@@ -317,7 +323,7 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
         await agentInvoker.invokeAgents(channelId, agentTargets, message);
       }
 
-      return c.json({ message, attachmentSlugs }, 201);
+      return c.json({ message, attachmentSlugs: attachSlugs ?? [] }, 201);
     } catch (error) {
       console.error('[Messages] Error sending message:', error);
       return c.json({ error: 'Failed to send message' }, 500);

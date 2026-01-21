@@ -15,3 +15,6 @@ export * from './tymbal/index.js';
 
 // @mention parsing and routing
 export * from './mentions/index.js';
+
+// Slug utilities
+export * from './slugify.js';

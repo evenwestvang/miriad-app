@@ -68,6 +68,7 @@ function createMessageStorageAdapter(storage: Storage): {
           content: message.content,
           isComplete: message.isComplete,
           addressedAgents: message.addressedAgents,
+          metadata: message.metadata,
         });
       },
 
@@ -93,6 +94,7 @@ function createMessageStorageAdapter(storage: Storage): {
           timestamp: msg.timestamp,
           isComplete: msg.isComplete,
           addressedAgents: msg.addressedAgents,
+          metadata: msg.metadata,
         }));
       },
 

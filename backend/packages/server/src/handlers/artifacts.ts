@@ -36,6 +36,7 @@ import {
   isArtifactStatus,
   getMimeType,
   tymbal,
+  slugify,
 } from '@cast/core';
 import type { ConnectionManager } from '../websocket/index.js';
 import type { AssetStorage } from '../assets/index.js';
@@ -1066,7 +1067,10 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
         }
       }
 
-      // Validate slug format
+      // Normalize slug from raw filename (handles underscores, spaces, etc.)
+      slug = slugify(slug);
+
+      // Validate slug format (should always pass after slugify, but safety check)
       const slugValidation = SlugSchema.safeParse(slug);
       if (!slugValidation.success) {
         return c.json({ error: slugValidation.error.errors[0].message }, 400);

@@ -961,9 +961,51 @@ export function App() {
   );
 
   const handleSendMessage = useCallback(
-    (content: string) => {
+    async (content: string, attachments?: File[]) => {
       if (!selectedThread) return;
-      sendMessage(content);
+
+      // Upload attachments first (inverted flow) and collect slugs
+      let attachSlugs: string[] | undefined;
+      if (attachments && attachments.length > 0) {
+        const uploadResults = await Promise.all(
+          attachments.map(async (file) => {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("slug", file.name);
+            formData.append("tldr", `Attachment: ${file.name}`);
+            formData.append("sender", authSession?.user?.callsign || "user");
+            // Note: no attachToMessageId - we'll pass slugs to message endpoint
+
+            try {
+              const response = await apiFetch(
+                `/channels/${selectedThread}/assets`,
+                {
+                  method: "POST",
+                  body: formData,
+                }
+              );
+
+              if (!response.ok) {
+                const error = await response.json();
+                console.error("Failed to upload attachment:", error);
+                return null;
+              }
+
+              const data = await response.json();
+              return data.slug as string; // Backend returns final slug (may be auto-suffixed)
+            } catch (err) {
+              console.error("Failed to upload attachment:", err);
+              return null;
+            }
+          })
+        );
+
+        // Filter out failed uploads
+        attachSlugs = uploadResults.filter((slug): slug is string => slug !== null);
+      }
+
+      // Send message with attachment slugs
+      await sendMessage(content, attachSlugs);
 
       // Optimistically move this channel to the top of the list (most recently active)
       setThreads((prev) => {
@@ -974,7 +1016,7 @@ export function App() {
         return [updated, ...prev.slice(0, idx), ...prev.slice(idx + 1)];
       });
     },
-    [selectedThread, sendMessage],
+    [selectedThread, sendMessage, authSession?.user?.callsign],
   );
 
   // Placeholder for channel selection (phase 2)
