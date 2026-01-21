@@ -166,6 +166,73 @@ const ListQuerySchema = z.object({
 // =============================================================================
 
 /**
+ * Validate Knowledge Base constraints.
+ * Rules:
+ * 1. KB root: type=knowledgebase requires slug='knowledgebase', one per channel
+ * 2. KB children: artifacts under /knowledgebase/ must be type 'doc' or 'folder'
+ * 3. Published KB docs require non-empty content
+ *
+ * @returns Error message if validation fails, null if valid
+ */
+async function validateKnowledgeBaseConstraints(
+  storage: Storage,
+  channelId: string,
+  slug: string,
+  type: string,
+  parentSlug: string | undefined,
+  status: string | undefined,
+  content: string,
+  isUpdate: boolean = false
+): Promise<string | null> {
+  // Rule 1: KB root constraints
+  if (type === 'knowledgebase') {
+    if (slug !== 'knowledgebase') {
+      return "Knowledge base root slug must be 'knowledgebase'";
+    }
+    if (!isUpdate) {
+      // Check if channel already has a KB
+      const existingKb = await storage.getArtifact(channelId, 'knowledgebase');
+      if (existingKb && existingKb.status !== 'archived') {
+        return 'Channel already has a knowledge base';
+      }
+    }
+  }
+
+  // Rule 2: KB children must be doc or folder
+  // Check if this artifact will be under /knowledgebase/
+  const isUnderKb = parentSlug === 'knowledgebase' ||
+    (parentSlug && await isDescendantOfKnowledgebase(storage, channelId, parentSlug));
+
+  if (isUnderKb && type !== 'doc' && type !== 'folder') {
+    return "Knowledge base content must be type 'doc' or 'folder'";
+  }
+
+  // Rule 3: Published KB docs require content
+  if (isUnderKb && status === 'published' && type === 'doc') {
+    if (!content || !content.trim()) {
+      return 'Published knowledge base documents require non-empty content';
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Check if an artifact is a descendant of the knowledgebase root.
+ */
+async function isDescendantOfKnowledgebase(
+  storage: Storage,
+  channelId: string,
+  slug: string
+): Promise<boolean> {
+  const artifact = await storage.getArtifact(channelId, slug);
+  if (!artifact) return false;
+
+  // Check if path starts with knowledgebase (ltree format uses underscores)
+  return artifact.path.startsWith('knowledgebase.') || artifact.path === 'knowledgebase';
+}
+
+/**
  * Format Zod validation errors for API response.
  */
 function formatZodError(error: z.ZodError): { error: string; details: Array<{ path: string; message: string }> } {
@@ -401,6 +468,21 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
         }, 409);
       }
 
+      // Validate Knowledge Base constraints
+      const kbError = await validateKnowledgeBaseConstraints(
+        storage,
+        channel.id,
+        slug,
+        type,
+        parentSlug,
+        status,
+        content,
+        !!replace
+      );
+      if (kbError) {
+        return c.json({ error: kbError }, 400);
+      }
+
       let artifact;
 
       if (replace && existing) {
@@ -498,6 +580,32 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
         oldValue: change.old_value,
         newValue: change.new_value,
       }));
+
+      // Check KB constraints for parentSlug or status changes
+      const parentSlugChange = changes.find((c) => c.field === 'parentSlug');
+      const statusChange = changes.find((c) => c.field === 'status');
+
+      if (parentSlugChange || statusChange) {
+        const artifact = await storage.getArtifact(channel.id, slug);
+        if (artifact) {
+          const newParentSlug = parentSlugChange ? (parentSlugChange.new_value as string | undefined) : artifact.parentSlug;
+          const newStatus = statusChange ? (statusChange.new_value as string) : artifact.status;
+
+          const kbError = await validateKnowledgeBaseConstraints(
+            storage,
+            channel.id,
+            slug,
+            artifact.type,
+            newParentSlug,
+            newStatus,
+            artifact.content,
+            true
+          );
+          if (kbError) {
+            return c.json({ error: kbError }, 400);
+          }
+        }
+      }
 
       const result = await storage.updateArtifactWithCAS(channel.id, slug, storageChanges, sender);
 

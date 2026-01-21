@@ -26,6 +26,7 @@ import { createAppRoutes } from './handlers/apps.js';
 import { createRuntimeAuthRoutes } from './handlers/runtime-auth.js';
 import { createRuntimeRoutes } from './handlers/runtimes.js';
 import { createMiriadCloudRoutes } from './handlers/miriad-cloud.js';
+import { createKBRoutes } from './handlers/kb.js';
 import { resetRootChannel } from './onboarding/index.js';
 
 // =============================================================================
@@ -1014,6 +1015,12 @@ export function createApp(options: AppOptions): Hono {
   // ---------------------------------------------------------------------------
   const miriadCloudRoutes = createMiriadCloudRoutes({ storage });
   app.route('/api/runtimes/miriad-cloud', miriadCloudRoutes);
+
+  // ---------------------------------------------------------------------------
+  // Knowledge Base Routes
+  // ---------------------------------------------------------------------------
+  const kbRoutes = createKBRoutes({ storage });
+  app.route('/kb', kbRoutes);
 
   // ---------------------------------------------------------------------------
   // Focus Types & Agent Types (stubs for frontend)
