@@ -156,7 +156,6 @@ export function createAssetsApiRoutes(options: AssetsApiHandlerOptions): Hono<{ 
         // Get the agent's most recent message in this channel
         const messages = await storage.getMessagesByChannelId(channel.id, {
           sender: container.callsign,
-          senderType: 'agent',
           newestFirst: true,
           limit: 1,
           includeToolCalls: false, // Only conversation messages
