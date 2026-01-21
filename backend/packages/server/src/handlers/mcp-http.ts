@@ -492,6 +492,88 @@ Messages without @mentions are logged but won't notify anyone.`,
       required: ['type'],
     },
   },
+  // ---------------------------------------------------------------------------
+  // Knowledge Base Tools
+  // ---------------------------------------------------------------------------
+  {
+    name: 'kb_list',
+    description: 'List all published knowledge bases in the space. Returns KB channel, title, and description.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
+  {
+    name: 'kb_glob',
+    description: 'Browse knowledge base tree structure. Returns hierarchical view of KB docs matching a glob pattern.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        kb: {
+          type: 'string',
+          description: 'Knowledge base channel name or ID',
+        },
+        pattern: {
+          type: 'string',
+          description: "Glob pattern (default: '/**'). Examples: '/**' (entire tree), '/api/**' (subtree), '/*' (root only)",
+        },
+      },
+      required: ['kb'],
+    },
+  },
+  {
+    name: 'kb_read',
+    description: 'Read a specific KB document by slug or path. Slugs are unique within a KB, so you can fetch by slug alone without knowing the full path.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        kb: {
+          type: 'string',
+          description: 'Knowledge base channel name or ID',
+        },
+        doc: {
+          type: 'string',
+          description: "Document slug (e.g., 'use-effect') or full path (e.g., '/hooks/use-effect')",
+        },
+      },
+      required: ['kb', 'doc'],
+    },
+  },
+  {
+    name: 'kb_query',
+    description: 'Search within a knowledge base. Supports keyword (FTS) mode. Returns matching docs with relevance scores.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        kb: {
+          type: 'string',
+          description: 'Knowledge base channel name or ID',
+        },
+        query: {
+          type: 'string',
+          description: 'Search query',
+        },
+        mode: {
+          type: 'string',
+          enum: ['keyword', 'semantic'],
+          description: "Search mode: 'keyword' (FTS, default) or 'semantic' (vector similarity - not yet implemented)",
+        },
+        path: {
+          type: 'string',
+          description: "Limit search to subtree (e.g., '/api')",
+        },
+        limit: {
+          type: 'number',
+          description: 'Max results (default: 5, max: 50)',
+        },
+        highlight: {
+          type: 'boolean',
+          description: 'Include text snippets with highlights (default: false)',
+        },
+      },
+      required: ['kb', 'query'],
+    },
+  },
 ];
 
 /**
@@ -1408,6 +1490,261 @@ const toolHandlers: Record<string, ToolHandler> = {
     response.hint = metadata.hint;
 
     return JSON.stringify(response, null, 2);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Knowledge Base Tools
+  // ---------------------------------------------------------------------------
+
+  async kb_list(_args, { storage, spaceId }) {
+    // Single JOIN query - no N+1 channel loop
+    const knowledgeBases = await storage.listPublishedKnowledgeBases(spaceId);
+
+    const hint = knowledgeBases.length === 0
+      ? 'No published knowledge bases found in this space.'
+      : `${knowledgeBases.length} knowledge base${knowledgeBases.length !== 1 ? 's' : ''} available.`;
+
+    return JSON.stringify({ knowledgeBases, hint }, null, 2);
+  },
+
+  async kb_glob(args, { storage, spaceId }) {
+    const { kb, pattern } = args as { kb: string; pattern?: string };
+
+    // Resolve KB channel
+    const channel = await storage.resolveChannel(spaceId, kb);
+    if (!channel) {
+      throw new Error(`Knowledge base not found: ${kb}`);
+    }
+
+    // Check KB exists and is published
+    const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
+    if (!kbRoot) {
+      throw new Error(`Knowledge base not found: ${kb}`);
+    }
+    if (kbRoot.status !== 'published') {
+      throw new Error(`Knowledge base is not published: ${kb}`);
+    }
+
+    // Get KB tree
+    const globPattern = pattern || '/**';
+    const kbPattern = globPattern.startsWith('/')
+      ? `/knowledgebase${globPattern}`
+      : `/knowledgebase/${globPattern}`;
+
+    const fullTree = await storage.globArtifacts(channel.id, kbPattern);
+
+    // Filter to only published docs and format as text tree
+    type TreeNode = { slug: string; path: string; title?: string; tldr?: string; status: string; type: string; children: TreeNode[] };
+
+    const formatTree = (nodes: TreeNode[], indent = 0): string => {
+      return nodes
+        .filter((node) => node.status === 'published')
+        .map((node) => {
+          const prefix = '  '.repeat(indent);
+          const title = node.title || node.slug;
+          const tldr = node.tldr ? ` - ${node.tldr}` : '';
+          const line = `${prefix}${node.slug}${tldr}`;
+          const children = formatTree(node.children as TreeNode[], indent + 1);
+          return children ? `${line}\n${children}` : line;
+        })
+        .join('\n');
+    };
+
+    // The tree from glob includes the KB root - we want children only
+    const kbTree = fullTree.length > 0 && fullTree[0].slug === 'knowledgebase'
+      ? fullTree[0].children
+      : fullTree;
+
+    const output = formatTree(kbTree as TreeNode[]);
+    return output || '(empty)';
+  },
+
+  async kb_read(args, { storage, spaceId }) {
+    const { kb, doc } = args as { kb: string; doc: string };
+
+    // Resolve KB channel
+    const channel = await storage.resolveChannel(spaceId, kb);
+    if (!channel) {
+      throw new Error(`Knowledge base not found: ${kb}`);
+    }
+
+    // Check KB exists and is published
+    const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
+    if (!kbRoot) {
+      throw new Error(`Knowledge base not found: ${kb}`);
+    }
+    if (kbRoot.status !== 'published') {
+      throw new Error(`Knowledge base is not published: ${kb}`);
+    }
+
+    // Try to find doc by slug first
+    let artifact = await storage.getArtifact(channel.id, doc);
+
+    // If not found, try path lookup
+    if (!artifact) {
+      // doc might be a path like "/hooks/use-effect" or "hooks/use-effect"
+      const pathParts = doc.replace(/^\//, '').split('/');
+      const artifacts = await storage.listArtifacts(channel.id, {
+        search: pathParts[pathParts.length - 1], // Search by last segment
+      });
+
+      // Find one where path ends with the doc segments
+      const match = artifacts.find((a) => {
+        const aPathParts = a.path.replace(/^knowledgebase\.?/, '').split('.');
+        if (aPathParts.length < pathParts.length) return false;
+        const tail = aPathParts.slice(-pathParts.length);
+        return pathParts.every(
+          (seg, i) => seg.replace(/-/g, '_') === tail[i]
+        );
+      });
+
+      if (match) {
+        artifact = await storage.getArtifact(channel.id, match.slug);
+      }
+    }
+
+    if (!artifact) {
+      throw new Error(`Document not found: ${doc}`);
+    }
+
+    // Verify it's a published doc under KB
+    if (artifact.status !== 'published') {
+      throw new Error(`Document not found: ${doc}`);
+    }
+
+    if (!artifact.path.startsWith('knowledgebase')) {
+      throw new Error(`Document not found: ${doc}`);
+    }
+
+    // Convert path to KB-relative format
+    const kbPath = '/' + artifact.path.replace(/^knowledgebase\.?/, '').replace(/\./g, '/');
+
+    return JSON.stringify({
+      name: channel.name,
+      path: kbPath || '/',
+      slug: artifact.slug,
+      title: artifact.title,
+      tldr: artifact.tldr,
+      content: artifact.content,
+      refs: artifact.refs,
+    }, null, 2);
+  },
+
+  async kb_query(args, { storage, spaceId }) {
+    const { kb, query, mode, path: pathFilter, limit: limitParam, highlight } = args as {
+      kb: string;
+      query: string;
+      mode?: string;
+      path?: string;
+      limit?: number;
+      highlight?: boolean;
+    };
+
+    // Resolve KB channel
+    const channel = await storage.resolveChannel(spaceId, kb);
+    if (!channel) {
+      throw new Error(`Knowledge base not found: ${kb}`);
+    }
+
+    // Check KB exists and is published
+    const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
+    if (!kbRoot) {
+      throw new Error(`Knowledge base not found: ${kb}`);
+    }
+    if (kbRoot.status !== 'published') {
+      throw new Error(`Knowledge base is not published: ${kb}`);
+    }
+
+    // Semantic mode not implemented
+    if (mode === 'semantic') {
+      return JSON.stringify({
+        error: 'not_implemented',
+        message: 'Semantic search is not yet implemented. Use mode=keyword.',
+      }, null, 2);
+    }
+
+    const limit = Math.min(Math.max(limitParam || 5, 1), 50);
+
+    // Use FTS search with KB path filter
+    const searchResults = await storage.listArtifacts(channel.id, {
+      search: query,
+      status: 'published',
+      limit: limit * 2, // Fetch extra to filter by path
+    });
+
+    // Filter to KB docs only
+    let kbResults = searchResults.filter(
+      (a) => a.path.startsWith('knowledgebase') && a.type === 'doc'
+    );
+
+    // Apply path filter if specified
+    if (pathFilter) {
+      const ltreePrefix =
+        'knowledgebase' +
+        (pathFilter === '/' ? '' : '.' + pathFilter.slice(1).replace(/\//g, '.').replace(/-/g, '_'));
+      kbResults = kbResults.filter((a) => a.path.startsWith(ltreePrefix));
+    }
+
+    // Limit results
+    kbResults = kbResults.slice(0, limit);
+
+    // Format results
+    const results = await Promise.all(
+      kbResults.map(async (a) => {
+        const kbPath =
+          '/' + a.path.replace(/^knowledgebase\.?/, '').replace(/\./g, '/');
+
+        const result: {
+          path: string;
+          slug: string;
+          title?: string;
+          tldr?: string;
+          snippet?: string;
+        } = {
+          path: kbPath || '/',
+          slug: a.slug,
+          title: a.title,
+          tldr: a.tldr,
+        };
+
+        // Get snippet if requested
+        if (highlight) {
+          const fullArtifact = await storage.getArtifact(channel.id, a.slug);
+          if (fullArtifact?.content) {
+            const content = fullArtifact.content;
+            const queryLower = query.toLowerCase();
+            const contentLower = content.toLowerCase();
+            const idx = contentLower.indexOf(queryLower);
+            if (idx !== -1) {
+              const start = Math.max(0, idx - 50);
+              const end = Math.min(content.length, idx + query.length + 50);
+              let snippet = content.slice(start, end);
+              if (start > 0) snippet = '...' + snippet;
+              if (end < content.length) snippet = snippet + '...';
+              const matchStart = idx - start;
+              const matchEnd = matchStart + query.length;
+              snippet =
+                snippet.slice(0, matchStart) +
+                '<mark>' +
+                snippet.slice(matchStart, matchEnd) +
+                '</mark>' +
+                snippet.slice(matchEnd);
+              result.snippet = snippet;
+            }
+          }
+        }
+
+        return result;
+      })
+    );
+
+    return JSON.stringify({
+      name: channel.name,
+      query,
+      mode: mode || 'keyword',
+      results,
+      total: results.length,
+    }, null, 2);
   },
 };
 

@@ -400,6 +400,21 @@ export interface Storage {
   globArtifacts(channelId: string, pattern: string): Promise<ArtifactTreeNode[]>;
 
   /**
+   * List all published knowledge bases in a space.
+   * Returns KB metadata with channel name (single JOIN query, no N+1).
+   *
+   * @param spaceId - Space to search in
+   * @returns Array of published KBs with channel names
+   */
+  listPublishedKnowledgeBases(spaceId: string): Promise<
+    Array<{
+      name: string;
+      title?: string;
+      tldr?: string;
+    }>
+  >;
+
+  /**
    * Create a named version snapshot of an artifact.
    * Snapshots current content and tldr.
    * Versions are immutable once created.
