@@ -5,7 +5,8 @@
  * Uses MIME-type based detection for proper file type handling.
  */
 
-import { Download, ExternalLink } from 'lucide-react'
+import { useState } from 'react'
+import { Download, ExternalLink, MoreVertical } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
 // =============================================================================
@@ -90,6 +91,46 @@ function AssetActions({ url, filename, openLabel = 'Open' }: AssetActionsProps) 
   )
 }
 
+/**
+ * Compact kebab menu for hover actions on previews.
+ */
+function CompactKebabMenu({ url, filename }: { url: string; filename: string }) {
+  const [isOpen, setIsOpen] = useState(false)
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="p-1 rounded bg-black/50 hover:bg-black/70 text-white transition-colors"
+        title="More actions"
+      >
+        <MoreVertical className="w-4 h-4" />
+      </button>
+      {isOpen && (
+        <>
+          {/* Backdrop to close menu */}
+          <div
+            className="fixed inset-0 z-10"
+            onClick={() => setIsOpen(false)}
+          />
+          {/* Menu */}
+          <div className="absolute left-full top-0 ml-1 z-20 bg-popover border border-[var(--cast-border-default)] rounded shadow-lg min-w-[120px]">
+            <a
+              href={url}
+              download={filename}
+              onClick={() => setIsOpen(false)}
+              className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--cast-bg-hover)] text-[var(--cast-text-primary)] transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              Download
+            </a>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // =============================================================================
 // Main Component
 // =============================================================================
@@ -110,18 +151,31 @@ export function AssetPreview({
 
   // Image preview
   if (isImageMime(contentType)) {
+    if (compact) {
+      return (
+        <div className={cn('relative group max-w-xs', className)}>
+          <img
+            src={url}
+            alt={displayAlt}
+            className="max-h-48 max-w-full border border-border rounded"
+            loading="lazy"
+          />
+          {/* Kebab menu - visible on hover */}
+          <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <CompactKebabMenu url={url} filename={filename} />
+          </div>
+        </div>
+      )
+    }
     return (
-      <div className={cn('space-y-3', compact && 'max-w-xs', className)}>
+      <div className={cn('space-y-3', className)}>
         <img
           src={url}
           alt={displayAlt}
-          className={cn(
-            'border border-border rounded',
-            compact ? 'max-h-48 max-w-full' : 'max-w-full'
-          )}
+          className="max-w-full border border-border rounded"
           loading="lazy"
         />
-        {!compact && <AssetActions url={url} filename={filename} />}
+        <AssetActions url={url} filename={filename} />
       </div>
     )
   }
