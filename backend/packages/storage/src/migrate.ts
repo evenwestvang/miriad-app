@@ -459,7 +459,7 @@ async function migrate(): Promise<void> {
   `;
 
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_cost_records_channel
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cost_records_channel_callsign
     ON cost_records(channel_id, callsign)
   `;
 

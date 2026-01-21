@@ -3177,6 +3177,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const id = ulid();
     const now = new Date();
 
+    // Upsert: the SDK reports cumulative totals, so we update to the absolute values
+    // rather than accumulating. Uses (channel_id, callsign) as the unique key.
     const result = await sql<CostRecordRow>`
       INSERT INTO cost_records (
         id, space_id, channel_id, callsign, cost_usd, duration_ms, num_turns, usage, model_usage, created_at
@@ -3193,6 +3195,13 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ${input.modelUsage ? JSON.stringify(input.modelUsage) : null},
         ${now}
       )
+      ON CONFLICT (channel_id, callsign) DO UPDATE SET
+        cost_usd = EXCLUDED.cost_usd,
+        duration_ms = EXCLUDED.duration_ms,
+        num_turns = EXCLUDED.num_turns,
+        usage = EXCLUDED.usage,
+        model_usage = EXCLUDED.model_usage,
+        created_at = EXCLUDED.created_at
       RETURNING *
     `;
 
@@ -3207,16 +3216,16 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   async function getChannelCostTally(channelId: string): Promise<CostTally[]> {
+    // Each row is now the cumulative total per agent (upserted), so no SUM needed
     const result = await sql<CostTallyRow>`
       SELECT
         callsign,
-        SUM(cost_usd)::float8 as total_cost_usd,
-        SUM(num_turns)::int as total_turns,
-        SUM(duration_ms)::int as total_duration_ms
+        cost_usd as total_cost_usd,
+        num_turns as total_turns,
+        duration_ms as total_duration_ms
       FROM cost_records
       WHERE channel_id = ${channelId}
-      GROUP BY callsign
-      ORDER BY total_cost_usd DESC
+      ORDER BY cost_usd DESC
     `;
 
     return result.map((row) => ({
