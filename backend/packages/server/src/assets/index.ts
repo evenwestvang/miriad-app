@@ -9,7 +9,7 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { getMimeType } from '@cast/core';
+import { getMimeType, MAX_ASSET_FILE_SIZE } from '@cast/core';
 
 // =============================================================================
 // Types
@@ -18,8 +18,8 @@ import { getMimeType } from '@cast/core';
 export interface AssetStorageConfig {
   /** Base directory for assets (default: ~/.cast/assets) */
   assetsDir: string;
-  /** Maximum file size in bytes (default: 10MB) */
-  maxFileSize: number;
+  /** Maximum file size in bytes (default: MAX_ASSET_FILE_SIZE from @cast/core) */
+  maxFileSize?: number;
 }
 
 export interface SaveAssetInput {
@@ -76,7 +76,7 @@ export interface AssetStorage {
 const DEFAULT_ASSETS_DIR = process.env.NODE_ENV === 'production'
   ? path.join(process.env.HOME || '/tmp', '.cast', 'assets')
   : '/tmp/.cast-dev/assets';
-const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+// Use shared constant from @cast/core as the single source of truth
 
 // =============================================================================
 // Filesystem Asset Storage Implementation
@@ -86,7 +86,7 @@ export function createFilesystemAssetStorage(
   config: Partial<AssetStorageConfig> = {}
 ): AssetStorage {
   const assetsDir = config.assetsDir || process.env.ASSETS_DIR || DEFAULT_ASSETS_DIR;
-  const maxFileSize = config.maxFileSize || DEFAULT_MAX_FILE_SIZE;
+  const maxFileSize = config.maxFileSize ?? MAX_ASSET_FILE_SIZE;
 
   /**
    * Ensure directory exists

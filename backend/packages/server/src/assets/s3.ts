@@ -15,7 +15,7 @@ import {
   HeadObjectCommand,
 } from '@aws-sdk/client-s3';
 import * as fs from 'node:fs/promises';
-import { getMimeType } from '@cast/core';
+import { getMimeType, MAX_ASSET_FILE_SIZE } from '@cast/core';
 import type { AssetStorage, SaveAssetInput, SaveAssetResult, ReadAssetStreamResult } from './index.js';
 
 // =============================================================================
@@ -27,15 +27,15 @@ export interface S3AssetStorageConfig {
   bucketName: string;
   /** AWS region */
   region: string;
-  /** Maximum file size in bytes (default: 500MB) */
-  maxFileSize: number;
+  /** Maximum file size in bytes (default: MAX_ASSET_FILE_SIZE from @cast/core) */
+  maxFileSize?: number;
 }
 
 // =============================================================================
 // Default Config
 // =============================================================================
 
-const DEFAULT_MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
+// Use shared constant from @cast/core as the single source of truth
 
 // =============================================================================
 // S3 Asset Storage Implementation
@@ -46,7 +46,7 @@ export function createS3AssetStorage(
 ): AssetStorage {
   const bucketName = config.bucketName || process.env.ASSETS_BUCKET_NAME;
   const region = config.region || process.env.ASSETS_BUCKET_REGION || 'us-east-1';
-  const maxFileSize = config.maxFileSize || DEFAULT_MAX_FILE_SIZE;
+  const maxFileSize = config.maxFileSize ?? MAX_ASSET_FILE_SIZE;
 
   if (!bucketName) {
     throw new Error('S3 asset storage requires ASSETS_BUCKET_NAME environment variable');
