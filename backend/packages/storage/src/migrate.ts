@@ -458,8 +458,21 @@ async function migrate(): Promise<void> {
     )
   `;
 
+  // Drop the old non-unique index if it exists (was idx_cost_records_channel)
+  await sql`DROP INDEX IF EXISTS idx_cost_records_channel`;
+
+  // Dedupe existing cost records before adding unique constraint
+  // Keep only the most recent record per (channel_id, callsign)
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_cost_records_channel
+    DELETE FROM cost_records a
+    USING cost_records b
+    WHERE a.channel_id = b.channel_id
+      AND a.callsign = b.callsign
+      AND a.created_at < b.created_at
+  `;
+
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cost_records_channel_callsign
     ON cost_records(channel_id, callsign)
   `;
 

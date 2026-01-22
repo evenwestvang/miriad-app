@@ -388,20 +388,21 @@ export function App() {
     });
   }, []);
 
-  // Cost frame handler - accumulates session cost per agent and total channel cost
+  // Cost frame handler - sets absolute cost per agent (SDK reports cumulative totals)
   const handleCostFrame = useCallback((callsign: string, cost: CostInfo) => {
-    // Update total channel cost (includes all agents, even archived)
-    setTotalChannelCost((prev) => prev + cost.totalCostUsd);
-    // Update individual agent cost in roster
+    // Update individual agent cost in roster (absolute value, not accumulated)
+    // Then recalculate total channel cost from all agents
     setRoster((prev) => {
       const idx = prev.findIndex((a) => a.callsign === callsign);
       if (idx === -1) return prev; // Agent not in roster
       const updated = [...prev];
-      const agent = updated[idx];
       updated[idx] = {
-        ...agent,
-        sessionCost: (agent.sessionCost || 0) + cost.totalCostUsd,
+        ...updated[idx],
+        sessionCost: cost.totalCostUsd,
       };
+      // Recalculate total from updated roster
+      const total = updated.reduce((sum, agent) => sum + (agent.sessionCost || 0), 0);
+      setTotalChannelCost(total);
       return updated;
     });
   }, []);
