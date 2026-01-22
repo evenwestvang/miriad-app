@@ -238,15 +238,6 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
         code,
       });
 
-      // ==========================================================================
-      // DOMAIN RESTRICTION - Remove this block to allow all domains
-      // ==========================================================================
-      const ALLOWED_DOMAIN = 'sanity.io'; // Set to null to disable restriction
-      if (ALLOWED_DOMAIN && !workosUser.email.endsWith(`@${ALLOWED_DOMAIN}`)) {
-        console.log(`[WorkOS] Rejected login from ${workosUser.email} - not @${ALLOWED_DOMAIN}`);
-        return c.redirect('https://miriad.systems');
-      }
-      // ==========================================================================
 
       // Parse state to get returnTo
       let returnTo = '/';
