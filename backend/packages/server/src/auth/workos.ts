@@ -14,6 +14,8 @@ import type { Storage } from '@cast/storage';
 import {
   createSession,
   setSessionCookie,
+  clearSessionCookie,
+  parseSession,
 } from './session.js';
 import { seedSpaceFromSanity } from '../onboarding/index.js';
 
@@ -34,6 +36,8 @@ interface OnboardingTokenPayload {
   displayName?: string;
   /** Suggested callsign derived from name/email */
   suggestedCallsign: string;
+  /** WorkOS session ID for logout support */
+  workosSessionId?: string;
   /** Token type marker */
   type: 'onboarding';
   /** Issued at timestamp */
@@ -101,12 +105,13 @@ async function createOnboardingToken(
   workosUserId: string,
   email: string,
   displayName: string | undefined,
-  suggestedCallsign: string
+  suggestedCallsign: string,
+  workosSessionId?: string
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const exp = now + Math.floor(ONBOARDING_TOKEN_DURATION_MS / 1000);
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     workosUserId,
     email,
     displayName,
@@ -115,6 +120,11 @@ async function createOnboardingToken(
     iat: now,
     exp,
   };
+
+  // Include WorkOS session ID for logout support after onboarding
+  if (workosSessionId) {
+    payload.workosSessionId = workosSessionId;
+  }
 
   return await sign(payload, getJwtSecret());
 }
@@ -143,6 +153,21 @@ async function verifyOnboardingToken(token: string): Promise<OnboardingTokenPayl
     }
 
     return payload;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decode a JWT without verification to extract claims.
+ * Used to get session ID from WorkOS access token.
+ */
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = Buffer.from(parts[1], 'base64url').toString('utf8');
+    return JSON.parse(payload);
   } catch {
     return null;
   }
@@ -232,11 +257,16 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
       const config = getWorkOSConfig();
       const workos = new WorkOS(config.apiKey);
 
-      // Exchange code for user
-      const { user: workosUser } = await workos.userManagement.authenticateWithCode({
+      // Exchange code for user and access token
+      const authResult = await workos.userManagement.authenticateWithCode({
         clientId: config.clientId,
         code,
       });
+      const workosUser = authResult.user;
+
+      // Extract session ID from access token for logout support
+      const accessTokenPayload = decodeJwtPayload(authResult.accessToken);
+      const workosSessionId = accessTokenPayload?.sid as string | undefined;
 
 
       // Parse state to get returnTo
@@ -265,8 +295,8 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
         // Use first space (multi-space support can come later)
         const space = spaces[0];
 
-        // Create session
-        const token = await createSession(existingUser.id, space.id, 'workos');
+        // Create session with WorkOS session ID for logout support
+        const token = await createSession(existingUser.id, space.id, 'workos', workosSessionId);
         setSessionCookie(c, token);
 
         return c.redirect(`${frontendUrl}${returnTo}`);
@@ -282,7 +312,8 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
         workosUser.id,
         workosUser.email,
         workosUser.firstName ? `${workosUser.firstName} ${workosUser.lastName || ''}`.trim() : undefined,
-        suggestedCallsign
+        suggestedCallsign,
+        workosSessionId
       );
 
       // Redirect to onboarding page with token
@@ -341,7 +372,7 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
           return c.json({ error: 'User exists but has no space' }, 500);
         }
 
-        const token = await createSession(existingUser.id, spaces[0].id, 'workos');
+        const token = await createSession(existingUser.id, spaces[0].id, 'workos', tokenPayload.workosSessionId);
         setSessionCookie(c, token);
 
         return c.json({
@@ -378,8 +409,8 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
       // Seed space with content from Sanity
       await seedSpaceFromSanity(storage, space.id);
 
-      // Create session
-      const token = await createSession(user.id, space.id, 'workos');
+      // Create session with WorkOS session ID for logout support
+      const token = await createSession(user.id, space.id, 'workos', tokenPayload.workosSessionId);
       setSessionCookie(c, token);
 
       return c.json({
@@ -425,6 +456,92 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
       displayName: payload.displayName,
       suggestedCallsign: payload.suggestedCallsign,
     });
+  });
+
+  /**
+   * GET /auth/logout
+   *
+   * Log out the user by:
+   * 1. Clearing the local session cookie
+   * 2. Redirecting to WorkOS logout URL to end the WorkOS session
+   *
+   * Query params:
+   * - returnTo (optional): URL to redirect to after logout (must be configured in WorkOS dashboard)
+   */
+  app.get('/logout', async (c) => {
+    const frontendUrl = getFrontendUrl();
+
+    // Parse session to get WorkOS session ID
+    const session = await parseSession(c);
+
+    // Always clear local cookie first
+    clearSessionCookie(c);
+
+    // If no session or no WorkOS session ID, just redirect to frontend
+    if (!session?.workosSessionId) {
+      console.log('[WorkOS] Logout: No WorkOS session ID, redirecting to frontend');
+      return c.redirect(frontendUrl);
+    }
+
+    try {
+      const config = getWorkOSConfig();
+      const workos = new WorkOS(config.apiKey);
+
+      // Get logout URL from WorkOS
+      const returnTo = c.req.query('returnTo') || frontendUrl;
+      const logoutUrl = workos.userManagement.getLogoutUrl({
+        sessionId: session.workosSessionId,
+        returnTo,
+      });
+
+      console.log(`[WorkOS] Logout: Redirecting to WorkOS logout URL`);
+      return c.redirect(logoutUrl);
+    } catch (error) {
+      console.error('[WorkOS] Error getting logout URL:', error);
+      // Fall back to just redirecting to frontend (cookie already cleared)
+      return c.redirect(frontendUrl);
+    }
+  });
+
+  /**
+   * POST /auth/logout
+   *
+   * API-style logout for frontend compatibility.
+   * Returns the WorkOS logout URL for the frontend to redirect to.
+   * Clears the local session cookie.
+   */
+  app.post('/logout', async (c) => {
+    const frontendUrl = getFrontendUrl();
+
+    // Parse session to get WorkOS session ID
+    const session = await parseSession(c);
+
+    // Always clear local cookie first
+    clearSessionCookie(c);
+
+    // If no session or no WorkOS session ID, return success without redirect URL
+    if (!session?.workosSessionId) {
+      console.log('[WorkOS] Logout: No WorkOS session ID');
+      return c.json({ ok: true });
+    }
+
+    try {
+      const config = getWorkOSConfig();
+      const workos = new WorkOS(config.apiKey);
+
+      // Get logout URL from WorkOS for frontend to redirect
+      const logoutUrl = workos.userManagement.getLogoutUrl({
+        sessionId: session.workosSessionId,
+        returnTo: frontendUrl,
+      });
+
+      console.log(`[WorkOS] Logout: Returning logout URL for frontend redirect`);
+      return c.json({ ok: true, logoutUrl });
+    } catch (error) {
+      console.error('[WorkOS] Error getting logout URL:', error);
+      // Return success anyway - cookie is cleared
+      return c.json({ ok: true });
+    }
   });
 
   return app;

@@ -108,18 +108,27 @@ export async function devLogin(params: {
 }
 
 /**
- * Log out - clears session cookie.
+ * Log out - clears session cookie and ends WorkOS session if applicable.
+ * For WorkOS auth, redirects to WorkOS logout URL to properly end the session.
  */
 export async function logout(): Promise<void> {
   try {
-    await fetch(`${API_HOST}/auth/logout`, {
+    const response = await fetch(`${API_HOST}/auth/logout`, {
       method: 'POST',
       credentials: 'include',
     })
+    const data = await response.json()
+
+    // If server returned a logout URL (WorkOS), redirect to it
+    // This ensures the WorkOS session is properly terminated
+    if (data.logoutUrl) {
+      window.location.href = data.logoutUrl
+      return
+    }
   } catch (error) {
     console.error('Logout error:', error)
   }
-  // Reload page to reset state
+  // For dev mode or if no redirect URL, just reload the page
   window.location.reload()
 }
 

@@ -22,6 +22,8 @@ export interface SessionPayload {
   spaceId: string;
   /** Authentication mode */
   mode: AuthMode;
+  /** WorkOS session ID (for logout) - only present when mode is 'workos' */
+  workosSessionId?: string;
   /** Issued at timestamp */
   iat: number;
   /** Expiration timestamp */
@@ -32,6 +34,8 @@ export interface SessionData {
   userId: string;
   spaceId: string;
   mode: AuthMode;
+  /** WorkOS session ID (for logout) - only present when mode is 'workos' */
+  workosSessionId?: string;
 }
 
 // =============================================================================
@@ -63,22 +67,29 @@ function getJwtSecret(): string {
 
 /**
  * Create a new session JWT token.
+ * @param workosSessionId - WorkOS session ID for logout (required when mode is 'workos')
  */
 export async function createSession(
   userId: string,
   spaceId: string,
-  mode: AuthMode
+  mode: AuthMode,
+  workosSessionId?: string
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const exp = now + Math.floor(SESSION_DURATION_MS / 1000);
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     userId,
     spaceId,
     mode,
     iat: now,
     exp,
   };
+
+  // Include WorkOS session ID for logout support
+  if (workosSessionId) {
+    payload.workosSessionId = workosSessionId;
+  }
 
   return await sign(payload, getJwtSecret());
 }
@@ -111,6 +122,7 @@ export async function parseSession(c: Context): Promise<SessionData | null> {
       userId: payload.userId,
       spaceId: payload.spaceId,
       mode: payload.mode,
+      workosSessionId: payload.workosSessionId,
     };
   } catch {
     // Invalid or expired token
@@ -210,6 +222,7 @@ export async function verifySessionToken(token: string): Promise<SessionData | n
       userId: payload.userId,
       spaceId: payload.spaceId,
       mode: payload.mode,
+      workosSessionId: payload.workosSessionId,
     };
   } catch {
     // Invalid or expired token

@@ -950,10 +950,10 @@ export function createApp(options: AppOptions): Hono {
   const workosAuthRoutes = createWorkOSAuthRoutes({ storage });
   app.route('/auth', workosAuthRoutes);
 
-  // GET /auth/me and POST /auth/logout are mounted at /auth level
-  // (shared between dev and workos modes)
+  // GET /auth/me is shared between dev and workos modes
+  // (dev routes have /me handler, workos routes can add their own later)
   app.get('/auth/me', async (c) => {
-    // Forward to dev routes for now (WorkOS will add its own handler later)
+    // Forward to dev routes - they use the shared session parsing
     const response = await devAuthRoutes.request(
       new Request(new URL('/me', c.req.url), { headers: c.req.raw.headers }),
       {}
@@ -966,7 +966,31 @@ export function createApp(options: AppOptions): Hono {
     });
   });
 
+  // POST /auth/logout - route to appropriate handler based on session mode
+  // WorkOS sessions need to redirect to WorkOS logout URL
+  // Dev sessions just need cookie cleared
   app.post('/auth/logout', async (c) => {
+    // Check session mode to decide which handler to use
+    const { parseSession } = await import('./auth/session.js');
+    const session = await parseSession(c);
+
+    if (session?.mode === 'workos') {
+      // Forward to WorkOS routes for proper session termination
+      const response = await workosAuthRoutes.request(
+        new Request(new URL('/logout', c.req.url), {
+          method: 'POST',
+          headers: c.req.raw.headers,
+        }),
+        {}
+      );
+      const headers = new Headers(response.headers);
+      return new Response(response.body, {
+        status: response.status,
+        headers,
+      });
+    }
+
+    // Dev mode - use dev routes
     const response = await devAuthRoutes.request(
       new Request(new URL('/logout', c.req.url), {
         method: 'POST',
