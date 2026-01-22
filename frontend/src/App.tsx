@@ -641,8 +641,13 @@ export function App() {
         );
         setThreads(threadList);
 
-        // Auto-navigate to first non-root channel if no channel is selected
-        if (!urlState.channelId && threadList.length > 0) {
+        // Auto-navigate to first non-root channel if:
+        // 1. No channel is selected, OR
+        // 2. URL channel doesn't exist in this space (e.g., switching spaces)
+        const urlChannelExists = urlState.channelId &&
+          threadList.some((t) => t.id === urlState.channelId);
+
+        if ((!urlState.channelId || !urlChannelExists) && threadList.length > 0) {
           // Find first non-root channel (root is for system config, not user work)
           const firstUserChannel = threadList.find((t) => t.agentName !== "root");
           if (firstUserChannel) {
