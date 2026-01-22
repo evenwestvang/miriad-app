@@ -192,6 +192,7 @@ function createMockStorage(options: MockStorageOptions = {}): Storage & {
     removeFromRoster: vi.fn(),
     initialize: vi.fn(),
     close: vi.fn(),
+    getSpaceSecretValue: vi.fn(async () => null), // Platform secrets (letta_api_key, etc.)
   } as unknown as Storage & {
     getRosterByCallsignCalls: string[];
     updateRosterEntryCalls: Array<{ channelId: string; entryId: string; update: unknown }>;

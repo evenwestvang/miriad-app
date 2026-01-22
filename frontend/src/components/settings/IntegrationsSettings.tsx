@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Eye, EyeOff, Save, RefreshCw, Trash2, Github, Copy, Check } from 'lucide-react'
+import { Eye, EyeOff, Save, RefreshCw, Trash2, Github, Copy, Check, Brain } from 'lucide-react'
 import { apiJson, apiPut, apiDelete } from '../../lib/api'
 
 const GITHUB_TOKEN_KEY = 'github_token'
+const LETTA_API_KEY = 'letta_api_key'
 
 interface SecretMetadata {
   setAt: string
@@ -19,20 +20,30 @@ interface IntegrationsSettingsProps {
 }
 
 export function IntegrationsSettings({ apiHost, spaceId }: IntegrationsSettingsProps) {
+  // GitHub state
   const [githubToken, setGithubToken] = useState('')
-  const [showToken, setShowToken] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  const [showGithubToken, setShowGithubToken] = useState(false)
+  const [savingGithub, setSavingGithub] = useState(false)
+  const [deletingGithub, setDeletingGithub] = useState(false)
+  const [githubSetAt, setGithubSetAt] = useState<string | null>(null)
+  const [copiedGithub, setCopiedGithub] = useState(false)
+
+  // Letta state
+  const [lettaApiKey, setLettaApiKey] = useState('')
+  const [showLettaKey, setShowLettaKey] = useState(false)
+  const [savingLetta, setSavingLetta] = useState(false)
+  const [deletingLetta, setDeletingLetta] = useState(false)
+  const [lettaSetAt, setLettaSetAt] = useState<string | null>(null)
+
+  // Shared state
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
-  const [existingTokenSetAt, setExistingTokenSetAt] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
 
-  async function handleCopyCommand() {
+  async function handleCopyGithubCommand() {
     await navigator.clipboard.writeText('gh auth token')
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    setCopiedGithub(true)
+    setTimeout(() => setCopiedGithub(false), 2000)
   }
 
   useEffect(() => {
@@ -41,9 +52,11 @@ export function IntegrationsSettings({ apiHost, spaceId }: IntegrationsSettingsP
         const data = await apiJson<SecretsListResponse>(
           `${apiHost}/api/spaces/${spaceId}/secrets`
         )
-        const meta = data.secrets[GITHUB_TOKEN_KEY]
-        if (meta) {
-          setExistingTokenSetAt(meta.setAt)
+        if (data.secrets[GITHUB_TOKEN_KEY]) {
+          setGithubSetAt(data.secrets[GITHUB_TOKEN_KEY].setAt)
+        }
+        if (data.secrets[LETTA_API_KEY]) {
+          setLettaSetAt(data.secrets[LETTA_API_KEY].setAt)
         }
       } catch (err) {
         console.error('Failed to load secrets:', err)
@@ -54,13 +67,13 @@ export function IntegrationsSettings({ apiHost, spaceId }: IntegrationsSettingsP
     loadSecrets()
   }, [apiHost, spaceId])
 
-  async function handleSave() {
+  async function handleSaveGithub() {
     if (!githubToken.trim()) {
       setError('Token is required')
       return
     }
 
-    setSaving(true)
+    setSavingGithub(true)
     setError(null)
     setSaved(false)
 
@@ -69,29 +82,70 @@ export function IntegrationsSettings({ apiHost, spaceId }: IntegrationsSettingsP
         `${apiHost}/api/spaces/${spaceId}/secrets/${GITHUB_TOKEN_KEY}`,
         { value: githubToken }
       )
-      setExistingTokenSetAt(result.setAt)
+      setGithubSetAt(result.setAt)
       setGithubToken('')
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save token')
     } finally {
-      setSaving(false)
+      setSavingGithub(false)
     }
   }
 
-  async function handleDelete() {
-    setDeleting(true)
+  async function handleDeleteGithub() {
+    setDeletingGithub(true)
     setError(null)
 
     try {
       await apiDelete(`${apiHost}/api/spaces/${spaceId}/secrets/${GITHUB_TOKEN_KEY}`)
-      setExistingTokenSetAt(null)
+      setGithubSetAt(null)
       setGithubToken('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete token')
     } finally {
-      setDeleting(false)
+      setDeletingGithub(false)
+    }
+  }
+
+  async function handleSaveLetta() {
+    if (!lettaApiKey.trim()) {
+      setError('API key is required')
+      return
+    }
+
+    setSavingLetta(true)
+    setError(null)
+    setSaved(false)
+
+    try {
+      const result = await apiPut<{ key: string; setAt: string }>(
+        `${apiHost}/api/spaces/${spaceId}/secrets/${LETTA_API_KEY}`,
+        { value: lettaApiKey }
+      )
+      setLettaSetAt(result.setAt)
+      setLettaApiKey('')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save API key')
+    } finally {
+      setSavingLetta(false)
+    }
+  }
+
+  async function handleDeleteLetta() {
+    setDeletingLetta(true)
+    setError(null)
+
+    try {
+      await apiDelete(`${apiHost}/api/spaces/${spaceId}/secrets/${LETTA_API_KEY}`)
+      setLettaSetAt(null)
+      setLettaApiKey('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete API key')
+    } finally {
+      setDeletingLetta(false)
     }
   }
 
@@ -148,22 +202,22 @@ export function IntegrationsSettings({ apiHost, spaceId }: IntegrationsSettingsP
             Personal Access Token
           </label>
 
-          {existingTokenSetAt ? (
+          {githubSetAt ? (
             <div className="space-y-3">
               <div className="flex items-center gap-3 p-3 bg-secondary/30 border border-border rounded-md">
                 <div className="flex-1">
                   <div className="font-mono text-base">ghp_••••••••••••••••</div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    Set on {formatDate(existingTokenSetAt)}
+                    Set on {formatDate(githubSetAt)}
                   </div>
                 </div>
                 <button
-                  onClick={handleDelete}
-                  disabled={deleting}
+                  onClick={handleDeleteGithub}
+                  disabled={deletingGithub}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-base text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
                   title="Remove token"
                 >
-                  {deleting ? (
+                  {deletingGithub ? (
                     <RefreshCw className="w-4 h-4 animate-spin" />
                   ) : (
                     <Trash2 className="w-4 h-4" />
@@ -180,7 +234,7 @@ export function IntegrationsSettings({ apiHost, spaceId }: IntegrationsSettingsP
               <div className="relative">
                 <input
                   id="github-token"
-                  type={showToken ? 'text' : 'password'}
+                  type={showGithubToken ? 'text' : 'password'}
                   value={githubToken}
                   onChange={(e) => setGithubToken(e.target.value)}
                   placeholder="ghp_... or paste from 'gh auth token'"
@@ -188,11 +242,11 @@ export function IntegrationsSettings({ apiHost, spaceId }: IntegrationsSettingsP
                 />
                 <button
                   type="button"
-                  onClick={() => setShowToken(!showToken)}
+                  onClick={() => setShowGithubToken(!showGithubToken)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-secondary rounded transition-colors"
-                  title={showToken ? 'Hide token' : 'Show token'}
+                  title={showGithubToken ? 'Hide token' : 'Show token'}
                 >
-                  {showToken ? (
+                  {showGithubToken ? (
                     <EyeOff className="w-4 h-4 text-muted-foreground" />
                   ) : (
                     <Eye className="w-4 h-4 text-muted-foreground" />
@@ -203,12 +257,12 @@ export function IntegrationsSettings({ apiHost, spaceId }: IntegrationsSettingsP
                 Quick: run{' '}
                 <button
                   type="button"
-                  onClick={handleCopyCommand}
+                  onClick={handleCopyGithubCommand}
                   className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-secondary/50 hover:bg-secondary rounded transition-colors font-mono"
                   title="Copy command"
                 >
                   gh auth token
-                  {copied ? (
+                  {copiedGithub ? (
                     <Check className="w-3 h-3 text-green-500" />
                   ) : (
                     <Copy className="w-3 h-3 text-muted-foreground" />
@@ -228,11 +282,11 @@ export function IntegrationsSettings({ apiHost, spaceId }: IntegrationsSettingsP
 
               {/* Save button */}
               <button
-                onClick={handleSave}
-                disabled={saving || !githubToken.trim()}
+                onClick={handleSaveGithub}
+                disabled={savingGithub || !githubToken.trim()}
                 className="flex items-center gap-2 px-4 py-2 text-base bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {saving ? (
+                {savingGithub ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
                     Saving...
@@ -249,11 +303,110 @@ export function IntegrationsSettings({ apiHost, spaceId }: IntegrationsSettingsP
         </div>
       </div>
 
-      {/* Future integrations placeholder */}
-      <div className="pt-4 border-t border-border">
-        <p className="text-sm text-muted-foreground">
-          More integrations coming soon.
-        </p>
+      {/* Letta Integration */}
+      <div className="space-y-4 pt-4 border-t border-border">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-secondary/50 rounded-md">
+            <Brain className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-medium text-foreground">Letta</h3>
+            <p className="text-sm text-muted-foreground">
+              Enable agents with persistent long-term memory
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2 pl-12">
+          <label htmlFor="letta-api-key" className="block text-base font-medium text-foreground">
+            API Key
+          </label>
+
+          {lettaSetAt ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 p-3 bg-secondary/30 border border-border rounded-md">
+                <div className="flex-1">
+                  <div className="font-mono text-base">sk-••••••••••••••••</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Set on {formatDate(lettaSetAt)}
+                  </div>
+                </div>
+                <button
+                  onClick={handleDeleteLetta}
+                  disabled={deletingLetta}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-base text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
+                  title="Remove API key"
+                >
+                  {deletingLetta ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  Remove
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                To update your API key, remove the existing one and add a new one.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="relative">
+                <input
+                  id="letta-api-key"
+                  type={showLettaKey ? 'text' : 'password'}
+                  value={lettaApiKey}
+                  onChange={(e) => setLettaApiKey(e.target.value)}
+                  placeholder="sk-..."
+                  className="w-full px-3 py-2 pr-10 bg-secondary/30 border border-border rounded-md text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowLettaKey(!showLettaKey)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-secondary rounded transition-colors"
+                  title={showLettaKey ? 'Hide key' : 'Show key'}
+                >
+                  {showLettaKey ? (
+                    <EyeOff className="w-4 h-4 text-muted-foreground" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Get your API key from{' '}
+                <a
+                  href="https://app.letta.com/api-keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  app.letta.com
+                </a>
+                . Agents with <code className="px-1 py-0.5 bg-secondary/50 rounded">engine: "letta"</code> will use persistent memory.
+              </p>
+
+              {/* Save button */}
+              <button
+                onClick={handleSaveLetta}
+                disabled={savingLetta || !lettaApiKey.trim()}
+                className="flex items-center gap-2 px-4 py-2 text-base bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {savingLetta ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    Save API Key
+                  </>
+                )}
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )

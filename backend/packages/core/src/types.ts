@@ -347,6 +347,13 @@ export interface RosterEntry {
    * Agent is considered online when runtime is online.
    */
   runtimeStatus?: RuntimeStatus;
+
+  /**
+   * Persistent engine-specific properties.
+   * Used to store state like Letta agent IDs, session data, etc.
+   * Unlike 'current' (ephemeral), this persists across sessions.
+   */
+  props?: Record<string, unknown>;
 }
 
 /**
@@ -383,6 +390,8 @@ export interface UpdateRosterInput {
   lastMessageRoutedAt?: string;
   /** Runtime ID to bind agent to (null = CAST Cloud) */
   runtimeId?: string | null;
+  /** Persistent engine-specific properties */
+  props?: Record<string, unknown>;
 }
 
 // =============================================================================

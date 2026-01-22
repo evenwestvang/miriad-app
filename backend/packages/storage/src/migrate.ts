@@ -214,6 +214,7 @@ async function migrate(): Promise<void> {
       ALTER TABLE roster ADD COLUMN IF NOT EXISTS last_message_routed_at TIMESTAMPTZ;
       ALTER TABLE roster ADD COLUMN IF NOT EXISTS route_hints JSONB;
       ALTER TABLE roster ADD COLUMN IF NOT EXISTS runtime_id VARCHAR(26);
+      ALTER TABLE roster ADD COLUMN IF NOT EXISTS props JSONB;
     EXCEPTION
       WHEN duplicate_column THEN NULL;
     END $$;

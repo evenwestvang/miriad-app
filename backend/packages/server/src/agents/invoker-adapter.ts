@@ -146,6 +146,12 @@ export function createAgentInvokerAdapter(
               }
               environment.CAST_AUTH_TOKEN = authToken;
 
+              // Add platform-level secrets (Letta API key for engine: "letta" agents)
+              const lettaApiKey = await storage.getSpaceSecretValue(spaceId, 'letta_api_key');
+              if (lettaApiKey) {
+                environment.LETTA_API_KEY = lettaApiKey;
+              }
+
               const deliverMessage: DeliverMessageMessage = {
                 type: 'message',
                 agentId,

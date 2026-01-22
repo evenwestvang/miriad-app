@@ -233,6 +233,7 @@ interface RosterRow {
   runtime_id: string | null;
   runtime_name?: string | null;
   runtime_status?: string | null;
+  props: Record<string, unknown> | null;
 }
 
 interface UserRow {
@@ -988,6 +989,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     }
     if (update.runtimeId !== undefined) {
       updateObj.runtime_id = update.runtimeId;
+    }
+    if (update.props !== undefined) {
+      updateObj.props = JSON.stringify(update.props);
     }
 
     if (Object.keys(updateObj).length === 0) return;
@@ -2991,6 +2995,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       runtimeId: row.runtime_id ?? undefined,
       runtimeName: row.runtime_name ?? undefined,
       runtimeStatus: (row.runtime_status as RuntimeStatus) ?? undefined,
+      props: (row.props as Record<string, unknown>) ?? undefined,
     };
   }
 
