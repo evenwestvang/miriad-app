@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { X, Settings, Monitor, Cloud } from 'lucide-react'
+import { X, Settings, Monitor, Cloud, Plug } from 'lucide-react'
 import { RuntimesSettings } from './RuntimesSettings'
 import { CloudSettings } from './CloudSettings'
+import { IntegrationsSettings } from './IntegrationsSettings'
 
-export type SettingsSection = 'cloud' | 'runtimes'
+export type SettingsSection = 'cloud' | 'runtimes' | 'integrations'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -28,6 +29,7 @@ export function SettingsModal({ isOpen, onClose, apiHost, spaceId, initialSectio
   const sections: { id: SettingsSection; label: string; icon: typeof Monitor }[] = [
     { id: 'cloud', label: 'Miriad Cloud', icon: Cloud },
     { id: 'runtimes', label: 'Local Runtimes', icon: Monitor },
+    { id: 'integrations', label: 'Integrations', icon: Plug },
   ]
 
   return (
@@ -86,6 +88,9 @@ export function SettingsModal({ isOpen, onClose, apiHost, spaceId, initialSectio
             )}
             {activeSection === 'runtimes' && spaceId && (
               <RuntimesSettings apiHost={apiHost} spaceId={spaceId} />
+            )}
+            {activeSection === 'integrations' && spaceId && (
+              <IntegrationsSettings apiHost={apiHost} spaceId={spaceId} />
             )}
           </div>
         </div>

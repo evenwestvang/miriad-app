@@ -190,7 +190,8 @@ function getDockerContainerName(spaceId: string): string {
 async function startDockerContainer(
   spaceId: string,
   config: MiriadConfig,
-  anthropicApiKey: string
+  anthropicApiKey: string,
+  githubToken: string | null
 ): Promise<{ containerId: string }> {
   const containerName = getDockerContainerName(spaceId);
 
@@ -234,7 +235,6 @@ async function startDockerContainer(
   };
 
   const tunnelServerUrl = getTunnelServerUrl();
-  const githubToken = process.env.GITHUB_TOKEN;
   const args = [
     'run',
     '-d',
@@ -427,7 +427,8 @@ async function startFlyMachine(
   spaceId: string,
   config: MiriadConfig,
   volumeId: string,
-  anthropicApiKey: string
+  anthropicApiKey: string,
+  githubToken: string | null
 ): Promise<{ machineId: string }> {
   const machineName = getFlyMachineName(spaceId);
 
@@ -458,7 +459,7 @@ async function startFlyMachine(
         MIRIAD_CONFIG: JSON.stringify(config),
         ANTHROPIC_API_KEY: anthropicApiKey,
         TUNNEL_SERVER_URL: getTunnelServerUrl() ?? '',
-        GITHUB_TOKEN: process.env.GITHUB_TOKEN ?? '',
+        ...(githubToken ? { GITHUB_TOKEN: githubToken } : {}),
       },
       mounts: [{
         volume: volumeId,
@@ -529,8 +530,9 @@ export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
     const { userId, spaceId } = session;
 
     try {
-      // Fetch API key from space secrets
+      // Fetch secrets from space settings
       const anthropicApiKey = await storage.getSpaceSecretValue(spaceId, 'anthropic_api_key');
+      const githubToken = await storage.getSpaceSecretValue(spaceId, 'github_token');
 
       if (!anthropicApiKey) {
         return c.json({ error: 'Claude API key not configured. Please set it in Settings → Cloud.' }, 400);
@@ -604,9 +606,9 @@ export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
 
       // Start container (Docker or Fly)
       if (useDocker()) {
-        await startDockerContainer(spaceId, config, anthropicApiKey);
+        await startDockerContainer(spaceId, config, anthropicApiKey, githubToken);
       } else {
-        await startFlyMachine(spaceId, config, flyVolumeId!, anthropicApiKey);
+        await startFlyMachine(spaceId, config, flyVolumeId!, anthropicApiKey, githubToken);
       }
 
       console.log(`[MiriadCloud] Started for space ${spaceId}, runtime ${runtime.id}`);
