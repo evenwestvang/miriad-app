@@ -153,6 +153,36 @@ const TOOLS: McpToolDefinition[] = [
     },
   },
   {
+    name: 'artifact_copy',
+    description: 'Copy an artifact from one channel to another. Copies current content (not version history).',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        sourceChannel: {
+          type: 'string',
+          description: 'Channel name or ID to copy from',
+        },
+        slug: {
+          type: 'string',
+          description: 'Slug of the artifact to copy',
+        },
+        targetChannel: {
+          type: 'string',
+          description: 'Channel name or ID to copy to (defaults to your home channel)',
+        },
+        newSlug: {
+          type: 'string',
+          description: 'New slug for the copied artifact (defaults to same slug)',
+        },
+        parentSlug: {
+          type: 'string',
+          description: 'Parent artifact slug in target channel for tree placement',
+        },
+      },
+      required: ['sourceChannel', 'slug'],
+    },
+  },
+  {
     name: 'artifact_read',
     description: "Read a single artifact's full content",
     inputSchema: {
@@ -621,8 +651,8 @@ const toolHandlers: Record<string, ToolHandler> = {
   // Artifact Tools (fully implemented)
   // ---------------------------------------------------------------------------
 
-  async artifact_create(args, { storage, channelId, callsign }) {
-    const { slug, type, tldr, content, title, parentSlug, status, assignees, labels } = args as {
+  async artifact_create(args, { storage, spaceId, channelId, callsign }) {
+    const { slug, type, tldr, content, title, parentSlug, status, assignees, labels, channel } = args as {
       slug: string;
       type: string;
       tldr: string;
@@ -632,11 +662,20 @@ const toolHandlers: Record<string, ToolHandler> = {
       status?: string;
       assignees?: string[];
       labels?: string[];
+      channel?: string;
     };
 
-    const artifact = await storage.createArtifact(channelId, {
+    // Resolve channel name to ID
+    let targetChannelId = channelId;
+    if (channel) {
+      const resolved = await storage.resolveChannel(spaceId, channel);
+      if (!resolved) throw new Error(`Channel not found: ${channel}`);
+      targetChannelId = resolved.id;
+    }
+
+    const artifact = await storage.createArtifact(targetChannelId, {
       slug,
-      channelId,
+      channelId: targetChannelId,
       type: type as 'doc' | 'folder' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook',
       title,
       tldr,
@@ -657,17 +696,24 @@ const toolHandlers: Record<string, ToolHandler> = {
     }, null, 2);
   },
 
-  async artifact_read(args, { storage, channelId }) {
+  async artifact_read(args, { storage, spaceId, channelId }) {
     const { slug, channel } = args as { slug: string; channel?: string };
-    const targetChannel = channel || channelId;
 
-    const artifact = await storage.getArtifact(targetChannel, slug);
+    // Resolve channel name to ID
+    let targetChannelId = channelId;
+    if (channel) {
+      const resolved = await storage.resolveChannel(spaceId, channel);
+      if (!resolved) throw new Error(`Channel not found: ${channel}`);
+      targetChannelId = resolved.id;
+    }
+
+    const artifact = await storage.getArtifact(targetChannelId, slug);
     if (!artifact) {
       throw new Error(`Artifact not found: ${slug}`);
     }
 
     // Include version list
-    const versions = await storage.listArtifactVersions(targetChannel, slug);
+    const versions = await storage.listArtifactVersions(targetChannelId, slug);
 
     return JSON.stringify({
       ...artifact,
@@ -680,7 +726,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     }, null, 2);
   },
 
-  async artifact_list(args, { storage, channelId }) {
+  async artifact_list(args, { storage, spaceId, channelId }) {
     const { type, status, assignee, parentSlug, search, limit, offset, channel } = args as {
       type?: string;
       status?: string;
@@ -692,9 +738,15 @@ const toolHandlers: Record<string, ToolHandler> = {
       channel?: string;
     };
 
-    const targetChannel = channel || channelId;
+    // Resolve channel name to ID
+    let targetChannelId = channelId;
+    if (channel) {
+      const resolved = await storage.resolveChannel(spaceId, channel);
+      if (!resolved) throw new Error(`Channel not found: ${channel}`);
+      targetChannelId = resolved.id;
+    }
 
-    const artifacts = await storage.listArtifacts(targetChannel, {
+    const artifacts = await storage.listArtifacts(targetChannelId, {
       type: type as 'doc' | 'folder' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook' | undefined,
       status: status as 'draft' | 'published' | 'archived' | 'pending' | 'in_progress' | 'done' | 'blocked' | undefined,
       assignee,
@@ -707,12 +759,19 @@ const toolHandlers: Record<string, ToolHandler> = {
     return JSON.stringify({ artifacts }, null, 2);
   },
 
-  async artifact_glob(args, { storage, channelId }) {
+  async artifact_glob(args, { storage, spaceId, channelId }) {
     const { pattern, channel } = args as { pattern?: string; channel?: string };
-    const targetChannel = channel || channelId;
     const globPattern = pattern || '/**';
 
-    const tree = await storage.globArtifacts(targetChannel, globPattern);
+    // Resolve channel name to ID
+    let targetChannelId = channelId;
+    if (channel) {
+      const resolved = await storage.resolveChannel(spaceId, channel);
+      if (!resolved) throw new Error(`Channel not found: ${channel}`);
+      targetChannelId = resolved.id;
+    }
+
+    const tree = await storage.globArtifacts(targetChannelId, globPattern);
 
     // Format as indented text for readability
     const formatTree = (nodes: typeof tree, indent = 0): string => {
@@ -731,13 +790,20 @@ const toolHandlers: Record<string, ToolHandler> = {
     return output || '(empty)';
   },
 
-  async artifact_update(args, { storage, channelId, callsign }) {
+  async artifact_update(args, { storage, spaceId, channelId, callsign }) {
     const { slug, changes, channel } = args as {
       slug: string;
       changes: Array<{ field: string; oldValue: unknown; newValue: unknown }>;
       channel?: string;
     };
-    const targetChannel = channel || channelId;
+
+    // Resolve channel name to ID
+    let targetChannelId = channelId;
+    if (channel) {
+      const resolved = await storage.resolveChannel(spaceId, channel);
+      if (!resolved) throw new Error(`Channel not found: ${channel}`);
+      targetChannelId = resolved.id;
+    }
 
     // Convert from MCP format to storage format
     const storageChanges = changes.map((change) => ({
@@ -746,7 +812,7 @@ const toolHandlers: Record<string, ToolHandler> = {
       newValue: change.newValue,
     }));
 
-    const result = await storage.updateArtifactWithCAS(targetChannel, slug, storageChanges, callsign);
+    const result = await storage.updateArtifactWithCAS(targetChannelId, slug, storageChanges, callsign);
 
     if (!result.success) {
       throw new Error(`Conflict on field '${result.conflict?.field}': expected ${JSON.stringify(result.conflict?.expected)} but found ${JSON.stringify(result.conflict?.actual)}`);
@@ -759,16 +825,23 @@ const toolHandlers: Record<string, ToolHandler> = {
     }, null, 2);
   },
 
-  async artifact_edit(args, { storage, channelId, callsign }) {
+  async artifact_edit(args, { storage, spaceId, channelId, callsign }) {
     const { slug, old_string, new_string, channel } = args as {
       slug: string;
       old_string: string;
       new_string: string;
       channel?: string;
     };
-    const targetChannel = channel || channelId;
 
-    const artifact = await storage.editArtifact(targetChannel, slug, {
+    // Resolve channel name to ID
+    let targetChannelId = channelId;
+    if (channel) {
+      const resolved = await storage.resolveChannel(spaceId, channel);
+      if (!resolved) throw new Error(`Channel not found: ${channel}`);
+      targetChannelId = resolved.id;
+    }
+
+    const artifact = await storage.editArtifact(targetChannelId, slug, {
       oldString: old_string,
       newString: new_string,
       updatedBy: callsign,
@@ -781,11 +854,18 @@ const toolHandlers: Record<string, ToolHandler> = {
     }, null, 2);
   },
 
-  async artifact_archive(args, { storage, channelId, callsign }) {
+  async artifact_archive(args, { storage, spaceId, channelId, callsign }) {
     const { slug, channel } = args as { slug: string; channel?: string };
-    const targetChannel = channel || channelId;
 
-    const artifact = await storage.archiveArtifact(targetChannel, slug, callsign);
+    // Resolve channel name to ID
+    let targetChannelId = channelId;
+    if (channel) {
+      const resolved = await storage.resolveChannel(spaceId, channel);
+      if (!resolved) throw new Error(`Channel not found: ${channel}`);
+      targetChannelId = resolved.id;
+    }
+
+    const artifact = await storage.archiveArtifact(targetChannelId, slug, callsign);
 
     return JSON.stringify({
       archived: true,
@@ -794,16 +874,76 @@ const toolHandlers: Record<string, ToolHandler> = {
     }, null, 2);
   },
 
-  async artifact_checkpoint(args, { storage, channelId, callsign }) {
+  async artifact_copy(args, { storage, spaceId, channelId, callsign }) {
+    const { sourceChannel, slug, targetChannel, newSlug, parentSlug } = args as {
+      sourceChannel: string;
+      slug: string;
+      targetChannel?: string;
+      newSlug?: string;
+      parentSlug?: string;
+    };
+
+    // Resolve source channel
+    const sourceResolved = await storage.resolveChannel(spaceId, sourceChannel);
+    if (!sourceResolved) throw new Error(`Source channel not found: ${sourceChannel}`);
+
+    // Resolve target channel (default to home channel)
+    let targetChannelId = channelId;
+    if (targetChannel) {
+      const targetResolved = await storage.resolveChannel(spaceId, targetChannel);
+      if (!targetResolved) throw new Error(`Target channel not found: ${targetChannel}`);
+      targetChannelId = targetResolved.id;
+    }
+
+    // Fetch source artifact
+    const source = await storage.getArtifact(sourceResolved.id, slug);
+    if (!source) {
+      throw new Error(`Artifact not found: ${slug} in channel ${sourceChannel}`);
+    }
+
+    // Create copy in target channel
+    const targetSlug = newSlug || slug;
+    const artifact = await storage.createArtifact(targetChannelId, {
+      slug: targetSlug,
+      channelId: targetChannelId,
+      type: source.type as 'doc' | 'folder' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook',
+      title: source.title,
+      tldr: source.tldr,
+      content: source.content,
+      parentSlug,
+      status: source.status as 'draft' | 'published' | 'archived' | 'pending' | 'in_progress' | 'done' | 'blocked' | undefined,
+      assignees: source.assignees,
+      labels: source.labels,
+      props: source.props,
+      createdBy: callsign,
+    });
+
+    return JSON.stringify({
+      copied: true,
+      sourceChannel,
+      sourceSlug: slug,
+      targetSlug: artifact.slug,
+      path: artifact.path,
+    }, null, 2);
+  },
+
+  async artifact_checkpoint(args, { storage, spaceId, channelId, callsign }) {
     const { slug, version, message, channel } = args as {
       slug: string;
       version: string;
       message?: string;
       channel?: string;
     };
-    const targetChannel = channel || channelId;
 
-    const artifactVersion = await storage.checkpointArtifact(targetChannel, slug, {
+    // Resolve channel name to ID
+    let targetChannelId = channelId;
+    if (channel) {
+      const resolved = await storage.resolveChannel(spaceId, channel);
+      if (!resolved) throw new Error(`Channel not found: ${channel}`);
+      targetChannelId = resolved.id;
+    }
+
+    const artifactVersion = await storage.checkpointArtifact(targetChannelId, slug, {
       versionName: version,
       versionMessage: message,
       createdBy: callsign,
@@ -818,16 +958,23 @@ const toolHandlers: Record<string, ToolHandler> = {
     }, null, 2);
   },
 
-  async artifact_diff(args, { storage, channelId }) {
+  async artifact_diff(args, { storage, spaceId, channelId }) {
     const { slug, from, to, channel } = args as {
       slug: string;
       from: string;
       to?: string;
       channel?: string;
     };
-    const targetChannel = channel || channelId;
 
-    const diff = await storage.diffArtifactVersions(targetChannel, slug, from, to);
+    // Resolve channel name to ID
+    let targetChannelId = channelId;
+    if (channel) {
+      const resolved = await storage.resolveChannel(spaceId, channel);
+      if (!resolved) throw new Error(`Channel not found: ${channel}`);
+      targetChannelId = resolved.id;
+    }
+
+    const diff = await storage.diffArtifactVersions(targetChannelId, slug, from, to);
 
     return diff;
   },
@@ -844,10 +991,17 @@ const toolHandlers: Record<string, ToolHandler> = {
       channel?: string;
     };
 
-    const targetChannel = channel || channelId;
+    // Resolve channel name to ID
+    let targetChannelId = channelId;
+    if (channel) {
+      const resolved = await storage.resolveChannel(spaceId, channel);
+      if (!resolved) throw new Error(`Channel not found: ${channel}`);
+      targetChannelId = resolved.id;
+    }
+
     const msgLimit = limit ?? 50;
 
-    const messages = await storage.getMessages(spaceId, targetChannel, {
+    const messages = await storage.getMessages(spaceId, targetChannelId, {
       limit: msgLimit,
       before,
       since,
@@ -874,12 +1028,19 @@ const toolHandlers: Record<string, ToolHandler> = {
       channel?: string;
     };
 
-    const targetChannel = channel || channelId;
+    // Resolve channel name to ID
+    let targetChannelId = channelId;
+    if (channel) {
+      const resolved = await storage.resolveChannel(spaceId, channel);
+      if (!resolved) throw new Error(`Channel not found: ${channel}`);
+      targetChannelId = resolved.id;
+    }
+
     const msgLimit = limit ?? 100;
 
     // Fetch more messages to filter client-side
     const fetchLimit = Math.min(msgLimit * 3, 500);
-    let messages = await storage.getMessages(spaceId, targetChannel, { limit: fetchLimit });
+    let messages = await storage.getMessages(spaceId, targetChannelId, { limit: fetchLimit });
 
     // Client-side filtering
     if (sender) {
