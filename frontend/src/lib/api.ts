@@ -21,6 +21,7 @@ export interface StoredUser {
   avatarUrl?: string
   createdAt: string
   updatedAt: string
+  disclaimerAcceptedVersion?: string
 }
 
 export interface StoredSpace {
@@ -244,6 +245,33 @@ export async function apiDelete(input: string): Promise<void> {
     const error = await response.json().catch(() => ({}))
     throw new Error(error.error || `API error: ${response.status}`)
   }
+}
+
+// =============================================================================
+// Disclaimer Types & Functions
+// =============================================================================
+
+export interface DisclaimerResponse {
+  title: string
+  content: string
+  version: string
+}
+
+/**
+ * Fetch the current legal disclaimer.
+ */
+export async function fetchDisclaimer(): Promise<DisclaimerResponse> {
+  return apiJson<DisclaimerResponse>('/disclaimer')
+}
+
+/**
+ * Accept the legal disclaimer.
+ */
+export async function acceptDisclaimer(params: {
+  confirmation: string
+  version: string
+}): Promise<{ success: boolean; disclaimerAcceptedVersion: string }> {
+  return apiPost('/disclaimer/accept', params)
 }
 
 // =============================================================================

@@ -27,6 +27,7 @@ import { createRuntimeAuthRoutes } from './handlers/runtime-auth.js';
 import { createRuntimeRoutes } from './handlers/runtimes.js';
 import { createMiriadCloudRoutes } from './handlers/miriad-cloud.js';
 import { createKBRoutes } from './handlers/kb.js';
+import { createDisclaimerRoutes } from './handlers/disclaimer.js';
 import { resetRootChannel } from './onboarding/index.js';
 
 // =============================================================================
@@ -1047,6 +1048,12 @@ export function createApp(options: AppOptions): Hono {
   // ---------------------------------------------------------------------------
   const kbRoutes = createKBRoutes({ storage });
   app.route('/kb', kbRoutes);
+
+  // ---------------------------------------------------------------------------
+  // Disclaimer Routes
+  // ---------------------------------------------------------------------------
+  const disclaimerRoutes = createDisclaimerRoutes(storage);
+  app.route('/disclaimer', disclaimerRoutes);
 
   // ---------------------------------------------------------------------------
   // Focus Types & Agent Types (stubs for frontend)

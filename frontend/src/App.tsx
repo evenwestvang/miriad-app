@@ -32,6 +32,7 @@ import {
 import { LoginPage } from "./components/LoginPage";
 import { OnboardingPage } from "./components/OnboardingPage";
 import { AuthErrorPage } from "./components/AuthErrorPage";
+import { DisclaimerPage } from "./components/DisclaimerPage";
 import { OAuthCallbackPage } from "./components/OAuthCallbackPage";
 import { OAuthErrorPage } from "./components/OAuthErrorPage";
 import { InitializeRootChannelPage } from "./components/InitializeRootChannelPage";
@@ -1123,6 +1124,19 @@ export function App() {
   // Show login page if not authenticated (dev mode only - prod redirects to /auth/login)
   if (authSession === null) {
     return <LoginPage onLogin={handleLogin} apiHost={API_HOST} />;
+  }
+
+  // Show disclaimer page if user hasn't accepted
+  if (!authSession.user.disclaimerAcceptedVersion) {
+    const handleDisclaimerAccept = () => {
+      // Re-check auth to get updated user with disclaimer version
+      checkAuth().then((session) => {
+        setAuthSession(session);
+        // Navigate to home after accepting
+        window.location.href = "/";
+      });
+    };
+    return <DisclaimerPage onAccept={handleDisclaimerAccept} />;
   }
 
   // Initialize root channel page (for debugging onboarding/curation)

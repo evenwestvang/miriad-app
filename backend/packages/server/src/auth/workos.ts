@@ -383,6 +383,7 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
             callsign: existingUser.callsign,
             email: existingUser.email,
             avatarUrl: existingUser.avatarUrl,
+            disclaimerAcceptedVersion: existingUser.disclaimerAcceptedVersion,
           },
           space: {
             id: spaces[0].id,
@@ -421,6 +422,7 @@ export function createWorkOSAuthRoutes(options: WorkOSAuthOptions): Hono {
           callsign: user.callsign,
           email: user.email,
           avatarUrl: user.avatarUrl,
+          disclaimerAcceptedVersion: user.disclaimerAcceptedVersion,
         },
         space: {
           id: space.id,

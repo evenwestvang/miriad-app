@@ -206,6 +206,7 @@ export function createDevAuthRoutes(options: DevAuthOptions): Hono {
           callsign: user.callsign,
           email: user.email,
           avatarUrl: user.avatarUrl,
+          disclaimerAcceptedVersion: user.disclaimerAcceptedVersion,
         },
         space: {
           id: space.id,

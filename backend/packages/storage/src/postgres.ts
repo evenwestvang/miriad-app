@@ -244,6 +244,7 @@ interface UserRow {
   avatar_url: string | null;
   created_at: Date;
   updated_at: Date;
+  disclaimer_accepted_version: string | null;
 }
 
 interface SpaceRow {
@@ -1024,6 +1025,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       avatarUrl: row.avatar_url ?? undefined,
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
+      disclaimerAcceptedVersion: row.disclaimer_accepted_version ?? undefined,
     };
   }
 
@@ -1072,6 +1074,21 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   async function getUserByExternalId(externalId: string): Promise<StoredUser | null> {
     const result = await sql<UserRow>`
       SELECT * FROM users WHERE external_id = ${externalId}
+    `;
+
+    if (result.length === 0) return null;
+    return rowToUser(result[0]);
+  }
+
+  async function acceptDisclaimer(
+    userId: string,
+    version: string
+  ): Promise<StoredUser | null> {
+    const result = await sql<UserRow>`
+      UPDATE users
+      SET disclaimer_accepted_version = ${version}, updated_at = NOW()
+      WHERE id = ${userId}
+      RETURNING *
     `;
 
     if (result.length === 0) return null;
@@ -3488,6 +3505,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     createUser,
     getUser,
     getUserByExternalId,
+    acceptDisclaimer,
     // Space operations (Spaces & Auth)
     createSpace,
     getSpace,

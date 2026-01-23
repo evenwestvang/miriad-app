@@ -99,6 +99,10 @@ async function migrate(): Promise<void> {
     ON users(callsign)
   `;
 
+  await sql`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS disclaimer_accepted_version VARCHAR(50)
+  `;
+
   // ---------------------------------------------------------------------------
   // Spaces Table
   // ---------------------------------------------------------------------------

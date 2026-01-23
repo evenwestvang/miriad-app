@@ -456,6 +456,9 @@ export interface StoredUser {
 
   /** ISO timestamp of last update */
   updatedAt: string;
+
+  /** Version of disclaimer user has accepted (null if not yet accepted) */
+  disclaimerAcceptedVersion?: string;
 }
 
 /**

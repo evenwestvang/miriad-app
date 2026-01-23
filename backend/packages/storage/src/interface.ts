@@ -141,6 +141,11 @@ export interface Storage {
    */
   getUserByExternalId(externalId: string): Promise<StoredUser | null>;
 
+  /**
+   * Record that a user accepted a disclaimer version.
+   */
+  acceptDisclaimer(userId: string, version: string): Promise<StoredUser | null>;
+
   // ---------------------------------------------------------------------------
   // Space Operations (Spaces & Auth)
   // ---------------------------------------------------------------------------
