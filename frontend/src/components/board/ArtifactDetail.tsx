@@ -964,7 +964,7 @@ export function ArtifactDetail({
       {/* TLDR section - click to edit */}
       <div
         className={cn(
-          "px-3 py-3 border-b border-border",
+          "px-3 py-3",
           !isEditing && !isViewingHistory && !isCreateMode && "cursor-text hover:bg-secondary/30"
         )}
         onClick={!isEditing && !isViewingHistory && !isCreateMode ? startEditing : undefined}
