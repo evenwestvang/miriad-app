@@ -965,7 +965,7 @@ export function ArtifactDetail({
                 value={editTldr}
                 onChange={(e) => setEditTldr(e.target.value)}
                 placeholder="Brief summary..."
-                className="w-full px-0 py-1 text-base bg-transparent border-0 border-b border-border focus:outline-none focus:border-primary transition-colors resize-none"
+                className="w-full px-0 py-1 text-base bg-transparent border-0 focus:outline-none transition-colors resize-none"
                 rows={2}
                 onClick={(e) => e.stopPropagation()}
               />
