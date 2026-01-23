@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, X, Upload, FileText, CheckSquare, GitBranch, Code, ChevronDown, Server, Bot, Target, BookOpen, Library, Plug2, KeyRound } from 'lucide-react'
+import { Plus, X, Upload, FileText, CheckSquare, GitBranch, Code, ChevronDown, Server, Bot, Target, BookOpen, Library, Plug2, KeyRound, Filter } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { ArtifactType } from '../../types/artifact'
 
@@ -23,9 +23,23 @@ interface BoardHeaderProps {
   onUploadClick: () => void
   onClose: () => void
   canCreate?: boolean
+  /** Whether the filter bar is visible */
+  filterVisible?: boolean
+  /** Callback to toggle filter visibility */
+  onFilterToggle?: () => void
+  /** Whether there's an active filter (to highlight the filter icon) */
+  hasActiveFilter?: boolean
 }
 
-export function BoardHeader({ onCreateClick, onUploadClick, onClose, canCreate = true }: BoardHeaderProps) {
+export function BoardHeader({
+  onCreateClick,
+  onUploadClick,
+  onClose,
+  canCreate = true,
+  filterVisible,
+  onFilterToggle,
+  hasActiveFilter,
+}: BoardHeaderProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -99,23 +113,38 @@ export function BoardHeader({ onCreateClick, onUploadClick, onClose, canCreate =
                   </button>
                 )
               })}
+              {/* Divider */}
+              <div className="border-t border-border my-1" />
+              {/* Upload option */}
+              <button
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-base text-foreground hover:bg-secondary/50 transition-colors"
+                onClick={() => {
+                  setDropdownOpen(false)
+                  onUploadClick()
+                }}
+              >
+                <Upload className="w-4 h-4 text-muted-foreground" />
+                Upload File
+              </button>
             </div>
           )}
         </div>
 
-        <button
-          className={cn(
-            "p-1.5 rounded transition-colors",
-            canCreate
-              ? "hover:bg-secondary/50"
-              : "opacity-50 cursor-not-allowed"
-          )}
-          onClick={canCreate ? onUploadClick : undefined}
-          disabled={!canCreate}
-          title={canCreate ? "Upload file" : "Select a channel first"}
-        >
-          <Upload className="w-4 h-4 text-muted-foreground" />
-        </button>
+        {/* Filter toggle button */}
+        {onFilterToggle && (
+          <button
+            className={cn(
+              "p-1.5 rounded transition-colors",
+              hasActiveFilter
+                ? "text-primary"
+                : "text-muted-foreground hover:bg-secondary/50"
+            )}
+            onClick={onFilterToggle}
+            title={filterVisible ? "Hide filter (Esc)" : "Filter artifacts (/ or ⌘K)"}
+          >
+            <Filter className="w-4 h-4" />
+          </button>
+        )}
         <button
           className="p-1.5 rounded hover:bg-secondary/50 transition-colors"
           onClick={onClose}

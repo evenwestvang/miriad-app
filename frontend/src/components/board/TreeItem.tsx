@@ -2,6 +2,7 @@ import { useRef, useCallback } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { getArtifactIcon } from '../../lib/artifact-icons'
+import { StatusIndicator } from './StatusIndicator'
 import type { ArtifactType, ArtifactStatus } from '../../types/artifact'
 
 export type DropZone = 'above' | 'on' | 'below' | null
@@ -34,16 +35,6 @@ interface TreeItemProps {
   isInvalidDropTarget?: boolean
 }
 
-// Status indicators for tasks - matches PowPow colors
-const STATUS_INDICATORS: Record<string, { icon: string; className: string }> = {
-  draft: { icon: '○', className: 'text-yellow-500' },
-  published: { icon: '●', className: 'text-green-500' },
-  archived: { icon: '◌', className: 'text-muted-foreground' },
-  pending: { icon: '○', className: 'text-yellow-500' },
-  in_progress: { icon: '◉', className: 'text-blue-500' },
-  done: { icon: '✓', className: 'text-green-500' },
-  blocked: { icon: '⊘', className: 'text-red-500' },
-}
 
 export function TreeItem({
   slug,
@@ -74,7 +65,6 @@ export function TreeItem({
 
   // Show status indicator for tasks, and for other types when not 'published'
   const showStatus = type === 'task' || (status && status !== 'published')
-  const statusIndicator = showStatus ? STATUS_INDICATORS[status] : null
 
   const isDragging = draggedSlug === slug
   const isDragActive = draggedSlug !== null
@@ -192,17 +182,13 @@ export function TreeItem({
       {/* Type icon */}
       <Icon className="w-4 h-4 text-[var(--cast-text-subtle)] flex-shrink-0" />
 
-      {/* Name */}
-      <span className="text-base truncate flex-1 text-[var(--cast-text-secondary)]">
-        {title || slug}
-      </span>
-
-      {/* Status indicator for tasks */}
-      {statusIndicator && (
-        <span className={cn("text-base flex-shrink-0", statusIndicator.className)}>
-          {statusIndicator.icon}
+      {/* Name with status indicator */}
+      <span className="flex items-center gap-1.5 min-w-0 flex-1">
+        <span className="text-base truncate text-[var(--cast-text-secondary)]">
+          {title || slug}
         </span>
-      )}
+        {showStatus && <StatusIndicator status={status} />}
+      </span>
     </div>
   )
 }
