@@ -254,6 +254,22 @@ export function ArtifactDetail({
   // Content textarea ref for focus management
   const contentTextareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // Auto-resize content textarea to fit content (max 70vh)
+  useEffect(() => {
+    const textarea = contentTextareaRef.current
+    if (!textarea || !isEditing) return
+
+    const resize = () => {
+      textarea.style.height = 'auto'
+      const maxHeight = window.innerHeight * 0.7
+      textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`
+    }
+
+    resize()
+    textarea.addEventListener('input', resize)
+    return () => textarea.removeEventListener('input', resize)
+  }, [isEditing, editContent])
+
   // Unsaved changes prompt state
   const [showUnsavedPrompt, setShowUnsavedPrompt] = useState(false)
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null)
@@ -1089,17 +1105,18 @@ export function ArtifactDetail({
             <span className="text-base text-muted-foreground">Loading version...</span>
           </div>
         ) : isEditing ? (
-          <div className="h-full px-3 py-3 flex flex-col">
+          <div className="px-3 py-3">
             <textarea
               ref={contentTextareaRef}
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
               placeholder={isCodeArtifact ? 'Code...' : 'Content (optional)...'}
               className={cn(
-                "flex-1 w-full px-0 py-1 text-base bg-transparent border-0 border-b border-border",
-                "focus:outline-none focus:border-primary transition-colors resize-none",
+                "w-full px-0 py-1 text-base bg-transparent border-0 border-b border-border",
+                "focus:outline-none focus:border-primary transition-colors resize-none overflow-y-auto",
                 isCodeArtifact && "font-mono"
               )}
+              style={{ maxHeight: '70vh' }}
             />
           </div>
         ) : isInteractiveApp ? (
