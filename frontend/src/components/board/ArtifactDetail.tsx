@@ -1206,9 +1206,9 @@ export function ArtifactDetail({
 
       {/* Sticky bottom bar with Cancel/Save - edit mode only */}
       {isEditing && (
-        <div className="sticky bottom-0 px-3 py-3 border-t border-border bg-background flex items-center justify-end gap-2">
+        <div className="sticky bottom-0 px-3 py-3 border-t-2 border-border bg-secondary/50 flex items-center justify-end gap-2">
           <button
-            className="px-3 py-1.5 text-base text-muted-foreground hover:text-foreground transition-colors"
+            className="px-3 py-1.5 text-base text-foreground/70 hover:text-foreground transition-colors"
             onClick={cancelEditing}
             disabled={saving}
           >
