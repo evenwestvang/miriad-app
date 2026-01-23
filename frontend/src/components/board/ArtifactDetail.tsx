@@ -741,32 +741,9 @@ export function ArtifactDetail({
           )}
         </div>
 
-        {/* Action icons (right) */}
+        {/* Action icons (right) - only shown when not editing */}
         <div className="flex items-center gap-1 flex-shrink-0">
-          {isEditing ? (
-            <>
-              <button
-                className="px-2 py-1 text-base text-muted-foreground hover:text-foreground transition-colors"
-                onClick={cancelEditing}
-                disabled={saving}
-              >
-                Cancel
-              </button>
-              <button
-                className={cn(
-                  "flex items-center gap-1 px-2 py-1 text-base rounded transition-colors",
-                  hasChanges && !saving
-                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                    : "bg-secondary text-muted-foreground cursor-not-allowed"
-                )}
-                onClick={saveChanges}
-                disabled={!hasChanges || saving}
-              >
-                <Save className="w-3 h-3" />
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-            </>
-          ) : !isCreateMode ? (
+          {!isEditing && !isCreateMode ? (
             <>
               {/* Copy content - direct icon */}
               {!isAsset && (
@@ -972,11 +949,6 @@ export function ArtifactDetail({
             )}
             onClick={!isEditing && !isViewingHistory && !isCreateMode ? startEditing : undefined}
           >
-            {isEditing && (
-              <label className="block text-base font-medium text-foreground mb-1">
-                Summary {isCreateMode && <span className="text-destructive">*</span>}
-              </label>
-            )}
             {isEditing ? (
               <textarea
                 value={editTldr}
@@ -1107,7 +1079,6 @@ export function ArtifactDetail({
           </div>
         ) : isEditing ? (
           <div className="h-full px-3 py-3 flex flex-col">
-            <label className="block text-base font-medium text-foreground mb-1">Content</label>
             <textarea
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
@@ -1195,6 +1166,32 @@ export function ArtifactDetail({
           {(artifact!.labels?.length ?? 0) > 0 && (
             <div>Labels: {artifact!.labels?.join(', ')}</div>
           )}
+        </div>
+      )}
+
+      {/* Sticky bottom bar with Cancel/Save - edit mode only */}
+      {isEditing && (
+        <div className="sticky bottom-0 px-3 py-3 border-t border-border bg-background flex items-center justify-end gap-2">
+          <button
+            className="px-3 py-1.5 text-base text-muted-foreground hover:text-foreground transition-colors"
+            onClick={cancelEditing}
+            disabled={saving}
+          >
+            Cancel
+          </button>
+          <button
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-base rounded transition-colors",
+              hasChanges && !saving
+                ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "bg-secondary text-muted-foreground cursor-not-allowed"
+            )}
+            onClick={saveChanges}
+            disabled={!hasChanges || saving}
+          >
+            <Save className="w-3.5 h-3.5" />
+            {saving ? 'Saving...' : 'Save'}
+          </button>
         </div>
       )}
     </div>
