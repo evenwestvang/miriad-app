@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
-import { Save, AlertTriangle, Copy, Check, ArrowLeft, ChevronDown, History, RotateCcw, Archive, MoreHorizontal } from 'lucide-react'
+import { Save, AlertTriangle, Copy, Check, ArrowLeft, History, RotateCcw, Archive, MoreHorizontal } from 'lucide-react'
 import Markdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -1244,13 +1244,12 @@ function StatusDropdown({
         onClick={() => !disabled && setOpen(!open)}
         disabled={disabled}
         className={cn(
-          "flex items-center gap-1 text-base transition-colors",
+          "text-base transition-colors",
           getStatusColor(status),
           disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:opacity-70"
         )}
       >
-        <span>{formatStatus(status)}</span>
-        {!disabled && <ChevronDown className="w-3 h-3" />}
+        {formatStatus(status)}
       </button>
 
       {/* Dropdown menu */}
