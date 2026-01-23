@@ -251,6 +251,9 @@ export function ArtifactDetail({
   // Overflow menu state
   const [overflowOpen, setOverflowOpen] = useState(false)
 
+  // Content textarea ref for focus management
+  const contentTextareaRef = useRef<HTMLTextAreaElement>(null)
+
   // Unsaved changes prompt state
   const [showUnsavedPrompt, setShowUnsavedPrompt] = useState(false)
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null)
@@ -368,7 +371,8 @@ export function ArtifactDetail({
   const statusOptions = currentType === 'task' ? TASK_STATUSES : DOC_STATUSES
 
   // Enter edit mode (for existing artifacts only)
-  const startEditing = useCallback(() => {
+  // If focusContent is true, focus the content textarea after entering edit mode
+  const startEditing = useCallback((focusContent = false) => {
     if (isCreateMode || !artifact) return
     setEditTitle(artifact.title || '')
     setEditTldr(artifact.tldr)
@@ -378,6 +382,13 @@ export function ArtifactDetail({
     setIsEditing(true)
     setError(null)
     setConflict(null)
+
+    // Focus content textarea after state update if requested
+    if (focusContent) {
+      setTimeout(() => {
+        contentTextareaRef.current?.focus()
+      }, 0)
+    }
   }, [artifact, isCreateMode])
 
   // Cancel editing (or cancel create)
@@ -733,7 +744,7 @@ export function ArtifactDetail({
                 "font-semibold text-base text-foreground truncate",
                 !isViewingHistory && "cursor-text hover:bg-secondary/30 px-1 -mx-1 rounded"
               )}
-              onClick={!isViewingHistory ? startEditing : undefined}
+              onClick={!isViewingHistory ? () => startEditing() : undefined}
             >
               {/* Show title if present, otherwise slug as fallback */}
               {artifact!.title || artifact!.slug}
@@ -947,7 +958,7 @@ export function ArtifactDetail({
               "flex-1 min-w-0",
               !isEditing && !isViewingHistory && !isCreateMode && "cursor-text hover:bg-secondary/50 -mx-1 px-1 rounded"
             )}
-            onClick={!isEditing && !isViewingHistory && !isCreateMode ? startEditing : undefined}
+            onClick={!isEditing && !isViewingHistory && !isCreateMode ? () => startEditing() : undefined}
           >
             {isEditing ? (
               <textarea
@@ -1080,6 +1091,7 @@ export function ArtifactDetail({
         ) : isEditing ? (
           <div className="h-full px-3 py-3 flex flex-col">
             <textarea
+              ref={contentTextareaRef}
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
               placeholder={isCodeArtifact ? 'Code...' : 'Content (optional)...'}
@@ -1108,14 +1120,14 @@ export function ArtifactDetail({
         ) : isCodeArtifact ? (
           <div
             className={cn(!isViewingHistory && "cursor-text")}
-            onClick={!isViewingHistory ? startEditing : undefined}
+            onClick={!isViewingHistory ? () => startEditing(true) : undefined}
           >
             <CodeContent content={isViewingHistory ? versionData!.content : artifact!.content} language={codeLanguage} isDarkMode={isDarkMode} />
           </div>
         ) : (
           <div
             className={cn("p-3", !isViewingHistory && "cursor-text")}
-            onClick={!isViewingHistory ? startEditing : undefined}
+            onClick={!isViewingHistory ? () => startEditing(true) : undefined}
           >
             <ArtifactContent
               content={isViewingHistory ? versionData!.content : artifact!.content}
@@ -1131,18 +1143,21 @@ export function ArtifactDetail({
       {isEditing && (
         <div className="px-3 py-3 border-t border-border">
           <label className="block text-base font-medium text-foreground mb-1">Parent</label>
-          <select
-            value={editParentSlug}
-            onChange={(e) => setEditParentSlug(e.target.value)}
-            className="w-full px-0 py-1 text-base bg-transparent border-0 border-b border-border focus:outline-none focus:border-primary transition-colors appearance-none cursor-pointer"
-          >
-            <option value="">-</option>
-            {parentOptions.map((opt) => (
-              <option key={opt.slug} value={opt.slug}>
-                {opt.path}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              value={editParentSlug}
+              onChange={(e) => setEditParentSlug(e.target.value)}
+              className="w-full px-3 py-2 text-base bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors cursor-pointer appearance-none"
+            >
+              <option value="">(none)</option>
+              {parentOptions.map((opt) => (
+                <option key={opt.slug} value={opt.slug}>
+                  {opt.path}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          </div>
         </div>
       )}
 
