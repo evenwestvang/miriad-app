@@ -735,13 +735,8 @@ export function ArtifactDetail({
               )}
               onClick={!isViewingHistory ? startEditing : undefined}
             >
+              {/* Show title if present, otherwise slug as fallback */}
               {artifact!.title || artifact!.slug}
-            </span>
-          )}
-          {/* Slug (when different from title) - view mode only */}
-          {!isCreateMode && !isEditing && artifact!.title && artifact!.title !== artifact!.slug && (
-            <span className="text-base text-muted-foreground truncate flex-shrink-0">
-              {artifact!.slug}
             </span>
           )}
         </div>
@@ -1178,6 +1173,8 @@ export function ArtifactDetail({
       {/* Metadata footer - view mode only (not create mode) */}
       {!isEditing && !isCreateMode && (
         <div className="px-3 py-2 border-t border-border text-base text-muted-foreground space-y-1">
+          {/* Slug (immutable identifier) */}
+          <div className="font-mono text-muted-foreground/70">{artifact!.slug}</div>
           {/* Created/Updated info */}
           <div className="flex flex-wrap gap-x-3 gap-y-0.5">
             <span>Created by <span className="text-foreground">@{artifact!.createdBy}</span> · {formatRelativeTime(artifact!.createdAt)}</span>
