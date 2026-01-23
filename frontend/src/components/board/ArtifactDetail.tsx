@@ -995,18 +995,15 @@ export function ArtifactDetail({
         )}
       </div>
 
-      {/* Status field - inline in body, subtle text+chevron style */}
+      {/* Status field - flush right, text tag style */}
       {!isViewingHistory && (
-        <div className="px-3 py-2 border-b border-border">
-          <div className="flex items-center gap-2">
-            <span className="text-base text-muted-foreground">Status</span>
-            <StatusDropdown
-              status={isCreateMode ? DEFAULT_STATUS[editType] : (isEditing ? editStatus : artifact!.status)}
-              options={statusOptions}
-              onChange={isCreateMode ? () => {} : (isEditing ? setEditStatus : handleStatusChange)}
-              disabled={saving || isCreateMode}
-            />
-          </div>
+        <div className="px-3 py-2 border-b border-border flex justify-end">
+          <StatusDropdown
+            status={isCreateMode ? DEFAULT_STATUS[editType] : (isEditing ? editStatus : artifact!.status)}
+            options={statusOptions}
+            onChange={isCreateMode ? () => {} : (isEditing ? setEditStatus : handleStatusChange)}
+            disabled={saving || isCreateMode}
+          />
         </div>
       )}
 
@@ -1207,8 +1204,8 @@ export function ArtifactDetail({
 // =============================================================================
 
 /**
- * Status dropdown - subtle text + chevron style, no button background.
- * Menu shows status dot indicators for visual reference.
+ * Status dropdown - text tag style [draft]/[active]/[archived].
+ * No colored dots, just subtle text treatment.
  */
 function StatusDropdown({
   status,
@@ -1223,16 +1220,23 @@ function StatusDropdown({
 }) {
   const [open, setOpen] = useState(false)
 
-  // Status dot colors (just the background color)
-  const STATUS_DOT_COLORS: Record<string, string> = {
-    draft: 'bg-gray-400',
-    active: 'bg-green-500',
-    archived: 'bg-gray-400',
-    pending: 'bg-gray-400',
-    in_progress: 'bg-blue-500',
-    done: 'bg-green-500',
-    blocked: 'bg-red-500',
+  // Text colors for status tags
+  // draft: light grey, active: white/foreground, archived: darker grey
+  // task statuses: pending=grey, in_progress=blue, done=green, blocked=red
+  const getStatusColor = (s: ArtifactStatus) => {
+    switch (s) {
+      case 'draft': return 'text-gray-400'
+      case 'active': return 'text-foreground'
+      case 'archived': return 'text-gray-500'
+      case 'pending': return 'text-gray-400'
+      case 'in_progress': return 'text-blue-400'
+      case 'done': return 'text-green-400'
+      case 'blocked': return 'text-red-400'
+      default: return 'text-muted-foreground'
+    }
   }
+
+  const formatStatus = (s: ArtifactStatus) => `[${s.replace('_', ' ')}]`
 
   return (
     <div className="relative">
@@ -1240,13 +1244,13 @@ function StatusDropdown({
         onClick={() => !disabled && setOpen(!open)}
         disabled={disabled}
         className={cn(
-          "flex items-center gap-1 text-base text-foreground transition-colors",
-          disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:text-muted-foreground"
+          "flex items-center gap-1 text-base transition-colors",
+          getStatusColor(status),
+          disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:opacity-70"
         )}
       >
-        <span className={cn("w-2 h-2 rounded-full flex-shrink-0", STATUS_DOT_COLORS[status] || 'bg-gray-400')} />
-        <span>{status.replace('_', ' ')}</span>
-        {!disabled && <ChevronDown className="w-3 h-3 text-muted-foreground" />}
+        <span>{formatStatus(status)}</span>
+        {!disabled && <ChevronDown className="w-3 h-3" />}
       </button>
 
       {/* Dropdown menu */}
@@ -1258,7 +1262,7 @@ function StatusDropdown({
             onClick={() => setOpen(false)}
           />
           {/* Menu */}
-          <div className="absolute left-0 top-full mt-1 z-20 bg-popover border border-border rounded shadow-lg py-1 min-w-[120px]">
+          <div className="absolute right-0 top-full mt-1 z-20 bg-popover border border-border rounded shadow-lg py-1 min-w-[120px]">
             {options.map((opt) => (
               <button
                 key={opt}
@@ -1267,12 +1271,12 @@ function StatusDropdown({
                   setOpen(false)
                 }}
                 className={cn(
-                  "w-full px-3 py-1.5 text-base text-left hover:bg-secondary transition-colors flex items-center gap-2",
+                  "w-full px-3 py-1.5 text-base text-left hover:bg-secondary transition-colors",
+                  getStatusColor(opt),
                   opt === status && "bg-secondary/50"
                 )}
               >
-                <span className={cn("w-2 h-2 rounded-full flex-shrink-0", STATUS_DOT_COLORS[opt] || 'bg-gray-400')} />
-                <span>{opt.replace('_', ' ')}</span>
+                {formatStatus(opt)}
               </button>
             ))}
           </div>
