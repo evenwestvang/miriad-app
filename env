@@ -1,0 +1,14 @@
+PLANETSCALE_URL=postgres://pscale_api_nmney6igy1w2.pwp8x47bv2br:pscale_pw_MdmptCQgW99vHwo4MILzUqRPdfn5iNAk@us-east-2.pg.psdb.cloud:6432/postgres
+PORT=3233
+SPACE_ID=default-space
+AGENT_IMAGE=claude-code:local
+JWT_SECRET=4hbEAhwKiswmRRX9D0gekpaXCX0BbABNVBeBYFRqfy4=
+PORT=3234
+AUTH_MODE=dev
+SECRET_KEY=rNhBROMTh75mKACT3ol6nb+rSK3NyIohiWfX3nhi+gU=
+GITHUB_CLIENT_ID=Ov23liznVxcSUMFSCFYT
+GITHUB_CLIENT_SECRET=badba6e4871a1995cec457d4d273db7432327cbd
+CAST_API_URL=http://localhost:3234
+TUNNEL_SERVER_URL=https://tunnel.staging.cast-stack.site
+MIRIAD_RUNTIME_MODE=docker
+MIRIAD_CLOUD_IMAGE=miriad-cloud

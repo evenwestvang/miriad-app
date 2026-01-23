@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
-import { Save, AlertTriangle, Copy, Check, ArrowLeft, History, RotateCcw, Archive, MoreHorizontal } from 'lucide-react'
+import { Save, AlertTriangle, Copy, Check, ArrowLeft, History, RotateCcw, Archive, MoreHorizontal, ChevronDown } from 'lucide-react'
 import Markdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -1232,8 +1232,9 @@ function StatusDropdown({
     }
   }
 
-  // Plain text, no brackets
-  const formatStatus = (s: ArtifactStatus) => s.replace('_', ' ')
+  // Plain text, capitalized
+  const formatStatus = (s: ArtifactStatus) =>
+    s.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
 
   return (
     <div className="relative">
@@ -1241,12 +1242,13 @@ function StatusDropdown({
         onClick={() => !disabled && setOpen(!open)}
         disabled={disabled}
         className={cn(
-          "text-base transition-colors",
+          "text-base transition-colors flex items-center gap-1",
           getStatusColor(status),
           disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:opacity-70"
         )}
       >
         {formatStatus(status)}
+        {!disabled && <ChevronDown className="w-3 h-3" />}
       </button>
 
       {/* Dropdown menu */}
