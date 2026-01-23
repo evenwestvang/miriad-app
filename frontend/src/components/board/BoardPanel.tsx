@@ -6,7 +6,7 @@ import { apiFetch } from '../../lib/api'
 import { BoardHeader } from './BoardHeader'
 import { ArtifactTree } from './ArtifactTree'
 import { ArtifactDetail } from './ArtifactDetail'
-import { ArtifactCreate } from './ArtifactCreate'
+// ArtifactCreate is deprecated - use ArtifactDetail with artifact={undefined} for create mode
 import { AssetUpload, type Asset } from './AssetUpload'
 import { FileDropZone } from './FileDropZone'
 import { TreeSearch } from './TreeSearch'
@@ -278,7 +278,7 @@ export function BoardPanel({
 
       const data = await response.json()
       // data.items contains { slug, previousStatus } for each archived item
-      setArchivedItems(data.items || [{ slug: selectedSlug, previousStatus: 'published' }])
+      setArchivedItems(data.items || [{ slug: selectedSlug, previousStatus: 'active' }])
 
       // Clear selection and go back to tree
       setSelectedSlug(null)
@@ -327,7 +327,7 @@ export function BoardPanel({
     setArchivedItems([]) // Clear archive toast on creation
     // Refetch tree to include new artifact
     if (channelId) {
-      apiFetch(`${apiHost}/channels/${channelId}/artifacts?pattern=/**`)
+      apiFetch(`${apiHost}/channels/${channelId}/artifacts/tree?pattern=/**&format=json`)
         .then(res => res.json())
         .then(data => setTree(data.tree || []))
         .catch(console.error)
@@ -339,7 +339,7 @@ export function BoardPanel({
     setSelectedArtifactData(artifact)
     // Refetch tree in case status/parent changed
     if (channelId) {
-      apiFetch(`${apiHost}/channels/${channelId}/artifacts?pattern=/**`)
+      apiFetch(`${apiHost}/channels/${channelId}/artifacts/tree?pattern=/**&format=json`)
         .then(res => res.json())
         .then(data => setTree(data.tree || []))
         .catch(console.error)
@@ -352,7 +352,7 @@ export function BoardPanel({
     setSelectedSlug(asset.slug)
     // Refetch tree to include new asset
     if (channelId) {
-      apiFetch(`${apiHost}/channels/${channelId}/artifacts?pattern=/**`)
+      apiFetch(`${apiHost}/channels/${channelId}/artifacts/tree?pattern=/**&format=json`)
         .then(res => res.json())
         .then(data => setTree(data.tree || []))
         .catch(console.error)
@@ -557,8 +557,8 @@ export function BoardPanel({
         <div className="absolute left-0 top-0 bottom-0 w-px bg-transparent group-hover:bg-primary/30 transition-colors" />
       </div>
 
-      {/* Hide BoardHeader when viewing artifact detail (iOS-style takeover) */}
-      {!selectedArtifactData && (
+      {/* Hide BoardHeader when viewing artifact detail or creating (iOS-style takeover) */}
+      {!selectedArtifactData && !isCreating && (
         <BoardHeader
           onCreateClick={(type) => {
             setCreateType(type)
@@ -602,13 +602,16 @@ export function BoardPanel({
                 onCancel={() => setIsUploading(false)}
               />
             ) : isCreating ? (
-              <ArtifactCreate
+              <ArtifactDetail
+                artifact={undefined}
                 channelId={channelId!}
                 apiHost={apiHost}
+                spaceId={spaceId}
                 tree={tree}
                 initialType={createType}
-                onSuccess={handleCreateSuccess}
-                onCancel={() => setIsCreating(false)}
+                onUpdate={handleCreateSuccess}
+                onLinkClick={handleSelect}
+                onBack={() => setIsCreating(false)}
               />
             ) : selectedArtifactData ? (
               <ArtifactDetail

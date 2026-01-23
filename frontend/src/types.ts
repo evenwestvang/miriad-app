@@ -244,15 +244,20 @@ export type ArtifactType =
 
 /**
  * ⚠️  SYNC WARNING: Keep aligned with ArtifactStatus in backend/packages/core/src/types.ts
+ *
+ * Status model:
+ * - Tasks: pending → in_progress → done / blocked
+ * - Everything else: draft / active / archived
  */
 export type ArtifactStatus =
   | 'draft'
-  | 'published'
+  | 'active'
   | 'archived'
   | 'pending'
   | 'in_progress'
   | 'done'
   | 'blocked'
+  | 'published' // Legacy - use 'active' for new artifacts
 
 // Agent lifecycle states
 export type AgentState =

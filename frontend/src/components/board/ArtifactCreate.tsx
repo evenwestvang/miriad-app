@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { cn } from '../../lib/utils'
 import { apiFetch } from '../../lib/api'
 import type { Artifact, ArtifactType, ArtifactStatus, ArtifactTreeNode } from '../../types/artifact'
@@ -34,24 +34,46 @@ const ARTIFACT_TYPES: { value: ArtifactType; label: string }[] = [
 ]
 
 // Default status based on type
+// Human-created artifacts default to 'active', tasks to 'pending'
 const DEFAULT_STATUS: Record<ArtifactType, ArtifactStatus> = {
-  doc: 'draft',
-  folder: 'published',
+  doc: 'active',
+  folder: 'active',
   task: 'pending',
-  decision: 'draft',
-  code: 'draft',
-  knowledgebase: 'published',
-  asset: 'published',
-  'system.mcp': 'published',
-  'system.agent': 'published',
-  'system.environment': 'published',
-  'system.focus': 'published',
-  'system.playbook': 'published',
-  'system.app': 'published',
+  decision: 'active',
+  code: 'active',
+  knowledgebase: 'active',
+  asset: 'active',
+  'system.mcp': 'active',
+  'system.agent': 'active',
+  'system.environment': 'active',
+  'system.focus': 'active',
+  'system.playbook': 'active',
+  'system.app': 'active',
 }
 
 // Slug validation regex
 const SLUG_REGEX = /^[a-z0-9-]+(\.[a-z0-9]+)*$/
+
+// Debounce delay for auto-generating slug from title (ms)
+const SLUG_DEBOUNCE_MS = 2000
+
+/**
+ * Convert a title to a slug:
+ * - Lowercase
+ * - Replace spaces with hyphens
+ * - Remove non-alphanumeric characters (except hyphens and dots)
+ * - Collapse multiple hyphens
+ * - Trim leading/trailing hyphens
+ */
+function titleToSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9.-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
 
 export function ArtifactCreate({
   channelId,
@@ -69,6 +91,10 @@ export function ArtifactCreate({
   const [content, setContent] = useState('')
   const [parentSlug, setParentSlug] = useState('')
 
+  // Track whether user has manually edited the slug (disables auto-generation)
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false)
+  const slugDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // Type-specific props state
   const [mcpProps, setMcpProps] = useState<McpProps>({ transport: 'stdio' })
   const [agentProps, setAgentProps] = useState<AgentProps>({ engine: 'claude' })
@@ -83,13 +109,46 @@ export function ArtifactCreate({
   const [error, setError] = useState<string | null>(null)
   const [slugError, setSlugError] = useState<string | null>(null)
 
+  // Debounced slug generation from title
+  useEffect(() => {
+    // Don't auto-generate if user has manually edited the slug
+    if (slugManuallyEdited) return
+
+    // Clear any pending debounce
+    if (slugDebounceRef.current) {
+      clearTimeout(slugDebounceRef.current)
+    }
+
+    // Don't generate if title is empty
+    if (!title.trim()) {
+      setSlug('')
+      return
+    }
+
+    // Debounce the slug generation
+    slugDebounceRef.current = setTimeout(() => {
+      const generatedSlug = titleToSlug(title)
+      if (generatedSlug) {
+        setSlug(generatedSlug)
+        setSlugError(null)
+      }
+    }, SLUG_DEBOUNCE_MS)
+
+    return () => {
+      if (slugDebounceRef.current) {
+        clearTimeout(slugDebounceRef.current)
+      }
+    }
+  }, [title, slugManuallyEdited])
+
   // Get available parent options
   const parentOptions = getParentOptions(tree)
 
-  // Validate slug on change
+  // Validate slug on change - marks as manually edited to disable auto-generation
   const handleSlugChange = (value: string) => {
     const normalized = value.toLowerCase().replace(/\s+/g, '-')
     setSlug(normalized)
+    setSlugManuallyEdited(true) // User is typing in slug field, disable auto-generation
 
     if (normalized && !SLUG_REGEX.test(normalized)) {
       setSlugError('Use lowercase letters, numbers, and hyphens only')
@@ -252,7 +311,9 @@ export function ArtifactCreate({
             <p className="text-base text-red-500 mt-1">{slugError}</p>
           ) : (
             <p className="text-base text-muted-foreground mt-1">
-              Lowercase, alphanumeric, hyphens (e.g., "api-spec" or "auth.test.ts")
+              {slugManuallyEdited
+                ? 'Lowercase, alphanumeric, hyphens (e.g., "api-spec" or "auth.test.ts")'
+                : 'Auto-generated from title, or type to set manually'}
             </p>
           )}
         </div>

@@ -63,8 +63,10 @@ export function TreeItem({
   const rowRef = useRef<HTMLDivElement>(null)
   const Icon = getArtifactIcon({ slug, type, status, contentType })
 
-  // Show status indicator for tasks, and for other types when not 'published'
-  const showStatus = type === 'task' || (status && status !== 'published')
+  // Show status indicator dot only for tasks (non-tasks use typography treatment)
+  const showStatusIndicator = type === 'task'
+  // Typography treatment for non-task statuses
+  const isDraft = type !== 'task' && status === 'draft'
 
   const isDragging = draggedSlug === slug
   const isDragActive = draggedSlug !== null
@@ -182,12 +184,17 @@ export function TreeItem({
       {/* Type icon */}
       <Icon className="w-4 h-4 text-[var(--cast-text-subtle)] flex-shrink-0" />
 
-      {/* Name with status indicator */}
+      {/* Name with status indicator (tasks) or typography treatment (non-tasks) */}
       <span className="flex items-center gap-1.5 min-w-0 flex-1">
-        <span className="text-base truncate text-[var(--cast-text-secondary)]">
+        <span className={cn(
+          "text-base truncate",
+          isDraft
+            ? "text-muted-foreground"
+            : "text-[var(--cast-text-secondary)]"
+        )}>
           {title || slug}
         </span>
-        {showStatus && <StatusIndicator status={status} />}
+        {showStatusIndicator && <StatusIndicator status={status} />}
       </span>
     </div>
   )
