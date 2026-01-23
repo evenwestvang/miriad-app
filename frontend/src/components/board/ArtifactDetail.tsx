@@ -961,33 +961,50 @@ export function ArtifactDetail({
         </div>
       )}
 
-      {/* TLDR section - click to edit */}
-      <div
-        className={cn(
-          "px-3 py-3",
-          !isEditing && !isViewingHistory && !isCreateMode && "cursor-text hover:bg-secondary/30"
-        )}
-        onClick={!isEditing && !isViewingHistory && !isCreateMode ? startEditing : undefined}
-      >
-        {isEditing && (
-          <label className="block text-base font-medium text-foreground mb-1">
-            Summary {isCreateMode && <span className="text-destructive">*</span>}
-          </label>
-        )}
-        {isEditing ? (
-          <textarea
-            value={editTldr}
-            onChange={(e) => setEditTldr(e.target.value)}
-            placeholder="Brief summary..."
-            className="w-full px-0 py-1 text-base bg-transparent border-0 border-b border-border focus:outline-none focus:border-primary transition-colors resize-none"
-            rows={2}
-            onClick={(e) => e.stopPropagation()}
-          />
-        ) : (
-          <p className="text-base text-muted-foreground">
-            {isViewingHistory ? versionData!.tldr : artifact!.tldr}
-          </p>
-        )}
+      {/* Meta area - TLDR + Status on subtle background */}
+      <div className="bg-secondary/30 px-3 py-3">
+        <div className="flex items-start gap-3">
+          {/* TLDR - click to edit */}
+          <div
+            className={cn(
+              "flex-1 min-w-0",
+              !isEditing && !isViewingHistory && !isCreateMode && "cursor-text hover:bg-secondary/50 -mx-1 px-1 rounded"
+            )}
+            onClick={!isEditing && !isViewingHistory && !isCreateMode ? startEditing : undefined}
+          >
+            {isEditing && (
+              <label className="block text-base font-medium text-foreground mb-1">
+                Summary {isCreateMode && <span className="text-destructive">*</span>}
+              </label>
+            )}
+            {isEditing ? (
+              <textarea
+                value={editTldr}
+                onChange={(e) => setEditTldr(e.target.value)}
+                placeholder="Brief summary..."
+                className="w-full px-0 py-1 text-base bg-transparent border-0 border-b border-border focus:outline-none focus:border-primary transition-colors resize-none"
+                rows={2}
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <p className="text-base text-muted-foreground">
+                {isViewingHistory ? versionData!.tldr : artifact!.tldr}
+              </p>
+            )}
+          </div>
+
+          {/* Status selector - right side */}
+          {!isViewingHistory && !isEditing && (
+            <div className="flex-shrink-0">
+              <StatusDropdown
+                status={isCreateMode ? DEFAULT_STATUS[editType] : artifact!.status}
+                options={statusOptions}
+                onChange={isCreateMode ? () => {} : handleStatusChange}
+                disabled={saving || isCreateMode}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Type-specific metadata (MCP props, Agent props, Focus props) - edit mode only */}
@@ -1083,18 +1100,7 @@ export function ArtifactDetail({
 
 
       {/* Content area */}
-      <div className={cn("flex-1 min-h-0 relative", isInteractiveApp && !isCreateMode ? "overflow-hidden flex flex-col" : "overflow-y-auto")}>
-        {/* Status - floating top right */}
-        {!isViewingHistory && !isEditing && (
-          <div className="absolute top-3 right-3 z-10">
-            <StatusDropdown
-              status={isCreateMode ? DEFAULT_STATUS[editType] : artifact!.status}
-              options={statusOptions}
-              onChange={isCreateMode ? () => {} : handleStatusChange}
-              disabled={saving || isCreateMode}
-            />
-          </div>
-        )}
+      <div className={cn("flex-1 min-h-0", isInteractiveApp && !isCreateMode ? "overflow-hidden flex flex-col" : "overflow-y-auto")}>
         {versionLoading ? (
           <div className="flex items-center justify-center h-20">
             <span className="text-base text-muted-foreground">Loading version...</span>
