@@ -702,7 +702,7 @@ export function ArtifactDetail({
         {onBack && (
           <button
             onClick={() => handleNavigate(onBack)}
-            className="text-primary hover:text-primary/80 transition-colors flex-shrink-0"
+            className="text-foreground hover:text-muted-foreground transition-colors flex-shrink-0"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -990,18 +990,6 @@ export function ArtifactDetail({
         )}
       </div>
 
-      {/* Status field - flush right, text tag style */}
-      {!isViewingHistory && (
-        <div className="px-3 py-2 border-b border-border flex justify-end">
-          <StatusDropdown
-            status={isCreateMode ? DEFAULT_STATUS[editType] : (isEditing ? editStatus : artifact!.status)}
-            options={statusOptions}
-            onChange={isCreateMode ? () => {} : (isEditing ? setEditStatus : handleStatusChange)}
-            disabled={saving || isCreateMode}
-          />
-        </div>
-      )}
-
       {/* Type-specific metadata (MCP props, Agent props, Focus props) - edit mode only */}
       {!isCreateMode && artifact!.type === 'system.mcp' && (
         <div className="px-3 py-3 border-b border-border">
@@ -1095,7 +1083,18 @@ export function ArtifactDetail({
 
 
       {/* Content area */}
-      <div className={cn("flex-1 min-h-0", isInteractiveApp && !isCreateMode ? "overflow-hidden flex flex-col" : "overflow-y-auto")}>
+      <div className={cn("flex-1 min-h-0 relative", isInteractiveApp && !isCreateMode ? "overflow-hidden flex flex-col" : "overflow-y-auto")}>
+        {/* Status - floating top right */}
+        {!isViewingHistory && !isEditing && (
+          <div className="absolute top-3 right-3 z-10">
+            <StatusDropdown
+              status={isCreateMode ? DEFAULT_STATUS[editType] : artifact!.status}
+              options={statusOptions}
+              onChange={isCreateMode ? () => {} : handleStatusChange}
+              disabled={saving || isCreateMode}
+            />
+          </div>
+        )}
         {versionLoading ? (
           <div className="flex items-center justify-center h-20">
             <span className="text-base text-muted-foreground">Loading version...</span>
@@ -1201,8 +1200,8 @@ export function ArtifactDetail({
 // =============================================================================
 
 /**
- * Status dropdown - text tag style [draft]/[active]/[archived].
- * No colored dots, just subtle text treatment.
+ * Status dropdown - plain text style (draft/active/archived).
+ * No brackets, no underline, just subtle text treatment.
  */
 function StatusDropdown({
   status,
@@ -1217,7 +1216,7 @@ function StatusDropdown({
 }) {
   const [open, setOpen] = useState(false)
 
-  // Text colors for status tags
+  // Text colors for status
   // draft: light grey, active: white/foreground, archived: darker grey
   // task statuses: pending=grey, in_progress=blue, done=green, blocked=red
   const getStatusColor = (s: ArtifactStatus) => {
@@ -1233,7 +1232,8 @@ function StatusDropdown({
     }
   }
 
-  const formatStatus = (s: ArtifactStatus) => `[${s.replace('_', ' ')}]`
+  // Plain text, no brackets
+  const formatStatus = (s: ArtifactStatus) => s.replace('_', ' ')
 
   return (
     <div className="relative">
