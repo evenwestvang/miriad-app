@@ -36,6 +36,7 @@ import {
 } from '../auth/container-middleware.js';
 import type { ConnectionManager } from '../websocket/index.js';
 import type { AgentInvoker, Message } from './messages.js';
+import { broadcastArtifactEvent } from './artifacts.js';
 
 // =============================================================================
 // Types
@@ -651,7 +652,7 @@ const toolHandlers: Record<string, ToolHandler> = {
   // Artifact Tools (fully implemented)
   // ---------------------------------------------------------------------------
 
-  async artifact_create(args, { storage, spaceId, channelId, callsign }) {
+  async artifact_create(args, { storage, spaceId, channelId, callsign, connectionManager }) {
     const { slug, type, tldr, content, title, parentSlug, status, assignees, labels, channel } = args as {
       slug: string;
       type: string;
@@ -686,6 +687,17 @@ const toolHandlers: Record<string, ToolHandler> = {
       labels,
       createdBy: callsign,
     });
+
+    // Broadcast artifact event for real-time updates
+    if (connectionManager) {
+      await broadcastArtifactEvent(connectionManager, targetChannelId, 'create', {
+        slug: artifact.slug,
+        type: artifact.type,
+        title: artifact.title,
+        tldr: artifact.tldr,
+        status: artifact.status,
+      });
+    }
 
     return JSON.stringify({
       slug: artifact.slug,
@@ -790,7 +802,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     return output || '(empty)';
   },
 
-  async artifact_update(args, { storage, spaceId, channelId, callsign }) {
+  async artifact_update(args, { storage, spaceId, channelId, callsign, connectionManager }) {
     const { slug, changes, channel } = args as {
       slug: string;
       changes: Array<{ field: string; oldValue: unknown; newValue: unknown }>;
@@ -818,6 +830,17 @@ const toolHandlers: Record<string, ToolHandler> = {
       throw new Error(`Conflict on field '${result.conflict?.field}': expected ${JSON.stringify(result.conflict?.expected)} but found ${JSON.stringify(result.conflict?.actual)}`);
     }
 
+    // Broadcast artifact event for real-time updates
+    if (connectionManager && result.artifact) {
+      await broadcastArtifactEvent(connectionManager, targetChannelId, 'update', {
+        slug: result.artifact.slug,
+        type: result.artifact.type,
+        title: result.artifact.title,
+        tldr: result.artifact.tldr,
+        status: result.artifact.status,
+      });
+    }
+
     return JSON.stringify({
       success: true,
       slug: result.artifact?.slug,
@@ -825,7 +848,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     }, null, 2);
   },
 
-  async artifact_edit(args, { storage, spaceId, channelId, callsign }) {
+  async artifact_edit(args, { storage, spaceId, channelId, callsign, connectionManager }) {
     const { slug, old_string, new_string, channel } = args as {
       slug: string;
       old_string: string;
@@ -847,6 +870,17 @@ const toolHandlers: Record<string, ToolHandler> = {
       updatedBy: callsign,
     });
 
+    // Broadcast artifact event for real-time updates
+    if (connectionManager) {
+      await broadcastArtifactEvent(connectionManager, targetChannelId, 'update', {
+        slug: artifact.slug,
+        type: artifact.type,
+        title: artifact.title,
+        tldr: artifact.tldr,
+        status: artifact.status,
+      });
+    }
+
     return JSON.stringify({
       success: true,
       slug: artifact.slug,
@@ -854,7 +888,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     }, null, 2);
   },
 
-  async artifact_archive(args, { storage, spaceId, channelId, callsign }) {
+  async artifact_archive(args, { storage, spaceId, channelId, callsign, connectionManager }) {
     const { slug, channel } = args as { slug: string; channel?: string };
 
     // Resolve channel name to ID
@@ -867,6 +901,17 @@ const toolHandlers: Record<string, ToolHandler> = {
 
     const artifact = await storage.archiveArtifact(targetChannelId, slug, callsign);
 
+    // Broadcast artifact event for real-time updates
+    if (connectionManager) {
+      await broadcastArtifactEvent(connectionManager, targetChannelId, 'archive', {
+        slug: artifact.slug,
+        type: artifact.type,
+        title: artifact.title,
+        tldr: artifact.tldr,
+        status: artifact.status,
+      });
+    }
+
     return JSON.stringify({
       archived: true,
       slug: artifact.slug,
@@ -874,7 +919,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     }, null, 2);
   },
 
-  async artifact_copy(args, { storage, spaceId, channelId, callsign }) {
+  async artifact_copy(args, { storage, spaceId, channelId, callsign, connectionManager }) {
     const { sourceChannel, slug, targetChannel, newSlug, parentSlug } = args as {
       sourceChannel: string;
       slug: string;
@@ -917,6 +962,17 @@ const toolHandlers: Record<string, ToolHandler> = {
       props: source.props,
       createdBy: callsign,
     });
+
+    // Broadcast artifact event for real-time updates (in target channel)
+    if (connectionManager) {
+      await broadcastArtifactEvent(connectionManager, targetChannelId, 'create', {
+        slug: artifact.slug,
+        type: artifact.type,
+        title: artifact.title,
+        tldr: artifact.tldr,
+        status: artifact.status,
+      });
+    }
 
     return JSON.stringify({
       copied: true,
