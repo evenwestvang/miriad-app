@@ -68,6 +68,7 @@ export function BoardPanel({
   // Filter state (with debouncing)
   const [filterInput, setFilterInput] = useState('')
   const [filterText, setFilterText] = useState('')
+  const [filterVisible, setFilterVisible] = useState(false)
 
   // Archive toast state
   const [archivedItems, setArchivedItems] = useState<ArchivedItem[]>([])
@@ -84,7 +85,37 @@ export function BoardPanel({
   useEffect(() => {
     setFilterInput('')
     setFilterText('')
+    setFilterVisible(false)
   }, [channelId])
+
+  // Keyboard shortcuts for filter visibility
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger when typing in inputs (unless Escape)
+      const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as Element)?.tagName)
+
+      // "/" to show filter (when not in an input)
+      if (e.key === '/' && !isInput) {
+        e.preventDefault()
+        setFilterVisible(true)
+      }
+      // Cmd/Ctrl+K to show filter
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setFilterVisible(true)
+      }
+      // Escape to hide filter (if visible and empty)
+      if (e.key === 'Escape' && filterVisible && !filterInput) {
+        e.preventDefault()
+        setFilterVisible(false)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, filterVisible, filterInput])
 
   // Unified selection handler
   const setSelectedSlug = useCallback((slug: string | null) => {
@@ -217,6 +248,11 @@ export function BoardPanel({
   const handleClearFilter = useCallback(() => {
     setFilterInput('')
     setFilterText('')
+  }, [])
+
+  // Toggle filter visibility
+  const handleFilterToggle = useCallback(() => {
+    setFilterVisible(prev => !prev)
   }, [])
 
   // Dismiss archive toast (called on user actions like select, create, close)
@@ -521,22 +557,28 @@ export function BoardPanel({
         <div className="absolute left-0 top-0 bottom-0 w-px bg-transparent group-hover:bg-primary/30 transition-colors" />
       </div>
 
-      <BoardHeader
-        onCreateClick={(type) => {
-          setCreateType(type)
-          setIsCreating(true)
-          setArchivedItems([]) // Clear archive toast on create
-        }}
-        onUploadClick={() => {
-          setIsUploading(true)
-          setArchivedItems([]) // Clear archive toast on upload
-        }}
-        onClose={() => {
-          setArchivedItems([]) // Clear archive toast on close
-          onClose()
-        }}
-        canCreate={!!channelId}
-      />
+      {/* Hide BoardHeader when viewing artifact detail (iOS-style takeover) */}
+      {!selectedArtifactData && (
+        <BoardHeader
+          onCreateClick={(type) => {
+            setCreateType(type)
+            setIsCreating(true)
+            setArchivedItems([]) // Clear archive toast on create
+          }}
+          onUploadClick={() => {
+            setIsUploading(true)
+            setArchivedItems([]) // Clear archive toast on upload
+          }}
+          onClose={() => {
+            setArchivedItems([]) // Clear archive toast on close
+            onClose()
+          }}
+          canCreate={!!channelId}
+          filterVisible={filterVisible}
+          onFilterToggle={handleFilterToggle}
+          hasActiveFilter={!!filterText}
+        />
+      )}
 
       {/* Main content area - shows EITHER tree OR detail/create/upload */}
       {/* FileDropZone wraps content when channel is selected and we're in tree view */}
@@ -633,15 +675,19 @@ export function BoardPanel({
               </div>
             ) : (
               <div className="flex flex-col h-full">
-                {/* Search filter */}
-                <div className="px-3 py-2 border-b border-[var(--cast-border-default)]">
-                  <TreeSearch
-                    value={filterInput}
-                    onChange={setFilterInput}
-                    onClear={handleClearFilter}
-                    placeholder="Filter artifacts... (/ or ⌘K)"
-                  />
-                </div>
+                {/* Search filter - collapsible */}
+                {filterVisible && (
+                  <div className="px-3 py-2 border-b border-[var(--cast-border-default)]">
+                    <TreeSearch
+                      value={filterInput}
+                      onChange={setFilterInput}
+                      onClear={handleClearFilter}
+                      onEscapeEmpty={() => setFilterVisible(false)}
+                      placeholder="Filter artifacts..."
+                      autoFocus
+                    />
+                  </div>
+                )}
                 {/* Tree */}
                 <div className="flex-1 overflow-y-auto">
                   <ArtifactTree

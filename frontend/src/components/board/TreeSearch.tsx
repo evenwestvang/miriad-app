@@ -6,45 +6,40 @@ interface TreeSearchProps {
   value: string
   onChange: (value: string) => void
   onClear: () => void
+  /** Called when Escape is pressed and the input is empty */
+  onEscapeEmpty?: () => void
   placeholder?: string
   className?: string
+  /** Auto-focus the input on mount */
+  autoFocus?: boolean
 }
 
 export function TreeSearch({
   value,
   onChange,
   onClear,
+  onEscapeEmpty,
   placeholder = 'Filter artifacts...',
   className,
+  autoFocus,
 }: TreeSearchProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Handle keyboard shortcuts
+  // Auto-focus on mount if requested
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // "/" to focus search (when not in an input)
-      if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes((e.target as Element)?.tagName)) {
-        e.preventDefault()
-        inputRef.current?.focus()
-      }
-      // Cmd/Ctrl+K to focus search
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault()
-        inputRef.current?.focus()
-      }
+    if (autoFocus) {
+      inputRef.current?.focus()
     }
+  }, [autoFocus])
 
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [])
-
-  // Handle Escape to clear
+  // Handle Escape to clear or close
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault()
       if (value) {
         onClear()
       } else {
+        onEscapeEmpty?.()
         inputRef.current?.blur()
       }
     }
@@ -62,9 +57,9 @@ export function TreeSearch({
         placeholder={placeholder}
         className={cn(
           "w-full h-8 pl-8 pr-8 text-base",
-          "bg-[var(--cast-bg-input)] border border-[var(--cast-border-default)]",
+          "bg-transparent",
           "placeholder:text-muted-foreground",
-          "focus:outline-none focus:ring-1 focus:ring-primary/50",
+          "focus:outline-none",
           "transition-colors"
         )}
       />

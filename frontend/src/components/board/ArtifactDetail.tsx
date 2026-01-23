@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react'
-import { Pencil, Save, AlertTriangle, Copy, Check, ArrowLeft, ChevronDown, History, RotateCcw, Archive } from 'lucide-react'
+import { Pencil, Save, AlertTriangle, Copy, Check, ArrowLeft, ChevronDown, History, RotateCcw, Archive, MoreHorizontal } from 'lucide-react'
 import Markdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -187,6 +187,9 @@ export function ArtifactDetail({
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null)
   const [versionData, setVersionData] = useState<ArtifactVersion | null>(null)
   const [versionLoading, setVersionLoading] = useState(false)
+
+  // Overflow menu state
+  const [overflowOpen, setOverflowOpen] = useState(false)
 
   // Fetch version content when a historical version is selected
   useEffect(() => {
@@ -462,21 +465,25 @@ export function ArtifactDetail({
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Header */}
-      <div className="px-3 py-2 border-b border-border space-y-1">
-        {/* Row 1: Back + Icon + Title + Status */}
-        <div className="flex items-center gap-2">
-          {/* Back button */}
-          {onBack && (
-            <button
-              onClick={onBack}
-              className="flex-shrink-0 p-1 -ml-1 rounded hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground"
-              title="Back to tree"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-          )}
-          {/* Icon + Title */}
+      {/* iOS-style header - single row */}
+      <div className="flex items-center h-10 px-3 border-b border-border gap-2">
+        {/* Back button */}
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="text-primary hover:text-primary/80 transition-colors flex-shrink-0"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+        )}
+
+        {/* Icon + Title + Status + Slug (center) */}
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {/* Type icon */}
+          {(() => {
+            const Icon = getArtifactIcon(artifact)
+            return <Icon className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
+          })()}
           {isEditing ? (
             <input
               type="text"
@@ -486,15 +493,9 @@ export function ArtifactDetail({
               className="flex-1 min-w-0 px-2 py-1 text-base font-medium bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
             />
           ) : (
-            <div className="flex items-center gap-1.5 min-w-0 flex-1">
-              {(() => {
-                const Icon = getArtifactIcon(artifact)
-                return <Icon className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
-              })()}
-              <span className="font-semibold text-base text-foreground truncate">
-                {artifact.title || artifact.slug}
-              </span>
-            </div>
+            <span className="font-semibold text-base text-foreground truncate">
+              {artifact.title || artifact.slug}
+            </span>
           )}
           {/* Status dropdown */}
           <StatusDropdown
@@ -503,93 +504,149 @@ export function ArtifactDetail({
             onChange={isEditing ? setEditStatus : handleStatusChange}
             disabled={saving}
           />
-          {/* Version dropdown - only show if artifact has versions and not editing */}
-          {!isEditing && artifact.versions && artifact.versions.length > 0 && (
-            <VersionDropdown
-              versions={artifact.versions}
-              selectedVersion={selectedVersion}
-              onSelectVersion={setSelectedVersion}
-              loading={versionLoading}
-            />
+          {/* Slug (when different from title) */}
+          {!isEditing && artifact.title && artifact.title !== artifact.slug && (
+            <span className="text-base text-muted-foreground truncate flex-shrink-0">
+              {artifact.slug}
+            </span>
           )}
         </div>
 
-        {/* Row 2: Path + Action icons */}
-        <div className="flex items-center gap-2">
-          {/* Path breadcrumb */}
-          <div className="flex-1 min-w-0 text-base text-muted-foreground truncate">
-            {(() => {
-              const pathSegments = getArtifactPath(tree, artifact.slug) || [artifact.slug]
-              return pathSegments.join(' / ')
-            })()}
-          </div>
-          {/* Action buttons */}
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {isEditing ? (
-              <>
-                <button
-                  className="px-2 py-1 text-base text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={cancelEditing}
-                  disabled={saving}
-                >
-                  Cancel
-                </button>
-                <button
-                  className={cn(
-                    "flex items-center gap-1 px-2 py-1 text-base rounded transition-colors",
-                    hasChanges && !saving
-                      ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                      : "bg-secondary text-muted-foreground cursor-not-allowed"
-                  )}
-                  onClick={saveChanges}
-                  disabled={!hasChanges || saving}
-                >
-                  <Save className="w-3 h-3" />
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
-              </>
-            ) : (
-              <>
-                {!isAsset && (
-                  <button
-                    className="p-1 rounded hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground"
-                    onClick={copyContent}
-                    title="Copy content"
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
+        {/* Action icons (right) */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {isEditing ? (
+            <>
+              <button
+                className="px-2 py-1 text-base text-muted-foreground hover:text-foreground transition-colors"
+                onClick={cancelEditing}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1 text-base rounded transition-colors",
+                  hasChanges && !saving
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                    : "bg-secondary text-muted-foreground cursor-not-allowed"
                 )}
-                <button
-                  className={cn(
-                    "p-1 rounded transition-colors",
-                    isViewingHistory
-                      ? "text-muted-foreground/50 cursor-not-allowed"
-                      : "hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
-                  )}
-                  onClick={isViewingHistory ? undefined : startEditing}
-                  title={isViewingHistory ? "Cannot edit historical version" : "Edit"}
-                  disabled={isViewingHistory}
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                {onArchive && (
-                  <button
-                    className={cn(
-                      "p-1 rounded transition-colors",
-                      isViewingHistory
-                        ? "text-muted-foreground/50 cursor-not-allowed"
-                        : "hover:bg-secondary/50 text-muted-foreground hover:text-destructive"
-                    )}
-                    onClick={isViewingHistory ? undefined : onArchive}
-                    title={isViewingHistory ? "Cannot archive historical version" : "Archive"}
-                    disabled={isViewingHistory}
-                  >
-                    <Archive className="w-3.5 h-3.5" />
-                  </button>
+                onClick={saveChanges}
+                disabled={!hasChanges || saving}
+              >
+                <Save className="w-3 h-3" />
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Edit - direct icon */}
+              <button
+                className={cn(
+                  "p-1.5 rounded transition-colors",
+                  isViewingHistory
+                    ? "text-muted-foreground/50 cursor-not-allowed"
+                    : "hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
                 )}
-              </>
-            )}
-          </div>
+                onClick={isViewingHistory ? undefined : startEditing}
+                title={isViewingHistory ? "Cannot edit historical version" : "Edit"}
+                disabled={isViewingHistory}
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+              {/* Copy content - direct icon */}
+              {!isAsset && (
+                <button
+                  className="p-1.5 rounded hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground"
+                  onClick={copyContent}
+                  title="Copy content"
+                >
+                  {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                </button>
+              )}
+              {/* Overflow menu for version history + archive */}
+              {((artifact.versions?.length ?? 0) > 0 || onArchive) && (
+                <div className="relative">
+                  <button
+                    onClick={() => setOverflowOpen(!overflowOpen)}
+                    className="p-1.5 rounded hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground"
+                    title="More options"
+                  >
+                    <MoreHorizontal className="w-4 h-4" />
+                  </button>
+                  {/* Overflow dropdown menu */}
+                  {overflowOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setOverflowOpen(false)}
+                      />
+                      <div className="absolute right-0 top-full mt-1 z-20 bg-popover border border-border rounded shadow-lg py-1 min-w-[160px]">
+                        {/* Version history */}
+                        {artifact.versions && artifact.versions.length > 0 && (
+                          <>
+                            <div className="px-3 py-1 text-xs text-muted-foreground uppercase tracking-wide">
+                              Versions
+                            </div>
+                            <button
+                              onClick={() => {
+                                setOverflowOpen(false)
+                                setSelectedVersion(null)
+                              }}
+                              className={cn(
+                                "w-full flex items-center gap-2 px-3 py-1.5 text-base text-left hover:bg-secondary transition-colors",
+                                !selectedVersion && "bg-secondary/50"
+                              )}
+                            >
+                              Current
+                            </button>
+                            {[...artifact.versions].reverse().map((version) => (
+                              <button
+                                key={version}
+                                onClick={() => {
+                                  setOverflowOpen(false)
+                                  setSelectedVersion(version)
+                                }}
+                                className={cn(
+                                  "w-full flex items-center gap-2 px-3 py-1.5 text-base text-left hover:bg-secondary transition-colors",
+                                  version === selectedVersion && "bg-secondary/50"
+                                )}
+                              >
+                                {version}
+                              </button>
+                            ))}
+                          </>
+                        )}
+                        {/* Archive */}
+                        {onArchive && (
+                          <>
+                            {artifact.versions && artifact.versions.length > 0 && (
+                              <div className="border-t border-border my-1" />
+                            )}
+                            <button
+                              onClick={() => {
+                                setOverflowOpen(false)
+                                if (!isViewingHistory) onArchive()
+                              }}
+                              disabled={isViewingHistory}
+                              className={cn(
+                                "w-full flex items-center gap-2 px-3 py-1.5 text-base text-left transition-colors",
+                                isViewingHistory
+                                  ? "text-muted-foreground/50 cursor-not-allowed"
+                                  : "hover:bg-secondary text-destructive"
+                              )}
+                            >
+                              <Archive className="w-4 h-4" />
+                              Archive
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -897,90 +954,6 @@ function StatusDropdown({
 }
 
 /**
- * Version dropdown for viewing artifact version history.
- * Shows "Current" when viewing latest, or version name when viewing history.
- */
-function VersionDropdown({
-  versions,
-  selectedVersion,
-  onSelectVersion,
-  loading,
-}: {
-  versions: string[]
-  selectedVersion: string | null
-  onSelectVersion: (version: string | null) => void
-  loading?: boolean
-}) {
-  const [open, setOpen] = useState(false)
-
-  return (
-    <div className="relative flex-shrink-0">
-      <button
-        onClick={() => setOpen(!open)}
-        disabled={loading}
-        className={cn(
-          "flex items-center gap-1 px-2 py-0.5 text-base rounded transition-colors",
-          selectedVersion
-            ? "bg-amber-200/50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-            : "text-muted-foreground hover:text-foreground hover:bg-secondary/50",
-          loading && "opacity-50 cursor-wait"
-        )}
-        title="Version history"
-      >
-        <History className="w-3 h-3" />
-        <span>{selectedVersion || 'Current'}</span>
-        <ChevronDown className="w-3 h-3" />
-      </button>
-
-      {/* Dropdown menu */}
-      {open && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setOpen(false)}
-          />
-          {/* Menu */}
-          <div className="absolute right-0 top-full mt-1 z-20 bg-popover border border-border rounded shadow-lg py-1 min-w-[160px] max-h-[300px] overflow-y-auto">
-            {/* Current option */}
-            <button
-              onClick={() => {
-                onSelectVersion(null)
-                setOpen(false)
-              }}
-              className={cn(
-                "w-full px-3 py-1.5 text-base text-left hover:bg-secondary transition-colors flex items-center gap-2",
-                !selectedVersion && "bg-secondary/50"
-              )}
-            >
-              <span className="font-medium">Current</span>
-            </button>
-            {/* Divider */}
-            <div className="border-t border-border my-1" />
-            {/* Version list (newest first) */}
-            {[...versions].reverse().map((version) => (
-              <button
-                key={version}
-                onClick={() => {
-                  onSelectVersion(version)
-                  setOpen(false)
-                }}
-                className={cn(
-                  "w-full px-3 py-1.5 text-base text-left hover:bg-secondary transition-colors",
-                  version === selectedVersion && "bg-secondary/50"
-                )}
-              >
-                <span>{version}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
-/**
  * Banner shown when viewing a historical version (not current).
  * Amber/yellow tint to indicate non-current state without being alarming.
  */
@@ -1246,23 +1219,6 @@ function isDescendant(nodes: ArtifactTreeNode[], slug: string): boolean {
     if (node.children && isDescendant(node.children, slug)) return true
   }
   return false
-}
-
-/**
- * Build the full path for an artifact by traversing the tree.
- * Returns path segments (e.g., ['parent', 'child', 'artifact-slug'])
- */
-function getArtifactPath(nodes: ArtifactTreeNode[], targetSlug: string, path: string[] = []): string[] | null {
-  for (const node of nodes) {
-    if (node.slug === targetSlug) {
-      return [...path, node.slug]
-    }
-    if (node.children) {
-      const result = getArtifactPath(node.children, targetSlug, [...path, node.slug])
-      if (result) return result
-    }
-  }
-  return null
 }
 
 /**
