@@ -215,7 +215,7 @@ export function FileDropZone({
         title: folderName,
         tldr: `Folder: ${folderPath}`,
         content: '',
-        status: 'published',
+        status: 'active',
         sender: 'user',
       }
       if (parentSlug) {

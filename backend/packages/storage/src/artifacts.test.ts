@@ -123,7 +123,7 @@ describe.skipIf(!canConnect)('Artifact Storage', () => {
         title: 'API Specification',
         tldr: 'REST API spec',
         content: '# API\n\n...',
-        status: 'published',
+        status: 'active',
         assignees: ['fox', 'bear'],
         labels: ['api', 'backend'],
         createdBy: 'arty',
@@ -133,7 +133,7 @@ describe.skipIf(!canConnect)('Artifact Storage', () => {
       createdSlugs.push(slug);
 
       expect(artifact.title).toBe('API Specification');
-      expect(artifact.status).toBe('published');
+      expect(artifact.status).toBe('active');
       expect(artifact.assignees).toEqual(['fox', 'bear']);
       expect(artifact.labels).toEqual(['api', 'backend']);
     });
@@ -506,7 +506,7 @@ describe.skipIf(!canConnect)('Artifact Storage', () => {
         type: 'doc',
         tldr: 'Document 1',
         content: 'Content about authentication',
-        status: 'published',
+        status: 'active',
         createdBy: 'arty',
       });
       createdSlugs.push(`${listTestPrefix}-doc-1`);

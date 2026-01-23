@@ -17,7 +17,7 @@ interface ArtifactEditProps {
 const ARTIFACT_TYPES: ArtifactType[] = ['doc', 'task', 'decision', 'code']
 
 // Status options based on type
-const DOC_STATUSES: ArtifactStatus[] = ['draft', 'published', 'archived']
+const DOC_STATUSES: ArtifactStatus[] = ['draft', 'active', 'archived']
 const TASK_STATUSES: ArtifactStatus[] = ['pending', 'in_progress', 'done', 'blocked']
 
 interface ConflictInfo {

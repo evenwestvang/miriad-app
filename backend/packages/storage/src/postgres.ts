@@ -1306,7 +1306,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const path = await computeArtifactPath(channelId, input.slug, input.parentSlug);
     const orderKey = await generateOrderKey(channelId, input.parentSlug);
     const refs = extractRefs(input.content);
-    const status = input.status ?? getDefaultArtifactStatus(input.type);
+    const status = input.status ?? getDefaultArtifactStatus(input.type, input.createdBy);
 
     try {
       const result = await sql<ArtifactRow>`
@@ -1703,6 +1703,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     spaceId: string
   ): Promise<Array<{ name: string; title?: string; tldr?: string }>> {
     // Single JOIN query - no N+1 channel loop
+    // Support both 'active' (new) and 'published' (legacy) statuses
     const result = await sql<{ name: string; title: string | null; tldr: string | null }>`
       SELECT c.name, a.title, a.tldr
       FROM artifacts a
@@ -1710,7 +1711,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       WHERE c.space_id = ${spaceId}
         AND a.type = 'knowledgebase'
         AND a.slug = 'knowledgebase'
-        AND a.status = 'published'
+        AND a.status IN ('active', 'published')
         AND c.archived = false
       ORDER BY c.name ASC
     `;

@@ -183,12 +183,17 @@ describe('Artifact Type Utilities', () => {
   describe('isArtifactStatus', () => {
     it('returns true for valid statuses', () => {
       expect(isArtifactStatus('draft')).toBe(true);
-      expect(isArtifactStatus('published')).toBe(true);
+      expect(isArtifactStatus('active')).toBe(true);
       expect(isArtifactStatus('archived')).toBe(true);
       expect(isArtifactStatus('pending')).toBe(true);
       expect(isArtifactStatus('in_progress')).toBe(true);
       expect(isArtifactStatus('done')).toBe(true);
       expect(isArtifactStatus('blocked')).toBe(true);
+    });
+
+    it('returns true for legacy published status', () => {
+      // 'published' is legacy but still valid for backwards compatibility
+      expect(isArtifactStatus('published')).toBe(true);
     });
 
     it('returns false for invalid statuses', () => {
@@ -202,20 +207,27 @@ describe('Artifact Type Utilities', () => {
   describe('getDefaultArtifactStatus', () => {
     it('returns pending for task type', () => {
       expect(getDefaultArtifactStatus('task')).toBe('pending');
+      expect(getDefaultArtifactStatus('task', 'user')).toBe('pending');
     });
 
-    it('returns published for system types', () => {
-      expect(getDefaultArtifactStatus('system.mcp')).toBe('published');
-      expect(getDefaultArtifactStatus('system.agent')).toBe('published');
-      expect(getDefaultArtifactStatus('system.focus')).toBe('published');
-      expect(getDefaultArtifactStatus('system.playbook')).toBe('published');
+    it('returns active for system types', () => {
+      expect(getDefaultArtifactStatus('system.mcp')).toBe('active');
+      expect(getDefaultArtifactStatus('system.agent')).toBe('active');
+      expect(getDefaultArtifactStatus('system.focus')).toBe('active');
+      expect(getDefaultArtifactStatus('system.playbook')).toBe('active');
     });
 
-    it('returns draft for other types', () => {
+    it('returns active for human-created docs', () => {
+      expect(getDefaultArtifactStatus('doc', 'user')).toBe('active');
+      expect(getDefaultArtifactStatus('code', 'user')).toBe('active');
+      expect(getDefaultArtifactStatus('decision', 'user')).toBe('active');
+    });
+
+    it('returns draft for agent-created docs', () => {
       expect(getDefaultArtifactStatus('doc')).toBe('draft');
-      expect(getDefaultArtifactStatus('code')).toBe('draft');
-      expect(getDefaultArtifactStatus('decision')).toBe('draft');
-      expect(getDefaultArtifactStatus('asset')).toBe('draft');
+      expect(getDefaultArtifactStatus('doc', 'fox')).toBe('draft');
+      expect(getDefaultArtifactStatus('code', 'builder-agent')).toBe('draft');
+      expect(getDefaultArtifactStatus('decision', 'researcher')).toBe('draft');
     });
   });
 

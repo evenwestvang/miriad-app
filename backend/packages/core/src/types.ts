@@ -607,19 +607,20 @@ export type ArtifactType =
 
 /**
  * Artifact status values.
- * - draft/published/archived: For documents
+ * - draft/active/archived: For documents (non-tasks)
  * - pending/in_progress/done/blocked: For tasks
  *
  * ⚠️  SYNC WARNING: Keep aligned with ArtifactStatus in frontend/src/types.ts
  */
 export type ArtifactStatus =
   | 'draft'
-  | 'published'
+  | 'active'
   | 'archived'
   | 'pending'
   | 'in_progress'
   | 'done'
-  | 'blocked';
+  | 'blocked'
+  | 'published'; // Legacy - use 'active' for new artifacts
 
 /**
  * An artifact as stored in the database.
@@ -970,25 +971,36 @@ export function isArtifactStatus(value: unknown): value is ArtifactStatus {
     typeof value === 'string' &&
     [
       'draft',
-      'published',
+      'active',
       'archived',
       'pending',
       'in_progress',
       'done',
       'blocked',
+      'published', // Legacy - use 'active' for new artifacts
     ].includes(value)
   );
 }
 
 /**
  * Get the default status for an artifact type.
+ * @param type - The artifact type
+ * @param createdBy - Who is creating the artifact ('user' for humans, agent callsign for agents)
  */
-export function getDefaultArtifactStatus(type: ArtifactType): ArtifactStatus {
+export function getDefaultArtifactStatus(
+  type: ArtifactType,
+  createdBy?: string
+): ArtifactStatus {
   if (type === 'task') {
     return 'pending';
   }
   if (type.startsWith('system.')) {
-    return 'published';
+    return 'active';
+  }
+  // Human-created defaults to 'active', agent-created defaults to 'draft'
+  // 'user' is the identifier for human users
+  if (createdBy === 'user') {
+    return 'active';
   }
   return 'draft';
 }

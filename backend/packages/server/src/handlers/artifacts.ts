@@ -92,12 +92,13 @@ const ArtifactTypeSchema = z.enum([
 
 const ArtifactStatusSchema = z.enum([
   'draft',
-  'published',
+  'active',
   'archived',
   'pending',
   'in_progress',
   'done',
   'blocked',
+  'published', // Legacy - use 'active' for new artifacts
 ]);
 
 const CreateArtifactSchema = z.object({
@@ -209,10 +210,10 @@ async function validateKnowledgeBaseConstraints(
     return "Knowledge base content must be type 'doc' or 'folder'";
   }
 
-  // Rule 3: Published KB docs require content
-  if (isUnderKb && status === 'published' && type === 'doc') {
+  // Rule 3: Active KB docs require content
+  if (isUnderKb && status === 'active' && type === 'doc') {
     if (!content || !content.trim()) {
-      return 'Published knowledge base documents require non-empty content';
+      return 'Active knowledge base documents require non-empty content';
     }
   }
 
@@ -1121,7 +1122,7 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
         tldr,
         content: '', // Binary content is stored separately
         parentSlug,
-        status: 'published',
+        status: 'active',
         contentType: result.contentType,
         fileSize: result.fileSize,
         attachedToMessageId: attachToMessageId,

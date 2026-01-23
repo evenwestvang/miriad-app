@@ -110,7 +110,7 @@ export function AddAppModal({
             title: app.name,
             tldr: app.description,
             content: `# ${app.name}\n\n${app.description}`,
-            status: 'published',
+            status: 'active',
             props: {
               provider: app.id,
             },

@@ -128,7 +128,7 @@ describe('Tymbal Frame Type Guards', () => {
             slug: 'my-doc',
             type: 'doc',
             tldr: 'A document',
-            status: 'published',
+            status: 'active',
             path: '/channel-123/my-doc',
           },
         },

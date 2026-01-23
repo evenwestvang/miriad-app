@@ -216,7 +216,7 @@ export function createAssetsApiRoutes(options: AssetsApiHandlerOptions): Hono<{ 
         tldr,
         content: '', // Binary content stored separately
         parentSlug,
-        status: 'published',
+        status: 'active',
         contentType: result.contentType,
         fileSize: result.fileSize,
         attachedToMessageId,

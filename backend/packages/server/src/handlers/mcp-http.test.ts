@@ -1127,7 +1127,7 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
                 type: 'system.agent',
                 title: 'Custom Builder',
                 tldr: 'Channel-specific builder',
-                status: 'published',
+                status: 'active',
                 props: { engine: 'claude' },
               },
             ];
@@ -1139,7 +1139,7 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
               type: 'system.agent',
               title: 'Builder',
               tldr: 'Default builder agent',
-              status: 'published',
+              status: 'active',
               props: { engine: 'claude' },
             },
             {
@@ -1147,7 +1147,7 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
               type: 'system.agent',
               title: 'Reviewer',
               tldr: 'Code reviewer agent',
-              status: 'published',
+              status: 'active',
               props: { engine: 'claude' },
             },
           ];
@@ -1207,7 +1207,7 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
                 type: 'system.agent',
                 title: 'Custom Builder',
                 tldr: 'Channel-specific builder override',
-                status: 'published',
+                status: 'active',
                 props: { engine: 'openai' },
               },
             ];
@@ -1219,7 +1219,7 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
               type: 'system.agent',
               title: 'Default Builder',
               tldr: 'Default builder agent',
-              status: 'published',
+              status: 'active',
               props: { engine: 'claude' },
             },
           ];
@@ -1265,7 +1265,7 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
             type: 'system.agent',
             title: 'Builder',
             tldr: 'Channel builder',
-            status: 'published',
+            status: 'active',
           },
         ]);
         mockStorage.getChannelByName.mockImplementation(async (spaceId: string, name: string) => {
@@ -1317,7 +1317,7 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
         const result = JSON.parse(json.result.content[0].text);
         expect(result.type).toBe('system.agent');
         expect(result.description).toContain('Agent definition');
-        expect(result.statusValues).toContain('published');
+        expect(result.statusValues).toContain('active');
         expect(result.propsSchema).toBeDefined();
         expect(result.propsSchema.properties.engine).toBeDefined();
         expect(result.example).toBeDefined();
