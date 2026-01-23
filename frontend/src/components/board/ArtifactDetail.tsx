@@ -260,12 +260,15 @@ export function ArtifactDetail({
     if (!textarea || !isEditing) return
 
     const resize = () => {
-      textarea.style.height = 'auto'
+      // Reset to min-height first to get accurate scrollHeight
+      textarea.style.height = '100px'
       const maxHeight = window.innerHeight * 0.7
-      textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`
+      const newHeight = Math.max(100, Math.min(textarea.scrollHeight, maxHeight))
+      textarea.style.height = `${newHeight}px`
     }
 
-    resize()
+    // Small delay to ensure DOM is ready
+    requestAnimationFrame(resize)
     textarea.addEventListener('input', resize)
     return () => textarea.removeEventListener('input', resize)
   }, [isEditing, editContent])
@@ -966,7 +969,7 @@ export function ArtifactDetail({
       )}
 
       {/* Meta area - TLDR + Status on subtle background */}
-      <div className="bg-secondary/30 px-3 py-3">
+      <div className="bg-secondary/20 px-3 py-2">
         <div className="flex items-start gap-3">
           {/* TLDR - click to edit */}
           <div
@@ -1116,7 +1119,7 @@ export function ArtifactDetail({
                 "focus:outline-none focus:border-primary transition-colors resize-none overflow-y-auto",
                 isCodeArtifact && "font-mono"
               )}
-              style={{ maxHeight: '70vh' }}
+              style={{ minHeight: '100px', maxHeight: '70vh' }}
             />
           </div>
         ) : isInteractiveApp ? (
