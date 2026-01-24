@@ -968,46 +968,17 @@ export function ArtifactDetail({
         </div>
       )}
 
-      {/* Meta area - TLDR + Status on subtle background */}
-      <div className="bg-secondary/20 px-3 py-2">
-        <div className="flex items-start gap-3">
-          {/* TLDR - click to edit */}
-          <div
-            className={cn(
-              "flex-1 min-w-0",
-              !isEditing && !isViewingHistory && !isCreateMode && "cursor-text hover:bg-secondary/50 -mx-1 px-1 rounded"
-            )}
-            onClick={!isEditing && !isViewingHistory && !isCreateMode ? () => startEditing() : undefined}
-          >
-            {isEditing ? (
-              <textarea
-                value={editTldr}
-                onChange={(e) => setEditTldr(e.target.value)}
-                placeholder="Brief summary..."
-                className="w-full px-0 py-1 text-base bg-transparent border-0 focus:outline-none transition-colors resize-none"
-                rows={2}
-                onClick={(e) => e.stopPropagation()}
-              />
-            ) : (
-              <p className="text-base text-muted-foreground">
-                {isViewingHistory ? versionData!.tldr : artifact!.tldr}
-              </p>
-            )}
-          </div>
-
-          {/* Status selector - right side */}
-          {!isViewingHistory && !isEditing && (
-            <div className="flex-shrink-0">
-              <StatusDropdown
-                status={isCreateMode ? DEFAULT_STATUS[editType] : artifact!.status}
-                options={statusOptions}
-                onChange={isCreateMode ? () => {} : handleStatusChange}
-                disabled={saving || isCreateMode}
-              />
-            </div>
-          )}
+      {/* Status bar - view mode only (not editing, not history) */}
+      {!isViewingHistory && !isEditing && (
+        <div className="px-3 py-2 flex justify-end">
+          <StatusDropdown
+            status={isCreateMode ? DEFAULT_STATUS[editType] : artifact!.status}
+            options={statusOptions}
+            onChange={isCreateMode ? () => {} : handleStatusChange}
+            disabled={saving || isCreateMode}
+          />
         </div>
-      </div>
+      )}
 
       {/* Type-specific metadata (MCP props, Agent props, Focus props) - edit mode only */}
       {!isCreateMode && artifact!.type === 'system.mcp' && (
