@@ -1064,13 +1064,15 @@ export function ArtifactDetail({
       <div className={cn("flex-1 min-h-0 relative", isInteractiveApp && !isCreateMode ? "overflow-hidden flex flex-col" : "overflow-y-auto")}>
         {/* Floating copy button */}
         {!isEditing && !isCreateMode && !isAsset && !versionLoading && (
-          <button
-            className="absolute top-2 right-2 z-10 p-1.5 rounded bg-background/80 hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
-            onClick={copyContent}
-            title="Copy content"
-          >
-            {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-          </button>
+          <div className="sticky top-0 z-10 flex justify-end px-2 py-1">
+            <button
+              className="p-1.5 rounded bg-background/80 hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
+              onClick={copyContent}
+              title="Copy content"
+            >
+              {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+            </button>
+          </div>
         )}
         {versionLoading ? (
           <div className="flex items-center justify-center h-20">
