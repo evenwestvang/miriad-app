@@ -775,15 +775,14 @@ export function ArtifactDetail({
         <div className="flex items-center gap-1 flex-shrink-0">
           {!isEditing && !isCreateMode ? (
             <>
-              {/* Copy content - direct icon */}
-              {!isAsset && (
-                <button
-                  className="p-1.5 rounded hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground"
-                  onClick={copyContent}
-                  title="Copy content"
-                >
-                  {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-                </button>
+              {/* Status badge */}
+              {!isViewingHistory && (
+                <StatusDropdown
+                  status={artifact!.status}
+                  options={statusOptions}
+                  onChange={handleStatusChange}
+                  disabled={saving}
+                />
               )}
               {/* Overflow menu for version history + archive */}
               {((artifact!.versions?.length ?? 0) > 0 || onArchive) && (
@@ -968,15 +967,16 @@ export function ArtifactDetail({
         </div>
       )}
 
-      {/* Status bar - view mode only (not editing, not history) */}
-      {!isViewingHistory && !isEditing && (
+      {/* Copy button - view mode only (not editing, not history, not asset) */}
+      {!isViewingHistory && !isEditing && !isCreateMode && !isAsset && (
         <div className="px-3 py-2 flex justify-end">
-          <StatusDropdown
-            status={isCreateMode ? DEFAULT_STATUS[editType] : artifact!.status}
-            options={statusOptions}
-            onChange={isCreateMode ? () => {} : handleStatusChange}
-            disabled={saving || isCreateMode}
-          />
+          <button
+            className="p-1.5 rounded hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground"
+            onClick={copyContent}
+            title="Copy content"
+          >
+            {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+          </button>
         </div>
       )}
 
