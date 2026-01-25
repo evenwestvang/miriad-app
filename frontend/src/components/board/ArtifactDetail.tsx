@@ -1094,7 +1094,7 @@ export function ArtifactDetail({
           <div className="flex items-center justify-center h-20">
             <span className="text-base text-muted-foreground">Loading version...</span>
           </div>
-        ) : isEditing && !(isCreateMode && currentType.startsWith('system.') && currentType !== 'system.agent') ? (
+        ) : isEditing && !['system.mcp', 'system.focus', 'system.environment'].includes(currentType) ? (
           <div className="px-3 py-3">
             <textarea
               ref={contentTextareaRef}
@@ -1109,8 +1109,8 @@ export function ArtifactDetail({
               style={{ minHeight: '100px', maxHeight: '70vh' }}
             />
           </div>
-        ) : isCreateMode && currentType.startsWith('system.') && currentType !== 'system.agent' ? (
-          // Create mode with system.* types (except agent) - no content area to show
+        ) : ['system.mcp', 'system.focus', 'system.environment'].includes(currentType) ? (
+          // system.mcp, system.focus, system.environment don't have user-editable content
           null
         ) : isInteractiveApp ? (
           <SpaRenderer
@@ -1134,6 +1134,9 @@ export function ArtifactDetail({
           >
             <CodeContent content={isViewingHistory ? versionData!.content : artifact!.content} language={codeLanguage} isDarkMode={isDarkMode} />
           </div>
+        ) : ['system.mcp', 'system.focus', 'system.environment'].includes(currentType) ? (
+          // These system types don't have user-visible content
+          null
         ) : (
           <div
             className={cn("p-3", !isViewingHistory && "cursor-text")}
