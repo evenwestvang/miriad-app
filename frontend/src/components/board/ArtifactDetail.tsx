@@ -758,11 +758,16 @@ export function ArtifactDetail({
   // Keyboard handling: ESC to cancel (with warning), Cmd+Enter to save
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd+Enter or Ctrl+Enter to save
+      // Cmd+Enter or Ctrl+Enter to save (or cancel if no changes)
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        if (isEditing && hasChanges && !saving) {
+        if (isEditing && !saving) {
           e.preventDefault()
-          saveChanges()
+          if (hasChanges) {
+            saveChanges()
+          } else {
+            // No changes - act as cancel (exit edit mode)
+            cancelEditing()
+          }
         }
         return
       }
@@ -772,11 +777,18 @@ export function ArtifactDetail({
         const target = e.target as HTMLElement
         if (target.tagName === 'SELECT') return
 
+        // If unsaved changes warning is showing, dismiss it
+        if (showUnsavedPrompt) {
+          e.preventDefault()
+          cancelNavigation()
+          return
+        }
+
         if (isEditing) {
           // First ESC: cancel editing (with unsaved changes warning)
           e.preventDefault()
           handleCancelWithWarning()
-        } else if (onBack && !showUnsavedPrompt) {
+        } else if (onBack) {
           // Second ESC (or first if not editing): close board
           e.preventDefault()
           onBack()
@@ -786,7 +798,7 @@ export function ArtifactDetail({
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isEditing, handleCancelWithWarning, onBack, showUnsavedPrompt, hasChanges, saving, saveChanges])
+  }, [isEditing, handleCancelWithWarning, cancelEditing, cancelNavigation, onBack, showUnsavedPrompt, hasChanges, saving, saveChanges])
 
   // Get type label for header (create mode)
   const getTypeLabel = (type: ArtifactType): string => {
