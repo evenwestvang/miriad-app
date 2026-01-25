@@ -1066,7 +1066,7 @@ export function ArtifactDetail({
         {!isEditing && !isCreateMode && !isAsset && !versionLoading && (
           <div className="sticky top-0 z-10 flex justify-end px-2 py-1">
             <button
-              className="p-1.5 rounded bg-background/80 hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
+              className="p-1.5 rounded hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
               onClick={copyContent}
               title="Copy content"
             >
