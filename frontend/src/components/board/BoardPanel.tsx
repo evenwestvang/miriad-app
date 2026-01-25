@@ -6,7 +6,6 @@ import { apiFetch } from '../../lib/api'
 import { BoardHeader } from './BoardHeader'
 import { ArtifactTree } from './ArtifactTree'
 import { ArtifactDetail } from './ArtifactDetail'
-// ArtifactCreate is deprecated - use ArtifactDetail with artifact={undefined} for create mode
 import { AssetUpload, type Asset } from './AssetUpload'
 import { FileDropZone } from './FileDropZone'
 import { TreeSearch } from './TreeSearch'
