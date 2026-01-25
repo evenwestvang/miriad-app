@@ -1003,33 +1003,6 @@ export function ArtifactDetail({
         </div>
       )}
 
-      {/* Create mode: Slug and Type fields */}
-      {isCreateMode && (
-        <div className="px-3 py-4 border-b border-border space-y-6">
-          {/* Slug input */}
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground uppercase mb-2">
-              Slug <span className="text-muted-foreground/70">*</span>
-            </label>
-            <input
-              type="text"
-              value={editSlug}
-              onChange={(e) => handleSlugChange(e.target.value)}
-              placeholder="my-artifact-slug"
-              className={cn(
-                "w-full px-0 py-1 text-base bg-transparent border-0 border-b focus:outline-none focus:border-muted-foreground transition-colors",
-                slugError
-                  ? "border-destructive"
-                  : "border-border"
-              )}
-            />
-            {slugError && (
-              <p className="text-base text-destructive mt-1">{slugError}</p>
-            )}
-          </div>
-
-        </div>
-      )}
 
 
       {/* Type-specific metadata (MCP props, Agent props, Focus props) */}

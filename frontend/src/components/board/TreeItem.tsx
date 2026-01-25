@@ -165,7 +165,7 @@ export function TreeItem({
       {/* Expand/collapse chevron - always reserve space */}
       <button
         className={cn(
-          "w-4 h-4 flex items-center justify-center flex-shrink-0",
+          "w-6 h-6 -m-1 flex items-center justify-center flex-shrink-0 rounded hover:bg-secondary/50",
           !hasChildren && "invisible"
         )}
         onClick={(e) => {
