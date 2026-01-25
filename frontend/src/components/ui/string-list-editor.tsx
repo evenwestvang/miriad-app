@@ -121,7 +121,7 @@ export function StringListEditor({
     }
   }
 
-  const inputClasses = 'flex-1 h-8 px-2 text-base font-mono bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary'
+  const inputClasses = 'flex-1 h-8 px-2 text-base font-mono bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-border'
 
   return (
     <div
@@ -185,18 +185,16 @@ export function StringListEditor({
             ))}
           </div>
         )}
-
-        {/* Add button */}
-        <div className="border-t border-border">
-          <button
-            onClick={handleAddNew}
-            className="flex items-center gap-1.5 px-3 py-2 text-base text-muted-foreground hover:text-foreground hover:bg-secondary/50 w-full transition-colors"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add {label.toLowerCase().replace(/s$/, '')}
-          </button>
-        </div>
       </div>
+
+      {/* Add button - outside the table */}
+      <button
+        onClick={handleAddNew}
+        className="flex items-center gap-1.5 px-2 py-1.5 text-base rounded border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground transition-colors"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Add {label.toLowerCase().replace(/s$/, '')}
+      </button>
     </div>
   )
 }

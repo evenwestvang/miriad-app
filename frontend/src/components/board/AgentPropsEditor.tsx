@@ -136,8 +136,8 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
       />
 
       {/* MCP Servers */}
-      <div className="space-y-2">
-        <label className="block text-base font-medium text-muted-foreground uppercase">
+      <div className="space-y-2 mt-2">
+        <label className="block text-xs font-medium text-muted-foreground uppercase">
           MCP Servers
         </label>
 
@@ -220,7 +220,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
             onClick={() => setShowMcpPicker(true)}
             className={cn(
               "flex items-center gap-1.5 px-2 py-1.5 text-base rounded border border-dashed",
-              "border-border text-muted-foreground hover:text-foreground hover:border-primary/50",
+              "border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground",
               "transition-colors"
             )}
           >

@@ -69,9 +69,9 @@ export function FocusPropsEditor({ props, onChange, apiHost }: FocusPropsEditorP
     <div className="space-y-4">
       {/* Starting Agents */}
       <div className="space-y-2">
-        <label className="block text-base font-medium text-muted-foreground uppercase">
+        <label className="block text-xs font-medium text-muted-foreground uppercase">
           Starting Agents
-          <span className="text-destructive ml-1">*</span>
+          <span className="text-muted-foreground/70 ml-1">*</span>
         </label>
         <p className="text-base text-muted-foreground">
           Select which agent types are available when creating a channel with this focus
@@ -105,8 +105,8 @@ export function FocusPropsEditor({ props, onChange, apiHost }: FocusPropsEditorP
                   className={cn(
                     "flex items-center gap-1.5 px-2.5 py-1.5 text-base rounded-md border transition-colors",
                     isSelected
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-secondary/30 text-foreground border-border hover:border-primary/50 hover:bg-secondary/50",
+                      ? "bg-secondary text-foreground border-muted-foreground"
+                      : "bg-secondary/30 text-foreground border-border hover:border-muted-foreground hover:bg-secondary/50",
                     isLastSelected && "opacity-60 cursor-not-allowed"
                   )}
                 >
