@@ -66,7 +66,7 @@ export function FocusPropsEditor({ props, onChange, apiHost }: FocusPropsEditorP
   const selectedAgents = props.agents || []
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Starting Agents */}
       <div className="space-y-2">
         <label className="block text-xs font-medium text-muted-foreground uppercase">

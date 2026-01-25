@@ -118,7 +118,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
   })
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Agent Name (fixed callsign) */}
       <EditableField
         label="Agent Name (Fixed Callsign)"
