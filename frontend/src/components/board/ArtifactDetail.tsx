@@ -1032,6 +1032,7 @@ export function ArtifactDetail({
             channel={channelId}
             mcpSlug={isCreateMode ? editSlug : artifact!.slug}
             secrets={isCreateMode ? {} : artifact!.secrets as Record<string, SecretMetadata>}
+            isCreateMode={isCreateMode}
           />
         </div>
       )}

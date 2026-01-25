@@ -42,9 +42,11 @@ interface McpPropsEditorProps {
   mcpSlug?: string
   /** Secrets metadata for this MCP artifact */
   secrets?: Record<string, SecretMetadata>
+  /** Whether we're in create mode (secrets disabled) */
+  isCreateMode?: boolean
 }
 
-export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: McpPropsEditorProps) {
+export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets, isCreateMode }: McpPropsEditorProps) {
   const transport = props.transport || 'stdio'
   const [oauthExpanded, setOauthExpanded] = useState(props.auth?.type === 'oauth')
 
@@ -108,7 +110,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
           />
 
           {/* Environment Variables and Secrets */}
-          {channel && mcpSlug ? (
+          {channel && mcpSlug && !isCreateMode ? (
             <EnvEditor
               variables={props.env || {}}
               secrets={secrets || {}}
@@ -118,13 +120,25 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
               showExpansionHint
             />
           ) : (
-            <KeyValueEditor
-              label="Environment Variables"
-              entries={envToEntries(props.env)}
-              onChange={(entries) => onChange({ env: entriesToEnv(entries) })}
-              keyPlaceholder="VARIABLE_NAME"
-              valuePlaceholder="value or ${ENV_REF}"
-            />
+            <>
+              <KeyValueEditor
+                label="Environment Variables"
+                entries={envToEntries(props.env)}
+                onChange={(entries) => onChange({ env: entriesToEnv(entries) })}
+                keyPlaceholder="VARIABLE_NAME"
+                valuePlaceholder="value or ${ENV_REF}"
+              />
+              {isCreateMode && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-muted-foreground uppercase">
+                    Secrets
+                  </label>
+                  <div className="text-base text-muted-foreground">
+                    Secrets can only be added after the MCP server is created
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -150,7 +164,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
           />
 
           {/* Environment Variables and Secrets */}
-          {channel && mcpSlug ? (
+          {channel && mcpSlug && !isCreateMode ? (
             <EnvEditor
               variables={props.env || {}}
               secrets={secrets || {}}
@@ -160,13 +174,25 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
               showExpansionHint
             />
           ) : (
-            <KeyValueEditor
-              label="Environment Variables"
-              entries={envToEntries(props.env)}
-              onChange={(entries) => onChange({ env: entriesToEnv(entries) })}
-              keyPlaceholder="VARIABLE_NAME"
-              valuePlaceholder="value or ${ENV_REF}"
-            />
+            <>
+              <KeyValueEditor
+                label="Environment Variables"
+                entries={envToEntries(props.env)}
+                onChange={(entries) => onChange({ env: entriesToEnv(entries) })}
+                keyPlaceholder="VARIABLE_NAME"
+                valuePlaceholder="value or ${ENV_REF}"
+              />
+              {isCreateMode && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-muted-foreground uppercase">
+                    Secrets
+                  </label>
+                  <div className="text-base text-muted-foreground">
+                    Secrets can only be added after the MCP server is created
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* OAuth Authentication Section */}
