@@ -190,7 +190,7 @@ export function TreeItem({
           "text-base truncate",
           isDraft
             ? "text-muted-foreground"
-            : "text-[var(--cast-text-secondary)]"
+            : "text-foreground"
         )}>
           {title || slug}
         </span>
