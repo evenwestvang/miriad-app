@@ -1093,7 +1093,7 @@ export function ArtifactDetail({
           <div className="flex items-center justify-center h-20">
             <span className="text-base text-muted-foreground">Loading version...</span>
           </div>
-        ) : isEditing && !(isCreateMode && currentType.startsWith('system.')) ? (
+        ) : isEditing && !(isCreateMode && currentType.startsWith('system.') && currentType !== 'system.agent') ? (
           <div className="px-3 py-3">
             <textarea
               ref={contentTextareaRef}
@@ -1108,8 +1108,8 @@ export function ArtifactDetail({
               style={{ minHeight: '100px', maxHeight: '70vh' }}
             />
           </div>
-        ) : isCreateMode ? (
-          // Create mode with system.* type - no content area to show
+        ) : isCreateMode && currentType.startsWith('system.') && currentType !== 'system.agent' ? (
+          // Create mode with system.* types (except agent) - no content area to show
           null
         ) : isInteractiveApp ? (
           <SpaRenderer
