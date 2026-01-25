@@ -54,6 +54,18 @@ RUN ARCH=$(case ${TARGETARCH:-amd64} in \
     curl -fsSL "https://github.com/rathole-org/rathole/releases/download/v${RATHOLE_VERSION}/rathole-${ARCH}.zip" -o /tmp/rathole.zip && \
     cd /tmp && unzip rathole.zip && mv rathole /usr/local/bin/ && chmod +x /usr/local/bin/rathole && rm -rf /tmp/rathole*
 
+# Install Bun (fast JavaScript runtime for Nuum agent engine)
+ARG BUN_VERSION=1.3.6
+RUN ARCH=$(case ${TARGETARCH:-amd64} in \
+        amd64) echo "x64-baseline" ;; \
+        arm64) echo "aarch64" ;; \
+        *) echo "x64-baseline" ;; \
+    esac) && \
+    curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${ARCH}.zip" -o /tmp/bun.zip && \
+    cd /tmp && unzip -q bun.zip && mv bun-linux-${ARCH}/bun /usr/local/bin/bun && \
+    ln -s /usr/local/bin/bun /usr/local/bin/bunx && \
+    chmod +x /usr/local/bin/bun && rm -rf /tmp/bun*
+
 # Install git shim for credential management
 COPY agents/miriad-cloud/scripts/cmd-shim /usr/bin/cmd-shim
 COPY agents/miriad-cloud/scripts/git-credential-token /usr/bin/git-credential-token
