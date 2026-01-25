@@ -417,58 +417,6 @@ export function ArtifactDetail({
     }
   }, [isCreateMode, onBack])
 
-  // Check if there are unsaved changes
-  const hasUnsavedChanges = useCallback(() => {
-    if (isCreateMode) {
-      return !!(editSlug || editTitle || editTldr || editContent || Object.keys(editProps).length > 0)
-    }
-    return buildChanges().length > 0 || hasContentChanged()
-  }, [isCreateMode, editSlug, editTitle, editTldr, editContent, editProps, buildChanges, hasContentChanged])
-
-  // Handle ESC with unsaved changes warning
-  const handleEscapeKey = useCallback(() => {
-    if (isEditing && hasUnsavedChanges()) {
-      // Show unsaved changes prompt instead of immediately canceling
-      setPendingNavigation(() => cancelEditing)
-      setShowUnsavedPrompt(true)
-    } else {
-      cancelEditing()
-    }
-  }, [isEditing, hasUnsavedChanges, cancelEditing])
-
-  // Keyboard handling: ESC to cancel, Cmd+Enter to save
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd+Enter or Ctrl+Enter to save
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        if (isEditing && hasChanges && !saving) {
-          e.preventDefault()
-          saveChanges()
-        }
-        return
-      }
-
-      if (e.key === 'Escape') {
-        // Don't interfere with inputs that might have their own ESC handling
-        const target = e.target as HTMLElement
-        if (target.tagName === 'SELECT') return
-
-        if (isEditing) {
-          // First ESC: cancel editing (with unsaved changes check)
-          e.preventDefault()
-          handleEscapeKey()
-        } else if (onBack && !showUnsavedPrompt) {
-          // Second ESC (or first if not editing): close board
-          e.preventDefault()
-          onBack()
-        }
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isEditing, handleEscapeKey, onBack, showUnsavedPrompt, hasChanges, saving, saveChanges])
-
   // Handle slug change in create mode
   const handleSlugChange = useCallback((value: string) => {
     const normalized = value.toLowerCase().replace(/\s+/g, '-')
@@ -795,6 +743,50 @@ export function ArtifactDetail({
 
   // For create mode, check form validity; for edit mode, check for changes
   const hasChanges = isCreateMode ? isCreateFormValid : (buildChanges().length > 0 || hasContentChanged())
+
+  // Handle ESC with unsaved changes warning
+  const handleCancelWithWarning = useCallback(() => {
+    if (hasChanges) {
+      // Show unsaved changes prompt instead of immediately canceling
+      setPendingNavigation(() => cancelEditing)
+      setShowUnsavedPrompt(true)
+    } else {
+      cancelEditing()
+    }
+  }, [hasChanges, cancelEditing])
+
+  // Keyboard handling: ESC to cancel (with warning), Cmd+Enter to save
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+Enter or Ctrl+Enter to save
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        if (isEditing && hasChanges && !saving) {
+          e.preventDefault()
+          saveChanges()
+        }
+        return
+      }
+
+      if (e.key === 'Escape') {
+        // Don't interfere with inputs that might have their own ESC handling
+        const target = e.target as HTMLElement
+        if (target.tagName === 'SELECT') return
+
+        if (isEditing) {
+          // First ESC: cancel editing (with unsaved changes warning)
+          e.preventDefault()
+          handleCancelWithWarning()
+        } else if (onBack && !showUnsavedPrompt) {
+          // Second ESC (or first if not editing): close board
+          e.preventDefault()
+          onBack()
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isEditing, handleCancelWithWarning, onBack, showUnsavedPrompt, hasChanges, saving, saveChanges])
 
   // Get type label for header (create mode)
   const getTypeLabel = (type: ArtifactType): string => {
@@ -1270,7 +1262,7 @@ export function ArtifactDetail({
         <div className="sticky bottom-0 px-3 py-3 border-t-2 border-border bg-secondary/50 flex items-center justify-end gap-2">
           <button
             className="px-3 py-1.5 text-base text-foreground/70 hover:text-foreground transition-colors"
-            onClick={handleEscapeKey}
+            onClick={handleCancelWithWarning}
             disabled={saving}
           >
             Cancel
