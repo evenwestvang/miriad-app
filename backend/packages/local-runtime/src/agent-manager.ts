@@ -614,7 +614,7 @@ export class AgentManager {
       // Build MCP servers config - use type assertion since SDK uses discriminated unions
       const mcpServers: Record<string, unknown> = {};
       for (const server of state.mcpServers) {
-        if (server.transport === 'stdio') {
+        if (server.transport === 'stdio' && server.command) {
           // Rewrite localhost URLs in env vars for Docker compatibility
           const rewrittenEnv = server.env
             ? Object.fromEntries(
@@ -637,6 +637,9 @@ export class AgentManager {
             url: rewriteUrlForDocker(server.url),
             headers: server.headers,
           };
+        } else {
+          // Skip invalid configs (e.g., stdio without command, http without url)
+          console.warn(`[AgentManager] Skipping invalid MCP server '${server.name}': transport=${server.transport}, command=${server.command ?? 'null'}, url=${server.url ?? 'null'}`);
         }
       }
       if (Object.keys(mcpServers).length > 0) {
