@@ -280,6 +280,8 @@ export function BoardPanel({
       setArchivedItems(data.items || [{ slug: selectedSlug, previousStatus: 'active' }])
 
       // Clear selection and go back to tree
+      // Clear both internal state and notify external routing
+      setInternalSelectedSlug(null)
       setSelectedSlug(null)
       setSelectedArtifactData(null)
 
