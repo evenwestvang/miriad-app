@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, X, Upload, FileText, CheckSquare, GitBranch, Code, ChevronDown, Server, Bot, Plug2, KeyRound, Search } from 'lucide-react'
+import { Plus, X, Upload, FileText, CheckSquare, Code, ChevronDown, Server, Bot, KeyRound, Search } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { ArtifactType } from '../../types/artifact'
 
@@ -7,7 +7,6 @@ import type { ArtifactType } from '../../types/artifact'
 const CONTENT_TYPES: { value: ArtifactType; label: string; icon: typeof FileText }[] = [
   { value: 'doc', label: 'Doc', icon: FileText },
   { value: 'task', label: 'Task', icon: CheckSquare },
-  { value: 'decision', label: 'Decision', icon: GitBranch },
   { value: 'code', label: 'Code', icon: Code },
 ]
 
@@ -15,7 +14,6 @@ const CONTENT_TYPES: { value: ArtifactType; label: string; icon: typeof FileText
 const SYSTEM_TYPES: { value: ArtifactType; label: string; icon: typeof FileText }[] = [
   { value: 'system.agent', label: 'Agent', icon: Bot },
   { value: 'system.mcp', label: 'MCP Server', icon: Server },
-  { value: 'system.app', label: 'App', icon: Plug2 },
   { value: 'system.environment', label: 'Environment', icon: KeyRound },
 ]
 

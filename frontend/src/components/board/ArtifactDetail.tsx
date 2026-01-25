@@ -71,16 +71,15 @@ interface PropsValidationError {
 // Constants
 // =============================================================================
 
-// Status options based on type
-const DOC_STATUSES: ArtifactStatus[] = ['draft', 'active', 'archived']
-const TASK_STATUSES: ArtifactStatus[] = ['pending', 'in_progress', 'done', 'blocked', 'archived']
+// Status options based on type (archived is not user-selectable)
+const DOC_STATUSES: ArtifactStatus[] = ['draft', 'active']
+const TASK_STATUSES: ArtifactStatus[] = ['pending', 'in_progress', 'done', 'blocked']
 
-// Available types for creation
+// Available types for creation (decision and system.app are hidden from UI)
 const ARTIFACT_TYPES: { value: ArtifactType; label: string }[] = [
   { value: 'doc', label: 'Document' },
   { value: 'folder', label: 'Folder' },
   { value: 'task', label: 'Task' },
-  { value: 'decision', label: 'Decision' },
   { value: 'code', label: 'Code' },
   { value: 'knowledgebase', label: 'Knowledge Base' },
   { value: 'system.mcp', label: 'MCP Server' },
@@ -88,7 +87,6 @@ const ARTIFACT_TYPES: { value: ArtifactType; label: string }[] = [
   { value: 'system.environment', label: 'Environment' },
   { value: 'system.focus', label: 'Focus' },
   { value: 'system.playbook', label: 'Playbook' },
-  { value: 'system.app', label: 'App' },
 ]
 
 // Default status based on type (human-created artifacts default to 'active', tasks to 'pending')
@@ -419,18 +417,46 @@ export function ArtifactDetail({
     }
   }, [isCreateMode, onBack])
 
-  // ESC key handling: first ESC cancels editing, second ESC closes board
+  // Check if there are unsaved changes
+  const hasUnsavedChanges = useCallback(() => {
+    if (isCreateMode) {
+      return !!(editSlug || editTitle || editTldr || editContent || Object.keys(editProps).length > 0)
+    }
+    return buildChanges().length > 0 || hasContentChanged()
+  }, [isCreateMode, editSlug, editTitle, editTldr, editContent, editProps, buildChanges, hasContentChanged])
+
+  // Handle ESC with unsaved changes warning
+  const handleEscapeKey = useCallback(() => {
+    if (isEditing && hasUnsavedChanges()) {
+      // Show unsaved changes prompt instead of immediately canceling
+      setPendingNavigation(() => cancelEditing)
+      setShowUnsavedPrompt(true)
+    } else {
+      cancelEditing()
+    }
+  }, [isEditing, hasUnsavedChanges, cancelEditing])
+
+  // Keyboard handling: ESC to cancel, Cmd+Enter to save
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+Enter or Ctrl+Enter to save
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        if (isEditing && hasChanges && !saving) {
+          e.preventDefault()
+          saveChanges()
+        }
+        return
+      }
+
       if (e.key === 'Escape') {
         // Don't interfere with inputs that might have their own ESC handling
         const target = e.target as HTMLElement
         if (target.tagName === 'SELECT') return
 
         if (isEditing) {
-          // First ESC: cancel editing
+          // First ESC: cancel editing (with unsaved changes check)
           e.preventDefault()
-          cancelEditing()
+          handleEscapeKey()
         } else if (onBack && !showUnsavedPrompt) {
           // Second ESC (or first if not editing): close board
           e.preventDefault()
@@ -441,7 +467,7 @@ export function ArtifactDetail({
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isEditing, cancelEditing, onBack, showUnsavedPrompt])
+  }, [isEditing, handleEscapeKey, onBack, showUnsavedPrompt, hasChanges, saving, saveChanges])
 
   // Handle slug change in create mode
   const handleSlugChange = useCallback((value: string) => {
@@ -1244,7 +1270,7 @@ export function ArtifactDetail({
         <div className="sticky bottom-0 px-3 py-3 border-t-2 border-border bg-secondary/50 flex items-center justify-end gap-2">
           <button
             className="px-3 py-1.5 text-base text-foreground/70 hover:text-foreground transition-colors"
-            onClick={cancelEditing}
+            onClick={handleEscapeKey}
             disabled={saving}
           >
             Cancel
