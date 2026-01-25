@@ -1074,6 +1074,9 @@ export function ArtifactDetail({
               style={{ minHeight: '100px', maxHeight: '70vh' }}
             />
           </div>
+        ) : isCreateMode ? (
+          // Create mode with system.* type - no content area to show
+          null
         ) : isInteractiveApp ? (
           <SpaRenderer
             content={isViewingHistory ? versionData!.content : artifact!.content}
