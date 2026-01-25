@@ -53,6 +53,13 @@ export interface DeliverMessageMessage {
   mcpServers?: McpServerConfig[];
   /** Resolved environment variables and secrets for this request */
   environment?: Record<string, string>;
+  /** Agent definition props (engine, nameTheme, etc.) */
+  props?: {
+    engine?: string;
+    nameTheme?: string;
+    mcp?: string[];
+    [key: string]: unknown;
+  };
 }
 
 export interface SuspendAgentMessage {

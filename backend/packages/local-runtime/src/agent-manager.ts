@@ -1,11 +1,12 @@
 /**
  * Agent Manager
  *
- * Manages multiple Claude SDK agent instances within a single runtime process.
+ * Manages multiple agent instances within a single runtime process.
+ * Supports multiple engines: Claude SDK (in-process) and Nuum (subprocess).
  * Handles agent lifecycle: activation, message routing, suspension.
  *
- * Key feature: Streaming input support - messages can be pushed to Claude
- * during execution using the SDK's AsyncIterable prompt feature.
+ * Key feature: Streaming input support - messages can be pushed to agents
+ * during execution for mid-turn injection.
  */
 
 import { existsSync, mkdirSync } from 'node:fs';
@@ -22,6 +23,12 @@ import type {
   AgentFrameMessage,
   McpServerConfig,
 } from './types.js';
+import {
+  createEngineManager,
+  type EngineManager,
+  type EngineProcess,
+  type EngineConfig,
+} from './engines/index.js';
 
 // =============================================================================
 // URL Rewriting for Docker
@@ -71,8 +78,10 @@ interface AgentInstance {
   bridge: TymbalBridge;
   messageQueue: DeliverMessageMessage[];
   isProcessing: boolean;
-  /** Active message stream for pushing messages during execution */
+  /** Active message stream for pushing messages during execution (Claude SDK only) */
   messageStream: MessageStream | null;
+  /** Engine process for subprocess-based engines (Nuum only) */
+  engineProcess: EngineProcess | null;
 }
 
 // =============================================================================
@@ -208,9 +217,11 @@ export function parseAgentId(agentId: string): {
 export class AgentManager {
   private readonly config: AgentManagerConfig;
   private readonly agents = new Map<string, AgentInstance>();
+  private readonly engineManager: EngineManager;
 
   constructor(config: AgentManagerConfig) {
     this.config = config;
+    this.engineManager = createEngineManager();
   }
 
   /**
@@ -228,13 +239,15 @@ export class AgentManager {
   }
 
   /**
-   * Activate an agent (spawn Claude SDK).
+   * Activate an agent with the specified engine.
    */
   async activate(message: ActivateAgentMessage): Promise<void> {
-    const { agentId, systemPrompt, mcpServers, workspacePath } = message;
+    const { agentId, systemPrompt, mcpServers, workspacePath, props } = message;
     const { callsign } = parseAgentId(agentId);
+    // Extract engine from props, default to claude-sdk
+    const engineId = (props?.engine === 'nuum' ? 'nuum' : 'claude-sdk') as 'claude-sdk' | 'nuum';
 
-    console.log(`[AgentManager] Activating ${agentId}`);
+    console.log(`[AgentManager] Activating ${agentId} with engine: ${engineId}`);
     console.log(`[AgentManager]   mcpServers from message:`, JSON.stringify(mcpServers));
 
     // Check if already active
@@ -270,6 +283,7 @@ export class AgentManager {
         workspacePath: resolvedPath,
         systemPrompt,
         mcpServers,
+        engine: engineId,
         activatedAt: new Date().toISOString(),
         lastActivity: new Date().toISOString(),
       },
@@ -277,19 +291,69 @@ export class AgentManager {
       messageQueue: [],
       isProcessing: false,
       messageStream: null,
+      engineProcess: null,
     };
 
     console.log(`[AgentManager]   Stored mcpServers in state:`, JSON.stringify(instance.state.mcpServers));
     this.agents.set(agentId, instance);
 
+    // For Nuum engine, spawn the subprocess now
+    if (engineId === 'nuum') {
+      try {
+        const nuumEngine = this.engineManager.getEngine('nuum');
+        if (!nuumEngine) {
+          throw new Error('Nuum engine not registered');
+        }
+
+        const engineConfig: EngineConfig = {
+          agentId,
+          workspacePath: resolvedPath,
+          systemPrompt,
+          mcpServers,
+          environment: instance.state.environment,
+        };
+
+        console.log(`[AgentManager] @${callsign} spawning Nuum engine...`);
+        instance.engineProcess = await nuumEngine.spawn(engineConfig);
+
+        // Start consuming output and feeding to bridge
+        this.consumeEngineOutput(instance);
+
+        console.log(`[AgentManager] @${callsign} Nuum engine spawned (pid: ${instance.engineProcess.pid})`);
+      } catch (error) {
+        console.error(`[AgentManager] Failed to spawn Nuum engine for ${agentId}:`, error);
+        instance.state.status = 'error';
+        this.config.onError?.(agentId, error as Error);
+        return;
+      }
+    }
+
     // Signal checkin (SDK ready)
-    // In a real implementation, we'd wait for SDK initialization
-    // For now, we mark as online immediately after activation setup
     instance.state.status = 'online';
     instance.state.lastActivity = new Date().toISOString();
     this.config.onCheckin(agentId);
 
     console.log(`[AgentManager] @${callsign} state: activating → online`);
+  }
+
+  /**
+   * Consume output from an engine process and feed to TymbalBridge.
+   */
+  private async consumeEngineOutput(instance: AgentInstance): Promise<void> {
+    if (!instance.engineProcess) return;
+
+    const { callsign } = parseAgentId(instance.state.agentId);
+
+    try {
+      for await (const message of instance.engineProcess.output) {
+        await instance.bridge.processSDKMessage(message);
+      }
+      await instance.bridge.finalize();
+      console.log(`[AgentManager] @${callsign} engine output stream ended`);
+    } catch (error) {
+      console.error(`[AgentManager] @${callsign} engine output error:`, error);
+      this.config.onError?.(instance.state.agentId, error as Error);
+    }
   }
 
   /**
@@ -304,7 +368,7 @@ export class AgentManager {
    * Auto-activates the agent if it doesn't exist (local runtime is always-on).
    */
   async deliverMessage(message: DeliverMessageMessage): Promise<void> {
-    const { agentId, systemPrompt, mcpServers, environment } = message;
+    const { agentId, systemPrompt, mcpServers, environment, props } = message;
     let instance = this.agents.get(agentId);
 
     const { callsign } = parseAgentId(agentId);
@@ -317,12 +381,16 @@ export class AgentManager {
       } else {
         console.warn(`[AgentManager] WARNING: Auto-activation WITHOUT mcpServers!`);
       }
+      if (props?.engine) {
+        console.log(`[AgentManager] Auto-activation with engine: ${props.engine}`);
+      }
       await this.activate({
         type: 'activate',
         agentId,
         systemPrompt: systemPrompt || '',
         workspacePath: '', // Will be ignored, uses local config
         mcpServers, // Now passed from message
+        props, // Pass props from message (includes engine)
       });
       instance = this.agents.get(agentId);
       if (!instance) {
@@ -344,6 +412,51 @@ export class AgentManager {
       instance.state.environment = environment;
     }
 
+    // Route based on engine type
+    if (instance.state.engine === 'nuum') {
+      await this.deliverMessageToNuum(instance, message);
+    } else {
+      await this.deliverMessageToClaudeSDK(instance, message);
+    }
+  }
+
+  /**
+   * Deliver message to Nuum engine (subprocess).
+   */
+  private async deliverMessageToNuum(
+    instance: AgentInstance,
+    message: DeliverMessageMessage,
+  ): Promise<void> {
+    const { callsign } = parseAgentId(instance.state.agentId);
+
+    if (!instance.engineProcess) {
+      console.error(`[AgentManager] @${callsign} Nuum engine not running`);
+      return;
+    }
+
+    // Send message to engine process
+    instance.engineProcess.send({
+      type: 'user',
+      content: message.content,
+      sender: message.sender,
+      systemPrompt: message.systemPrompt,
+      mcpServers: message.mcpServers,
+    });
+
+    instance.state.status = 'busy';
+    instance.state.lastActivity = new Date().toISOString();
+    console.log(`[AgentManager] @${callsign} sent message to Nuum engine`);
+  }
+
+  /**
+   * Deliver message to Claude SDK engine (in-process).
+   */
+  private async deliverMessageToClaudeSDK(
+    instance: AgentInstance,
+    message: DeliverMessageMessage,
+  ): Promise<void> {
+    const { callsign } = parseAgentId(instance.state.agentId);
+
     // Format message with sender header
     const formattedContent = this.formatMessage(message);
 
@@ -363,12 +476,12 @@ export class AgentManager {
 
     // Process message (will transition to busy)
     console.log(`[AgentManager] @${callsign} calling processMessage with content length: ${formattedContent.length}`);
-    await this.processMessage(instance, formattedContent, systemPrompt);
+    await this.processMessage(instance, formattedContent, message.systemPrompt);
     console.log(`[AgentManager] @${callsign} processMessage returned`);
   }
 
   /**
-   * Suspend an agent (tear down SDK).
+   * Suspend an agent (tear down engine).
    */
   async suspend(message: SuspendAgentMessage): Promise<void> {
     const { agentId, reason } = message;
@@ -387,10 +500,16 @@ export class AgentManager {
     instance.state.status = 'offline';
     instance.state.lastActivity = new Date().toISOString();
 
-    // Close any active message stream
+    // Close any active message stream (Claude SDK)
     if (instance.messageStream) {
       instance.messageStream.close();
       instance.messageStream = null;
+    }
+
+    // Terminate engine process (Nuum)
+    if (instance.engineProcess) {
+      await instance.engineProcess.terminate(reason);
+      instance.engineProcess = null;
     }
 
     // Clear message queue

@@ -8,21 +8,24 @@
  * The roster table in PlanetScale is the source of truth for container state.
  */
 
-import type { AgentManager } from './agent-manager.js';
-import type { Storage } from '@cast/storage';
-import type { LocalRuntimeConfig } from '@cast/core';
-import type { ConnectionManager } from '../websocket/index.js';
-import type { AgentInvoker, Message } from '../handlers/messages.js';
-import type { DeliverMessageMessage } from '../runtimes/runtime-protocol-handlers.js';
-import { pushMessagesToContainer, broadcastAgentState } from '../handlers/checkin.js';
-import { generateContainerToken } from '../auth/index.js';
+import type { AgentManager } from "./agent-manager.js";
+import type { Storage } from "@cast/storage";
+import type { LocalRuntimeConfig } from "@cast/core";
+import type { ConnectionManager } from "../websocket/index.js";
+import type { AgentInvoker, Message } from "../handlers/messages.js";
+import type { DeliverMessageMessage } from "../runtimes/runtime-protocol-handlers.js";
+import {
+  pushMessagesToContainer,
+  broadcastAgentState,
+} from "../handlers/checkin.js";
+import { generateContainerToken } from "../auth/index.js";
 
 /**
  * Convert message content to string for agent consumption.
  * Text messages are already strings, structured messages (like status) are JSON-stringified.
  */
 function contentToString(content: string | Record<string, unknown>): string {
-  return typeof content === 'string' ? content : JSON.stringify(content);
+  return typeof content === "string" ? content : JSON.stringify(content);
 }
 
 // =============================================================================
@@ -58,15 +61,16 @@ export interface AgentInvokerAdapterOptions {
  * This ensures Lambda and local dev use identical routing logic.
  */
 export function createAgentInvokerAdapter(
-  options: AgentInvokerAdapterOptions
+  options: AgentInvokerAdapterOptions,
 ): AgentInvoker {
-  const { agentManager, storage, spaceId, connectionManager, runtimeSend } = options;
+  const { agentManager, storage, spaceId, connectionManager, runtimeSend } =
+    options;
 
   return {
     invokeAgents: async (
       channelId: string,
       targets: string[],
-      message: Message
+      message: Message,
     ): Promise<void> => {
       if (targets.length === 0) {
         return;
@@ -74,7 +78,7 @@ export function createAgentInvokerAdapter(
 
       console.log(
         `[AgentInvoker] Invoking ${targets.length} agent(s) for message ${message.id}:`,
-        targets
+        targets,
       );
 
       // Invoke all agents in parallel
@@ -82,13 +86,20 @@ export function createAgentInvokerAdapter(
         targets.map(async (callsign) => {
           try {
             // Step 0a: Check if agent is paused or archived - skip if so
-            const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
-            if (rosterEntry?.status === 'paused') {
-              console.log(`[AgentInvoker] Skipping @${callsign}: agent is paused`);
+            const rosterEntry = await storage.getRosterByCallsign(
+              channelId,
+              callsign,
+            );
+            if (rosterEntry?.status === "paused") {
+              console.log(
+                `[AgentInvoker] Skipping @${callsign}: agent is paused`,
+              );
               return;
             }
-            if (rosterEntry?.status === 'archived') {
-              console.log(`[AgentInvoker] Skipping @${callsign}: agent is archived`);
+            if (rosterEntry?.status === "archived") {
+              console.log(
+                `[AgentInvoker] Skipping @${callsign}: agent is archived`,
+              );
               return;
             }
 
@@ -98,47 +109,107 @@ export function createAgentInvokerAdapter(
             // Step 1: Check if agent is bound to a LocalRuntime (via roster.runtime_id)
             // Route via WebSocket to the runtime's connection
             if (rosterEntry?.runtimeId) {
-              console.log(`[AgentInvoker] @${callsign} bound to LocalRuntime ${rosterEntry.runtimeId}, checking DB`);
-              const runtimeRecord = await storage.getRuntime(rosterEntry.runtimeId);
+              console.log(
+                `[AgentInvoker] @${callsign} bound to LocalRuntime ${rosterEntry.runtimeId}, checking DB`,
+              );
+              const runtimeRecord = await storage.getRuntime(
+                rosterEntry.runtimeId,
+              );
 
               if (!runtimeRecord) {
-                console.warn(`[AgentInvoker] @${callsign}'s runtime (${rosterEntry.runtimeId}) not found in DB`);
-                await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
+                console.warn(
+                  `[AgentInvoker] @${callsign}'s runtime (${rosterEntry.runtimeId}) not found in DB`,
+                );
+                await broadcastAgentState(
+                  connectionManager,
+                  channelId,
+                  callsign,
+                  "offline",
+                );
                 return;
               }
 
-              const runtimeConfig = runtimeRecord.config as LocalRuntimeConfig | null;
+              const runtimeConfig =
+                runtimeRecord.config as LocalRuntimeConfig | null;
               const wsConnectionId = runtimeConfig?.wsConnectionId;
 
-              if (runtimeRecord.status !== 'online' || !wsConnectionId) {
+              if (runtimeRecord.status !== "online" || !wsConnectionId) {
                 // Runtime is offline - broadcast error to channel, message stays in DB for later
-                console.warn(`[AgentInvoker] @${callsign}'s runtime (${rosterEntry.runtimeId}) is ${runtimeRecord.status}, wsConnectionId: ${wsConnectionId ?? 'none'}`);
-                await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
+                console.warn(
+                  `[AgentInvoker] @${callsign}'s runtime (${rosterEntry.runtimeId}) is ${runtimeRecord.status}, wsConnectionId: ${wsConnectionId ?? "none"}`,
+                );
+                await broadcastAgentState(
+                  connectionManager,
+                  channelId,
+                  callsign,
+                  "offline",
+                );
                 return;
               }
 
               // Runtime is online - check if we have runtimeSend to deliver messages
               if (!runtimeSend) {
-                console.error(`[AgentInvoker] No runtimeSend available for LocalRuntime routing`);
-                await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
+                console.error(
+                  `[AgentInvoker] No runtimeSend available for LocalRuntime routing`,
+                );
+                await broadcastAgentState(
+                  connectionManager,
+                  channelId,
+                  callsign,
+                  "offline",
+                );
                 return;
               }
 
-              const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
+              const systemPrompt = await agentManager.buildPromptForAgent(
+                spaceId,
+                channelId,
+                callsign,
+              );
 
               // LocalRuntime simplification: Always send 'message' type directly.
               // The AgentManager.deliverMessage() auto-activates if needed (lines 172-192).
               // This avoids the activate→checkin→fetch roundtrip that containerized agents need.
               // The local runtime process is always-on, so no cold start delay.
-              console.log(`[AgentInvoker] @${callsign} bound to LocalRuntime, sending message directly via WebSocket ${wsConnectionId}`);
+              console.log(
+                `[AgentInvoker] @${callsign} bound to LocalRuntime, sending message directly via WebSocket ${wsConnectionId}`,
+              );
 
               // Generate auth token and get MCP configs
-              const authToken = generateContainerToken({ spaceId, channelId, callsign });
-              const mcpServers = await agentManager.getMcpConfigsForAgent(spaceId, channelId, authToken);
-              console.log(`[AgentInvoker] @${callsign} MCP configs:`, JSON.stringify(mcpServers));
+              const authToken = generateContainerToken({
+                spaceId,
+                channelId,
+                callsign,
+              });
+              const mcpServers = await agentManager.getMcpConfigsForAgent(
+                spaceId,
+                channelId,
+                authToken,
+              );
+              console.log(
+                `[AgentInvoker] @${callsign} MCP configs:`,
+                JSON.stringify(mcpServers),
+              );
+
+              // Get agent definition props (engine, nameTheme, etc.)
+              const props = await agentManager.getAgentProps(
+                spaceId,
+                channelId,
+                callsign,
+              );
+              console.log("COWABUNGA", props);
+              if (props) {
+                console.log(
+                  `[AgentInvoker] @${callsign} props:`,
+                  JSON.stringify(props),
+                );
+              }
 
               // Resolve environment variables and secrets for this channel
-              const environment = await agentManager.resolveEnvironment(spaceId, channelId);
+              const environment = await agentManager.resolveEnvironment(
+                spaceId,
+                channelId,
+              );
 
               // Add tunnel credentials to environment (per-agent, for cast-tunnel script)
               if (rosterEntry.tunnelHash) {
@@ -147,32 +218,55 @@ export function createAgentInvokerAdapter(
               environment.CAST_AUTH_TOKEN = authToken;
 
               // Add platform-level secrets (Letta API key for engine: "letta" agents)
-              const lettaApiKey = await storage.getSpaceSecretValue(spaceId, 'letta_api_key');
+              const lettaApiKey = await storage.getSpaceSecretValue(
+                spaceId,
+                "letta_api_key",
+              );
               if (lettaApiKey) {
                 environment.LETTA_API_KEY = lettaApiKey;
               }
 
               const deliverMessage: DeliverMessageMessage = {
-                type: 'message',
+                type: "message",
                 agentId,
                 messageId: message.id,
                 content: userMessage,
                 sender: message.sender,
                 systemPrompt,
                 mcpServers,
-                environment: Object.keys(environment).length > 0 ? environment : undefined,
+                environment:
+                  Object.keys(environment).length > 0 ? environment : undefined,
+                props,
               };
 
               try {
-                const result = await runtimeSend(wsConnectionId, JSON.stringify(deliverMessage));
+                const result = await runtimeSend(
+                  wsConnectionId,
+                  JSON.stringify(deliverMessage),
+                );
                 if (result === false) {
-                  console.warn(`[AgentInvoker] Failed to send message to @${callsign} (connection stale)`);
-                  await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
+                  console.warn(
+                    `[AgentInvoker] Failed to send message to @${callsign} (connection stale)`,
+                  );
+                  await broadcastAgentState(
+                    connectionManager,
+                    channelId,
+                    callsign,
+                    "offline",
+                  );
                   return;
                 }
               } catch (error) {
-                console.warn(`[AgentInvoker] Failed to send message to @${callsign}:`, error);
-                await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
+                console.warn(
+                  `[AgentInvoker] Failed to send message to @${callsign}:`,
+                  error,
+                );
+                await broadcastAgentState(
+                  connectionManager,
+                  channelId,
+                  callsign,
+                  "offline",
+                );
                 return;
               }
 
@@ -182,8 +276,16 @@ export function createAgentInvokerAdapter(
                 readmark: message.id,
                 lastMessageRoutedAt: now,
               });
-              await broadcastAgentState(connectionManager, channelId, callsign, 'pending', now);
-              console.log(`[AgentInvoker] Successfully sent message to @${callsign} via LocalRuntime WebSocket`);
+              await broadcastAgentState(
+                connectionManager,
+                channelId,
+                callsign,
+                "pending",
+                now,
+              );
+              console.log(
+                `[AgentInvoker] Successfully sent message to @${callsign} via LocalRuntime WebSocket`,
+              );
               return;
             }
 
@@ -191,13 +293,23 @@ export function createAgentInvokerAdapter(
             // Note: rosterEntry already fetched at start of loop for status check
             if (rosterEntry?.callbackUrl) {
               // Container is running - push directly via HTTP
-              console.log(`[AgentInvoker] @${callsign} has callbackUrl, pushing directly to ${rosterEntry.callbackUrl}`);
+              console.log(
+                `[AgentInvoker] @${callsign} has callbackUrl, pushing directly to ${rosterEntry.callbackUrl}`,
+              );
 
               // Generate auth token for this agent (deterministic - same as container received at activate)
-              const authToken = generateContainerToken({ spaceId, channelId, callsign });
+              const authToken = generateContainerToken({
+                spaceId,
+                channelId,
+                callsign,
+              });
 
               // Build system prompt using centralized method from AgentManager
-              const systemPrompt = await agentManager.buildPromptForAgent(spaceId, channelId, callsign);
+              const systemPrompt = await agentManager.buildPromptForAgent(
+                spaceId,
+                channelId,
+                callsign,
+              );
 
               // v3.0: Pass routeHints to be echoed as HTTP headers (for Fly.io routing, etc.)
               const success = await pushMessagesToContainer(
@@ -206,7 +318,7 @@ export function createAgentInvokerAdapter(
                 agentId,
                 authToken,
                 systemPrompt,
-                rosterEntry.routeHints as Record<string, string> | null
+                rosterEntry.routeHints as Record<string, string> | null,
               );
 
               if (success) {
@@ -217,30 +329,52 @@ export function createAgentInvokerAdapter(
                   lastMessageRoutedAt: now,
                 });
                 // Broadcast pending state - agent is now processing
-                await broadcastAgentState(connectionManager, channelId, callsign, 'pending', now);
-                console.log(`[AgentInvoker] Successfully pushed to @${callsign}, updated readmark to ${message.id}`);
+                await broadcastAgentState(
+                  connectionManager,
+                  channelId,
+                  callsign,
+                  "pending",
+                  now,
+                );
+                console.log(
+                  `[AgentInvoker] Successfully pushed to @${callsign}, updated readmark to ${message.id}`,
+                );
               } else {
                 // Push failed - container may have died, clear callbackUrl and spawn new
-                console.warn(`[AgentInvoker] Push to @${callsign} failed, clearing callbackUrl and spawning new container`);
+                console.warn(
+                  `[AgentInvoker] Push to @${callsign} failed, clearing callbackUrl and spawning new container`,
+                );
                 await storage.updateRosterEntry(channelId, rosterEntry.id, {
                   callbackUrl: undefined,
                 });
                 // Broadcast 'connecting' state before spawning
-                await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
+                await broadcastAgentState(
+                  connectionManager,
+                  channelId,
+                  callsign,
+                  "connecting",
+                );
                 // Fall through to spawn
                 await agentManager.sendMessage(
                   spaceId,
                   channelId,
                   callsign,
                   message.sender,
-                  contentToString(message.content)
+                  contentToString(message.content),
                 );
               }
             } else {
               // Step 3: No container running - spawn new one via AgentManager
-              console.log(`[AgentInvoker] @${callsign} has no callbackUrl, spawning new container`);
+              console.log(
+                `[AgentInvoker] @${callsign} has no callbackUrl, spawning new container`,
+              );
               // Broadcast 'connecting' state before spawning
-              await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
+              await broadcastAgentState(
+                connectionManager,
+                channelId,
+                callsign,
+                "connecting",
+              );
               // Set lastMessageRoutedAt since we're routing a message (will become 'pending' after container starts)
               if (rosterEntry) {
                 await storage.updateRosterEntry(channelId, rosterEntry.id, {
@@ -252,22 +386,27 @@ export function createAgentInvokerAdapter(
                 channelId,
                 callsign,
                 message.sender,
-                contentToString(message.content)
+                contentToString(message.content),
               );
-              console.log(`[AgentInvoker] Spawned container for @${callsign} (will checkin and get pending messages)`);
+              console.log(
+                `[AgentInvoker] Spawned container for @${callsign} (will checkin and get pending messages)`,
+              );
             }
           } catch (error) {
-            console.error(`[AgentInvoker] Failed to invoke @${callsign}:`, error);
+            console.error(
+              `[AgentInvoker] Failed to invoke @${callsign}:`,
+              error,
+            );
             throw error;
           }
-        })
+        }),
       );
 
       // Log any failures but don't throw - we want partial success
-      const failures = results.filter((r) => r.status === 'rejected');
+      const failures = results.filter((r) => r.status === "rejected");
       if (failures.length > 0) {
         console.warn(
-          `[AgentInvoker] ${failures.length}/${targets.length} agent invocations failed`
+          `[AgentInvoker] ${failures.length}/${targets.length} agent invocations failed`,
         );
       }
     },

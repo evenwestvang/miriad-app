@@ -253,6 +253,7 @@ export class RuntimeClient {
 
   private async handleDeliverMessage(message: DeliverMessageMessage): Promise<void> {
     console.log(`[RuntimeClient] Message for agent: ${message.agentId}`);
+    console.log(`[RuntimeClient]   props: ${JSON.stringify(message.props)}`);
     await this.agentManager.deliverMessage(message);
   }
 
