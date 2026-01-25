@@ -555,14 +555,15 @@ export function ArtifactDetail({
 
         if (response.status === 400) {
           const data = await response.json().catch(() => ({}))
-          if (data.violations && Array.isArray(data.violations)) {
+          // API returns { error: 'validation_error', details: [...] } for validation errors
+          if (data.details && Array.isArray(data.details)) {
             setPropsValidationError({
-              violations: data.violations,
+              violations: data.details,
               schema: data.schema,
             })
             return
           }
-          throw new Error(data.error || 'Validation failed')
+          throw new Error(data.error === 'validation_error' ? 'Validation failed' : (data.error || 'Validation failed'))
         }
 
         if (!response.ok) {
@@ -643,14 +644,15 @@ export function ArtifactDetail({
 
         if (patchResponse.status === 400) {
           const data = await patchResponse.json().catch(() => ({}))
-          if (data.violations && Array.isArray(data.violations)) {
+          // API returns { error: 'validation_error', details: [...] } for validation errors
+          if (data.details && Array.isArray(data.details)) {
             setPropsValidationError({
-              violations: data.violations,
+              violations: data.details,
               schema: data.schema,
             })
             return
           }
-          throw new Error(data.error || 'Validation failed')
+          throw new Error(data.error === 'validation_error' ? 'Validation failed' : (data.error || 'Validation failed'))
         }
 
         if (!patchResponse.ok) {
@@ -692,14 +694,15 @@ export function ArtifactDetail({
 
       if (response.status === 400) {
         const data = await response.json().catch(() => ({}))
-        if (data.violations && Array.isArray(data.violations)) {
+        // API returns { error: 'validation_error', details: [...] } for validation errors
+        if (data.details && Array.isArray(data.details)) {
           setPropsValidationError({
-            violations: data.violations,
+            violations: data.details,
             schema: data.schema,
           })
           return
         }
-        throw new Error(data.error || 'Invalid props')
+        throw new Error(data.error === 'validation_error' ? 'Validation failed' : (data.error || 'Invalid props'))
       }
 
       if (!response.ok) {
@@ -797,14 +800,7 @@ export function ArtifactDetail({
             const Icon = getArtifactIcon(iconArtifact)
             return <Icon className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
           })()}
-          {['system.mcp', 'system.focus', 'system.environment'].includes(currentType) ? (
-            // Props-only system types get a static title (not editable)
-            <span className="font-semibold text-base text-foreground truncate">
-              {isCreateMode
-                ? `New ${getTypeLabel(currentType)}`
-                : (artifact?.title || getTypeLabel(currentType))}
-            </span>
-          ) : isEditing ? (
+          {isEditing ? (
             <input
               type="text"
               value={editTitle}
@@ -966,6 +962,15 @@ export function ArtifactDetail({
           onDiscard={confirmDiscard}
           onContinue={cancelNavigation}
         />
+      )}
+
+      {/* Form heading for props-only system types */}
+      {['system.mcp', 'system.focus', 'system.environment'].includes(currentType) && (
+        <div className="px-3 py-3 border-b border-border">
+          <h2 className="text-lg font-semibold text-foreground">
+            {isCreateMode ? `New ${getTypeLabel(currentType)}` : getTypeLabel(currentType)}
+          </h2>
+        </div>
       )}
 
       {/* Create mode: Slug and Type fields */}
