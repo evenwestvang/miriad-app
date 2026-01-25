@@ -287,20 +287,20 @@ export class TymbalBridge {
       });
     }
 
-    // Emit cost frame
+    // Emit cost frame (handle missing fields from Nuum which doesn't track cost)
     const costValue: CostValue = {
       type: 'cost',
       sender: this.callsign,
       senderType: 'agent',
-      totalCostUsd: message.total_cost_usd,
-      durationMs: message.duration_ms,
-      durationApiMs: message.duration_api_ms,
-      numTurns: message.num_turns,
+      totalCostUsd: message.total_cost_usd ?? 0,
+      durationMs: message.duration_ms ?? 0,
+      durationApiMs: message.duration_api_ms ?? 0,
+      numTurns: message.num_turns ?? 1,
       usage: {
-        inputTokens: message.usage.input_tokens,
-        outputTokens: message.usage.output_tokens,
-        cacheReadInputTokens: message.usage.cache_read_input_tokens ?? 0,
-        cacheCreationInputTokens: message.usage.cache_creation_input_tokens ?? 0,
+        inputTokens: message.usage?.input_tokens ?? 0,
+        outputTokens: message.usage?.output_tokens ?? 0,
+        cacheReadInputTokens: message.usage?.cache_read_input_tokens ?? 0,
+        cacheCreationInputTokens: message.usage?.cache_creation_input_tokens ?? 0,
       },
     };
 
@@ -325,7 +325,7 @@ export class TymbalBridge {
     });
 
     console.log(
-      `[TymbalBridge:${this.callsign}] Cost: $${message.total_cost_usd.toFixed(4)} (${message.num_turns} turns)`
+      `[TymbalBridge:${this.callsign}] Cost: $${(message.total_cost_usd ?? 0).toFixed(4)} (${message.num_turns ?? 1} turns)`
     );
 
     // Emit idle frame (signals processing complete)

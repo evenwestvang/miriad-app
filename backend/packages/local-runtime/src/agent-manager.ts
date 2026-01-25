@@ -242,9 +242,10 @@ export class AgentManager {
    * Activate an agent with the specified engine.
    */
   async activate(message: ActivateAgentMessage): Promise<void> {
-    const { agentId, systemPrompt, mcpServers, workspacePath, engine } = message;
+    const { agentId, systemPrompt, mcpServers, workspacePath, props } = message;
     const { callsign } = parseAgentId(agentId);
-    const engineId = engine ?? 'claude-sdk';
+    // Extract engine from props, default to claude-sdk
+    const engineId = (props?.engine === 'nuum' ? 'nuum' : 'claude-sdk') as 'claude-sdk' | 'nuum';
 
     console.log(`[AgentManager] Activating ${agentId} with engine: ${engineId}`);
     console.log(`[AgentManager]   mcpServers from message:`, JSON.stringify(mcpServers));
@@ -367,7 +368,7 @@ export class AgentManager {
    * Auto-activates the agent if it doesn't exist (local runtime is always-on).
    */
   async deliverMessage(message: DeliverMessageMessage): Promise<void> {
-    const { agentId, systemPrompt, mcpServers, environment } = message;
+    const { agentId, systemPrompt, mcpServers, environment, props } = message;
     let instance = this.agents.get(agentId);
 
     const { callsign } = parseAgentId(agentId);
@@ -380,12 +381,16 @@ export class AgentManager {
       } else {
         console.warn(`[AgentManager] WARNING: Auto-activation WITHOUT mcpServers!`);
       }
+      if (props?.engine) {
+        console.log(`[AgentManager] Auto-activation with engine: ${props.engine}`);
+      }
       await this.activate({
         type: 'activate',
         agentId,
         systemPrompt: systemPrompt || '',
         workspacePath: '', // Will be ignored, uses local config
         mcpServers, // Now passed from message
+        props, // Pass props from message (includes engine)
       });
       instance = this.agents.get(agentId);
       if (!instance) {

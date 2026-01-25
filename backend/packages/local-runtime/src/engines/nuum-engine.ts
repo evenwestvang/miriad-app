@@ -26,13 +26,14 @@ interface NuumUserMessage {
   message: { role: 'user'; content: string };
   session_id?: string;
   system_prompt?: string;
-  mcp_servers?: Array<{
-    name: string;
+  // Nuum expects mcp_servers as an object keyed by server name
+  mcp_servers?: Record<string, {
     transport: 'stdio' | 'sse' | 'http';
     command?: string;
     args?: string[];
     env?: Record<string, string>;
     url?: string;
+    headers?: Record<string, string>;
   }>;
 }
 
@@ -166,6 +167,8 @@ class NuumProcess implements EngineProcess {
       console.warn(`[NuumProcess] Invalid JSON: ${line}`);
       return;
     }
+    
+    console.log(`[NuumProcess] Received: ${JSON.stringify(msg).slice(0, 200)}`);
 
     // Handle init message
     if (msg.type === 'system' && (msg as { subtype?: string }).subtype === 'init') {
@@ -238,11 +241,15 @@ class NuumProcess implements EngineProcess {
       if (message.systemPrompt) {
         nuumMsg.system_prompt = message.systemPrompt;
       }
-      if (message.mcpServers) {
-        nuumMsg.mcp_servers = message.mcpServers;
+      if (message.mcpServers && message.mcpServers.length > 0) {
+        // Convert array to object keyed by name (Nuum's expected format)
+        nuumMsg.mcp_servers = Object.fromEntries(
+          message.mcpServers.map(s => [s.name, s])
+        );
       }
 
       this._state = 'busy';
+      console.log(`[NuumProcess] Sending user message: ${formatted.slice(0, 100)}...`);
       this.proc.stdin.write(JSON.stringify(nuumMsg) + '\n');
     } else if (message.type === 'control') {
       const nuumMsg: NuumControlMessage = {

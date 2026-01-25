@@ -19,8 +19,13 @@ export interface ActivateAgentMessage {
   systemPrompt: string;
   mcpServers?: McpServerConfig[];
   workspacePath: string;
-  /** Engine to use for this agent (default: 'claude-sdk') */
-  engine?: 'claude-sdk' | 'nuum';
+  /** Agent definition props (engine, nameTheme, etc.) */
+  props?: {
+    engine?: string;
+    nameTheme?: string;
+    mcp?: string[];
+    [key: string]: unknown;
+  };
 }
 
 export interface DeliverMessageMessage {
@@ -33,6 +38,13 @@ export interface DeliverMessageMessage {
   mcpServers?: McpServerConfig[];
   /** Resolved environment variables and secrets for this request */
   environment?: Record<string, string>;
+  /** Agent definition props (engine, nameTheme, etc.) */
+  props?: {
+    engine?: string;
+    nameTheme?: string;
+    mcp?: string[];
+    [key: string]: unknown;
+  };
 }
 
 export interface SuspendAgentMessage {

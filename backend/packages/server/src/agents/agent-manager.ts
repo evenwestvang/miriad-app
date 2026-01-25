@@ -790,6 +790,45 @@ export class AgentManager {
   }
 
   /**
+   * Get agent definition props for an agent.
+   * Returns the props from the system.agent artifact (engine, nameTheme, etc.)
+   */
+  async getAgentProps(
+    spaceId: string,
+    channelId: string,
+    callsign: string,
+  ): Promise<AgentDefinition["props"] | undefined> {
+    // Get roster to find agent type
+    const roster = await this.config.getRoster(spaceId, channelId);
+    const rosterEntry = roster.find((r) => r.callsign === callsign);
+    const agentType = rosterEntry?.agentType;
+
+    console.log(
+      `[AgentManager] getAgentProps: spaceId=${spaceId} callsign=${callsign}, agentType=${agentType}, hasGetAgentDefinition=${!!this.config.getAgentDefinition}`,
+    );
+
+    if (!agentType || !this.config.getAgentDefinition) {
+      console.log("No agent definition! WOWW!");
+      return undefined;
+    }
+
+    try {
+      const agentDefinition = await this.config.getAgentDefinition(
+        spaceId,
+        agentType,
+      );
+      console.log("AGENT DEFINITION!", agentDefinition);
+      return agentDefinition?.props;
+    } catch (err) {
+      console.error(
+        `[AgentManager] Error loading agent definition for props:`,
+        err,
+      );
+      return undefined;
+    }
+  }
+
+  /**
    * Activate a container for an agent.
    * NOTE: No longer checks in-memory state - roster callbackUrl check happens in invoker-adapter.
    * This method just activates unconditionally.
