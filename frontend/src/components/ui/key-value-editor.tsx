@@ -231,7 +231,7 @@ export function KeyValueEditor({
       {/* Add button - outside the table */}
       <button
         onClick={handleAddNew}
-        className="flex items-center gap-1.5 px-2 py-1.5 text-base rounded border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground transition-colors"
+        className="flex items-center gap-1.5 px-2 py-1.5 text-base border border-border bg-secondary text-foreground hover:bg-secondary/80 transition-colors"
       >
         <Plus className="h-3.5 w-3.5" />
         Add {label.toLowerCase().replace(/s$/, '')}

@@ -164,9 +164,10 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
               <button
                 type="button"
                 onClick={() => setShowMcpPicker(false)}
-                className="text-base text-muted-foreground hover:text-foreground"
+                className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                title="Cancel"
               >
-                Cancel
+                <X className="w-4 h-4" />
               </button>
             </div>
             {mcpLoading ? (
@@ -211,8 +212,8 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
             type="button"
             onClick={() => setShowMcpPicker(true)}
             className={cn(
-              "flex items-center gap-1.5 px-2 py-1.5 text-base rounded border border-dashed",
-              "border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground",
+              "flex items-center gap-1.5 px-2 py-1.5 text-base border border-border",
+              "bg-secondary text-foreground hover:bg-secondary/80",
               "transition-colors"
             )}
           >
@@ -230,15 +231,12 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
             id="featuredChannelStarter"
             checked={props.featuredChannelStarter || false}
             onChange={(e) => onChange({ featuredChannelStarter: e.target.checked || undefined })}
-            className="w-4 h-4 rounded border-border text-muted-foreground focus:ring-border focus:ring-offset-0"
+            className="w-4 h-4 bg-secondary border border-border text-foreground accent-foreground focus:ring-0 focus:ring-offset-0"
           />
           <label htmlFor="featuredChannelStarter" className="text-base text-foreground">
-            Featured channel starter
+            Suggest this agent when starting new channels
           </label>
         </div>
-        <p className="text-base text-muted-foreground mt-1 ml-6">
-          Show this agent as a suggested starter when creating new channels
-        </p>
       </div>
     </div>
   )

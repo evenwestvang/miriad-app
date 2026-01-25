@@ -419,6 +419,30 @@ export function ArtifactDetail({
     }
   }, [isCreateMode, onBack])
 
+  // ESC key handling: first ESC cancels editing, second ESC closes board
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        // Don't interfere with inputs that might have their own ESC handling
+        const target = e.target as HTMLElement
+        if (target.tagName === 'SELECT') return
+
+        if (isEditing) {
+          // First ESC: cancel editing
+          e.preventDefault()
+          cancelEditing()
+        } else if (onBack && !showUnsavedPrompt) {
+          // Second ESC (or first if not editing): close board
+          e.preventDefault()
+          onBack()
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isEditing, cancelEditing, onBack, showUnsavedPrompt])
+
   // Handle slug change in create mode
   const handleSlugChange = useCallback((value: string) => {
     const normalized = value.toLowerCase().replace(/\s+/g, '-')
@@ -506,6 +530,7 @@ export function ArtifactDetail({
 
       setSaving(true)
       setError(null)
+      setPropsValidationError(null)
 
       try {
         const response = await apiFetch(`${apiHost}/channels/${channelId}/artifacts`, {
@@ -528,8 +553,20 @@ export function ArtifactDetail({
           return
         }
 
+        if (response.status === 400) {
+          const data = await response.json().catch(() => ({}))
+          if (data.violations && Array.isArray(data.violations)) {
+            setPropsValidationError({
+              violations: data.violations,
+              schema: data.schema,
+            })
+            return
+          }
+          throw new Error(data.error || 'Validation failed')
+        }
+
         if (!response.ok) {
-          const data = await response.json()
+          const data = await response.json().catch(() => ({}))
           throw new Error(data.error || 'Failed to create artifact')
         }
 
@@ -556,6 +593,7 @@ export function ArtifactDetail({
     setSaving(true)
     setError(null)
     setConflict(null)
+    setPropsValidationError(null)
 
     try {
       let updatedArtifact = artifact!
@@ -603,8 +641,20 @@ export function ArtifactDetail({
           return
         }
 
+        if (patchResponse.status === 400) {
+          const data = await patchResponse.json().catch(() => ({}))
+          if (data.violations && Array.isArray(data.violations)) {
+            setPropsValidationError({
+              violations: data.violations,
+              schema: data.schema,
+            })
+            return
+          }
+          throw new Error(data.error || 'Validation failed')
+        }
+
         if (!patchResponse.ok) {
-          const data = await patchResponse.json()
+          const data = await patchResponse.json().catch(() => ({}))
           throw new Error(data.error || 'Failed to save')
         }
 
@@ -747,7 +797,14 @@ export function ArtifactDetail({
             const Icon = getArtifactIcon(iconArtifact)
             return <Icon className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
           })()}
-          {isEditing ? (
+          {['system.mcp', 'system.focus', 'system.environment'].includes(currentType) ? (
+            // Props-only system types get a static title (not editable)
+            <span className="font-semibold text-base text-foreground truncate">
+              {isCreateMode
+                ? `New ${getTypeLabel(currentType)}`
+                : (artifact?.title || getTypeLabel(currentType))}
+            </span>
+          ) : isEditing ? (
             <input
               type="text"
               value={editTitle}
@@ -1095,7 +1152,7 @@ export function ArtifactDetail({
             <span className="text-base text-muted-foreground">Loading version...</span>
           </div>
         ) : isEditing && !['system.mcp', 'system.focus', 'system.environment'].includes(currentType) ? (
-          <div className="px-3 py-3">
+          <div className="px-3 pt-3">
             <textarea
               ref={contentTextareaRef}
               value={editContent}
