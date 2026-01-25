@@ -73,7 +73,7 @@ interface PropsValidationError {
 
 // Status options based on type
 const DOC_STATUSES: ArtifactStatus[] = ['draft', 'active', 'archived']
-const TASK_STATUSES: ArtifactStatus[] = ['pending', 'in_progress', 'done', 'blocked']
+const TASK_STATUSES: ArtifactStatus[] = ['pending', 'in_progress', 'done', 'blocked', 'archived']
 
 // Available types for creation
 const ARTIFACT_TYPES: { value: ArtifactType; label: string }[] = [

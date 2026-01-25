@@ -9,7 +9,7 @@ interface StatusIndicatorProps {
 }
 
 /** Task-specific statuses that show colored dots */
-const TASK_STATUSES = ['pending', 'in_progress', 'done', 'blocked'] as const
+const TASK_STATUSES = ['pending', 'in_progress', 'done', 'blocked', 'archived'] as const
 
 /**
  * Status indicator dot for task artifacts only.
@@ -22,6 +22,7 @@ const TASK_STATUSES = ['pending', 'in_progress', 'done', 'blocked'] as const
  * - in_progress: blue
  * - done: green
  * - blocked: red
+ * - archived: gray (muted)
  */
 export function StatusIndicator({ status, className, size = 6 }: StatusIndicatorProps) {
   // Only show indicator for task-specific statuses
@@ -37,6 +38,7 @@ export function StatusIndicator({ status, className, size = 6 }: StatusIndicator
         status === 'in_progress' && 'bg-blue-500',
         status === 'done' && 'bg-green-500',
         status === 'blocked' && 'bg-red-500',
+        status === 'archived' && 'bg-gray-500',
         className
       )}
       style={{ width: size, height: size }}
