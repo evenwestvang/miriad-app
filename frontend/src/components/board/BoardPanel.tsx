@@ -280,10 +280,10 @@ export function BoardPanel({
       setArchivedItems(data.items || [{ slug: selectedSlug, previousStatus: 'active' }])
 
       // Clear selection and go back to tree
-      // Clear both internal state and notify external routing
-      setInternalSelectedSlug(null)
-      setSelectedSlug(null)
       setSelectedArtifactData(null)
+      if (onClearSelection) {
+        onClearSelection()
+      }
 
       // Refresh tree
       apiFetch(`${apiHost}/channels/${channelId}/artifacts/tree?pattern=/**&format=json`)
@@ -293,7 +293,7 @@ export function BoardPanel({
     } catch (err) {
       console.error('Archive error:', err)
     }
-  }, [channelId, selectedSlug, apiHost, setSelectedSlug])
+  }, [channelId, selectedSlug, apiHost, onClearSelection])
 
   // Undo archive (restore previous statuses)
   const handleUndoArchive = useCallback(async (items: ArchivedItem[]) => {
