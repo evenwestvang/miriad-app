@@ -5,30 +5,57 @@
  * This is the main entry point for both local dev and Lambda deployment.
  */
 
-import { Hono } from 'hono';
-import { logger } from 'hono/logger';
-import { cors } from 'hono/cors';
-import type { Storage } from '@cast/storage';
-import type { AgentRuntime } from '@cast/runtime';
-import type { ChannelRoster, StoredMessage, RosterEntry, StoredMessageType, SetFrame } from '@cast/core';
-import { parseFrame, isSetFrame, isResetFrame, tymbal, generateMessageId, getMimeType } from '@cast/core';
-import { createTymbalRoutes } from './handlers/tymbal.js';
-import { createMessageRoutes, type MessageStorage, type RosterProvider, type Message } from './handlers/messages.js';
-import { createCheckinRoutes, broadcastAgentState } from './handlers/checkin.js';
-import { createMcpRoutes } from './handlers/mcp-http.js';
-import { createArtifactRoutes } from './handlers/artifacts.js';
-import { createAssetsApiRoutes } from './handlers/assets-api.js';
-import { createAssetStorage } from './assets/index.js';
-import type { ConnectionManager } from './websocket/index.js';
-import { AgentManager, createAgentInvokerAdapter } from './agents/index.js';
-import { createDevAuthRoutes, createWorkOSAuthRoutes, requireAuth, getSpaceId, generateContainerToken } from './auth/index.js';
-import { createAppRoutes } from './handlers/apps.js';
-import { createRuntimeAuthRoutes } from './handlers/runtime-auth.js';
-import { createRuntimeRoutes } from './handlers/runtimes.js';
-import { createMiriadCloudRoutes } from './handlers/miriad-cloud.js';
-import { createKBRoutes } from './handlers/kb.js';
-import { createDisclaimerRoutes } from './handlers/disclaimer.js';
-import { resetRootChannel } from './onboarding/index.js';
+import { Hono } from "hono";
+import { logger } from "hono/logger";
+import { cors } from "hono/cors";
+import type { Storage } from "@cast/storage";
+import type { AgentRuntime } from "@cast/runtime";
+import type {
+  ChannelRoster,
+  StoredMessage,
+  RosterEntry,
+  StoredMessageType,
+  SetFrame,
+} from "@cast/core";
+import {
+  parseFrame,
+  isSetFrame,
+  isResetFrame,
+  tymbal,
+  generateMessageId,
+  getMimeType,
+} from "@cast/core";
+import { createTymbalRoutes } from "./handlers/tymbal.js";
+import {
+  createMessageRoutes,
+  type MessageStorage,
+  type RosterProvider,
+  type Message,
+} from "./handlers/messages.js";
+import {
+  createCheckinRoutes,
+  broadcastAgentState,
+} from "./handlers/checkin.js";
+import { createMcpRoutes } from "./handlers/mcp-http.js";
+import { createArtifactRoutes } from "./handlers/artifacts.js";
+import { createAssetsApiRoutes } from "./handlers/assets-api.js";
+import { createAssetStorage } from "./assets/index.js";
+import type { ConnectionManager } from "./websocket/index.js";
+import { AgentManager, createAgentInvokerAdapter } from "./agents/index.js";
+import {
+  createDevAuthRoutes,
+  createWorkOSAuthRoutes,
+  requireAuth,
+  getSpaceId,
+  generateContainerToken,
+} from "./auth/index.js";
+import { createAppRoutes } from "./handlers/apps.js";
+import { createRuntimeAuthRoutes } from "./handlers/runtime-auth.js";
+import { createRuntimeRoutes } from "./handlers/runtimes.js";
+import { createMiriadCloudRoutes } from "./handlers/miriad-cloud.js";
+import { createKBRoutes } from "./handlers/kb.js";
+import { createDisclaimerRoutes } from "./handlers/disclaimer.js";
+import { resetRootChannel } from "./onboarding/index.js";
 
 // =============================================================================
 // Types
@@ -65,7 +92,7 @@ function createMessageStorageAdapter(storage: Storage): {
           channelId,
           sender: message.sender,
           senderType: message.senderType,
-          type: message.type as 'user' | 'agent',
+          type: message.type as "user" | "agent",
           content: message.content,
           isComplete: message.isComplete,
           addressedAgents: message.addressedAgents,
@@ -75,7 +102,12 @@ function createMessageStorageAdapter(storage: Storage): {
 
       async getMessages(
         channelId: string,
-        options?: { since?: string; before?: string; limit?: number; forAgent?: string }
+        options?: {
+          since?: string;
+          before?: string;
+          limit?: number;
+          forAgent?: string;
+        },
       ): Promise<Message[]> {
         const stored = await storage.getMessages(spaceId, channelId, {
           since: options?.since,
@@ -123,7 +155,9 @@ function createRosterProviderAdapter(storage: Storage): {
         const rosterEntries = result.roster;
 
         // Find leader (first agent with 'lead' in type)
-        const leaderEntry = rosterEntries.find((e: RosterEntry) => e.agentType.toLowerCase().includes('lead'));
+        const leaderEntry = rosterEntries.find((e: RosterEntry) =>
+          e.agentType.toLowerCase().includes("lead"),
+        );
 
         // Get space owner's callsign (human user) for valid @mentions
         const space = await storage.getSpace(spaceId);
@@ -132,7 +166,7 @@ function createRosterProviderAdapter(storage: Storage): {
         // ChannelRoster expects { agents: string[], leader: string, users?: string[] }
         const roster: ChannelRoster = {
           agents: rosterEntries.map((e: RosterEntry) => e.callsign),
-          leader: leaderEntry?.callsign ?? rosterEntries[0]?.callsign ?? '',
+          leader: leaderEntry?.callsign ?? rosterEntries[0]?.callsign ?? "",
           users: owner?.callsign ? [owner.callsign] : [],
         };
 
@@ -142,7 +176,9 @@ function createRosterProviderAdapter(storage: Storage): {
       async getLeader(channelId: string): Promise<string | null> {
         const rosterEntries = await storage.listRoster(channelId);
         // Convention: first agent with 'lead' in type is the leader
-        const leader = rosterEntries.find((e: RosterEntry) => e.agentType.toLowerCase().includes('lead'));
+        const leader = rosterEntries.find((e: RosterEntry) =>
+          e.agentType.toLowerCase().includes("lead"),
+        );
         return leader?.callsign ?? null;
       },
     }),
@@ -157,29 +193,29 @@ function createChannelRoutes(storage: Storage): Hono {
   const app = new Hono();
 
   // GET /channels - List all channels
-  app.get('/', async (c) => {
+  app.get("/", async (c) => {
     const spaceId = getSpaceId(c);
     try {
       const channels = await storage.listChannels(spaceId);
       return c.json({ channels });
     } catch (error) {
-      console.error('[Channels] Error listing channels:', error);
-      return c.json({ error: 'Failed to list channels' }, 500);
+      console.error("[Channels] Error listing channels:", error);
+      return c.json({ error: "Failed to list channels" }, 500);
     }
   });
 
   // POST /channels - Create a channel
-  app.post('/', async (c) => {
+  app.post("/", async (c) => {
     const spaceId = getSpaceId(c);
     let body: { name?: string; tagline?: string; mission?: string };
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: 'Invalid JSON body' }, 400);
+      return c.json({ error: "Invalid JSON body" }, 400);
     }
 
     if (!body.name) {
-      return c.json({ error: 'Channel name is required' }, 400);
+      return c.json({ error: "Channel name is required" }, 400);
     }
 
     try {
@@ -191,40 +227,45 @@ function createChannelRoutes(storage: Storage): Hono {
       });
       return c.json({ channel }, 201);
     } catch (error) {
-      console.error('[Channels] Error creating channel:', error);
-      return c.json({ error: 'Failed to create channel' }, 500);
+      console.error("[Channels] Error creating channel:", error);
+      return c.json({ error: "Failed to create channel" }, 500);
     }
   });
 
   // GET /channels/:id - Get a channel (with roster per spec)
-  app.get('/:channelId', async (c) => {
+  app.get("/:channelId", async (c) => {
     const spaceId = getSpaceId(c);
-    const channelId = c.req.param('channelId');
+    const channelId = c.req.param("channelId");
 
     try {
       // Single query: channel + roster via JOIN
       const result = await storage.getChannelWithRoster(spaceId, channelId);
       if (!result) {
-        return c.json({ error: 'Channel not found' }, 404);
+        return c.json({ error: "Channel not found" }, 404);
       }
 
       return c.json({ channel: result.channel, roster: result.roster });
     } catch (error) {
-      console.error('[Channels] Error getting channel:', error);
-      return c.json({ error: 'Failed to get channel' }, 500);
+      console.error("[Channels] Error getting channel:", error);
+      return c.json({ error: "Failed to get channel" }, 500);
     }
   });
 
   // PUT /channels/:id - Update a channel
-  app.put('/:channelId', async (c) => {
+  app.put("/:channelId", async (c) => {
     const spaceId = getSpaceId(c);
-    const channelId = c.req.param('channelId');
+    const channelId = c.req.param("channelId");
 
-    let body: { name?: string; tagline?: string; mission?: string; archived?: boolean };
+    let body: {
+      name?: string;
+      tagline?: string;
+      mission?: string;
+      archived?: boolean;
+    };
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: 'Invalid JSON body' }, 400);
+      return c.json({ error: "Invalid JSON body" }, 400);
     }
 
     try {
@@ -232,8 +273,8 @@ function createChannelRoutes(storage: Storage): Hono {
       const channel = await storage.getChannel(spaceId, channelId);
       return c.json({ channel });
     } catch (error) {
-      console.error('[Channels] Error updating channel:', error);
-      return c.json({ error: 'Failed to update channel' }, 500);
+      console.error("[Channels] Error updating channel:", error);
+      return c.json({ error: "Failed to update channel" }, 500);
     }
   });
 
@@ -244,32 +285,37 @@ function createRosterRoutes(storage: Storage): Hono {
   const app = new Hono();
 
   // GET /channels/:id/roster - List roster
-  app.get('/:channelId/roster', async (c) => {
-    const channelId = c.req.param('channelId');
+  app.get("/:channelId/roster", async (c) => {
+    const channelId = c.req.param("channelId");
 
     try {
       const roster = await storage.listRoster(channelId);
       return c.json({ roster });
     } catch (error) {
-      console.error('[Roster] Error listing roster:', error);
-      return c.json({ error: 'Failed to list roster' }, 500);
+      console.error("[Roster] Error listing roster:", error);
+      return c.json({ error: "Failed to list roster" }, 500);
     }
   });
 
   // POST /channels/:id/roster - Add to roster
-  app.post('/:channelId/roster', async (c) => {
+  app.post("/:channelId/roster", async (c) => {
     const spaceId = getSpaceId(c);
-    const channelId = c.req.param('channelId');
+    const channelId = c.req.param("channelId");
 
-    let body: { callsign?: string; agentType?: string; status?: string; runtimeId?: string | null };
+    let body: {
+      callsign?: string;
+      agentType?: string;
+      status?: string;
+      runtimeId?: string | null;
+    };
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: 'Invalid JSON body' }, 400);
+      return c.json({ error: "Invalid JSON body" }, 400);
     }
 
     if (!body.callsign || !body.agentType) {
-      return c.json({ error: 'callsign and agentType are required' }, 400);
+      return c.json({ error: "callsign and agentType are required" }, 400);
     }
 
     try {
@@ -277,10 +323,13 @@ function createRosterRoutes(storage: Storage): Hono {
       if (body.runtimeId) {
         const runtime = await storage.getRuntime(body.runtimeId);
         if (!runtime) {
-          return c.json({ error: 'Runtime not found' }, 404);
+          return c.json({ error: "Runtime not found" }, 404);
         }
         if (runtime.spaceId !== spaceId) {
-          return c.json({ error: 'Runtime does not belong to this space' }, 403);
+          return c.json(
+            { error: "Runtime does not belong to this space" },
+            403,
+          );
         }
       }
 
@@ -288,27 +337,28 @@ function createRosterRoutes(storage: Storage): Hono {
         channelId,
         callsign: body.callsign,
         agentType: body.agentType,
-        status: (body.status as 'active' | 'idle' | 'busy' | 'offline') ?? 'active',
+        status:
+          (body.status as "active" | "idle" | "busy" | "offline") ?? "active",
         runtimeId: body.runtimeId ?? null,
       });
       return c.json({ entry }, 201);
     } catch (error) {
-      console.error('[Roster] Error adding to roster:', error);
-      return c.json({ error: 'Failed to add to roster' }, 500);
+      console.error("[Roster] Error adding to roster:", error);
+      return c.json({ error: "Failed to add to roster" }, 500);
     }
   });
 
   // DELETE /channels/:id/roster/:entryId - Remove from roster
-  app.delete('/:channelId/roster/:entryId', async (c) => {
-    const channelId = c.req.param('channelId');
-    const entryId = c.req.param('entryId');
+  app.delete("/:channelId/roster/:entryId", async (c) => {
+    const channelId = c.req.param("channelId");
+    const entryId = c.req.param("entryId");
 
     try {
       await storage.removeFromRoster(channelId, entryId);
       return c.json({ ok: true });
     } catch (error) {
-      console.error('[Roster] Error removing from roster:', error);
-      return c.json({ error: 'Failed to remove from roster' }, 500);
+      console.error("[Roster] Error removing from roster:", error);
+      return c.json({ error: "Failed to remove from roster" }, 500);
     }
   });
 
@@ -339,72 +389,86 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
    * 4. Spawn container via agentManager
    * 5. Return agent info
    */
-  app.post('/:channelId/agents', async (c) => {
+  app.post("/:channelId/agents", async (c) => {
     const spaceId = getSpaceId(c);
-    const channelId = c.req.param('channelId');
+    const channelId = c.req.param("channelId");
 
-    let body: { callsign?: string; agentType?: string; runtimeId?: string | null };
+    let body: {
+      callsign?: string;
+      agentType?: string;
+      runtimeId?: string | null;
+    };
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: 'Invalid JSON body' }, 400);
+      return c.json({ error: "Invalid JSON body" }, 400);
     }
 
     const { callsign, agentType, runtimeId } = body;
 
     if (!callsign || !agentType) {
-      return c.json({ error: 'callsign and agentType are required' }, 400);
+      return c.json({ error: "callsign and agentType are required" }, 400);
     }
 
     try {
       // Verify channel exists
       const channel = await storage.getChannel(spaceId, channelId);
       if (!channel) {
-        return c.json({ error: 'Channel not found' }, 404);
+        return c.json({ error: "Channel not found" }, 404);
       }
 
       // Validate runtimeId if provided
       if (runtimeId) {
         const runtime = await storage.getRuntime(runtimeId);
         if (!runtime) {
-          return c.json({ error: 'Runtime not found' }, 404);
+          return c.json({ error: "Runtime not found" }, 404);
         }
         if (runtime.spaceId !== spaceId) {
-          return c.json({ error: 'Runtime does not belong to this space' }, 403);
+          return c.json(
+            { error: "Runtime does not belong to this space" },
+            403,
+          );
         }
       }
 
       // Check if agent already exists in roster
-      const existingEntry = await storage.getRosterByCallsign(channelId, callsign);
+      const existingEntry = await storage.getRosterByCallsign(
+        channelId,
+        callsign,
+      );
       if (existingEntry) {
-        return c.json({ error: 'Agent already in roster' }, 409);
+        return c.json({ error: "Agent already in roster" }, 409);
       }
 
-      console.log(`[Agents] Adding ${callsign} (${agentType}) to channel ${channelId}${runtimeId ? ` on runtime ${runtimeId}` : ''}`);
+      console.log(
+        `[Agents] Adding ${callsign} (${agentType}) to channel ${channelId}${runtimeId ? ` on runtime ${runtimeId}` : ""}`,
+      );
 
       // Step 1: Add to roster
       const rosterEntry = await storage.addToRoster({
         channelId,
         callsign,
         agentType,
-        status: 'active',
+        status: "active",
         runtimeId: runtimeId ?? null,
       });
-      console.log(`[Agents] Added ${callsign} to roster, entry ID: ${rosterEntry.id}`);
+      console.log(
+        `[Agents] Added ${callsign} to roster, entry ID: ${rosterEntry.id}`,
+      );
 
       // Step 2: Create summoning message (save + broadcast)
       const messageId = generateMessageId();
       const now = new Date().toISOString();
-      const summoningContent = { action: 'summon', callsign };
+      const summoningContent = { action: "summon", callsign };
 
       // Save message to storage (content as object - stored as JSONB)
       await storage.saveMessage({
         id: messageId,
         spaceId,
         channelId,
-        sender: 'system',
-        senderType: 'system',
-        type: 'status',
+        sender: "system",
+        senderType: "system",
+        type: "status",
         content: summoningContent,
         isComplete: true,
       });
@@ -412,9 +476,9 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
 
       // Broadcast to WebSocket clients
       const frame = tymbal.set(messageId, {
-        type: 'status',
-        sender: 'system',
-        senderType: 'system',
+        type: "status",
+        sender: "system",
+        senderType: "system",
         content: summoningContent,
         timestamp: now,
       });
@@ -429,8 +493,8 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
           i: generateMessageId(),
           t: now,
           v: {
-            type: 'roster',
-            action: 'agent_joined',
+            type: "roster",
+            action: "agent_joined",
             agent: {
               callsign: fullEntry.callsign,
               agentType: fullEntry.agentType,
@@ -442,12 +506,20 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
           },
           c: channelId,
         };
-        await connectionManager.broadcast(channelId, JSON.stringify(rosterFrame));
+        await connectionManager.broadcast(
+          channelId,
+          JSON.stringify(rosterFrame),
+        );
         console.log(`[Agents] Broadcast roster join event for ${callsign}`);
       }
 
       // Broadcast 'connecting' agent state - user knows to wait
-      await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
+      await broadcastAgentState(
+        connectionManager,
+        channelId,
+        callsign,
+        "connecting",
+      );
 
       // Step 3: Set summoning message ID as initial readmark
       await storage.updateRosterEntry(channelId, rosterEntry.id, {
@@ -465,26 +537,34 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
           console.log(`[Agents] Container spawned for ${callsign}`);
         } else {
           // Agent bound to LocalRuntime - will activate on first message
-          console.log(`[Agents] Agent ${callsign} bound to runtime ${runtimeId}, will activate on first message`);
+          console.log(
+            `[Agents] Agent ${callsign} bound to runtime ${runtimeId}, will activate on first message`,
+          );
         }
       } catch (spawnError) {
-        console.error(`[Agents] Failed to spawn container for ${callsign}:`, spawnError);
+        console.error(
+          `[Agents] Failed to spawn container for ${callsign}:`,
+          spawnError,
+        );
         // Don't fail the request - agent is in roster, container spawn can retry
       }
 
       // Step 5: Return agent info
-      return c.json({
-        success: true,
-        agent: {
-          id: rosterEntry.id,
-          callsign: rosterEntry.callsign,
-          agentType: rosterEntry.agentType,
-          status: rosterEntry.status,
+      return c.json(
+        {
+          success: true,
+          agent: {
+            id: rosterEntry.id,
+            callsign: rosterEntry.callsign,
+            agentType: rosterEntry.agentType,
+            status: rosterEntry.status,
+          },
         },
-      }, 201);
+        201,
+      );
     } catch (error) {
-      console.error('[Agents] Error adding agent:', error);
-      return c.json({ error: 'Failed to add agent' }, 500);
+      console.error("[Agents] Error adding agent:", error);
+      return c.json({ error: "Failed to add agent" }, 500);
     }
   });
 
@@ -494,39 +574,42 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
    * Fetches system.agent artifacts from both the channel's board and root channel,
    * merges by slug (local shadows root), and returns unified list.
    */
-  app.get('/:channelId/agents/available', async (c) => {
+  app.get("/:channelId/agents/available", async (c) => {
     const spaceId = getSpaceId(c);
-    const channelId = c.req.param('channelId');
+    const channelId = c.req.param("channelId");
 
     try {
       // Verify channel exists
       const channel = await storage.getChannel(spaceId, channelId);
       if (!channel) {
-        return c.json({ error: 'Channel not found' }, 404);
+        return c.json({ error: "Channel not found" }, 404);
       }
 
       // Fetch system.agent artifacts from root channel
-      const rootChannel = await storage.getChannelByName(spaceId, 'root');
+      const rootChannel = await storage.getChannelByName(spaceId, "root");
       const rootAgents = rootChannel
-        ? await storage.listArtifacts(rootChannel.id, { type: 'system.agent' })
+        ? await storage.listArtifacts(rootChannel.id, { type: "system.agent" })
         : [];
 
       // Fetch system.agent artifacts from current channel (only if not root)
       const isRootChannel = rootChannel && channelId === rootChannel.id;
       const localAgents = isRootChannel
         ? [] // Don't double-load root agents
-        : await storage.listArtifacts(channelId, { type: 'system.agent' });
+        : await storage.listArtifacts(channelId, { type: "system.agent" });
 
       // Merge by slug: local shadows root
-      const agentMap = new Map<string, {
-        slug: string;
-        title?: string;
-        tldr?: string;
-        nameTheme?: string;
-        suggestedName?: string;
-        featuredChannelStarter?: boolean;
-        source: 'local' | 'root';
-      }>();
+      const agentMap = new Map<
+        string,
+        {
+          slug: string;
+          title?: string;
+          tldr?: string;
+          nameTheme?: string;
+          suggestedName?: string;
+          featuredChannelStarter?: boolean;
+          source: "local" | "root";
+        }
+      >();
 
       // Add root agents first
       for (const agent of rootAgents) {
@@ -537,8 +620,10 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
           tldr: agent.tldr,
           nameTheme: props?.nameTheme as string | undefined,
           suggestedName: props?.suggestedName as string | undefined,
-          featuredChannelStarter: props?.featuredChannelStarter as boolean | undefined,
-          source: 'root',
+          featuredChannelStarter: props?.featuredChannelStarter as
+            | boolean
+            | undefined,
+          source: "root",
         });
       }
 
@@ -551,8 +636,10 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
           tldr: agent.tldr,
           nameTheme: props?.nameTheme as string | undefined,
           suggestedName: props?.suggestedName as string | undefined,
-          featuredChannelStarter: props?.featuredChannelStarter as boolean | undefined,
-          source: 'local',
+          featuredChannelStarter: props?.featuredChannelStarter as
+            | boolean
+            | undefined,
+          source: "local",
         });
       }
 
@@ -565,8 +652,87 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
 
       return c.json({ agents });
     } catch (error) {
-      console.error('[Agents] Error listing available agents:', error);
-      return c.json({ error: 'Failed to list available agents' }, 500);
+      console.error("[Agents] Error listing available agents:", error);
+      return c.json({ error: "Failed to list available agents" }, 500);
+    }
+  });
+
+  /**
+   * GET /channels/:id/agents/generateName - Generate a unique agent callsign
+   *
+   * Uses Claude Sonnet to generate a name fitting the theme that's unique
+   * to the channel roster.
+   *
+   * Query params:
+   *   - theme: Name theme (e.g., "wild birds of Canada")
+   */
+  app.get("/:channelId/agents/generateName", async (c) => {
+    const spaceId = getSpaceId(c);
+    const channelId = c.req.param("channelId");
+    const theme = c.req.query("theme");
+
+    if (!theme) {
+      return c.json({ error: "theme query parameter is required" }, 400);
+    }
+
+    try {
+      // Get current roster to know which names to avoid
+      const roster = await storage.listRoster(channelId);
+      const takenNames = roster.map((r) => r.callsign);
+
+      // Get Anthropic API key from space secrets
+      const apiKey = await storage.getSpaceSecretValue(
+        spaceId,
+        "anthropic_api_key",
+      );
+      if (!apiKey) {
+        return c.json({ error: "Anthropic API key not configured" }, 400);
+      }
+
+      // Call Claude to generate a name
+      const prompt =
+        takenNames.length > 0
+          ? `Generate a single short callsign (One word, lowercase) for an AI agent. The theme is: "${theme}". These names are already taken: ${takenNames.join(", ")}. Return ONLY the callsign, nothing else.`
+          : `Generate a single short callsign (One word, lowercase) for an AI agent. The theme is: "${theme}". Return ONLY the callsign, nothing else.`;
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 50,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        console.error("[GenerateName] Anthropic API error:", error);
+        return c.json({ error: "Failed to generate name" }, 500);
+      }
+
+      const data = (await response.json()) as {
+        content: Array<{ type: string; text?: string }>;
+      };
+      const textBlock = data.content.find((b) => b.type === "text");
+      const generatedName =
+        textBlock?.text
+          ?.trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9-]/g, "") || "";
+
+      if (!generatedName) {
+        return c.json({ error: "Failed to generate name" }, 500);
+      }
+
+      return c.json({ name: generatedName });
+    } catch (error) {
+      console.error("[GenerateName] Error:", error);
+      return c.json({ error: "Failed to generate name" }, 500);
     }
   });
 
@@ -576,25 +742,28 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
    * Stops the container and sets status to 'paused'.
    * Agent remains in roster but won't receive messages.
    */
-  app.post('/:channelId/agents/:callsign/pause', async (c) => {
-    const channelId = c.req.param('channelId');
-    const callsign = c.req.param('callsign');
+  app.post("/:channelId/agents/:callsign/pause", async (c) => {
+    const channelId = c.req.param("channelId");
+    const callsign = c.req.param("callsign");
 
     try {
       // Find agent in roster
-      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+      const rosterEntry = await storage.getRosterByCallsign(
+        channelId,
+        callsign,
+      );
       if (!rosterEntry) {
-        return c.json({ error: 'Agent not found in roster' }, 404);
+        return c.json({ error: "Agent not found in roster" }, 404);
       }
 
       // Check if already paused
-      if (rosterEntry.status === 'paused') {
-        return c.json({ error: 'Agent is already paused' }, 400);
+      if (rosterEntry.status === "paused") {
+        return c.json({ error: "Agent is already paused" }, 400);
       }
 
       // Check if archived
-      if (rosterEntry.status === 'archived') {
-        return c.json({ error: 'Cannot pause archived agent' }, 400);
+      if (rosterEntry.status === "archived") {
+        return c.json({ error: "Cannot pause archived agent" }, 400);
       }
 
       console.log(`[Agents] Pausing ${callsign} in channel ${channelId}`);
@@ -604,24 +773,32 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
       try {
         await agentManager.suspend(spaceId, channelId, callsign);
       } catch (stopError) {
-        console.warn(`[Agents] Error stopping container for ${callsign}:`, stopError);
+        console.warn(
+          `[Agents] Error stopping container for ${callsign}:`,
+          stopError,
+        );
         // Continue anyway - container may already be stopped
       }
 
       // Update roster status to paused and clear callbackUrl
       await storage.updateRosterEntry(channelId, rosterEntry.id, {
-        status: 'paused',
+        status: "paused",
         callbackUrl: undefined,
       });
 
       // Broadcast paused state
-      await broadcastAgentState(connectionManager, channelId, callsign, 'paused');
+      await broadcastAgentState(
+        connectionManager,
+        channelId,
+        callsign,
+        "paused",
+      );
 
       console.log(`[Agents] ${callsign} paused successfully`);
-      return c.json({ success: true, callsign, status: 'paused' });
+      return c.json({ success: true, callsign, status: "paused" });
     } catch (error) {
-      console.error('[Agents] Error pausing agent:', error);
-      return c.json({ error: 'Failed to pause agent' }, 500);
+      console.error("[Agents] Error pausing agent:", error);
+      return c.json({ error: "Failed to pause agent" }, 500);
     }
   });
 
@@ -630,37 +807,45 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
    *
    * Spawns a new container and sets status back to 'active'.
    */
-  app.post('/:channelId/agents/:callsign/resume', async (c) => {
-    const channelId = c.req.param('channelId');
-    const callsign = c.req.param('callsign');
+  app.post("/:channelId/agents/:callsign/resume", async (c) => {
+    const channelId = c.req.param("channelId");
+    const callsign = c.req.param("callsign");
 
     try {
       // Find agent in roster
-      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+      const rosterEntry = await storage.getRosterByCallsign(
+        channelId,
+        callsign,
+      );
       if (!rosterEntry) {
-        return c.json({ error: 'Agent not found in roster' }, 404);
+        return c.json({ error: "Agent not found in roster" }, 404);
       }
 
       // Check if actually paused
-      if (rosterEntry.status !== 'paused') {
-        return c.json({ error: 'Agent is not paused' }, 400);
+      if (rosterEntry.status !== "paused") {
+        return c.json({ error: "Agent is not paused" }, 400);
       }
 
       console.log(`[Agents] Resuming ${callsign} in channel ${channelId}`);
 
       // Update roster status to active
       await storage.updateRosterEntry(channelId, rosterEntry.id, {
-        status: 'active',
+        status: "active",
       });
 
       // Broadcast resumed state - agent is no longer muted
-      await broadcastAgentState(connectionManager, channelId, callsign, 'resumed');
+      await broadcastAgentState(
+        connectionManager,
+        channelId,
+        callsign,
+        "resumed",
+      );
 
       console.log(`[Agents] ${callsign} resumed successfully`);
-      return c.json({ success: true, callsign, status: 'active' });
+      return c.json({ success: true, callsign, status: "active" });
     } catch (error) {
-      console.error('[Agents] Error resuming agent:', error);
-      return c.json({ error: 'Failed to resume agent' }, 500);
+      console.error("[Agents] Error resuming agent:", error);
+      return c.json({ error: "Failed to resume agent" }, 500);
     }
   });
 
@@ -670,20 +855,23 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
    * Spawns a new container for an agent that is offline.
    * Also clears paused status if set (activate overrides mute).
    */
-  app.post('/:channelId/agents/:callsign/activate', async (c) => {
-    const channelId = c.req.param('channelId');
-    const callsign = c.req.param('callsign');
+  app.post("/:channelId/agents/:callsign/activate", async (c) => {
+    const channelId = c.req.param("channelId");
+    const callsign = c.req.param("callsign");
 
     try {
       // Find agent in roster
-      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+      const rosterEntry = await storage.getRosterByCallsign(
+        channelId,
+        callsign,
+      );
       if (!rosterEntry) {
-        return c.json({ error: 'Agent not found in roster' }, 404);
+        return c.json({ error: "Agent not found in roster" }, 404);
       }
 
       // Check if archived
-      if (rosterEntry.status === 'archived') {
-        return c.json({ error: 'Cannot activate archived agent' }, 400);
+      if (rosterEntry.status === "archived") {
+        return c.json({ error: "Cannot activate archived agent" }, 400);
       }
 
       console.log(`[Agents] Activating ${callsign} in channel ${channelId}`);
@@ -699,32 +887,45 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
       const spaceId = getSpaceId(c);
 
       // If paused, clear the paused status (activate overrides mute)
-      if (rosterEntry.status === 'paused') {
+      if (rosterEntry.status === "paused") {
         await storage.updateRosterEntry(channelId, rosterEntry.id, {
-          status: 'active',
+          status: "active",
         });
         console.log(`[Agents] Cleared paused status for ${callsign}`);
       }
 
       // Broadcast connecting state
-      await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
+      await broadcastAgentState(
+        connectionManager,
+        channelId,
+        callsign,
+        "connecting",
+      );
 
       // Spawn new container
       try {
         await agentManager.activate(spaceId, channelId, callsign);
         console.log(`[Agents] Container spawned for ${callsign}`);
       } catch (spawnError) {
-        console.error(`[Agents] Failed to spawn container for ${callsign}:`, spawnError);
+        console.error(
+          `[Agents] Failed to spawn container for ${callsign}:`,
+          spawnError,
+        );
         // Broadcast offline state since spawn failed
-        await broadcastAgentState(connectionManager, channelId, callsign, 'offline');
-        return c.json({ error: 'Failed to spawn container' }, 500);
+        await broadcastAgentState(
+          connectionManager,
+          channelId,
+          callsign,
+          "offline",
+        );
+        return c.json({ error: "Failed to spawn container" }, 500);
       }
 
       console.log(`[Agents] ${callsign} activated successfully`);
-      return c.json({ success: true, callsign, status: 'active' });
+      return c.json({ success: true, callsign, status: "active" });
     } catch (error) {
-      console.error('[Agents] Error activating agent:', error);
-      return c.json({ error: 'Failed to activate agent' }, 500);
+      console.error("[Agents] Error activating agent:", error);
+      return c.json({ error: "Failed to activate agent" }, 500);
     }
   });
 
@@ -734,20 +935,23 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
    * Archives the agent (hidden from roster but data preserved).
    * Stops container, clears callbackUrl, broadcasts dismissed state.
    */
-  app.delete('/:channelId/agents/:callsign', async (c) => {
-    const channelId = c.req.param('channelId');
-    const callsign = c.req.param('callsign');
+  app.delete("/:channelId/agents/:callsign", async (c) => {
+    const channelId = c.req.param("channelId");
+    const callsign = c.req.param("callsign");
 
     try {
       // Find agent in roster
-      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+      const rosterEntry = await storage.getRosterByCallsign(
+        channelId,
+        callsign,
+      );
       if (!rosterEntry) {
-        return c.json({ error: 'Agent not found in roster' }, 404);
+        return c.json({ error: "Agent not found in roster" }, 404);
       }
 
       // Check if already archived
-      if (rosterEntry.status === 'archived') {
-        return c.json({ error: 'Agent is already dismissed' }, 400);
+      if (rosterEntry.status === "archived") {
+        return c.json({ error: "Agent is already dismissed" }, 400);
       }
 
       console.log(`[Agents] Dismissing ${callsign} in channel ${channelId}`);
@@ -757,40 +961,48 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
       try {
         await agentManager.suspend(spaceId, channelId, callsign);
       } catch (stopError) {
-        console.warn(`[Agents] Error stopping container for ${callsign}:`, stopError);
+        console.warn(
+          `[Agents] Error stopping container for ${callsign}:`,
+          stopError,
+        );
         // Continue anyway - container may already be stopped
       }
 
       // Update roster status to archived and clear callbackUrl
       await storage.updateRosterEntry(channelId, rosterEntry.id, {
-        status: 'archived',
+        status: "archived",
         callbackUrl: undefined,
       });
 
       // Broadcast dismissed state
-      await broadcastAgentState(connectionManager, channelId, callsign, 'dismissed');
+      await broadcastAgentState(
+        connectionManager,
+        channelId,
+        callsign,
+        "dismissed",
+      );
 
       // Create and broadcast status message for dismiss action
       const messageId = generateMessageId();
       const now = new Date().toISOString();
-      const dismissContent = { action: 'dismiss', callsign };
+      const dismissContent = { action: "dismiss", callsign };
       // Save message to storage (content as object - stored as JSONB)
       await storage.saveMessage({
         id: messageId,
         spaceId,
         channelId,
-        sender: 'system',
-        senderType: 'system',
-        type: 'status',
+        sender: "system",
+        senderType: "system",
+        type: "status",
         content: dismissContent,
         isComplete: true,
       });
 
       // Broadcast status message to channel
       const frame = tymbal.set(messageId, {
-        type: 'status',
-        sender: 'system',
-        senderType: 'system',
+        type: "status",
+        sender: "system",
+        senderType: "system",
         content: dismissContent,
         timestamp: now,
       });
@@ -799,8 +1011,8 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
       console.log(`[Agents] ${callsign} dismissed successfully`);
       return c.json({ success: true, callsign });
     } catch (error) {
-      console.error('[Agents] Error dismissing agent:', error);
-      return c.json({ error: 'Failed to dismiss agent' }, 500);
+      console.error("[Agents] Error dismissing agent:", error);
+      return c.json({ error: "Failed to dismiss agent" }, 500);
     }
   });
 
@@ -811,15 +1023,15 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
    * Used by frontend to detect @mentions of dismissed agents
    * and offer to reactivate them.
    */
-  app.get('/:channelId/agents/archived', async (c) => {
-    const channelId = c.req.param('channelId');
+  app.get("/:channelId/agents/archived", async (c) => {
+    const channelId = c.req.param("channelId");
 
     try {
       const archived = await storage.listArchivedRoster(channelId);
       return c.json({ agents: archived });
     } catch (error) {
-      console.error('[Agents] Error listing archived agents:', error);
-      return c.json({ error: 'Failed to list archived agents' }, 500);
+      console.error("[Agents] Error listing archived agents:", error);
+      return c.json({ error: "Failed to list archived agents" }, 500);
     }
   });
 
@@ -829,31 +1041,39 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
    * Sets status back to 'active' and spawns a new container.
    * Used when user wants to re-summon a previously dismissed agent.
    */
-  app.post('/:channelId/agents/:callsign/unarchive', async (c) => {
-    const channelId = c.req.param('channelId');
-    const callsign = c.req.param('callsign');
+  app.post("/:channelId/agents/:callsign/unarchive", async (c) => {
+    const channelId = c.req.param("channelId");
+    const callsign = c.req.param("callsign");
 
     try {
       // Find agent in roster (archived agents are still in DB)
-      const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+      const rosterEntry = await storage.getRosterByCallsign(
+        channelId,
+        callsign,
+      );
       if (!rosterEntry) {
-        return c.json({ error: 'Agent not found in roster' }, 404);
+        return c.json({ error: "Agent not found in roster" }, 404);
       }
 
       // Check if actually archived
-      if (rosterEntry.status !== 'archived') {
-        return c.json({ error: 'Agent is not dismissed' }, 400);
+      if (rosterEntry.status !== "archived") {
+        return c.json({ error: "Agent is not dismissed" }, 400);
       }
 
       console.log(`[Agents] Unarchiving ${callsign} in channel ${channelId}`);
 
       // Update roster status back to active
       await storage.updateRosterEntry(channelId, rosterEntry.id, {
-        status: 'active',
+        status: "active",
       });
 
       // Broadcast connecting state
-      await broadcastAgentState(connectionManager, channelId, callsign, 'connecting');
+      await broadcastAgentState(
+        connectionManager,
+        channelId,
+        callsign,
+        "connecting",
+      );
 
       // Spawn new container
       const spaceId = getSpaceId(c);
@@ -861,15 +1081,18 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
         await agentManager.activate(spaceId, channelId, callsign);
         console.log(`[Agents] ${callsign} unarchived and container spawned`);
       } catch (spawnError) {
-        console.warn(`[Agents] Error spawning container for ${callsign}:`, spawnError);
+        console.warn(
+          `[Agents] Error spawning container for ${callsign}:`,
+          spawnError,
+        );
         // Agent is restored to active state even if spawn fails
         // They'll get a container on next message
       }
 
-      return c.json({ success: true, callsign, status: 'active' });
+      return c.json({ success: true, callsign, status: "active" });
     } catch (error) {
-      console.error('[Agents] Error unarchiving agent:', error);
-      return c.json({ error: 'Failed to unarchive agent' }, 500);
+      console.error("[Agents] Error unarchiving agent:", error);
+      return c.json({ error: "Failed to unarchive agent" }, 500);
     }
   });
 
@@ -892,46 +1115,52 @@ export function createApp(options: AppOptions): Hono {
   // Middleware
   // ---------------------------------------------------------------------------
 
-  app.use('*', logger());
-  app.use('*', cors({
-    origin: (origin) => {
-      // Allow any localhost origin for local development
-      if (origin && origin.match(/^http:\/\/localhost(:\d+)?$/)) {
-        return origin;
-      }
-      // Allow staging and production frontend domains
-      if (origin === 'https://app.staging.caststack.ai' || origin === 'https://app.caststack.ai') {
-        return origin;
-      }
-      // Allow FRONTEND_URL if set (for flexible deployment configurations)
-      const frontendUrl = process.env.FRONTEND_URL;
-      if (frontendUrl && origin === frontendUrl) {
-        return origin;
-      }
-      return null;
-    },
-    credentials: true,
-    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization'],
-  }));
+  app.use("*", logger());
+  app.use(
+    "*",
+    cors({
+      origin: (origin) => {
+        // Allow any localhost origin for local development
+        if (origin && origin.match(/^http:\/\/localhost(:\d+)?$/)) {
+          return origin;
+        }
+        // Allow staging and production frontend domains
+        if (
+          origin === "https://app.staging.caststack.ai" ||
+          origin === "https://app.caststack.ai"
+        ) {
+          return origin;
+        }
+        // Allow FRONTEND_URL if set (for flexible deployment configurations)
+        const frontendUrl = process.env.FRONTEND_URL;
+        if (frontendUrl && origin === frontendUrl) {
+          return origin;
+        }
+        return null;
+      },
+      credentials: true,
+      allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowHeaders: ["Content-Type", "Authorization"],
+    }),
+  );
 
   // ---------------------------------------------------------------------------
   // Health & Info Endpoints
   // ---------------------------------------------------------------------------
 
-  app.get('/health', (c) => {
+  app.get("/health", (c) => {
     return c.json({
-      status: 'ok',
-      version: '0.0.1',
+      status: "ok",
+      version: "0.0.1",
       timestamp: new Date().toISOString(),
     });
   });
 
-  app.get('/', (c) => {
+  app.get("/", (c) => {
     return c.json({
-      name: 'Cast Backend',
-      version: '0.0.1',
-      docs: '/health',
+      name: "Cast Backend",
+      version: "0.0.1",
+      docs: "/health",
     });
   });
 
@@ -942,22 +1171,22 @@ export function createApp(options: AppOptions): Hono {
   // Dev auth routes (local development only)
   // SECURITY: Only mount when AUTH_MODE=dev to prevent auth bypass in production
   const devAuthRoutes = createDevAuthRoutes({ storage });
-  if (process.env.AUTH_MODE === 'dev') {
-    app.route('/auth/dev', devAuthRoutes);
+  if (process.env.AUTH_MODE === "dev") {
+    app.route("/auth/dev", devAuthRoutes);
   }
 
   // WorkOS auth routes (production)
   // These are always mounted - they'll return errors if WorkOS env vars aren't set
   const workosAuthRoutes = createWorkOSAuthRoutes({ storage });
-  app.route('/auth', workosAuthRoutes);
+  app.route("/auth", workosAuthRoutes);
 
   // GET /auth/me is shared between dev and workos modes
   // (dev routes have /me handler, workos routes can add their own later)
-  app.get('/auth/me', async (c) => {
+  app.get("/auth/me", async (c) => {
     // Forward to dev routes - they use the shared session parsing
     const response = await devAuthRoutes.request(
-      new Request(new URL('/me', c.req.url), { headers: c.req.raw.headers }),
-      {}
+      new Request(new URL("/me", c.req.url), { headers: c.req.raw.headers }),
+      {},
     );
     // Copy response headers (including cookies)
     const headers = new Headers(response.headers);
@@ -970,19 +1199,19 @@ export function createApp(options: AppOptions): Hono {
   // POST /auth/logout - route to appropriate handler based on session mode
   // WorkOS sessions need to redirect to WorkOS logout URL
   // Dev sessions just need cookie cleared
-  app.post('/auth/logout', async (c) => {
+  app.post("/auth/logout", async (c) => {
     // Check session mode to decide which handler to use
-    const { parseSession } = await import('./auth/session.js');
+    const { parseSession } = await import("./auth/session.js");
     const session = await parseSession(c);
 
-    if (session?.mode === 'workos') {
+    if (session?.mode === "workos") {
       // Forward to WorkOS routes for proper session termination
       const response = await workosAuthRoutes.request(
-        new Request(new URL('/logout', c.req.url), {
-          method: 'POST',
+        new Request(new URL("/logout", c.req.url), {
+          method: "POST",
           headers: c.req.raw.headers,
         }),
-        {}
+        {},
       );
       const headers = new Headers(response.headers);
       return new Response(response.body, {
@@ -993,11 +1222,11 @@ export function createApp(options: AppOptions): Hono {
 
     // Dev mode - use dev routes
     const response = await devAuthRoutes.request(
-      new Request(new URL('/logout', c.req.url), {
-        method: 'POST',
+      new Request(new URL("/logout", c.req.url), {
+        method: "POST",
         headers: c.req.raw.headers,
       }),
-      {}
+      {},
     );
     const headers = new Headers(response.headers);
     return new Response(response.body, {
@@ -1009,9 +1238,10 @@ export function createApp(options: AppOptions): Hono {
   // ---------------------------------------------------------------------------
   // App OAuth Routes (External Service Integrations)
   // ---------------------------------------------------------------------------
-  const apiUrl = process.env.CAST_API_URL || 'http://localhost:8080';
-  const appUrl = process.env.APP_URL || 'http://localhost:3000';
-  const jwtSecret = process.env.SECRET_KEY || 'dev-secret-key-min-32-characters!!';
+  const apiUrl = process.env.CAST_API_URL || "http://localhost:8080";
+  const appUrl = process.env.APP_URL || "http://localhost:3000";
+  const jwtSecret =
+    process.env.SECRET_KEY || "dev-secret-key-min-32-characters!!";
 
   const appRoutes = createAppRoutes({
     storage,
@@ -1019,7 +1249,7 @@ export function createApp(options: AppOptions): Hono {
     appUrl,
     jwtSecret,
   });
-  app.route('/auth/apps', appRoutes);
+  app.route("/auth/apps", appRoutes);
 
   // ---------------------------------------------------------------------------
   // Runtime Auth Routes (bootstrap token, server credentials)
@@ -1027,62 +1257,62 @@ export function createApp(options: AppOptions): Hono {
   const runtimeAuthRoutes = createRuntimeAuthRoutes({
     storage,
     apiHost: new URL(apiUrl).host,
-    wsHost: new URL(apiUrl).host.replace('api.', 'ws.'),
+    wsHost: new URL(apiUrl).host.replace("api.", "ws."),
   });
-  app.route('/api/runtimes/auth', runtimeAuthRoutes);
+  app.route("/api/runtimes/auth", runtimeAuthRoutes);
 
   // ---------------------------------------------------------------------------
   // Runtime Management Routes
   // ---------------------------------------------------------------------------
   const runtimeRoutes = createRuntimeRoutes({ storage });
-  app.route('/api/spaces', runtimeRoutes);
+  app.route("/api/spaces", runtimeRoutes);
 
   // ---------------------------------------------------------------------------
   // Miriad Cloud Routes (container provisioning)
   // ---------------------------------------------------------------------------
   const miriadCloudRoutes = createMiriadCloudRoutes({ storage });
-  app.route('/api/runtimes/miriad-cloud', miriadCloudRoutes);
+  app.route("/api/runtimes/miriad-cloud", miriadCloudRoutes);
 
   // ---------------------------------------------------------------------------
   // Knowledge Base Routes
   // ---------------------------------------------------------------------------
   const kbRoutes = createKBRoutes({ storage });
-  app.route('/kb', kbRoutes);
+  app.route("/kb", kbRoutes);
 
   // ---------------------------------------------------------------------------
   // Disclaimer Routes
   // ---------------------------------------------------------------------------
   const disclaimerRoutes = createDisclaimerRoutes(storage);
-  app.route('/disclaimer', disclaimerRoutes);
+  app.route("/disclaimer", disclaimerRoutes);
 
   // ---------------------------------------------------------------------------
   // Focus Types & Agent Types (stubs for frontend)
   // ---------------------------------------------------------------------------
 
-  app.get('/focus-types', (c) => {
+  app.get("/focus-types", (c) => {
     return c.json({
       focusTypes: [
         {
-          slug: 'general',
-          name: 'General',
-          description: 'Open workspace for any task',
+          slug: "general",
+          name: "General",
+          description: "Open workspace for any task",
         },
       ],
     });
   });
 
-  app.get('/agents', (c) => {
+  app.get("/agents", (c) => {
     return c.json({
       agentTypes: [
         {
-          slug: 'engineer',
-          name: 'Engineer',
-          description: 'Software engineering agent',
+          slug: "engineer",
+          name: "Engineer",
+          description: "Software engineering agent",
         },
         {
-          slug: 'lead',
-          name: 'Lead',
-          description: 'Team lead agent',
+          slug: "lead",
+          name: "Lead",
+          description: "Team lead agent",
         },
       ],
     });
@@ -1092,22 +1322,34 @@ export function createApp(options: AppOptions): Hono {
   // GET /api/backends - List available AI backends/engines with capabilities
   // Static response for now - engine registry integration can come later
   // ---------------------------------------------------------------------------
-  app.get('/api/backends', (c) => {
+  app.get("/api/backends", (c) => {
     return c.json([
       {
-        name: 'claude',
+        name: "claude",
         isBuiltIn: true,
-        capabilities: { supportsMcp: true, supportsTools: true, supportsVision: true },
+        capabilities: {
+          supportsMcp: true,
+          supportsTools: true,
+          supportsVision: true,
+        },
       },
       {
-        name: 'openai',
+        name: "openai",
         isBuiltIn: true,
-        capabilities: { supportsMcp: true, supportsTools: true, supportsVision: true },
+        capabilities: {
+          supportsMcp: true,
+          supportsTools: true,
+          supportsVision: true,
+        },
       },
       {
-        name: 'codex',
+        name: "codex",
         isBuiltIn: true,
-        capabilities: { supportsMcp: true, supportsTools: true, supportsVision: false },
+        capabilities: {
+          supportsMcp: true,
+          supportsTools: true,
+          supportsVision: false,
+        },
       },
     ]);
   });
@@ -1118,7 +1360,8 @@ export function createApp(options: AppOptions): Hono {
 
   const agentManager = new AgentManager({
     runtime,
-    broadcast: (channelId, frame) => connectionManager.broadcast(channelId, frame),
+    broadcast: (channelId, frame) =>
+      connectionManager.broadcast(channelId, frame),
     getChannel: async (sid, cid) => {
       const channel = await storage.getChannel(sid, cid);
       if (!channel) return null;
@@ -1135,7 +1378,7 @@ export function createApp(options: AppOptions): Hono {
         id: e.id,
         callsign: e.callsign,
         agentType: e.agentType,
-        status: e.status === 'active' ? 'active' : 'inactive',
+        status: e.status === "active" ? "active" : "inactive",
         tunnelHash: e.tunnelHash,
       }));
     },
@@ -1146,7 +1389,7 @@ export function createApp(options: AppOptions): Hono {
         id: entry.id,
         callsign: entry.callsign,
         agentType: entry.agentType,
-        status: entry.status === 'active' ? 'active' : 'inactive',
+        status: entry.status === "active" ? "active" : "inactive",
         tunnelHash: entry.tunnelHash,
       };
     },
@@ -1154,12 +1397,14 @@ export function createApp(options: AppOptions): Hono {
     // App integrations: get system.app artifacts for MCP derivation
     getApps: async (sid, cid) => {
       // Get apps from this channel and from #root (space-wide apps)
-      const channelApps = await storage.listArtifacts(cid, { type: 'system.app' });
+      const channelApps = await storage.listArtifacts(cid, {
+        type: "system.app",
+      });
 
       // Get root channel for space-wide apps
-      const rootChannel = await storage.getChannelByName(sid, 'root');
+      const rootChannel = await storage.getChannelByName(sid, "root");
       const rootApps = rootChannel
-        ? await storage.listArtifacts(rootChannel.id, { type: 'system.app' })
+        ? await storage.listArtifacts(rootChannel.id, { type: "system.app" })
         : [];
 
       return [...channelApps, ...rootApps];
@@ -1167,10 +1412,10 @@ export function createApp(options: AppOptions): Hono {
     // App secrets accessor for token retrieval
     appSecrets: {
       getAccessToken: async (sid, cid, slug) => {
-        return storage.getSecretValue(sid, cid, slug, 'accessToken');
+        return storage.getSecretValue(sid, cid, slug, "accessToken");
       },
       getRefreshToken: async (sid, cid, slug) => {
-        return storage.getSecretValue(sid, cid, slug, 'refreshToken');
+        return storage.getSecretValue(sid, cid, slug, "refreshToken");
       },
       getMetadata: async (cid, slug, key) => {
         return storage.getSecretMetadata(cid, slug, key);
@@ -1178,37 +1423,41 @@ export function createApp(options: AppOptions): Hono {
     },
     // Get agent definition by slug from #root channel
     getAgentDefinition: async (sid, agentSlug) => {
-      const rootChannel = await storage.getChannelByName(sid, 'root');
+      const rootChannel = await storage.getChannelByName(sid, "root");
       if (!rootChannel) return null;
 
       const artifact = await storage.getArtifact(rootChannel.id, agentSlug);
-      if (!artifact || artifact.type !== 'system.agent') return null;
+      if (!artifact || artifact.type !== "system.agent") return null;
 
       return {
         slug: artifact.slug,
         title: artifact.title,
         tldr: artifact.tldr,
         content: artifact.content,
-        props: artifact.props as { engine?: string; nameTheme?: string; mcp?: string[] } | undefined,
+        props: artifact.props as
+          | { engine?: string; nameTheme?: string; mcp?: string[] }
+          | undefined,
       };
     },
     // Get focus type by slug from #root channel
     getFocusType: async (sid, focusSlug) => {
-      const rootChannel = await storage.getChannelByName(sid, 'root');
+      const rootChannel = await storage.getChannelByName(sid, "root");
       if (!rootChannel) return null;
 
       const artifact = await storage.getArtifact(rootChannel.id, focusSlug);
-      if (!artifact || artifact.type !== 'system.focus') return null;
+      if (!artifact || artifact.type !== "system.focus") return null;
 
       return {
         slug: artifact.slug,
         title: artifact.title,
         tldr: artifact.tldr,
         content: artifact.content,
-        props: artifact.props as {
-          defaultAgents?: Array<{ slug: string; role?: string }>;
-          initialPrompt?: string;
-        } | undefined,
+        props: artifact.props as
+          | {
+              defaultAgents?: Array<{ slug: string; role?: string }>;
+              initialPrompt?: string;
+            }
+          | undefined,
       };
     },
     // Platform MCP URL for built-in powpow tools
@@ -1216,7 +1465,9 @@ export function createApp(options: AppOptions): Hono {
     // Environment resolution: get system.environment artifacts for a channel
     getEnvironmentArtifacts: async (sid, cid) => {
       // First list to get slugs, then fetch full artifacts to get secrets
-      const summaries = await storage.listArtifacts(cid, { type: 'system.environment' });
+      const summaries = await storage.listArtifacts(cid, {
+        type: "system.environment",
+      });
       const results = [];
       for (const summary of summaries) {
         const artifact = await storage.getArtifact(cid, summary.slug);
@@ -1225,7 +1476,9 @@ export function createApp(options: AppOptions): Hono {
             slug: artifact.slug,
             channelId: artifact.channelId,
             props: {
-              variables: ((artifact.props as Record<string, unknown> | undefined)?.variables as Record<string, string>) ?? {},
+              variables:
+                ((artifact.props as Record<string, unknown> | undefined)
+                  ?.variables as Record<string, string>) ?? {},
             },
             secretKeys: artifact.secrets ? Object.keys(artifact.secrets) : [],
           });
@@ -1235,7 +1488,7 @@ export function createApp(options: AppOptions): Hono {
     },
     // Get root channel ID for a space
     getRootChannelId: async (sid) => {
-      const rootChannel = await storage.getChannelByName(sid, 'root');
+      const rootChannel = await storage.getChannelByName(sid, "root");
       return rootChannel?.id ?? null;
     },
     // Get decrypted secret value
@@ -1269,14 +1522,19 @@ export function createApp(options: AppOptions): Hono {
     onSetFrame: async (channelId, frame, spaceIdFromContainer) => {
       // Persist SetFrames as messages
       // spaceIdFromContainer is passed from the container auth context
-      if (frame.v && typeof frame.v === 'object') {
+      if (frame.v && typeof frame.v === "object") {
         const value = frame.v as Record<string, unknown>;
 
         // Handle cost frames separately - persist to costs table, not messages
-        if (value.type === 'cost') {
-          console.log(`[Tymbal] Cost frame from ${value.sender}: $${value.totalCostUsd} (${value.numTurns} turns, ${value.durationMs}ms)`);
+        if (value.type === "cost") {
+          console.log(
+            `[Tymbal] Cost frame from ${value.sender}: $${value.totalCostUsd} (${value.numTurns} turns, ${value.durationMs}ms)`,
+          );
           if (value.modelUsage) {
-            console.log(`[Tymbal] Model usage:`, JSON.stringify(value.modelUsage));
+            console.log(
+              `[Tymbal] Model usage:`,
+              JSON.stringify(value.modelUsage),
+            );
           }
           // Persist to costs table
           try {
@@ -1287,8 +1545,24 @@ export function createApp(options: AppOptions): Hono {
               costUsd: value.totalCostUsd as number,
               durationMs: value.durationMs as number,
               numTurns: value.numTurns as number,
-              usage: value.usage as { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number },
-              modelUsage: value.modelUsage as Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number; costUsd: number }> | undefined,
+              usage: value.usage as {
+                inputTokens: number;
+                outputTokens: number;
+                cacheReadInputTokens: number;
+                cacheCreationInputTokens: number;
+              },
+              modelUsage: value.modelUsage as
+                | Record<
+                    string,
+                    {
+                      inputTokens: number;
+                      outputTokens: number;
+                      cacheReadInputTokens: number;
+                      cacheCreationInputTokens: number;
+                      costUsd: number;
+                    }
+                  >
+                | undefined,
             });
             console.log(`[Tymbal] Cost record saved for ${value.sender}`);
           } catch (err) {
@@ -1300,25 +1574,26 @@ export function createApp(options: AppOptions): Hono {
         // For tool_call and tool_result, store the full value object
         // so we can reconstruct all fields (toolCallId, name, args, isError, etc.)
         // when reading back. Storage layer handles JSON serialization.
-        const messageType = (value.type as string) ?? 'agent';
+        const messageType = (value.type as string) ?? "agent";
         let messageContent: string | Record<string, unknown>;
-        if (messageType === 'tool_call' || messageType === 'tool_result') {
+        if (messageType === "tool_call" || messageType === "tool_result") {
           messageContent = value as Record<string, unknown>;
         } else {
           // For other types, use content field or fall back to whole value
-          messageContent = (value.content as string | Record<string, unknown>) ?? value;
+          messageContent =
+            (value.content as string | Record<string, unknown>) ?? value;
         }
 
         // Detect method field - defaults to 'agent_output' for frames without explicit method
         // This enables the loop-breaker: send_message routes to agents, agent_output does not
-        const method = (value.method as string) ?? 'agent_output';
+        const method = (value.method as string) ?? "agent_output";
 
         await storage.saveMessage({
           id: frame.i,
           spaceId: spaceIdFromContainer,
           channelId,
-          sender: (value.sender as string) ?? 'system',
-          senderType: (value.senderType as 'user' | 'agent') ?? 'agent',
+          sender: (value.sender as string) ?? "system",
+          senderType: (value.senderType as "user" | "agent") ?? "agent",
           type: messageType as StoredMessageType,
           content: messageContent,
           isComplete: true,
@@ -1331,48 +1606,76 @@ export function createApp(options: AppOptions): Hono {
       await storage.deleteMessage(spaceIdFromContainer, messageId);
     },
   });
-  app.route('/tymbal', tymbalRoutes);
+  app.route("/tymbal", tymbalRoutes);
 
   // Legacy /thread/:threadId/tymbal endpoint for compatibility with existing containers
   // threadId format: spaceId:channelId:callsign
   // This endpoint doesn't require container auth (legacy containers don't send it)
-  app.post('/thread/:threadId/tymbal', async (c) => {
-    const threadId = c.req.param('threadId');
-    const parts = threadId.split(':');
+  app.post("/thread/:threadId/tymbal", async (c) => {
+    const threadId = c.req.param("threadId");
+    const parts = threadId.split(":");
     if (parts.length < 2) {
-      return c.json({ error: 'invalid_thread_id', message: 'Thread ID must be spaceId:channelId[:callsign]' }, 400);
+      return c.json(
+        {
+          error: "invalid_thread_id",
+          message: "Thread ID must be spaceId:channelId[:callsign]",
+        },
+        400,
+      );
     }
     const spaceIdFromThread = parts[0];
     const channelId = parts[1];
 
     const body = await c.req.text();
     if (!body.trim()) {
-      return c.json({ error: 'empty_body', message: 'Request body is empty' }, 400);
+      return c.json(
+        { error: "empty_body", message: "Request body is empty" },
+        400,
+      );
     }
 
     const frame = parseFrame(body);
     if (!frame) {
-      return c.json({ error: 'invalid_frame', message: 'Could not parse Tymbal frame' }, 400);
+      return c.json(
+        { error: "invalid_frame", message: "Could not parse Tymbal frame" },
+        400,
+      );
     }
 
     try {
       if (isSetFrame(frame)) {
-        const normalizedValue = frame.v && typeof frame.v === 'object' && (frame.v as Record<string, unknown>).type === 'tool_call' && 'input' in (frame.v as Record<string, unknown>) && !('args' in (frame.v as Record<string, unknown>))
-          ? { ...(frame.v as Record<string, unknown>), args: (frame.v as Record<string, unknown>).input }
-          : frame.v;
-        const normalizedFrame = normalizedValue !== frame.v ? { ...frame, v: normalizedValue } : frame;
+        const normalizedValue =
+          frame.v &&
+          typeof frame.v === "object" &&
+          (frame.v as Record<string, unknown>).type === "tool_call" &&
+          "input" in (frame.v as Record<string, unknown>) &&
+          !("args" in (frame.v as Record<string, unknown>))
+            ? {
+                ...(frame.v as Record<string, unknown>),
+                args: (frame.v as Record<string, unknown>).input,
+              }
+            : frame.v;
+        const normalizedFrame =
+          normalizedValue !== frame.v
+            ? { ...frame, v: normalizedValue }
+            : frame;
         const serialized = JSON.stringify(normalizedFrame);
         await connectionManager.broadcast(channelId, serialized);
 
         // Persist SetFrames as messages (skip cost frames)
-        if (normalizedFrame.v && typeof normalizedFrame.v === 'object') {
+        if (normalizedFrame.v && typeof normalizedFrame.v === "object") {
           const value = normalizedFrame.v as Record<string, unknown>;
 
           // Handle cost frames separately - persist to costs table, not messages
-          if (value.type === 'cost') {
-            console.log(`[Tymbal/Legacy] Cost frame from ${value.sender}: $${value.totalCostUsd} (${value.numTurns} turns, ${value.durationMs}ms)`);
+          if (value.type === "cost") {
+            console.log(
+              `[Tymbal/Legacy] Cost frame from ${value.sender}: $${value.totalCostUsd} (${value.numTurns} turns, ${value.durationMs}ms)`,
+            );
             if (value.modelUsage) {
-              console.log(`[Tymbal/Legacy] Model usage:`, JSON.stringify(value.modelUsage));
+              console.log(
+                `[Tymbal/Legacy] Model usage:`,
+                JSON.stringify(value.modelUsage),
+              );
             }
             // Persist to costs table
             try {
@@ -1383,10 +1686,28 @@ export function createApp(options: AppOptions): Hono {
                 costUsd: value.totalCostUsd as number,
                 durationMs: value.durationMs as number,
                 numTurns: value.numTurns as number,
-                usage: value.usage as { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number },
-                modelUsage: value.modelUsage as Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number; costUsd: number }> | undefined,
+                usage: value.usage as {
+                  inputTokens: number;
+                  outputTokens: number;
+                  cacheReadInputTokens: number;
+                  cacheCreationInputTokens: number;
+                },
+                modelUsage: value.modelUsage as
+                  | Record<
+                      string,
+                      {
+                        inputTokens: number;
+                        outputTokens: number;
+                        cacheReadInputTokens: number;
+                        cacheCreationInputTokens: number;
+                        costUsd: number;
+                      }
+                    >
+                  | undefined,
               });
-              console.log(`[Tymbal/Legacy] Cost record saved for ${value.sender}`);
+              console.log(
+                `[Tymbal/Legacy] Cost record saved for ${value.sender}`,
+              );
             } catch (err) {
               console.error(`[Tymbal/Legacy] Failed to save cost record:`, err);
             }
@@ -1396,24 +1717,25 @@ export function createApp(options: AppOptions): Hono {
           // For tool_call and tool_result, store the full value object
           // so we can reconstruct all fields (toolCallId, name, args, isError, etc.)
           // when reading back. Storage layer handles JSON serialization.
-          const messageType = (value.type as string) ?? 'agent';
+          const messageType = (value.type as string) ?? "agent";
           let messageContent: string | Record<string, unknown>;
-          if (messageType === 'tool_call' || messageType === 'tool_result') {
+          if (messageType === "tool_call" || messageType === "tool_result") {
             messageContent = value as Record<string, unknown>;
           } else {
             // For other types, use content field or fall back to whole value
-            messageContent = (value.content as string | Record<string, unknown>) ?? value;
+            messageContent =
+              (value.content as string | Record<string, unknown>) ?? value;
           }
 
           // Detect method field - defaults to 'agent_output' for frames without explicit method
-          const method = (value.method as string) ?? 'agent_output';
+          const method = (value.method as string) ?? "agent_output";
 
           await storage.saveMessage({
             id: normalizedFrame.i,
             spaceId: spaceIdFromThread,
             channelId,
-            sender: (value.sender as string) ?? 'system',
-            senderType: (value.senderType as 'user' | 'agent') ?? 'agent',
+            sender: (value.sender as string) ?? "system",
+            senderType: (value.senderType as "user" | "agent") ?? "agent",
             type: messageType as StoredMessageType,
             content: messageContent,
             isComplete: true,
@@ -1430,8 +1752,11 @@ export function createApp(options: AppOptions): Hono {
 
       return c.json({ ok: true });
     } catch (error) {
-      console.error('[Tymbal/Legacy] Error processing frame:', error);
-      return c.json({ error: 'processing_error', message: 'Failed to process frame' }, 500);
+      console.error("[Tymbal/Legacy] Error processing frame:", error);
+      return c.json(
+        { error: "processing_error", message: "Failed to process frame" },
+        500,
+      );
     }
   });
 
@@ -1440,17 +1765,17 @@ export function createApp(options: AppOptions): Hono {
   // ---------------------------------------------------------------------------
 
   // Apply auth middleware to all /channels/* routes
-  app.use('/channels/*', requireAuth);
+  app.use("/channels/*", requireAuth);
 
   // Channel CRUD routes (gets spaceId from session context)
   const channelRoutes = createChannelRoutes(storage);
-  app.route('/channels', channelRoutes);
+  app.route("/channels", channelRoutes);
 
   // ---------------------------------------------------------------------------
   // Root Channel Reset (for debugging onboarding/curation)
   // ---------------------------------------------------------------------------
-  app.use('/initialize-root-channel', requireAuth);
-  app.post('/initialize-root-channel', async (c) => {
+  app.use("/initialize-root-channel", requireAuth);
+  app.post("/initialize-root-channel", async (c) => {
     const spaceId = getSpaceId(c);
     try {
       const result = await resetRootChannel(storage, spaceId);
@@ -1460,17 +1785,20 @@ export function createApp(options: AppOptions): Hono {
         ...result,
       });
     } catch (error) {
-      console.error('[ResetRootChannel] Error:', error);
+      console.error("[ResetRootChannel] Error:", error);
       return c.json(
-        { error: 'Failed to reset root channel', message: error instanceof Error ? error.message : 'Unknown error' },
-        500
+        {
+          error: "Failed to reset root channel",
+          message: error instanceof Error ? error.message : "Unknown error",
+        },
+        500,
       );
     }
   });
 
   // Roster routes (mounted under /channels/:id/roster)
   const rosterRoutes = createRosterRoutes(storage);
-  app.route('/channels', rosterRoutes);
+  app.route("/channels", rosterRoutes);
 
   // Agent routes (POST /channels/:id/agents - Add agent to channel)
   const agentRoutes = createAgentRoutes({
@@ -1478,17 +1806,17 @@ export function createApp(options: AppOptions): Hono {
     connectionManager,
     agentManager,
   });
-  app.route('/channels', agentRoutes);
+  app.route("/channels", agentRoutes);
 
   // Message routes (user → server → agents)
   // Note: These need dynamic spaceId from session
-  app.get('/channels/:channelId/messages', async (c) => {
+  app.get("/channels/:channelId/messages", async (c) => {
     const spaceId = getSpaceId(c);
-    const channelId = c.req.param('channelId');
-    const since = c.req.query('since');
-    const before = c.req.query('before');
-    const limit = c.req.query('limit');
-    const forAgent = c.req.query('forAgent');
+    const channelId = c.req.param("channelId");
+    const since = c.req.query("since");
+    const before = c.req.query("before");
+    const limit = c.req.query("limit");
+    const forAgent = c.req.query("forAgent");
 
     try {
       const messageStorage = messageStorageFactory.forSpace(spaceId);
@@ -1500,24 +1828,24 @@ export function createApp(options: AppOptions): Hono {
       });
       return c.json({ messages });
     } catch (error) {
-      console.error('[Messages] Error getting messages:', error);
-      return c.json({ error: 'Failed to get messages' }, 500);
+      console.error("[Messages] Error getting messages:", error);
+      return c.json({ error: "Failed to get messages" }, 500);
     }
   });
 
-  app.post('/channels/:channelId/messages', async (c) => {
+  app.post("/channels/:channelId/messages", async (c) => {
     const spaceId = getSpaceId(c);
-    const channelId = c.req.param('channelId');
+    const channelId = c.req.param("channelId");
 
     let body: { sender?: string; content?: string };
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: 'Invalid JSON body' }, 400);
+      return c.json({ error: "Invalid JSON body" }, 400);
     }
 
     if (!body.sender || !body.content) {
-      return c.json({ error: 'sender and content are required' }, 400);
+      return c.json({ error: "sender and content are required" }, 400);
     }
 
     try {
@@ -1530,7 +1858,11 @@ export function createApp(options: AppOptions): Hono {
         rosterProvider,
         connectionManager,
         agentInvoker: {
-          invokeAgents: async (cid: string, targets: string[], message: Message) => {
+          invokeAgents: async (
+            cid: string,
+            targets: string[],
+            message: Message,
+          ) => {
             // Create invoker on-the-fly with session's spaceId
             const invoker = createAgentInvokerAdapter({
               agentManager,
@@ -1549,41 +1881,52 @@ export function createApp(options: AppOptions): Hono {
           });
         },
         artifactStorage: {
-          getArtifact: (channelId: string, slug: string) => storage.getArtifact(channelId, slug),
-          setArtifactAttachment: (channelId: string, slug: string, messageId: string, updatedBy: string) =>
-            storage.setArtifactAttachment(channelId, slug, messageId, updatedBy),
+          getArtifact: (channelId: string, slug: string) =>
+            storage.getArtifact(channelId, slug),
+          setArtifactAttachment: (
+            channelId: string,
+            slug: string,
+            messageId: string,
+            updatedBy: string,
+          ) =>
+            storage.setArtifactAttachment(
+              channelId,
+              slug,
+              messageId,
+              updatedBy,
+            ),
         },
       });
 
       // Forward to message routes
       const response = await messageRoutes.request(
         new Request(new URL(`/${channelId}/messages`, c.req.url), {
-          method: 'POST',
+          method: "POST",
           headers: c.req.raw.headers,
           body: JSON.stringify(body),
         }),
-        {}
+        {},
       );
       return new Response(response.body, {
         status: response.status,
         headers: response.headers,
       });
     } catch (error) {
-      console.error('[Messages] Error sending message:', error);
-      return c.json({ error: 'Failed to send message' }, 500);
+      console.error("[Messages] Error sending message:", error);
+      return c.json({ error: "Failed to send message" }, 500);
     }
   });
 
   // Cost tally endpoint - get aggregated costs per agent for a channel
-  app.get('/channels/:channelId/costs', async (c) => {
-    const channelId = c.req.param('channelId');
+  app.get("/channels/:channelId/costs", async (c) => {
+    const channelId = c.req.param("channelId");
 
     try {
       const tally = await storage.getChannelCostTally(channelId);
       return c.json({ tally });
     } catch (error) {
-      console.error('[Costs] Error getting cost tally:', error);
-      return c.json({ error: 'Failed to get cost tally' }, 500);
+      console.error("[Costs] Error getting cost tally:", error);
+      return c.json({ error: "Failed to get cost tally" }, 500);
     }
   });
 
@@ -1596,13 +1939,14 @@ export function createApp(options: AppOptions): Hono {
   const checkinRoutes = createCheckinRoutes({
     storage,
     // No default spaceId - extracted from body
-    spaceId: '', // Placeholder - checkin extracts from body.spaceId
+    spaceId: "", // Placeholder - checkin extracts from body.spaceId
     runtime,
     connectionManager,
     // Pass the centralized prompt builder from AgentManager
-    buildSystemPrompt: (sid, cid, callsign) => agentManager.buildPromptForAgent(sid, cid, callsign),
+    buildSystemPrompt: (sid, cid, callsign) =>
+      agentManager.buildPromptForAgent(sid, cid, callsign),
   });
-  app.route('/agents', checkinRoutes);
+  app.route("/agents", checkinRoutes);
 
   // Asset storage for binary files (uses factory to select backend based on env)
   const assetStorage = createAssetStorage();
@@ -1614,17 +1958,17 @@ export function createApp(options: AppOptions): Hono {
   // For text artifacts, serves content directly.
   // Note: This endpoint requires auth - spaceId from session
   // ---------------------------------------------------------------------------
-  app.get('/boards/:channel/:slug', requireAuth, async (c) => {
+  app.get("/boards/:channel/:slug", requireAuth, async (c) => {
     const spaceId = getSpaceId(c);
-    const channelParam = c.req.param('channel');
-    const slug = c.req.param('slug');
+    const channelParam = c.req.param("channel");
+    const slug = c.req.param("slug");
 
     try {
       // Resolve channel by name or ID (single query)
       const channel = await storage.resolveChannel(spaceId, channelParam);
 
       if (!channel) {
-        return c.json({ error: 'Channel not found' }, 404);
+        return c.json({ error: "Channel not found" }, 404);
       }
 
       // Get artifact by slug
@@ -1634,34 +1978,34 @@ export function createApp(options: AppOptions): Hono {
       }
 
       // For asset artifacts, serve binary file via assetStorage
-      if (artifact.type === 'asset') {
+      if (artifact.type === "asset") {
         const data = await assetStorage.readAsset(channel.id, slug);
         const mimeType = artifact.contentType || getMimeType(slug);
 
         return new Response(data, {
           status: 200,
           headers: {
-            'Content-Type': mimeType,
-            'Content-Length': data.length.toString(),
-            'Cache-Control': 'public, max-age=31536000, immutable',
+            "Content-Type": mimeType,
+            "Content-Length": data.length.toString(),
+            "Cache-Control": "public, max-age=31536000, immutable",
           },
         });
       }
 
       // For text artifacts, serve content directly with appropriate Content-Type
-      const content = artifact.content || '';
+      const content = artifact.content || "";
       const mimeType = getMimeType(slug);
 
-      c.header('Content-Type', mimeType);
-      c.header('Content-Length', Buffer.byteLength(content).toString());
-      c.header('Cache-Control', 'public, max-age=3600');
+      c.header("Content-Type", mimeType);
+      c.header("Content-Length", Buffer.byteLength(content).toString());
+      c.header("Cache-Control", "public, max-age=3600");
       return c.body(content);
     } catch (error) {
-      if (error instanceof Error && error.message.includes('not found')) {
+      if (error instanceof Error && error.message.includes("not found")) {
         return c.json({ error: error.message }, 404);
       }
-      console.error('[Boards] Error serving artifact content:', error);
-      return c.json({ error: 'Failed to serve artifact content' }, 500);
+      console.error("[Boards] Error serving artifact content:", error);
+      return c.json({ error: "Failed to serve artifact content" }, 500);
     }
   });
 
@@ -1672,14 +2016,20 @@ export function createApp(options: AppOptions): Hono {
     connectionManager,
     // AgentInvoker for send_message tool - creates invoker with spaceId from container auth context
     agentInvoker: {
-      invokeAgents: async (channelId: string, targets: string[], message: Message) => {
+      invokeAgents: async (
+        channelId: string,
+        targets: string[],
+        message: Message,
+      ) => {
         // Get spaceId from the channel (message.channelId is guaranteed to match)
         // Note: For MCP calls, spaceId is in the ToolContext, but agentInvoker is called
         // from within the handler which has access to ctx.spaceId
         // We need to look up the channel to get spaceId
         const channel = await storage.getChannelById(channelId);
         if (!channel) {
-          console.warn(`[MCP] Channel ${channelId} not found for agent invocation`);
+          console.warn(
+            `[MCP] Channel ${channelId} not found for agent invocation`,
+          );
           return;
         }
         const invoker = createAgentInvokerAdapter({
@@ -1693,7 +2043,7 @@ export function createApp(options: AppOptions): Hono {
       },
     },
   });
-  app.route('/mcp', mcpRoutes);
+  app.route("/mcp", mcpRoutes);
 
   // Assets API routes (container auth for agents)
   // Used by @miriad-systems/assets-mcp for agent file upload/download
@@ -1702,7 +2052,7 @@ export function createApp(options: AppOptions): Hono {
     assetStorage,
     connectionManager,
   });
-  app.route('/api/assets', assetsApiRoutes);
+  app.route("/api/assets", assetsApiRoutes);
 
   // Artifact routes (REST API for frontend)
   // spaceId extracted from session context (auth middleware already applied to /channels/*)
@@ -1711,7 +2061,7 @@ export function createApp(options: AppOptions): Hono {
     connectionManager,
     assetStorage,
   });
-  app.route('/channels', artifactRoutes);
+  app.route("/channels", artifactRoutes);
 
   return app;
 }

@@ -61,9 +61,9 @@ function setLastUsedRuntime(runtimeId: string): void {
 }
 
 /**
- * Get suggested callsign for an agent, avoiding duplicates.
+ * Get fallback callsign for an agent, avoiding duplicates.
  */
-function getSuggestedCallsign(agent: AvailableAgent, roster: RosterAgent[]): string {
+function getFallbackCallsign(agent: AvailableAgent, roster: RosterAgent[]): string {
   const taken = new Set(roster.map(r => r.callsign))
 
   // Use suggestedName if available and not taken
@@ -104,6 +104,7 @@ export function AgentSummonPicker({
   const [callsign, setCallsign] = useState('')
   const [callsignError, setCallsignError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isGeneratingName, setIsGeneratingName] = useState(false)
 
   // Runtime state
   const [runtimes, setRuntimes] = useState<RuntimeOption[]>([])
@@ -299,13 +300,50 @@ export function AgentSummonPicker({
     setCallsignError(validateCallsign(normalized))
   }
 
+  // Generate a unique name based on theme
+  const generateName = useCallback(async (theme: string): Promise<string | null> => {
+    try {
+      const response = await apiFetch(
+        `${apiHost}/channels/${channelId}/agents/generateName?theme=${encodeURIComponent(theme)}`
+      )
+      if (response.ok) {
+        const data = await response.json()
+        return data.name || null
+      }
+    } catch (err) {
+      console.warn('Failed to generate name:', err)
+    }
+    return null
+  }, [apiHost, channelId])
+
   // Select an agent and go to configure state
-  const handleSelectAgent = (agent: AvailableAgent) => {
+  const handleSelectAgent = async (agent: AvailableAgent) => {
     setSelectedAgent(agent)
-    const suggested = getSuggestedCallsign(agent, roster)
-    setCallsign(suggested)
-    setCallsignError(validateCallsign(suggested))
     setState('configure')
+
+    // If agent has a nameTheme, generate a unique name
+    if (agent.nameTheme) {
+      setIsGeneratingName(true)
+      setCallsign('') // Clear while loading
+      setCallsignError(null)
+
+      const generatedName = await generateName(agent.nameTheme)
+      if (generatedName) {
+        setCallsign(generatedName)
+        setCallsignError(validateCallsign(generatedName))
+      } else {
+        // Fall back to default names if generation fails
+        const fallback = getFallbackCallsign(agent, roster)
+        setCallsign(fallback)
+        setCallsignError(validateCallsign(fallback))
+      }
+      setIsGeneratingName(false)
+    } else {
+      // No theme - use fallback names
+      const fallback = getFallbackCallsign(agent, roster)
+      setCallsign(fallback)
+      setCallsignError(validateCallsign(fallback))
+    }
   }
 
   // Go back to browse state
@@ -499,20 +537,26 @@ export function AgentSummonPicker({
               <label className="block text-xs text-muted-foreground mb-1">
                 Callsign
               </label>
-              <input
-                ref={callsignInputRef}
-                type="text"
-                value={callsign}
-                onChange={(e) => handleCallsignChange(e.target.value)}
-                placeholder="e.g., fox"
-                className={cn(
-                  "w-full px-2 py-1.5 text-base bg-background border rounded focus:outline-none focus:ring-1",
-                  callsignError
-                    ? "border-destructive focus:ring-destructive"
-                    : "border-border focus:ring-primary"
+              <div className="relative flex items-center">
+                <input
+                  ref={callsignInputRef}
+                  type="text"
+                  value={callsign}
+                  onChange={(e) => handleCallsignChange(e.target.value)}
+                  placeholder={isGeneratingName ? "Generating..." : "e.g., fox"}
+                  className={cn(
+                    "w-full px-2 py-1.5 text-base bg-background border rounded focus:outline-none focus:ring-1",
+                    isGeneratingName && "pr-8",
+                    callsignError
+                      ? "border-destructive focus:ring-destructive"
+                      : "border-border focus:ring-primary"
+                  )}
+                  disabled={isSubmitting || isGeneratingName}
+                />
+                {isGeneratingName && (
+                  <Loader2 className="absolute right-2 w-4 h-4 animate-spin text-muted-foreground" />
                 )}
-                disabled={isSubmitting}
-              />
+              </div>
               {callsignError && (
                 <p className="text-xs text-destructive mt-1">{callsignError}</p>
               )}
@@ -556,10 +600,10 @@ export function AgentSummonPicker({
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={isSubmitting || !!callsignError || !callsign || !selectedRuntimeId}
+                disabled={isSubmitting || isGeneratingName || !!callsignError || !callsign || !selectedRuntimeId}
                 className={cn(
                   "px-3 py-1.5 text-xs rounded font-medium flex items-center gap-1",
-                  isSubmitting || callsignError || !callsign || !selectedRuntimeId
+                  isSubmitting || isGeneratingName || callsignError || !callsign || !selectedRuntimeId
                     ? "bg-secondary text-muted-foreground cursor-not-allowed"
                     : "bg-primary text-primary-foreground hover:bg-primary/90"
                 )}
