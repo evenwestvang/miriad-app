@@ -138,7 +138,7 @@ export function TreeItem({
         dropZone === 'on' && "bg-primary/20 ring-1 ring-inset ring-primary",
         isInvalidDropTarget && isDragActive && "cursor-not-allowed"
       )}
-      style={{ paddingLeft: `${8 + depth * 12}px`, paddingRight: '16px' }}
+      style={{ paddingLeft: `${12 + depth * 12}px`, paddingRight: '12px' }}
       onClick={onSelect}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
