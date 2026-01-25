@@ -6,9 +6,9 @@ import type { ArtifactType } from '../../types/artifact'
 // Content-heavy artifact types (user-facing)
 const CONTENT_TYPES: { value: ArtifactType; label: string; icon: typeof FileText }[] = [
   { value: 'doc', label: 'Doc', icon: FileText },
-  { value: 'folder', label: 'Folder', icon: Folder },
   { value: 'task', label: 'Task', icon: CheckSquare },
   { value: 'code', label: 'Code', icon: Code },
+  { value: 'folder', label: 'Folder', icon: Folder },
 ]
 
 // System types (configuration artifacts)
