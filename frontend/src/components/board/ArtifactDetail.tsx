@@ -1246,11 +1246,15 @@ export function ArtifactDetail({
       </div>
 
 
-      {/* Metadata footer - view mode only (not create mode) */}
+      {/* Slug display with copy - shown in all modes */}
+      <SlugDisplay
+        slug={isCreateMode ? editSlug : artifact!.slug}
+        isCreateMode={isCreateMode}
+      />
+
+      {/* Metadata footer - view mode only (not create mode, not editing) */}
       {!isEditing && !isCreateMode && (
         <div className="px-3 py-2 border-t border-border text-base text-muted-foreground space-y-1">
-          {/* Slug (immutable identifier) */}
-          <div className="font-mono text-muted-foreground/70">{artifact!.slug}</div>
           {/* Created/Updated info */}
           <div className="flex flex-wrap gap-x-3 gap-y-0.5">
             <span>Created by <span className="text-foreground">@{artifact!.createdBy}</span> · {formatRelativeTime(artifact!.createdAt)}</span>
@@ -1301,6 +1305,46 @@ export function ArtifactDetail({
 // =============================================================================
 // Sub-components
 // =============================================================================
+
+/**
+ * Slug display with copy button - shown in all modes (create, edit, view).
+ */
+function SlugDisplay({
+  slug,
+  isCreateMode,
+}: {
+  slug: string
+  isCreateMode: boolean
+}) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    if (!slug) return
+    await navigator.clipboard.writeText(slug)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  // Don't show if no slug (create mode with empty slug)
+  if (!slug) return null
+
+  return (
+    <div className="px-3 py-2 border-t border-border flex items-center gap-2">
+      <span className="font-mono text-base text-muted-foreground/70 truncate flex-1">
+        {slug}
+      </span>
+      {!isCreateMode && (
+        <button
+          onClick={handleCopy}
+          className="p-1 rounded hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground flex-shrink-0"
+          title="Copy slug"
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+        </button>
+      )}
+    </div>
+  )
+}
 
 /**
  * Status dropdown - plain text style (draft/active/archived).
