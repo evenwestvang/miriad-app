@@ -6,11 +6,11 @@ import { cn } from '../../lib/utils'
 
 // Agent props types - matches server schema
 // Note: engine and model are handled by backend defaults, not exposed in UI
+// Note: agentName is handled at spawn time (callsign), not in the definition
 export interface AgentProps {
   engine?: string
   model?: string
   nameTheme?: string
-  agentName?: string
   mcp?: McpReference[]
   featuredChannelStarter?: boolean
 }
@@ -119,14 +119,6 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
 
   return (
     <div className="space-y-8">
-      {/* Agent Name (fixed callsign) */}
-      <EditableField
-        label="Agent Name (Fixed Callsign)"
-        value={props.agentName || ''}
-        onChange={(value) => onChange({ agentName: value || undefined })}
-        placeholder="Leave empty for auto-generated name"
-      />
-
       {/* Name Theme */}
       <EditableField
         label="Name Theme"

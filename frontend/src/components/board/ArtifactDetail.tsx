@@ -753,7 +753,7 @@ export function ArtifactDetail({
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
               placeholder={isCreateMode ? `New ${getTypeLabel(editType)}` : "Title (optional)"}
-              className="flex-1 min-w-0 px-2 py-1 text-base font-medium bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+              className="flex-1 min-w-0 px-2 py-1 text-base font-medium bg-secondary border border-border focus:outline-none focus:ring-0 focus:border-foreground"
               autoFocus={isCreateMode}
             />
           ) : (

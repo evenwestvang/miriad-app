@@ -143,7 +143,7 @@ export function KeyValueEditor({
     }
   }
 
-  const inputClasses = 'flex-1 h-8 px-2 text-base font-mono bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-border'
+  const inputClasses = 'flex-1 h-8 px-2 text-base font-mono bg-secondary border border-border focus:outline-none focus:ring-0 focus:border-foreground'
 
   return (
     <div
