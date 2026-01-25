@@ -281,6 +281,7 @@ export function BoardPanel({
 
       // Clear selection and go back to tree
       setSelectedSlug(null)
+      setSelectedArtifactData(null)
 
       // Refresh tree
       apiFetch(`${apiHost}/channels/${channelId}/artifacts/tree?pattern=/**&format=json`)
