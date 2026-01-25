@@ -251,7 +251,7 @@ function formatZodError(error: z.ZodError): { error: string; details: Array<{ pa
  * Broadcast artifact event as a proper Tymbal SetFrame.
  * Uses the standard { i, t, v, c } format for consistency with all other frames.
  */
-async function broadcastArtifactEvent(
+export async function broadcastArtifactEvent(
   connectionManager: ConnectionManager,
   channelId: string,
   action: 'create' | 'update' | 'archive',
