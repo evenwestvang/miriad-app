@@ -1080,7 +1080,8 @@ export function ArtifactDetail({
       {/* Content area */}
       <div className={cn("flex-1 min-h-0 relative", isInteractiveApp && !isCreateMode ? "overflow-hidden flex flex-col" : "overflow-y-auto")}>
         {/* Floating copy button - absolute so it doesn't push content down */}
-        {!isEditing && !isCreateMode && !isAsset && !versionLoading && (
+        {/* Hide for system types that don't have meaningful content (mcp, focus, environment) */}
+        {!isEditing && !isCreateMode && !isAsset && !versionLoading && !['system.mcp', 'system.focus', 'system.environment'].includes(currentType) && (
           <button
             className="absolute top-1 right-2 z-10 p-1.5 rounded hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
             onClick={copyContent}
