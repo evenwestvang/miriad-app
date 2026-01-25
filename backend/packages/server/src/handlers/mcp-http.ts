@@ -149,7 +149,7 @@ const TOOLS: McpToolDefinition[] = [
         },
         channel: channelProperty,
       },
-      required: ['slug', 'type', 'tldr', 'content'],
+      required: ['slug', 'type', 'content'],
     },
   },
   {

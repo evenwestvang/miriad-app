@@ -345,7 +345,7 @@ export function ArtifactDetail({
     if (artifact) {
       setIsEditing(false)
       setEditTitle(artifact.title || '')
-      setEditTldr(artifact.tldr)
+      setEditTldr(artifact.tldr || '')
       setEditContent(artifact.content)
       setEditStatus(artifact.status)
       setEditProps((artifact.props as Record<string, unknown>) || {})
@@ -391,7 +391,7 @@ export function ArtifactDetail({
   const startEditing = useCallback((focusContent = false) => {
     if (isCreateMode || !artifact) return
     setEditTitle(artifact.title || '')
-    setEditTldr(artifact.tldr)
+    setEditTldr(artifact.tldr || '')
     setEditContent(artifact.content)
     setEditStatus(artifact.status)
     setEditProps((artifact.props as Record<string, unknown>) || {})
@@ -1018,7 +1018,7 @@ export function ArtifactDetail({
               // Auto-enter edit mode if not already editing
               if (!isEditing && !isCreateMode && artifact) {
                 setEditTitle(artifact.title || '')
-                setEditTldr(artifact.tldr)
+                setEditTldr(artifact.tldr || '')
                 setEditContent(artifact.content)
                 setEditStatus(artifact.status)
                 setEditProps(newProps)
@@ -1051,7 +1051,7 @@ export function ArtifactDetail({
               // Auto-enter edit mode if not already editing
               if (!isEditing && !isCreateMode && artifact) {
                 setEditTitle(artifact.title || '')
-                setEditTldr(artifact.tldr)
+                setEditTldr(artifact.tldr || '')
                 setEditContent(artifact.content)
                 setEditStatus(artifact.status)
                 setEditProps(newProps)
@@ -1083,7 +1083,7 @@ export function ArtifactDetail({
               // Auto-enter edit mode if not already editing
               if (!isEditing && !isCreateMode && artifact) {
                 setEditTitle(artifact.title || '')
-                setEditTldr(artifact.tldr)
+                setEditTldr(artifact.tldr || '')
                 setEditContent(artifact.content)
                 setEditStatus(artifact.status)
                 setEditProps(newProps)

@@ -195,13 +195,24 @@ describe("uploadAsset", () => {
     await expect(uploadAsset(input, config)).rejects.toThrow("slug is required");
   });
 
-  it("throws when tldr is missing", async () => {
+  it("succeeds when tldr is omitted", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        slug: "test-asset",
+        contentType: "image/png",
+        fileSize: 100,
+        url: "https://example.com/assets/test-asset",
+      }),
+    });
+
     const input = {
       path: testFilePath,
       slug: "test-asset",
     } as UploadAssetInput;
 
-    await expect(uploadAsset(input, config)).rejects.toThrow("tldr is required");
+    const result = await uploadAsset(input, config);
+    expect(result.slug).toBe("test-asset");
   });
 
   it("throws on HTTP error response", async () => {

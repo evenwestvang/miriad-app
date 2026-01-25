@@ -96,8 +96,8 @@ export function createAssetsApiRoutes(options: AssetsApiHandlerOptions): Hono<{ 
         if (!file) {
           return c.json({ error: 'Missing file in form data' }, 400);
         }
-        if (!slug || !tldr) {
-          return c.json({ error: 'Missing required fields: slug, tldr' }, 400);
+        if (!slug) {
+          return c.json({ error: 'Missing required field: slug' }, 400);
         }
 
         // Convert file to base64
@@ -113,8 +113,8 @@ export function createAssetsApiRoutes(options: AssetsApiHandlerOptions): Hono<{ 
         parentSlug = body.parentSlug;
         attachToLatestMessage = body.attachToLatestMessage === true;
 
-        if (!slug || !tldr) {
-          return c.json({ error: 'Missing required fields: slug, tldr' }, 400);
+        if (!slug) {
+          return c.json({ error: 'Missing required field: slug' }, 400);
         }
 
         if (body.data) {

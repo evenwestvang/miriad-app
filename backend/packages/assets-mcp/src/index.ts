@@ -88,7 +88,6 @@ export async function uploadAsset(
   // Validate input
   if (!input.path) throw new Error("path is required");
   if (!input.slug) throw new Error("slug is required");
-  if (!input.tldr) throw new Error("tldr is required");
 
   // Resolve and validate path
   const filePath = path.resolve(input.path);
@@ -274,7 +273,7 @@ export function createServer(config: AssetsMcpConfig): Server {
                 "The asset will be hidden from the board and displayed inline with the message.",
             },
           },
-          required: ["path", "slug", "tldr"],
+          required: ["path", "slug"],
         },
       },
       {

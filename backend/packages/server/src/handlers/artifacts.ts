@@ -104,7 +104,7 @@ const ArtifactStatusSchema = z.enum([
 const CreateArtifactSchema = z.object({
   slug: SlugSchema,
   type: ArtifactTypeSchema,
-  tldr: z.string().min(1, 'tldr is required'),
+  tldr: z.string().optional(),
   content: z.string(),
   title: z.string().optional(),
   parentSlug: z.string().optional(),

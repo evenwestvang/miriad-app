@@ -192,7 +192,7 @@ export interface Artifact {
   channelId: string
   type: ArtifactType
   title?: string
-  tldr: string
+  tldr?: string
   content: string
   parentSlug?: string
   orderKey: string
@@ -219,7 +219,7 @@ export interface ArtifactVersion {
   versionName: string
   message?: string
   content: string
-  tldr: string
+  tldr?: string
   createdBy: string
   createdAt: string
 }
