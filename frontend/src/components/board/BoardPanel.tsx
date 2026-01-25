@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { LayoutGrid } from 'lucide-react'
+import { LayoutGrid, Paperclip } from 'lucide-react'
 import { generateKeyBetween } from 'fractional-indexing'
 import { cn } from '../../lib/utils'
 import { apiFetch } from '../../lib/api'
@@ -553,10 +553,6 @@ export function BoardPanel({
             setIsCreating(true)
             setArchivedItems([]) // Clear archive toast on create
           }}
-          onUploadClick={() => {
-            setIsUploading(true)
-            setArchivedItems([]) // Clear archive toast on upload
-          }}
           onClose={() => {
             setArchivedItems([]) // Clear archive toast on close
             onClose()
@@ -705,6 +701,26 @@ export function BoardPanel({
           onUndo={handleUndoArchive}
           onDismiss={dismissArchiveToast}
         />
+      )}
+
+      {/* Floating upload button - bottom right corner */}
+      {channelId && !isCreating && !isUploading && !selectedArtifactData && (
+        <button
+          className={cn(
+            "absolute bottom-4 right-4 p-2.5 rounded-full",
+            "bg-secondary hover:bg-secondary/80 border border-border",
+            "text-muted-foreground hover:text-foreground",
+            "shadow-sm transition-colors",
+            "z-10"
+          )}
+          onClick={() => {
+            setIsUploading(true)
+            setArchivedItems([])
+          }}
+          title="Upload file"
+        >
+          <Paperclip className="w-4 h-4" />
+        </button>
       )}
     </aside>
   )

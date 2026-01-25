@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, X, Upload, FileText, CheckSquare, Code, ChevronDown, Server, Bot, KeyRound, Search } from 'lucide-react'
+import { Plus, X, FileText, CheckSquare, Code, ChevronDown, Server, Bot, KeyRound, Search } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { ArtifactType } from '../../types/artifact'
 
@@ -19,7 +19,6 @@ const SYSTEM_TYPES: { value: ArtifactType; label: string; icon: typeof FileText 
 
 interface BoardHeaderProps {
   onCreateClick: (type: ArtifactType) => void
-  onUploadClick: () => void
   onClose: () => void
   canCreate?: boolean
   /** Whether the filter bar is visible */
@@ -32,7 +31,6 @@ interface BoardHeaderProps {
 
 export function BoardHeader({
   onCreateClick,
-  onUploadClick,
   onClose,
   canCreate = true,
   filterVisible,
@@ -129,19 +127,6 @@ export function BoardHeader({
                   </button>
                 )
               })}
-              {/* Divider before upload */}
-              <div className="border-t border-border my-1" />
-              {/* Upload option */}
-              <button
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-base text-foreground hover:bg-secondary/50 transition-colors"
-                onClick={() => {
-                  setDropdownOpen(false)
-                  onUploadClick()
-                }}
-              >
-                <Upload className="w-4 h-4 text-muted-foreground" />
-                Upload File
-              </button>
             </div>
           )}
         </div>
