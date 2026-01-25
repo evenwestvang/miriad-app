@@ -77,7 +77,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
     fetchMcps()
   }, [channelId, apiHost])
 
-  // Add MCP to the list
+  // Add MCP to the list (keeps picker open for multi-select)
   const addMcp = (mcp: McpArtifact) => {
     const currentMcps = props.mcp || []
     // Check if already added
@@ -91,7 +91,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
       }
       onChange({ mcp: [...currentMcps, newRef] })
     }
-    setShowMcpPicker(false)
+    // Don't close picker - let user add multiple MCPs
   }
 
   // Remove MCP from the list
