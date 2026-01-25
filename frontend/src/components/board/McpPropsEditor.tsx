@@ -101,14 +101,6 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets, isC
             placeholder="e.g., -y @modelcontextprotocol/server-github"
           />
 
-          {/* Working Directory */}
-          <EditableField
-            label="Working Directory"
-            value={props.cwd || ''}
-            onChange={(value) => onChange({ cwd: value || undefined })}
-            placeholder="/path/to/working/dir"
-          />
-
           {/* Environment Variables and Secrets */}
           {channel && mcpSlug && !isCreateMode ? (
             <EnvEditor
@@ -328,7 +320,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets, isC
         label="Capabilities"
         value={props.capabilities || ''}
         onChange={(value) => onChange({ capabilities: value || undefined })}
-        placeholder="Describe what this MCP server provides..."
+        placeholder="Optionally describe MCP capabilities"
         multiline
         minHeight="min-h-[4rem]"
       />
