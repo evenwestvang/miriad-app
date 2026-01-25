@@ -31,6 +31,7 @@ import { StructuredAskForm } from "../structured-ask";
 import { MessageAttachments, AssetRenderer } from "./AttachmentRenderer";
 import { ChannelEmptyState } from "./ChannelEmptyState";
 import { RootChannelEmptyState } from "./RootChannelEmptyState";
+import { FirstChannelEmptyState } from "./FirstChannelEmptyState";
 import type { AttachmentMessageContent } from "../../types";
 // Avatar components kept for potential future use
 // import { AgentAvatar, UserAvatar } from './AgentAvatar'
@@ -512,8 +513,15 @@ export function MessageList({
             null
           ) : // Empty state - only show when NOT switching channels
           threadName === "root" ? (
-            // Root channel has a special empty state
-            <RootChannelEmptyState />
+            // Root channel has a special empty state with Custodian CTA
+            <RootChannelEmptyState
+              onSpawnCustodian={onSelectStarterAgent ? () => onSelectStarterAgent("custodian") : undefined}
+            />
+          ) : threadName === "first-channel" ? (
+            // First channel has intro to Miriad with Guide CTA
+            <FirstChannelEmptyState
+              onSpawnGuide={onSelectStarterAgent ? () => onSelectStarterAgent("guide") : undefined}
+            />
           ) : onSelectStarterAgent ? (
             <ChannelEmptyState
               channelId={channelId}
