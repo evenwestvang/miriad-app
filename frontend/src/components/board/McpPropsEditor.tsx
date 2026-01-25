@@ -82,7 +82,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
 
       {/* stdio transport fields */}
       {transport === 'stdio' && (
-        <div className="space-y-3">
+        <div className="space-y-6">
           {/* Command */}
           <EditableField
             label="Command"
@@ -131,7 +131,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
 
       {/* http transport fields */}
       {transport === 'http' && (
-        <div className="space-y-3">
+        <div className="space-y-6">
           {/* URL */}
           <EditableField
             label="URL"
@@ -203,7 +203,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
 
             {/* OAuth configuration (expanded) */}
             {hasOAuth && oauthExpanded && (
-              <div className="px-3 pb-3 pt-1 space-y-3 border-t border-border/50">
+              <div className="px-3 pb-3 pt-2 space-y-6 border-t border-border/50">
                 {/* Connection status and button */}
                 {channel && mcpSlug && (
                   <div>

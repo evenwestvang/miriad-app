@@ -136,7 +136,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
       />
 
       {/* MCP Servers */}
-      <div className="space-y-2 mt-2">
+      <div className="space-y-2">
         <label className="block text-xs font-medium text-muted-foreground uppercase">
           MCP Servers
         </label>
@@ -231,21 +231,23 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
       </div>
 
       {/* Featured Channel Starter */}
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="featuredChannelStarter"
-          checked={props.featuredChannelStarter || false}
-          onChange={(e) => onChange({ featuredChannelStarter: e.target.checked || undefined })}
-          className="w-4 h-4 rounded border-border text-muted-foreground focus:ring-border focus:ring-offset-0"
-        />
-        <label htmlFor="featuredChannelStarter" className="text-base text-foreground">
-          Featured channel starter
-        </label>
+      <div>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="featuredChannelStarter"
+            checked={props.featuredChannelStarter || false}
+            onChange={(e) => onChange({ featuredChannelStarter: e.target.checked || undefined })}
+            className="w-4 h-4 rounded border-border text-muted-foreground focus:ring-border focus:ring-offset-0"
+          />
+          <label htmlFor="featuredChannelStarter" className="text-base text-foreground">
+            Featured channel starter
+          </label>
+        </div>
+        <p className="text-base text-muted-foreground mt-1 ml-6">
+          Show this agent as a suggested starter when creating new channels
+        </p>
       </div>
-      <p className="text-base text-muted-foreground -mt-2">
-        Show this agent as a suggested starter when creating new channels
-      </p>
     </div>
   )
 }
