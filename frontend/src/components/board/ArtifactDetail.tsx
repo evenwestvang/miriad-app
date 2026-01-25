@@ -460,8 +460,9 @@ export function ArtifactDetail({
   // Check if create form has required fields
   const isCreateFormValid = useMemo(() => {
     if (!isCreateMode) return true
-    return editSlug && !slugError && editTldr
-  }, [isCreateMode, editSlug, slugError, editTldr])
+    // Only slug is required - TLDR is optional
+    return editSlug && !slugError
+  }, [isCreateMode, editSlug, slugError])
 
   // Handle navigation with unsaved changes check
   const handleNavigate = useCallback((callback: () => void) => {
@@ -911,8 +912,8 @@ export function ArtifactDetail({
         <div className="px-3 py-3 border-b border-border space-y-4">
           {/* Slug input */}
           <div>
-            <label className="block text-base font-medium text-foreground mb-1">
-              Slug <span className="text-destructive">*</span>
+            <label className="block text-xs font-medium text-muted-foreground uppercase mb-1">
+              Slug <span className="text-muted-foreground/70">*</span>
             </label>
             <input
               type="text"
@@ -927,37 +928,11 @@ export function ArtifactDetail({
               )}
               autoFocus
             />
-            {slugError ? (
+            {slugError && (
               <p className="text-base text-destructive mt-1">{slugError}</p>
-            ) : (
-              <p className="text-base text-muted-foreground mt-1">
-                {slugManuallyEdited
-                  ? 'Lowercase, alphanumeric, hyphens'
-                  : 'Auto-generated from title'}
-              </p>
             )}
           </div>
 
-          {/* Type selector */}
-          <div>
-            <label className="block text-base font-medium text-foreground mb-1">
-              Type <span className="text-destructive">*</span>
-              {initialType && <span className="ml-2 text-primary text-base font-normal">(locked)</span>}
-            </label>
-            <select
-              value={editType}
-              onChange={(e) => setEditType(e.target.value as ArtifactType)}
-              disabled={!!initialType}
-              className={cn(
-                "w-full px-0 py-1 text-base bg-transparent border-0 border-b border-border focus:outline-none focus:border-primary transition-colors appearance-none cursor-pointer",
-                initialType && "opacity-60 cursor-not-allowed"
-              )}
-            >
-              {ARTIFACT_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
-          </div>
         </div>
       )}
 
