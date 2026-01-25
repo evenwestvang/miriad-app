@@ -1162,7 +1162,7 @@ export function ArtifactDetail({
               ref={contentTextareaRef}
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
-              placeholder={isCodeArtifact ? 'Code...' : currentType === 'system.agent' ? 'Describe agent behavior...' : 'Content (optional)...'}
+              placeholder={isCodeArtifact ? 'Code...' : currentType === 'system.agent' ? 'Describe the agent behaviour or ask the custodian to do it for you' : 'Content (optional)...'}
               className={cn(
                 "w-full px-0 py-1 text-base bg-transparent border-0 border-b border-border",
                 "focus:outline-none focus:border-muted-foreground transition-colors resize-none overflow-y-auto",
