@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, X, Upload, FileText, CheckSquare, GitBranch, Code, ChevronDown, Server, Bot, Plug2, KeyRound, Filter } from 'lucide-react'
+import { Plus, X, Upload, FileText, CheckSquare, GitBranch, Code, ChevronDown, Server, Bot, Plug2, KeyRound, Search } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { ArtifactType } from '../../types/artifact'
 
@@ -160,7 +160,7 @@ export function BoardHeader({
             onClick={onFilterToggle}
             title={filterVisible ? "Hide filter (Esc)" : "Filter artifacts (/ or ⌘K)"}
           >
-            <Filter className="w-4 h-4" />
+            <Search className="w-4 h-4" />
           </button>
         )}
         <button
