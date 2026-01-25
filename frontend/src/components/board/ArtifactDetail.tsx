@@ -950,12 +950,23 @@ export function ArtifactDetail({
           <McpPropsEditor
             props={isEditing || isCreateMode ? (editProps as unknown as McpProps) || { transport: 'stdio' as const } : (artifact?.props as unknown as McpProps) || { transport: 'stdio' as const }}
             onChange={(updates) => {
+              // Get current props (from editProps if editing, else from artifact)
+              const currentProps = ((isEditing ? editProps : artifact?.props) as unknown as McpProps) || { transport: 'stdio' as const }
+              const newProps = { ...currentProps, ...updates } as unknown as Record<string, unknown>
+
               // Auto-enter edit mode if not already editing
-              if (!isEditing && !isCreateMode) {
-                startEditing()
+              if (!isEditing && !isCreateMode && artifact) {
+                setEditTitle(artifact.title || '')
+                setEditTldr(artifact.tldr)
+                setEditContent(artifact.content)
+                setEditStatus(artifact.status)
+                setEditProps(newProps)
+                setIsEditing(true)
+                setError(null)
+                setConflict(null)
+              } else {
+                setEditProps(newProps)
               }
-              const currentProps = (editProps as unknown as McpProps) || (artifact?.props as unknown as McpProps) || { transport: 'stdio' as const }
-              setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
             }}
             channel={channelId}
             mcpSlug={isCreateMode ? editSlug : artifact!.slug}
@@ -972,12 +983,23 @@ export function ArtifactDetail({
           <AgentPropsEditor
             props={isEditing || isCreateMode ? (editProps as unknown as AgentProps) || { engine: 'claude' } : (artifact?.props as unknown as AgentProps) || { engine: 'claude' }}
             onChange={(updates) => {
+              // Get current props (from editProps if editing, else from artifact)
+              const currentProps = (isEditing ? editProps : artifact?.props) as AgentProps || { engine: 'claude' }
+              const newProps = { ...currentProps, ...updates } as unknown as Record<string, unknown>
+
               // Auto-enter edit mode if not already editing
-              if (!isEditing && !isCreateMode) {
-                startEditing()
+              if (!isEditing && !isCreateMode && artifact) {
+                setEditTitle(artifact.title || '')
+                setEditTldr(artifact.tldr)
+                setEditContent(artifact.content)
+                setEditStatus(artifact.status)
+                setEditProps(newProps)
+                setIsEditing(true)
+                setError(null)
+                setConflict(null)
+              } else {
+                setEditProps(newProps)
               }
-              const currentProps = (editProps as unknown as AgentProps) || (artifact?.props as unknown as AgentProps) || { engine: 'claude' }
-              setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
             }}
             channelId={channelId}
             apiHost={apiHost}
@@ -993,12 +1015,23 @@ export function ArtifactDetail({
           <FocusPropsEditor
             props={isEditing || isCreateMode ? (editProps as unknown as FocusProps) || { agents: [] } : (artifact?.props as unknown as FocusProps) || { agents: [] }}
             onChange={(updates) => {
+              // Get current props (from editProps if editing, else from artifact)
+              const currentProps = ((isEditing ? editProps : artifact?.props) as unknown as FocusProps) || { agents: [] }
+              const newProps = { ...currentProps, ...updates } as unknown as Record<string, unknown>
+
               // Auto-enter edit mode if not already editing
-              if (!isEditing && !isCreateMode) {
-                startEditing()
+              if (!isEditing && !isCreateMode && artifact) {
+                setEditTitle(artifact.title || '')
+                setEditTldr(artifact.tldr)
+                setEditContent(artifact.content)
+                setEditStatus(artifact.status)
+                setEditProps(newProps)
+                setIsEditing(true)
+                setError(null)
+                setConflict(null)
+              } else {
+                setEditProps(newProps)
               }
-              const currentProps = (editProps as unknown as FocusProps) || (artifact?.props as unknown as FocusProps) || { agents: [] }
-              setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
             }}
             apiHost={apiHost}
           />
