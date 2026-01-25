@@ -941,16 +941,20 @@ export function ArtifactDetail({
       )}
 
 
-      {/* Type-specific metadata (MCP props, Agent props, Focus props) - only in edit/create mode */}
-      {(isEditing || isCreateMode) && currentType === 'system.mcp' && (
+      {/* Type-specific metadata (MCP props, Agent props, Focus props) */}
+      {currentType === 'system.mcp' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
             <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <McpPropsEditor
-            props={(editProps as unknown as McpProps) || { transport: 'stdio' as const }}
+            props={isEditing || isCreateMode ? (editProps as unknown as McpProps) || { transport: 'stdio' as const } : (artifact?.props as unknown as McpProps) || { transport: 'stdio' as const }}
             onChange={(updates) => {
-              const currentProps = (editProps as unknown as McpProps) || { transport: 'stdio' as const }
+              // Auto-enter edit mode if not already editing
+              if (!isEditing && !isCreateMode) {
+                startEditing()
+              }
+              const currentProps = (editProps as unknown as McpProps) || (artifact?.props as unknown as McpProps) || { transport: 'stdio' as const }
               setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
             }}
             channel={channelId}
@@ -960,15 +964,19 @@ export function ArtifactDetail({
         </div>
       )}
 
-      {(isEditing || isCreateMode) && currentType === 'system.agent' && (
+      {currentType === 'system.agent' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
             <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <AgentPropsEditor
-            props={(editProps as unknown as AgentProps) || { engine: 'claude' }}
+            props={isEditing || isCreateMode ? (editProps as unknown as AgentProps) || { engine: 'claude' } : (artifact?.props as unknown as AgentProps) || { engine: 'claude' }}
             onChange={(updates) => {
-              const currentProps = (editProps as unknown as AgentProps) || { engine: 'claude' }
+              // Auto-enter edit mode if not already editing
+              if (!isEditing && !isCreateMode) {
+                startEditing()
+              }
+              const currentProps = (editProps as unknown as AgentProps) || (artifact?.props as unknown as AgentProps) || { engine: 'claude' }
               setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
             }}
             channelId={channelId}
@@ -977,15 +985,19 @@ export function ArtifactDetail({
         </div>
       )}
 
-      {(isEditing || isCreateMode) && currentType === 'system.focus' && (
+      {currentType === 'system.focus' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
             <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <FocusPropsEditor
-            props={(editProps as unknown as FocusProps) || { agents: [] }}
+            props={isEditing || isCreateMode ? (editProps as unknown as FocusProps) || { agents: [] } : (artifact?.props as unknown as FocusProps) || { agents: [] }}
             onChange={(updates) => {
-              const currentProps = (editProps as unknown as FocusProps) || { agents: [] }
+              // Auto-enter edit mode if not already editing
+              if (!isEditing && !isCreateMode) {
+                startEditing()
+              }
+              const currentProps = (editProps as unknown as FocusProps) || (artifact?.props as unknown as FocusProps) || { agents: [] }
               setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
             }}
             apiHost={apiHost}
