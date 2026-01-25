@@ -162,23 +162,24 @@ export function TreeItem({
         />
       )}
 
-      {/* Expand/collapse chevron - only rendered for items with children */}
-      {hasChildren && (
-        <button
-          className="w-4 h-4 flex items-center justify-center flex-shrink-0"
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggle()
-          }}
-        >
-          <ChevronRight
-            className={cn(
-              "w-3 h-3 text-[#ccc] transition-transform",
-              isExpanded && "rotate-90"
-            )}
-          />
-        </button>
-      )}
+      {/* Expand/collapse chevron - always reserve space */}
+      <button
+        className={cn(
+          "w-4 h-4 flex items-center justify-center flex-shrink-0",
+          !hasChildren && "invisible"
+        )}
+        onClick={(e) => {
+          e.stopPropagation()
+          onToggle()
+        }}
+      >
+        <ChevronRight
+          className={cn(
+            "w-3 h-3 text-[#ccc] transition-transform",
+            isExpanded && "rotate-90"
+          )}
+        />
+      </button>
 
       {/* Type icon */}
       <Icon className="w-4 h-4 text-[var(--cast-text-subtle)] flex-shrink-0" />
