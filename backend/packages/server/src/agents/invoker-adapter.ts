@@ -205,6 +205,7 @@ export function createAgentInvokerAdapter(
               const mcpServers = await agentManager.getMcpConfigsForAgent(
                 spaceId,
                 channelId,
+                callsign,
                 authToken,
               );
               console.log(

@@ -56,6 +56,13 @@ import { createMiriadCloudRoutes } from "./handlers/miriad-cloud.js";
 import { createKBRoutes } from "./handlers/kb.js";
 import { createDisclaimerRoutes } from "./handlers/disclaimer.js";
 import { createOAuthRoutes } from "./oauth/routes.js";
+import {
+  getOAuthTokens,
+  saveOAuthTokens,
+  getValidAccessToken,
+  resolveOAuthEndpoints,
+  OAUTH_SECRET_KEYS,
+} from "./oauth/index.js";
 import { resetRootChannel } from "./onboarding/index.js";
 
 // =============================================================================
@@ -1445,7 +1452,7 @@ export function createApp(options: AppOptions): Hono {
         tldr: artifact.tldr,
         content: artifact.content,
         props: artifact.props as
-          | { engine?: string; nameTheme?: string; mcp?: string[] }
+          | { engine?: string; nameTheme?: string; mcp?: Array<{ slug: string }> }
           | undefined,
       };
     },
@@ -1511,6 +1518,130 @@ export function createApp(options: AppOptions): Hono {
       if (!space) return null;
       const user = await storage.getUser(space.ownerId);
       return user?.callsign ?? null;
+    },
+    // Get a single system.mcp artifact by slug from a specific channel
+    getSystemMcp: async (cid, slug) => {
+      const artifact = await storage.getArtifact(cid, slug);
+      if (!artifact || artifact.type !== "system.mcp") {
+        return null;
+      }
+      // Return as ArtifactSummary
+      return {
+        slug: artifact.slug,
+        type: artifact.type,
+        title: artifact.title,
+        tldr: artifact.tldr,
+        status: artifact.status,
+        path: artifact.path,
+        orderKey: artifact.orderKey,
+        assignees: artifact.assignees,
+        parentSlug: artifact.parentSlug,
+        channelId: artifact.channelId,
+        props: artifact.props,
+      };
+    },
+    // Get agent definition with channel-then-root resolution
+    getAgentDefinitionWithChannel: async (sid, cid, agentSlug) => {
+      // First try the channel
+      let artifact = await storage.getArtifact(cid, agentSlug);
+      let foundChannelId = cid;
+
+      // If not in channel, try root
+      if (!artifact || artifact.type !== "system.agent") {
+        const rootChannel = await storage.getChannelByName(sid, "root");
+        if (rootChannel) {
+          artifact = await storage.getArtifact(rootChannel.id, agentSlug);
+          foundChannelId = rootChannel.id;
+        }
+      }
+
+      if (!artifact || artifact.type !== "system.agent") {
+        return null;
+      }
+
+      return {
+        definition: {
+          slug: artifact.slug,
+          title: artifact.title,
+          tldr: artifact.tldr,
+          content: artifact.content,
+          props: artifact.props as
+            | { engine?: string; nameTheme?: string; mcp?: Array<{ slug: string }> }
+            | undefined,
+        },
+        channelId: foundChannelId,
+      };
+    },
+    // Get a valid OAuth access token, auto-refreshing if expired
+    getValidOAuthToken: async (sid, cid, mcpSlug) => {
+      try {
+        // Get stored tokens
+        const tokens = await getOAuthTokens(storage, sid, cid, mcpSlug);
+        if (!tokens) {
+          return null;
+        }
+
+        // Get the MCP artifact to find token endpoint for refresh
+        const artifact = await storage.getArtifact(cid, mcpSlug);
+        if (!artifact) {
+          return null;
+        }
+
+        const props = artifact.props as {
+          url?: string;
+          oauth?: {
+            type: "oauth";
+            tokenEndpoint?: string;
+          };
+        } | undefined;
+
+        // If no OAuth config, just return the token as-is
+        if (!props?.oauth) {
+          return tokens.accessToken;
+        }
+
+        // Resolve token endpoint from OAuth config or via discovery
+        let tokenEndpoint = props.oauth.tokenEndpoint;
+        if (!tokenEndpoint && props.url) {
+          try {
+            const endpoints = await resolveOAuthEndpoints(props.url);
+            tokenEndpoint = endpoints.tokenEndpoint;
+          } catch {
+            // Discovery failed, can't refresh
+            console.warn(
+              `[OAuth] Failed to discover token endpoint for ${mcpSlug}`,
+            );
+          }
+        }
+
+        // Use getValidAccessToken which handles expiry check and refresh
+        const validToken = await getValidAccessToken(
+          {
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            expiresAt: tokens.expiresAt,
+            tokenType: "Bearer",
+          },
+          tokenEndpoint ?? "",
+          tokens.clientId ?? "",
+          undefined, // No client secret for public clients
+          async (newTokens) => {
+            // Save refreshed tokens back to storage
+            await saveOAuthTokens(storage, sid, cid, mcpSlug, {
+              accessToken: newTokens.accessToken,
+              refreshToken: newTokens.refreshToken,
+              expiresAt: newTokens.expiresAt,
+              clientId: tokens.clientId,
+            });
+            console.log(`[OAuth] Refreshed tokens for ${mcpSlug}`);
+          },
+        );
+
+        return validToken;
+      } catch (error) {
+        console.error(`[OAuth] Failed to get valid token for ${mcpSlug}:`, error);
+        return null;
+      }
     },
   });
 

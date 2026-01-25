@@ -86,7 +86,14 @@ export interface EnvironmentArtifact {
 }
 
 /**
- * Agent definition artifact (system.agent from #root)
+ * MCP reference in agent definition props.
+ */
+export interface McpReference {
+  slug: string;
+}
+
+/**
+ * Agent definition artifact (system.agent from #root or channel)
  */
 export interface AgentDefinition {
   slug: string;
@@ -96,7 +103,7 @@ export interface AgentDefinition {
   props?: {
     engine?: string;
     nameTheme?: string;
-    mcp?: string[];
+    mcp?: McpReference[];
   };
 }
 
@@ -165,6 +172,32 @@ export interface AgentManagerConfig {
   ) => Promise<string | null>;
   /** Get space owner's callsign */
   getSpaceOwnerCallsign?: (spaceId: string) => Promise<string | null>;
+  /**
+   * Get a system.mcp artifact by slug from a specific channel.
+   * Does NOT fall through to root - caller handles resolution order.
+   */
+  getSystemMcp?: (
+    channelId: string,
+    slug: string,
+  ) => Promise<ArtifactSummary | null>;
+  /**
+   * Get a valid OAuth access token for an MCP artifact, auto-refreshing if needed.
+   * Returns null if no tokens are stored or refresh fails.
+   */
+  getValidOAuthToken?: (
+    spaceId: string,
+    channelId: string,
+    mcpSlug: string,
+  ) => Promise<string | null>;
+  /**
+   * Get agent definition with channel-then-root resolution.
+   * Returns the definition and the channelId it was found in.
+   */
+  getAgentDefinitionWithChannel?: (
+    spaceId: string,
+    channelId: string,
+    agentSlug: string,
+  ) => Promise<{ definition: AgentDefinition; channelId: string } | null>;
 }
 
 // =============================================================================
@@ -592,6 +625,152 @@ export class AgentManager {
   }
 
   /**
+   * Derive MCP configs from system.mcp artifacts based on agent definition.
+   *
+   * Resolution order:
+   * 1. Get agent's roster entry to find agentType (definition slug)
+   * 2. Find agent definition (channel first, then root via getAgentDefinitionWithChannel)
+   * 3. Get MCP slugs from definition's props.mcp
+   * 4. Resolve each MCP from the same channel as the definition was found
+   *
+   * For HTTP transport MCPs with OAuth configured, injects Bearer token into headers.
+   * Auto-refreshes expired tokens when possible.
+   */
+  private async deriveMcpConfigsFromSystemMcps(
+    spaceId: string,
+    channelId: string,
+    callsign: string,
+  ): Promise<McpServerConfig[]> {
+    const { getSystemMcp, getValidOAuthToken, getAgentDefinitionWithChannel, getRoster } =
+      this.config;
+
+    // Skip if system.mcp derivation not configured
+    if (!getSystemMcp || !getAgentDefinitionWithChannel || !getRoster) {
+      return [];
+    }
+
+    const mcpConfigs: McpServerConfig[] = [];
+
+    try {
+      // Get agent's roster entry to find agentType
+      const roster = await getRoster(spaceId, channelId);
+      const rosterEntry = roster.find((r) => r.callsign === callsign);
+      if (!rosterEntry?.agentType) {
+        console.log(
+          `[AgentManager] No agentType for ${callsign}, skipping system.mcp derivation`,
+        );
+        return [];
+      }
+
+      // Get agent definition with channel resolution
+      const result = await getAgentDefinitionWithChannel(
+        spaceId,
+        channelId,
+        rosterEntry.agentType,
+      );
+      if (!result) {
+        console.log(
+          `[AgentManager] No agent definition found for ${rosterEntry.agentType}`,
+        );
+        return [];
+      }
+
+      const { definition, channelId: definitionChannelId } = result;
+      const mcpRefs = definition.props?.mcp;
+
+      if (!mcpRefs || mcpRefs.length === 0) {
+        console.log(
+          `[AgentManager] Agent ${rosterEntry.agentType} has no MCPs configured`,
+        );
+        return [];
+      }
+
+      console.log(
+        `[AgentManager] Agent ${rosterEntry.agentType} (from channel ${definitionChannelId}) has ${mcpRefs.length} MCPs: ${mcpRefs.map((r) => r.slug).join(", ")}`,
+      );
+
+      // Resolve each MCP from the definition's channel
+      for (const mcpRef of mcpRefs) {
+        const mcp = await getSystemMcp(definitionChannelId, mcpRef.slug);
+        if (!mcp) {
+          console.warn(
+            `[AgentManager] MCP ${mcpRef.slug} not found in channel ${definitionChannelId}`,
+          );
+          continue;
+        }
+
+        const props = mcp.props as {
+          transport?: "stdio" | "http";
+          url?: string;
+          command?: string;
+          args?: string[];
+          variables?: Record<string, string>;
+          cwd?: string;
+          oauth?: { type: "oauth" };
+        } | undefined;
+
+        if (!props?.transport) {
+          console.log(
+            `[AgentManager] Skipping system.mcp ${mcp.slug}: no transport in props`,
+          );
+          continue;
+        }
+
+        // Build base config from props
+        const mcpConfig: McpServerConfig = {
+          name: mcp.slug,
+          slug: mcp.slug,
+          transport: props.transport,
+          command: props.command,
+          args: props.args,
+          env: props.variables,
+          cwd: props.cwd,
+          url: props.url,
+        };
+
+        // For HTTP transport with OAuth, get valid token (auto-refreshes if needed)
+        if (props.transport === "http" && props.oauth && getValidOAuthToken) {
+          const accessToken = await getValidOAuthToken(
+            spaceId,
+            definitionChannelId, // Use definition's channel for OAuth tokens
+            mcp.slug,
+          );
+
+          if (accessToken) {
+            // Inject Authorization header with Bearer token
+            mcpConfig.headers = {
+              ...mcpConfig.headers,
+              Authorization: `Bearer ${accessToken}`,
+            };
+            console.log(
+              `[AgentManager] Injected OAuth token for system.mcp ${mcp.slug}`,
+            );
+          } else {
+            console.log(
+              `[AgentManager] Skipping system.mcp ${mcp.slug}: OAuth configured but no valid token`,
+            );
+            // MCP has OAuth configured but no tokens or refresh failed
+            continue;
+          }
+        }
+
+        mcpConfigs.push(mcpConfig);
+        console.log(
+          `[AgentManager] Added system.mcp config: ${mcp.slug} (${props.transport})`,
+        );
+      }
+    } catch (error) {
+      console.error(
+        "[AgentManager] Error deriving MCP configs from system.mcp:",
+        error,
+      );
+      // Don't fail spawn if derivation fails — just skip these MCPs
+    }
+
+    return mcpConfigs;
+  }
+
+  /**
    * Expand ${VAR} references in an MCP server config.
    *
    * Resolution order (specificity first - MCP's own wins):
@@ -630,20 +809,26 @@ export class AgentManager {
 
   /**
    * Get MCP server configurations for an agent.
-   * Returns both the built-in platform MCP (powpow) and user-configured app MCPs.
-   * Expands ${VAR} references using resolved environment.
+   * Returns built-in platform MCPs, app MCPs, and agent-specific system.mcp configs.
+   *
+   * System MCPs are resolved based on agent definition:
+   * 1. Find agent definition (channel first, then root)
+   * 2. Only include MCPs listed in definition's props.mcp
+   * 3. Resolve MCP artifacts from the same channel as the definition
    *
    * @param spaceId - Space ID
-   * @param channelId - Channel ID
-   * @param authToken - Container auth token for powpow MCP authentication (optional)
+   * @param channelId - Channel ID where agent is spawned
+   * @param callsign - Agent callsign (to look up agent type and definition)
+   * @param authToken - Container auth token for platform MCP authentication (optional)
    */
   async getMcpConfigsForAgent(
     spaceId: string,
     channelId: string,
+    callsign: string,
     authToken?: string,
   ): Promise<McpServerConfig[]> {
     console.log(
-      `[AgentManager] getMcpConfigsForAgent - channelId: ${channelId}, platformMcpUrl: ${this.config.platformMcpUrl ? "configured" : "missing"}, authToken: ${authToken ? "present" : "missing"}`,
+      `[AgentManager] getMcpConfigsForAgent - callsign: ${callsign}, channelId: ${channelId}, platformMcpUrl: ${this.config.platformMcpUrl ? "configured" : "missing"}, authToken: ${authToken ? "present" : "missing"}`,
     );
 
     // Resolve shared environment for ${VAR} expansion
@@ -691,6 +876,17 @@ export class AgentManager {
     const appConfigs = await this.deriveMcpConfigsFromApps(spaceId, channelId);
     console.log(`[AgentManager] App MCPs: ${appConfigs.length} configured`);
     configs.push(...appConfigs);
+
+    // Add agent-specific system.mcp configs (based on agent definition)
+    const systemMcpConfigs = await this.deriveMcpConfigsFromSystemMcps(
+      spaceId,
+      channelId,
+      callsign,
+    );
+    console.log(
+      `[AgentManager] System MCPs: ${systemMcpConfigs.length} configured`,
+    );
+    configs.push(...systemMcpConfigs);
 
     // Expand ${VAR} references in all configs (except built-in MCPs which have no vars)
     const expandedConfigs = configs.map((config) =>
@@ -870,10 +1066,11 @@ export class AgentManager {
     // Generate auth token
     const authToken = generateContainerToken({ spaceId, channelId, callsign });
 
-    // Get all MCP configs (platform + app MCPs)
+    // Get all MCP configs (platform + app + agent-specific MCPs)
     const mcpConfigs = await this.getMcpConfigsForAgent(
       spaceId,
       channelId,
+      callsign,
       authToken,
     );
 

@@ -57,7 +57,7 @@ export interface DeliverMessageMessage {
   props?: {
     engine?: string;
     nameTheme?: string;
-    mcp?: string[];
+    mcp?: Array<{ slug: string }>;
     [key: string]: unknown;
   };
 }
