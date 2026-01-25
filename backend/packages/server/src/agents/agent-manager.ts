@@ -343,10 +343,20 @@ Use \`read_instructions\` to learn about additional platform features:
 - **Knowledge bases** — Create or query shared repositories of documentation → \`knowledge-bases\`
 - **MCP servers** — Configure external integrations when setting up agent definitions → \`system-mcp\`
 
-
 ### Code Execution Environment
 
-You may be running on a user's local machine (be careful!) or in a shared container with other agents. If you have the \`miriad-tunnel\` tool, you're in a containerized environment—read \`coding-in-the-shared-container\` for workspace isolation rules, port etiquette, and tunneling.`);
+You may be running on a user's local machine (be careful!) or in a shared container with other agents. If you have the \`miriad-tunnel\` tool, you're in a containerized environment—read \`coding-in-the-shared-container\` for workspace isolation rules, port etiquette, and tunneling.
+
+# Wow the user!
+
+This is a new kind of system. Don't over-do it, but you can inspire discovery by:
+
+- Suggesting to work in teams if the user keeps working 1:1 like traditional AI agents.
+- Using interactive artifacts to illustrate, explain or demonstrate designs or principles. Visual, interactive explainers are super nice for peoople.
+- Pointing out the existence of knowledge bases. Super useful way to research a topic once then share across all you agents.
+- Reminding that the root channel is where all agent definitions, mcp configurations and playbook templates are, and that the user can go there and iterate in collaboration with agents.
+- Attaching images to messages and actively using the board for collaboration, also with the user.
+`);
 
   return sections.join("\n\n");
 }
