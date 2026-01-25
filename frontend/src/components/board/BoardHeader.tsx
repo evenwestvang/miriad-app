@@ -1,21 +1,22 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, X, Upload, FileText, CheckSquare, GitBranch, Code, ChevronDown, Server, Bot, Target, BookOpen, Library, Plug2, KeyRound, Filter } from 'lucide-react'
+import { Plus, X, Upload, FileText, CheckSquare, GitBranch, Code, ChevronDown, Server, Bot, Plug2, KeyRound, Filter } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { ArtifactType } from '../../types/artifact'
 
-// All artifact types with icons and labels
-const ARTIFACT_TYPES: { value: ArtifactType; label: string; icon: typeof FileText }[] = [
-  { value: 'doc', label: 'Document', icon: FileText },
+// Content-heavy artifact types (user-facing)
+const CONTENT_TYPES: { value: ArtifactType; label: string; icon: typeof FileText }[] = [
+  { value: 'doc', label: 'Doc', icon: FileText },
   { value: 'task', label: 'Task', icon: CheckSquare },
   { value: 'decision', label: 'Decision', icon: GitBranch },
   { value: 'code', label: 'Code', icon: Code },
-  { value: 'knowledgebase', label: 'Knowledge Base', icon: Library },
-  { value: 'system.mcp', label: 'MCP Server', icon: Server },
+]
+
+// System types (configuration artifacts)
+const SYSTEM_TYPES: { value: ArtifactType; label: string; icon: typeof FileText }[] = [
   { value: 'system.agent', label: 'Agent', icon: Bot },
-  { value: 'system.environment', label: 'Environment', icon: KeyRound },
-  { value: 'system.focus', label: 'Focus', icon: Target },
-  { value: 'system.playbook', label: 'Playbook', icon: BookOpen },
+  { value: 'system.mcp', label: 'MCP Server', icon: Server },
   { value: 'system.app', label: 'App', icon: Plug2 },
+  { value: 'system.environment', label: 'Environment', icon: KeyRound },
 ]
 
 interface BoardHeaderProps {
@@ -100,7 +101,8 @@ export function BoardHeader({
           {/* Dropdown menu */}
           {dropdownOpen && (
             <div className="absolute right-0 top-full mt-1 w-40 bg-card border border-border rounded-md shadow-lg z-50 py-1">
-              {ARTIFACT_TYPES.map((t) => {
+              {/* Content-heavy types */}
+              {CONTENT_TYPES.map((t) => {
                 const Icon = t.icon
                 return (
                   <button
@@ -113,7 +115,23 @@ export function BoardHeader({
                   </button>
                 )
               })}
-              {/* Divider */}
+              {/* Divider between content and system types */}
+              <div className="border-t border-border my-1" />
+              {/* System types */}
+              {SYSTEM_TYPES.map((t) => {
+                const Icon = t.icon
+                return (
+                  <button
+                    key={t.value}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-base text-foreground hover:bg-secondary/50 transition-colors"
+                    onClick={() => handleTypeSelect(t.value)}
+                  >
+                    <Icon className="w-4 h-4 text-muted-foreground" />
+                    {t.label}
+                  </button>
+                )
+              })}
+              {/* Divider before upload */}
               <div className="border-t border-border my-1" />
               {/* Upload option */}
               <button
