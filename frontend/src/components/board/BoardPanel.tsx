@@ -514,20 +514,9 @@ export function BoardPanel({
     }
   }, [channelId, apiHost, tree])
 
-  // ESC key closes artifact detail
-  useEffect(() => {
-    if (!isOpen || !selectedArtifactData) return
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        setSelectedSlug(null)
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, selectedArtifactData, setSelectedSlug])
+  // ESC key handling is done in ArtifactDetail:
+  // - First ESC: cancel editing (return to view mode)
+  // - Second ESC: close artifact detail (calls onBack)
 
   // Track if we're on mobile for responsive width
   const [isMobile, setIsMobile] = useState(() =>
