@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Plus, X, Server } from 'lucide-react'
 import { EditableField } from '../ui/editable-field'
-import { SegmentedControl } from '../ui/segmented-control'
-import { apiFetch, fetchBackends, type BackendInfo } from '../../lib/api'
+import { apiFetch } from '../../lib/api'
 import { cn } from '../../lib/utils'
 
 // Agent props types - matches server schema
+// Note: engine and model are handled by backend defaults, not exposed in UI
 export interface AgentProps {
-  engine: string
+  engine?: string
   model?: string
   nameTheme?: string
   agentName?: string
@@ -27,13 +27,6 @@ interface AgentPropsEditorProps {
   apiHost: string
 }
 
-// Fallback engine options if API fails
-const FALLBACK_ENGINE_OPTIONS = [
-  { value: 'claude', label: 'Claude' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'codex', label: 'Codex' },
-]
-
 // Available MCP artifact from API
 interface McpArtifact {
   slug: string
@@ -46,27 +39,6 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
   const [availableMcps, setAvailableMcps] = useState<McpArtifact[]>([])
   const [mcpLoading, setMcpLoading] = useState(false)
   const [showMcpPicker, setShowMcpPicker] = useState(false)
-  const [engineOptions, setEngineOptions] = useState(FALLBACK_ENGINE_OPTIONS)
-
-  // Fetch available backends/engines
-  useEffect(() => {
-    async function loadBackends() {
-      try {
-        const backends = await fetchBackends()
-        const options = backends.map((b: BackendInfo) => ({
-          value: b.name,
-          label: b.name.charAt(0).toUpperCase() + b.name.slice(1),
-        }))
-        if (options.length > 0) {
-          setEngineOptions(options)
-        }
-      } catch (error) {
-        console.warn('Failed to fetch backends, using fallback:', error)
-        // Keep fallback options
-      }
-    }
-    loadBackends()
-  }, [])
 
   // Fetch available MCPs from current channel and root
   useEffect(() => {
@@ -147,22 +119,6 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
 
   return (
     <div className="space-y-4">
-      {/* Engine Selection */}
-      <SegmentedControl<string>
-        label="Engine"
-        value={props.engine || 'claude'}
-        onChange={(value) => onChange({ engine: value })}
-        options={engineOptions}
-      />
-
-      {/* Model */}
-      <EditableField
-        label="Model"
-        value={props.model || ''}
-        onChange={(value) => onChange({ model: value || undefined })}
-        placeholder="e.g., claude-sonnet-4-20250514"
-      />
-
       {/* Agent Name (fixed callsign) */}
       <EditableField
         label="Agent Name (Fixed Callsign)"

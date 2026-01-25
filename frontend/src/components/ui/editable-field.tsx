@@ -114,11 +114,6 @@ export function EditableField({
               onChange={(e) => setEditValue(e.target.value)}
               placeholder={placeholder}
               onKeyDown={handleKeyDown}
-              onBlur={() => {
-                setTimeout(() => {
-                  if (!cancelingRef.current) saveEdit()
-                }, 100)
-              }}
               className={inputClasses}
             />
           ) : (
@@ -129,11 +124,6 @@ export function EditableField({
               onChange={(e) => setEditValue(e.target.value)}
               placeholder={placeholder}
               onKeyDown={handleKeyDown}
-              onBlur={() => {
-                setTimeout(() => {
-                  if (!cancelingRef.current) saveEdit()
-                }, 100)
-              }}
               className={inputClasses}
             />
           )}

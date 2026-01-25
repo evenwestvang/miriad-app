@@ -227,7 +227,6 @@ export function ArtifactDetail({
   const [editTldr, setEditTldr] = useState('')
   const [editContent, setEditContent] = useState('')
   const [editStatus, setEditStatus] = useState<ArtifactStatus>('draft')
-  const [editParentSlug, setEditParentSlug] = useState('')
 
   // Create mode specific state
   const [editSlug, setEditSlug] = useState('')
@@ -348,14 +347,12 @@ export function ArtifactDetail({
       setEditTldr(artifact.tldr)
       setEditContent(artifact.content)
       setEditStatus(artifact.status)
-      setEditParentSlug(artifact.parentSlug || '')
     } else {
       // Create mode - reset to defaults
       setEditTitle('')
       setEditTldr('')
       setEditContent('')
       setEditStatus('draft')
-      setEditParentSlug('')
       setEditSlug('')
       setEditType(initialType || 'doc')
       setSlugManuallyEdited(false)
@@ -380,9 +377,6 @@ export function ArtifactDetail({
   const isCodeArtifact = (currentType === 'code' || hasCodeExtension(currentSlug)) && !isInteractiveApp
   const codeLanguage = getLanguageFromSlug(currentSlug)
 
-  // Get available parent options (exclude self in edit mode)
-  const parentOptions = getParentOptions(tree, isCreateMode ? '' : artifact!.slug)
-
   // Build artifact map for mention highlighting (title lookup)
   const artifactMap = useMemo(() => buildArtifactMap(tree), [tree])
 
@@ -397,7 +391,6 @@ export function ArtifactDetail({
     setEditTldr(artifact.tldr)
     setEditContent(artifact.content)
     setEditStatus(artifact.status)
-    setEditParentSlug(artifact.parentSlug || '')
     setIsEditing(true)
     setError(null)
     setConflict(null)
@@ -450,12 +443,9 @@ export function ArtifactDetail({
     if (editStatus !== artifact.status) {
       changes.push({ field: 'status', oldValue: artifact.status, newValue: editStatus })
     }
-    if (editParentSlug !== (artifact.parentSlug || '')) {
-      changes.push({ field: 'parentSlug', oldValue: artifact.parentSlug, newValue: editParentSlug || null })
-    }
 
     return changes
-  }, [artifact, isCreateMode, editTitle, editTldr, editStatus, editParentSlug])
+  }, [artifact, isCreateMode, editTitle, editTldr, editStatus])
 
   // Check if content has changed (edit mode only)
   const hasContentChanged = useCallback(() => {
@@ -518,7 +508,6 @@ export function ArtifactDetail({
             title: editTitle || undefined,
             tldr: editTldr,
             content: editContent || `# ${editTitle || editSlug}\n\n${editTldr}`,
-            parentSlug: editParentSlug || undefined,
             status: DEFAULT_STATUS[editType],
             sender: 'user', // TODO: Get from auth context
           }),
@@ -1130,27 +1119,6 @@ export function ArtifactDetail({
         )}
       </div>
 
-      {/* Parent selection (edit mode only) - at bottom of form */}
-      {isEditing && (
-        <div className="px-3 py-3 border-t border-border">
-          <label className="block text-base font-medium text-foreground mb-1">Parent</label>
-          <div className="relative">
-            <select
-              value={editParentSlug}
-              onChange={(e) => setEditParentSlug(e.target.value)}
-              className="w-full px-3 py-2 text-base bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors cursor-pointer appearance-none"
-            >
-              <option value="">(none)</option>
-              {parentOptions.map((opt) => (
-                <option key={opt.slug} value={opt.slug}>
-                  {opt.path}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-          </div>
-        </div>
-      )}
 
       {/* Metadata footer - view mode only (not create mode) */}
       {!isEditing && !isCreateMode && (
@@ -1565,39 +1533,6 @@ function getLanguageFromSlug(slug: string): string {
     if (lower.endsWith(ext)) return lang
   }
   return 'text'
-}
-
-interface ParentOption {
-  slug: string
-  path: string
-}
-
-function getParentOptions(nodes: ArtifactTreeNode[], excludeSlug: string, prefix = ''): ParentOption[] {
-  const options: ParentOption[] = []
-
-  for (const node of nodes) {
-    if (node.slug === excludeSlug) continue
-
-    const path = prefix ? `${prefix}/${node.slug}` : node.slug
-    options.push({ slug: node.slug, path })
-
-    if (node.children) {
-      const isExcludedChild = isDescendant(node.children, excludeSlug)
-      if (!isExcludedChild) {
-        options.push(...getParentOptions(node.children, excludeSlug, path))
-      }
-    }
-  }
-
-  return options
-}
-
-function isDescendant(nodes: ArtifactTreeNode[], slug: string): boolean {
-  for (const node of nodes) {
-    if (node.slug === slug) return true
-    if (node.children && isDescendant(node.children, slug)) return true
-  }
-  return false
 }
 
 /**
