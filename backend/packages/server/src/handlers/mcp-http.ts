@@ -174,6 +174,11 @@ const TOOLS: McpToolDefinition[] = [
           items: { type: 'string' },
           description: 'Freeform tags',
         },
+        props: {
+          type: 'object',
+          additionalProperties: true,
+          description: 'Type-specific properties (e.g., MCP config, agent settings)',
+        },
         channel: channelProperty,
       },
       required: ['slug', 'type', 'content'],
@@ -679,7 +684,7 @@ const toolHandlers: Record<string, ToolHandler> = {
   // ---------------------------------------------------------------------------
 
   async artifact_create(args, { storage, spaceId, channelId, callsign, connectionManager }) {
-    const { slug, type, tldr, content, title, parentSlug, status, assignees, labels, channel } = args as {
+    const { slug, type, tldr, content, title, parentSlug, status, assignees, labels, props, channel } = args as {
       slug: string;
       type: string;
       tldr: string;
@@ -689,6 +694,7 @@ const toolHandlers: Record<string, ToolHandler> = {
       status?: string;
       assignees?: string[];
       labels?: string[];
+      props?: Record<string, unknown>;
       channel?: string;
     };
 
@@ -711,6 +717,7 @@ const toolHandlers: Record<string, ToolHandler> = {
       status: status as 'draft' | 'active' | 'archived' | 'pending' | 'in_progress' | 'done' | 'blocked' | undefined,
       assignees,
       labels,
+      props,
       createdBy: callsign,
     });
 
