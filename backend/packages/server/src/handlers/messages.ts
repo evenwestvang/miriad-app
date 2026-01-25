@@ -17,6 +17,39 @@ import {
 import type { ConnectionManager } from '../websocket/index.js';
 
 // =============================================================================
+// Helpers
+// =============================================================================
+
+/**
+ * Format attachment slugs as text appendix for agent messages.
+ * Uses [[slug]] syntax which agents recognize as artifact references.
+ */
+function formatAttachments(attachmentSlugs: string[] | undefined): string {
+  if (!attachmentSlugs || attachmentSlugs.length === 0) {
+    return "";
+  }
+  const slugRefs = attachmentSlugs.map((slug) => `[[${slug}]]`).join(" ");
+  return `\n\n<attachments>${slugRefs}</attachments>`;
+}
+
+/**
+ * Transform messages for agent consumption by appending attachment info to content.
+ */
+function transformMessagesForAgent(messages: Message[]): Message[] {
+  return messages.map((msg) => {
+    const attachmentSlugs = msg.metadata?.attachmentSlugs as string[] | undefined;
+    if (!attachmentSlugs || attachmentSlugs.length === 0) {
+      return msg;
+    }
+    const contentStr = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
+    return {
+      ...msg,
+      content: contentStr + formatAttachments(attachmentSlugs),
+    };
+  });
+}
+
+// =============================================================================
 // Types
 // =============================================================================
 
@@ -189,6 +222,8 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
       // Apply agent scoping if requested
       if (forAgent) {
         messages = filterMessagesForAgent(messages, forAgent);
+        // Transform messages to include attachment info in content
+        messages = transformMessagesForAgent(messages);
       }
 
       return c.json({ messages });

@@ -28,6 +28,27 @@ function contentToString(content: string | Record<string, unknown>): string {
   return typeof content === "string" ? content : JSON.stringify(content);
 }
 
+/**
+ * Format attachment slugs as text appendix for agent messages.
+ * Uses [[slug]] syntax which agents recognize as artifact references.
+ */
+function formatAttachments(attachmentSlugs: string[] | undefined): string {
+  if (!attachmentSlugs || attachmentSlugs.length === 0) {
+    return "";
+  }
+  const slugRefs = attachmentSlugs.map((slug) => `[[${slug}]]`).join(" ");
+  return `\n\n<attachments>${slugRefs}</attachments>`;
+}
+
+/**
+ * Build the user message string for agent consumption, including any attachments.
+ */
+function buildUserMessage(message: Message): string {
+  const content = contentToString(message.content);
+  const attachmentSlugs = message.metadata?.attachmentSlugs as string[] | undefined;
+  return `Message from @${message.sender}: ${content}${formatAttachments(attachmentSlugs)}`;
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -104,7 +125,7 @@ export function createAgentInvokerAdapter(
             }
 
             const agentId = `${spaceId}:${channelId}:${callsign}`;
-            const userMessage = `Message from @${message.sender}: ${message.content}`;
+            const userMessage = buildUserMessage(message);
 
             // Step 1: Check if agent is bound to a LocalRuntime (via roster.runtime_id)
             // Route via WebSocket to the runtime's connection

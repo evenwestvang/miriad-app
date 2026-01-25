@@ -39,6 +39,32 @@ import type { AgentInvoker, Message } from './messages.js';
 import { broadcastArtifactEvent } from './artifacts.js';
 
 // =============================================================================
+// Helpers
+// =============================================================================
+
+/**
+ * Format attachment slugs as text appendix for agent messages.
+ * Uses [[slug]] syntax which agents recognize as artifact references.
+ */
+function formatAttachments(attachmentSlugs: string[] | undefined): string {
+  if (!attachmentSlugs || attachmentSlugs.length === 0) {
+    return '';
+  }
+  const slugRefs = attachmentSlugs.map((slug) => `[[${slug}]]`).join(' ');
+  return `\n\n<attachments>${slugRefs}</attachments>`;
+}
+
+/**
+ * Format message content for agent consumption, appending attachment info if present.
+ * Works with both Message (from handlers) and StoredMessage (from storage).
+ */
+function formatMessageContent(msg: { content: unknown; metadata?: Record<string, unknown> }): string {
+  const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+  const attachmentSlugs = msg.metadata?.attachmentSlugs as string[] | undefined;
+  return content + formatAttachments(attachmentSlugs);
+}
+
+// =============================================================================
 // Types
 // =============================================================================
 
@@ -1068,7 +1094,7 @@ const toolHandlers: Record<string, ToolHandler> = {
       sender: msg.sender,
       senderType: msg.senderType,
       timestamp: msg.timestamp,
-      content: msg.content,
+      content: formatMessageContent(msg),
     }));
 
     const cursor = messages.length > 0 ? messages[messages.length - 1].id : undefined;
@@ -1120,7 +1146,7 @@ const toolHandlers: Record<string, ToolHandler> = {
       sender: msg.sender,
       senderType: msg.senderType,
       timestamp: msg.timestamp,
-      content: msg.content,
+      content: formatMessageContent(msg),
     }));
 
     return JSON.stringify({ count: formatted.length, messages: formatted }, null, 2);
@@ -1441,7 +1467,7 @@ const toolHandlers: Record<string, ToolHandler> = {
       id: msg.id,
       sender: msg.sender,
       senderType: msg.senderType === 'user' ? 'human' : msg.senderType,
-      content: msg.content,
+      content: formatMessageContent(msg),
       timestamp: msg.timestamp,
     }));
 
