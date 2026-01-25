@@ -941,8 +941,8 @@ export function ArtifactDetail({
       )}
 
 
-      {/* Type-specific metadata (MCP props, Agent props, Focus props) */}
-      {currentType === 'system.mcp' && (
+      {/* Type-specific metadata (MCP props, Agent props, Focus props) - only in edit/create mode */}
+      {(isEditing || isCreateMode) && currentType === 'system.mcp' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
             <div className="text-base text-muted-foreground mb-2">Saving...</div>
@@ -960,7 +960,7 @@ export function ArtifactDetail({
         </div>
       )}
 
-      {currentType === 'system.agent' && (
+      {(isEditing || isCreateMode) && currentType === 'system.agent' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
             <div className="text-base text-muted-foreground mb-2">Saving...</div>
@@ -977,7 +977,7 @@ export function ArtifactDetail({
         </div>
       )}
 
-      {currentType === 'system.focus' && (
+      {(isEditing || isCreateMode) && currentType === 'system.focus' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
             <div className="text-base text-muted-foreground mb-2">Saving...</div>
