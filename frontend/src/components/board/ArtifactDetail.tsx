@@ -447,9 +447,13 @@ export function ArtifactDetail({
     if (editStatus !== artifact.status) {
       changes.push({ field: 'status', oldValue: artifact.status, newValue: editStatus })
     }
+    // Props changes (for system.* types)
+    if (JSON.stringify(editProps) !== JSON.stringify(artifact.props || {})) {
+      changes.push({ field: 'props', oldValue: artifact.props, newValue: editProps })
+    }
 
     return changes
-  }, [artifact, isCreateMode, editTitle, editTldr, editStatus])
+  }, [artifact, isCreateMode, editTitle, editTldr, editStatus, editProps])
 
   // Check if content has changed (edit mode only)
   const hasContentChanged = useCallback(() => {
@@ -947,11 +951,7 @@ export function ArtifactDetail({
             props={(editProps as unknown as McpProps) || { transport: 'stdio' as const }}
             onChange={(updates) => {
               const currentProps = (editProps as unknown as McpProps) || { transport: 'stdio' as const }
-              if (isCreateMode) {
-                setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
-              } else {
-                handlePropsUpdate({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
-              }
+              setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
             }}
             channel={channelId}
             mcpSlug={isCreateMode ? editSlug : artifact!.slug}
@@ -969,11 +969,7 @@ export function ArtifactDetail({
             props={(editProps as unknown as AgentProps) || { engine: 'claude' }}
             onChange={(updates) => {
               const currentProps = (editProps as unknown as AgentProps) || { engine: 'claude' }
-              if (isCreateMode) {
-                setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
-              } else {
-                handlePropsUpdate({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
-              }
+              setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
             }}
             channelId={channelId}
             apiHost={apiHost}
@@ -990,11 +986,7 @@ export function ArtifactDetail({
             props={(editProps as unknown as FocusProps) || { agents: [] }}
             onChange={(updates) => {
               const currentProps = (editProps as unknown as FocusProps) || { agents: [] }
-              if (isCreateMode) {
-                setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
-              } else {
-                handlePropsUpdate({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
-              }
+              setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
             }}
             apiHost={apiHost}
           />
