@@ -1059,7 +1059,7 @@ export function ArtifactDetail({
           <div className="flex items-center justify-center h-20">
             <span className="text-base text-muted-foreground">Loading version...</span>
           </div>
-        ) : isEditing ? (
+        ) : isEditing && !(isCreateMode && currentType.startsWith('system.')) ? (
           <div className="px-3 py-3">
             <textarea
               ref={contentTextareaRef}
