@@ -49,7 +49,9 @@ async function fetchOAuthStatus(
   mcpSlug: string
 ): Promise<OAuthStatusResponse> {
   const params = new URLSearchParams({ channel, mcpSlug })
-  const response = await fetch(`${baseUrl}/api/oauth/status?${params}`)
+  const response = await fetch(`${baseUrl}/api/oauth/status?${params}`, {
+    credentials: 'include',
+  })
   if (!response.ok) {
     throw new Error(`Failed to fetch OAuth status: ${response.status}`)
   }
@@ -68,6 +70,7 @@ async function startOAuthFlow(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ channel, mcpSlug }),
+    credentials: 'include',
   })
   if (!response.ok) {
     throw new Error(`Failed to start OAuth flow: ${response.status}`)
@@ -87,6 +90,7 @@ async function disconnectOAuth(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ channel, mcpSlug }),
+    credentials: 'include',
   })
   if (!response.ok) {
     throw new Error(`Failed to disconnect OAuth: ${response.status}`)

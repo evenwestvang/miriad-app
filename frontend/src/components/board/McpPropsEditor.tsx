@@ -1,12 +1,10 @@
-import { useState } from 'react'
-import { ChevronDown, ChevronRight, Shield } from 'lucide-react'
 import { EditableField } from '../ui/editable-field'
 import { EnvEditor, type SecretMetadata } from '../ui/env-editor'
 import { KeyValueEditor, KeyValuePair } from '../ui/key-value-editor'
 import { SegmentedControl } from '../ui/segmented-control'
 import { StringListEditor } from '../ui/string-list-editor'
 import { OAuthConnectButton } from './OAuthConnectButton'
-import { cn } from '../../lib/utils'
+import { API_HOST } from '../../lib/api'
 
 // MCP props types - matches server schema
 type McpTransport = 'stdio' | 'http'
@@ -20,17 +18,8 @@ export interface McpProps {
   cwd?: string
   // http transport fields
   url?: string
-  headers?: Record<string, string>
   // Description
   capabilities?: string
-  // Auth (placeholder for future)
-  auth?: {
-    type: 'oauth'
-    authorizationEndpoint?: string
-    tokenEndpoint?: string
-    clientId?: string
-    scopes?: string[]
-  }
 }
 
 interface McpPropsEditorProps {
@@ -48,26 +37,6 @@ interface McpPropsEditorProps {
 
 export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets, isCreateMode }: McpPropsEditorProps) {
   const transport = props.transport || 'stdio'
-  const [oauthExpanded, setOauthExpanded] = useState(props.auth?.type === 'oauth')
-
-  // Check if OAuth is enabled
-  const hasOAuth = props.auth?.type === 'oauth'
-
-  // Toggle OAuth on/off
-  const toggleOAuth = (enabled: boolean) => {
-    if (enabled) {
-      onChange({
-        auth: {
-          type: 'oauth',
-          scopes: [],
-        },
-      })
-      setOauthExpanded(true)
-    } else {
-      onChange({ auth: undefined })
-      setOauthExpanded(false)
-    }
-  }
 
   return (
     <div className="space-y-8">
@@ -146,172 +115,29 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets, isC
             placeholder="https://mcp.example.com/sse"
           />
 
-          {/* Headers */}
-          <KeyValueEditor
-            label="Headers"
-            entries={envToEntries(props.headers)}
-            onChange={(entries) => onChange({ headers: entriesToEnv(entries) })}
-            keyPlaceholder="Header-Name"
-            valuePlaceholder="value or ${ENV_REF}"
-          />
-
-          {/* Environment Variables and Secrets */}
-          {channel && mcpSlug && !isCreateMode ? (
-            <EnvEditor
-              variables={props.env || {}}
-              secrets={secrets || {}}
-              artifactSlug={mcpSlug}
-              channelId={channel}
-              onVariablesChange={(variables) => onChange({ env: Object.keys(variables).length > 0 ? variables : undefined })}
-              showExpansionHint
-            />
-          ) : (
-            <>
-              <KeyValueEditor
-                label="Environment Variables"
-                entries={envToEntries(props.env)}
-                onChange={(entries) => onChange({ env: entriesToEnv(entries) })}
-                keyPlaceholder="VARIABLE_NAME"
-                valuePlaceholder="value or ${ENV_REF}"
+          {/* OAuth Authentication */}
+          {channel && mcpSlug && !isCreateMode && (
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-muted-foreground uppercase">
+                Authentication
+              </label>
+              <OAuthConnectButton
+                channel={channel}
+                mcpSlug={mcpSlug}
+                baseUrl={API_HOST}
               />
-              {isCreateMode && (
-                <div className="space-y-2">
-                  <label className="block text-xs font-medium text-muted-foreground uppercase">
-                    Secrets
-                  </label>
-                  <div className="text-base text-muted-foreground">
-                    Secrets can be added after you have created the MCP server
-                  </div>
-                </div>
-              )}
-            </>
+            </div>
           )}
-
-          {/* OAuth Authentication Section */}
-          <div className="rounded-md border bg-secondary/10">
-            {/* OAuth header with toggle */}
-            <button
-              type="button"
-              onClick={() => hasOAuth ? setOauthExpanded(!oauthExpanded) : toggleOAuth(true)}
-              className={cn(
-                "w-full flex items-center justify-between px-3 py-2 text-left",
-                "hover:bg-secondary/20 rounded-t-md transition-colors"
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-muted-foreground" />
-                <span className="text-base font-medium">OAuth 2.1 Authentication</span>
-                {hasOAuth && (
-                  <span className="text-base px-1.5 py-0.5 rounded bg-primary/10 text-primary">
-                    Enabled
-                  </span>
-                )}
+          {isCreateMode && (
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-muted-foreground uppercase">
+                Authentication
+              </label>
+              <div className="text-base text-muted-foreground">
+                OAuth can be configured after creating the MCP server
               </div>
-              {hasOAuth && (
-                oauthExpanded ? (
-                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                )
-              )}
-              {!hasOAuth && (
-                <span className="text-base text-muted-foreground">Click to enable</span>
-              )}
-            </button>
-
-            {/* OAuth configuration (expanded) */}
-            {hasOAuth && oauthExpanded && (
-              <div className="px-3 pb-3 pt-2 space-y-6 border-t border-border/50">
-                {/* Connection status and button */}
-                {channel && mcpSlug && (
-                  <div>
-                    <div className="text-base font-medium text-muted-foreground mb-1.5">
-                      Connection Status
-                    </div>
-                    <OAuthConnectButton
-                      channel={channel}
-                      mcpSlug={mcpSlug}
-                    />
-                  </div>
-                )}
-
-                {/* Authorization Endpoint (optional override) */}
-                <EditableField
-                  label="Authorization Endpoint (optional)"
-                  value={props.auth?.authorizationEndpoint || ''}
-                  onChange={(value) =>
-                    onChange({
-                      auth: {
-                        ...props.auth,
-                        type: 'oauth',
-                        authorizationEndpoint: value || undefined,
-                      },
-                    })
-                  }
-                  placeholder="Auto-discovered from server"
-                />
-
-                {/* Token Endpoint (optional override) */}
-                <EditableField
-                  label="Token Endpoint (optional)"
-                  value={props.auth?.tokenEndpoint || ''}
-                  onChange={(value) =>
-                    onChange({
-                      auth: {
-                        ...props.auth,
-                        type: 'oauth',
-                        tokenEndpoint: value || undefined,
-                      },
-                    })
-                  }
-                  placeholder="Auto-discovered from server"
-                />
-
-                {/* Client ID (optional override) */}
-                <EditableField
-                  label="Client ID (optional)"
-                  value={props.auth?.clientId || ''}
-                  onChange={(value) =>
-                    onChange({
-                      auth: {
-                        ...props.auth,
-                        type: 'oauth',
-                        clientId: value || undefined,
-                      },
-                    })
-                  }
-                  placeholder="Uses dynamic registration if not set"
-                />
-
-                {/* Scopes */}
-                <StringListEditor
-                  label="Scopes"
-                  items={props.auth?.scopes || []}
-                  onChange={(items) =>
-                    onChange({
-                      auth: {
-                        ...props.auth,
-                        type: 'oauth',
-                        scopes: items.length > 0 ? items : undefined,
-                      },
-                    })
-                  }
-                  placeholder="e.g., read, write"
-                />
-
-                {/* Disable OAuth button */}
-                <div className="pt-2 border-t border-border/50">
-                  <button
-                    type="button"
-                    onClick={() => toggleOAuth(false)}
-                    className="text-base text-destructive hover:text-destructive/80"
-                  >
-                    Disable OAuth
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
 

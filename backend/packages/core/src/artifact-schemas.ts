@@ -25,6 +25,40 @@ export const McpReferenceSchema = z.object({
 export type McpReference = z.infer<typeof McpReferenceSchema>;
 
 /**
+ * OAuth configuration for HTTP MCP servers (user-specified overrides only).
+ *
+ * Props store manual overrides (user config). Dynamic registration credentials
+ * and tokens are stored in artifact secrets:
+ * - oauth_access_token
+ * - oauth_refresh_token
+ * - oauth_client_id (from dynamic registration)
+ * - oauth_client_secret (from dynamic registration, if server returns one)
+ */
+export const OAuthConfigSchema = z.object({
+  type: z.literal('oauth').describe('OAuth authentication type'),
+  authorizationEndpoint: z
+    .string()
+    .url()
+    .optional()
+    .describe('Manual override for authorization endpoint (auto-discovered if not set)'),
+  tokenEndpoint: z
+    .string()
+    .url()
+    .optional()
+    .describe('Manual override for token endpoint (auto-discovered if not set)'),
+  clientId: z
+    .string()
+    .optional()
+    .describe('Manual client ID (skips dynamic registration if set)'),
+  scopes: z
+    .array(z.string())
+    .optional()
+    .describe('OAuth scopes to request'),
+});
+
+export type OAuthConfig = z.infer<typeof OAuthConfigSchema>;
+
+/**
  * Schema for system.mcp artifact props.
  * Defines MCP server configuration for stdio or http transports.
  */
@@ -56,10 +90,11 @@ export const SystemMcpPropsSchema = z
       .url()
       .optional()
       .describe('URL for HTTP transport MCP server'),
-    headers: z
-      .record(z.string())
-      .optional()
-      .describe('HTTP headers. Use ${VAR_NAME} syntax to reference server env vars'),
+
+    // OAuth configuration for http transport (tokens stored in secrets)
+    oauth: OAuthConfigSchema.optional().describe(
+      'OAuth 2.1 configuration for HTTP MCP servers. Tokens are stored encrypted in artifact secrets.'
+    ),
 
     // Description field
     capabilities: z

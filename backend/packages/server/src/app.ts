@@ -55,6 +55,7 @@ import { createRuntimeRoutes } from "./handlers/runtimes.js";
 import { createMiriadCloudRoutes } from "./handlers/miriad-cloud.js";
 import { createKBRoutes } from "./handlers/kb.js";
 import { createDisclaimerRoutes } from "./handlers/disclaimer.js";
+import { createOAuthRoutes } from "./oauth/routes.js";
 import { resetRootChannel } from "./onboarding/index.js";
 
 // =============================================================================
@@ -1250,6 +1251,15 @@ export function createApp(options: AppOptions): Hono {
     jwtSecret,
   });
   app.route("/auth/apps", appRoutes);
+
+  // ---------------------------------------------------------------------------
+  // MCP OAuth Routes (OAuth for HTTP MCP servers)
+  // ---------------------------------------------------------------------------
+  const oauthRoutes = createOAuthRoutes({
+    storage,
+    apiUrl,
+  });
+  app.route("/api/oauth", oauthRoutes);
 
   // ---------------------------------------------------------------------------
   // Runtime Auth Routes (bootstrap token, server credentials)
