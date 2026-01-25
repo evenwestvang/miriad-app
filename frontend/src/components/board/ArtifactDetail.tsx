@@ -227,6 +227,7 @@ export function ArtifactDetail({
   const [editTldr, setEditTldr] = useState('')
   const [editContent, setEditContent] = useState('')
   const [editStatus, setEditStatus] = useState<ArtifactStatus>('draft')
+  const [editProps, setEditProps] = useState<Record<string, unknown>>({})
 
   // Create mode specific state
   const [editSlug, setEditSlug] = useState('')
@@ -347,12 +348,14 @@ export function ArtifactDetail({
       setEditTldr(artifact.tldr)
       setEditContent(artifact.content)
       setEditStatus(artifact.status)
+      setEditProps((artifact.props as Record<string, unknown>) || {})
     } else {
       // Create mode - reset to defaults
       setEditTitle('')
       setEditTldr('')
       setEditContent('')
       setEditStatus('draft')
+      setEditProps({})
       setEditSlug('')
       setEditType(initialType || 'doc')
       setSlugManuallyEdited(false)
@@ -391,6 +394,7 @@ export function ArtifactDetail({
     setEditTldr(artifact.tldr)
     setEditContent(artifact.content)
     setEditStatus(artifact.status)
+    setEditProps((artifact.props as Record<string, unknown>) || {})
     setIsEditing(true)
     setError(null)
     setConflict(null)
@@ -509,6 +513,7 @@ export function ArtifactDetail({
             tldr: editTldr,
             content: editContent || `# ${editTitle || editSlug}\n\n${editTldr}`,
             status: DEFAULT_STATUS[editType],
+            props: Object.keys(editProps).length > 0 ? editProps : undefined,
             sender: 'user', // TODO: Get from auth context
           }),
         })
@@ -957,35 +962,43 @@ export function ArtifactDetail({
       )}
 
 
-      {/* Type-specific metadata (MCP props, Agent props, Focus props) - edit mode only */}
-      {!isCreateMode && artifact!.type === 'system.mcp' && (
+      {/* Type-specific metadata (MCP props, Agent props, Focus props) */}
+      {currentType === 'system.mcp' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
             <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <McpPropsEditor
-            props={(artifact!.props as unknown as McpProps) || { transport: 'stdio' as const }}
+            props={(editProps as unknown as McpProps) || { transport: 'stdio' as const }}
             onChange={(updates) => {
-              const currentProps = (artifact!.props as unknown as McpProps) || { transport: 'stdio' as const }
-              handlePropsUpdate({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
+              const currentProps = (editProps as unknown as McpProps) || { transport: 'stdio' as const }
+              if (isCreateMode) {
+                setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
+              } else {
+                handlePropsUpdate({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
+              }
             }}
             channel={channelId}
-            mcpSlug={artifact!.slug}
-            secrets={artifact!.secrets as Record<string, SecretMetadata>}
+            mcpSlug={isCreateMode ? editSlug : artifact!.slug}
+            secrets={isCreateMode ? {} : artifact!.secrets as Record<string, SecretMetadata>}
           />
         </div>
       )}
 
-      {!isCreateMode && artifact!.type === 'system.agent' && (
+      {currentType === 'system.agent' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
             <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <AgentPropsEditor
-            props={(artifact!.props as unknown as AgentProps) || { engine: 'claude' }}
+            props={(editProps as unknown as AgentProps) || { engine: 'claude' }}
             onChange={(updates) => {
-              const currentProps = (artifact!.props as unknown as AgentProps) || { engine: 'claude' }
-              handlePropsUpdate({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
+              const currentProps = (editProps as unknown as AgentProps) || { engine: 'claude' }
+              if (isCreateMode) {
+                setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
+              } else {
+                handlePropsUpdate({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
+              }
             }}
             channelId={channelId}
             apiHost={apiHost}
@@ -993,16 +1006,20 @@ export function ArtifactDetail({
         </div>
       )}
 
-      {!isCreateMode && artifact!.type === 'system.focus' && (
+      {currentType === 'system.focus' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
             <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <FocusPropsEditor
-            props={(artifact!.props as unknown as FocusProps) || { agents: [] }}
+            props={(editProps as unknown as FocusProps) || { agents: [] }}
             onChange={(updates) => {
-              const currentProps = (artifact!.props as unknown as FocusProps) || { agents: [] }
-              handlePropsUpdate({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
+              const currentProps = (editProps as unknown as FocusProps) || { agents: [] }
+              if (isCreateMode) {
+                setEditProps({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
+              } else {
+                handlePropsUpdate({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
+              }
             }}
             apiHost={apiHost}
           />
