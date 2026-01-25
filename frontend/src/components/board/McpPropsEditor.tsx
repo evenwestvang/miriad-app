@@ -134,7 +134,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets, isC
                     Secrets
                   </label>
                   <div className="text-base text-muted-foreground">
-                    Secrets can only be added after the MCP server is created
+                    Secrets can be added after you have created the MCP server
                   </div>
                 </div>
               )}
@@ -188,7 +188,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets, isC
                     Secrets
                   </label>
                   <div className="text-base text-muted-foreground">
-                    Secrets can only be added after the MCP server is created
+                    Secrets can be added after you have created the MCP server
                   </div>
                 </div>
               )}
