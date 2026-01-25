@@ -191,7 +191,7 @@ export function BoardPanel({
     }
 
     fetchArtifact()
-  }, [channelId, selectedSlug, apiHost, refreshTrigger])
+  }, [channelId, selectedSlug, apiHost])
 
   // Handle resize
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
