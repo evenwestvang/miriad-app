@@ -754,7 +754,7 @@ export function ArtifactDetail({
               onChange={(e) => setEditTitle(e.target.value)}
               placeholder={isCreateMode ? `New ${getTypeLabel(editType)}` : "Title (optional)"}
               className="flex-1 min-w-0 px-2 py-1 text-base font-medium bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
-              autoFocus={!isCreateMode}
+              autoFocus={isCreateMode}
             />
           ) : (
             <span
@@ -930,7 +930,6 @@ export function ArtifactDetail({
                   ? "border-destructive"
                   : "border-border"
               )}
-              autoFocus
             />
             {slugError && (
               <p className="text-base text-destructive mt-1">{slugError}</p>
