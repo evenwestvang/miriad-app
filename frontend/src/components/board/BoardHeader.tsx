@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, X, FileText, CheckSquare, Code, ChevronDown, Server, Bot, KeyRound, Search } from 'lucide-react'
+import { Plus, X, FileText, CheckSquare, Code, ChevronDown, Server, Bot, KeyRound, Search, Folder } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { ArtifactType } from '../../types/artifact'
 
 // Content-heavy artifact types (user-facing)
 const CONTENT_TYPES: { value: ArtifactType; label: string; icon: typeof FileText }[] = [
   { value: 'doc', label: 'Doc', icon: FileText },
+  { value: 'folder', label: 'Folder', icon: Folder },
   { value: 'task', label: 'Task', icon: CheckSquare },
   { value: 'code', label: 'Code', icon: Code },
 ]

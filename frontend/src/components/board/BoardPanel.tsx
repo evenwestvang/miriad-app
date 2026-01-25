@@ -707,7 +707,7 @@ export function BoardPanel({
       {channelId && !isCreating && !isUploading && !selectedArtifactData && (
         <button
           className={cn(
-            "absolute bottom-4 right-4 p-2.5 rounded-full",
+            "absolute bottom-4 right-4 p-2.5 rounded-md",
             "bg-secondary hover:bg-secondary/80 border border-border",
             "text-muted-foreground hover:text-foreground",
             "shadow-sm transition-colors",
