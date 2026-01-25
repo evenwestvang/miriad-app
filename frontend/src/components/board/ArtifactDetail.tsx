@@ -1223,6 +1223,8 @@ export function ArtifactDetail({
       <SlugDisplay
         slug={isCreateMode ? editSlug : artifact!.slug}
         isCreateMode={isCreateMode}
+        onChange={isCreateMode ? handleSlugChange : undefined}
+        error={isCreateMode ? slugError : null}
       />
 
       {/* Metadata footer - view mode only (not create mode, not editing) */}
@@ -1281,13 +1283,18 @@ export function ArtifactDetail({
 
 /**
  * Slug display with copy button - shown in all modes (create, edit, view).
+ * In create mode, renders an editable input field.
  */
 function SlugDisplay({
   slug,
   isCreateMode,
+  onChange,
+  error,
 }: {
   slug: string
   isCreateMode: boolean
+  onChange?: (value: string) => void
+  error?: string | null
 }) {
   const [copied, setCopied] = useState(false)
 
@@ -1298,7 +1305,28 @@ function SlugDisplay({
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // Don't show if no slug (create mode with empty slug)
+  // In create mode, always show the input (even if empty)
+  if (isCreateMode) {
+    return (
+      <div className="px-3 py-2 border-t border-border">
+        <input
+          type="text"
+          value={slug}
+          onChange={(e) => onChange?.(e.target.value)}
+          placeholder="my-artifact-slug"
+          className={cn(
+            "w-full font-mono text-base bg-transparent border-0 focus:outline-none text-muted-foreground/70 placeholder:text-muted-foreground/40",
+            error && "text-destructive"
+          )}
+        />
+        {error && (
+          <p className="text-base text-destructive mt-1">{error}</p>
+        )}
+      </div>
+    )
+  }
+
+  // Don't show if no slug in view/edit mode
   if (!slug) return null
 
   return (
@@ -1306,15 +1334,13 @@ function SlugDisplay({
       <span className="font-mono text-base text-muted-foreground/70 truncate flex-1">
         {slug}
       </span>
-      {!isCreateMode && (
-        <button
-          onClick={handleCopy}
-          className="p-1 rounded hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground flex-shrink-0"
-          title="Copy slug"
-        >
-          {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-        </button>
-      )}
+      <button
+        onClick={handleCopy}
+        className="p-1 rounded hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground flex-shrink-0"
+        title="Copy slug"
+      >
+        {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+      </button>
     </div>
   )
 }
