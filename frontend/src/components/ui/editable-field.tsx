@@ -38,7 +38,7 @@ export function EditableField({
 
   const inputClasses = cn(
     'w-full px-2 py-1.5 text-base bg-secondary rounded border border-border',
-    'focus:outline-none focus:ring-1 focus:ring-primary',
+    'focus:outline-none focus:ring-1 focus:ring-border',
     multiline && 'font-mono resize-none overflow-hidden',
     minHeight || (multiline && 'min-h-[100px]'),
     inputClassName

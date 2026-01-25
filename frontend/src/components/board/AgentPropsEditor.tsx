@@ -237,7 +237,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
           id="featuredChannelStarter"
           checked={props.featuredChannelStarter || false}
           onChange={(e) => onChange({ featuredChannelStarter: e.target.checked || undefined })}
-          className="w-4 h-4 rounded border-border text-primary focus:ring-primary focus:ring-offset-0"
+          className="w-4 h-4 rounded border-border text-muted-foreground focus:ring-border focus:ring-offset-0"
         />
         <label htmlFor="featuredChannelStarter" className="text-base text-foreground">
           Featured channel starter

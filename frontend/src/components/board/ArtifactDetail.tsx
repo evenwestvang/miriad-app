@@ -925,7 +925,7 @@ export function ArtifactDetail({
               onChange={(e) => handleSlugChange(e.target.value)}
               placeholder="my-artifact-slug"
               className={cn(
-                "w-full px-0 py-1 text-base bg-transparent border-0 border-b focus:outline-none focus:border-primary transition-colors",
+                "w-full px-0 py-1 text-base bg-transparent border-0 border-b focus:outline-none focus:border-muted-foreground transition-colors",
                 slugError
                   ? "border-destructive"
                   : "border-border"
@@ -1058,7 +1058,7 @@ export function ArtifactDetail({
               placeholder={isCodeArtifact ? 'Code...' : 'Content (optional)...'}
               className={cn(
                 "w-full px-0 py-1 text-base bg-transparent border-0 border-b border-border",
-                "focus:outline-none focus:border-primary transition-colors resize-none overflow-y-auto",
+                "focus:outline-none focus:border-muted-foreground transition-colors resize-none overflow-y-auto",
                 isCodeArtifact && "font-mono"
               )}
               style={{ minHeight: '100px', maxHeight: '70vh' }}
