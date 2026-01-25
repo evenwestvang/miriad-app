@@ -45,7 +45,7 @@ export function EditableField({
   )
 
   return (
-    <div className={cn('space-y-1', className)}>
+    <div className={cn('space-y-2', className)}>
       {label && (
         <label className="block text-xs font-medium text-muted-foreground uppercase">
           {label}

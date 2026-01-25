@@ -913,10 +913,10 @@ export function ArtifactDetail({
 
       {/* Create mode: Slug and Type fields */}
       {isCreateMode && (
-        <div className="px-3 py-3 border-b border-border space-y-4">
+        <div className="px-3 py-4 border-b border-border space-y-6">
           {/* Slug input */}
           <div>
-            <label className="block text-xs font-medium text-muted-foreground uppercase mb-1">
+            <label className="block text-xs font-medium text-muted-foreground uppercase mb-2">
               Slug <span className="text-muted-foreground/70">*</span>
             </label>
             <input

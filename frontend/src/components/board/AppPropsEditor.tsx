@@ -76,7 +76,7 @@ export function AppPropsEditor({ props, onChange }: AppPropsEditorProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-8">
       {/* Provider select */}
       <div>
         <label className="block text-base text-muted-foreground mb-1">

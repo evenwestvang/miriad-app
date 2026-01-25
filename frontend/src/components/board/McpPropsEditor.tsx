@@ -68,7 +68,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Transport Type */}
       <SegmentedControl<McpTransport>
         label="Transport"
