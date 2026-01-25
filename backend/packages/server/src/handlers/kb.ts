@@ -5,7 +5,7 @@
  * KBs are per-channel documentation collections that agents can query.
  *
  * Endpoints:
- * - GET  /kb                         - List all published KBs in space
+ * - GET  /kb                         - List all active KBs in space
  * - GET  /kb/:channel/tree           - Browse KB tree structure
  * - GET  /kb/:channel/docs/:identifier - Read KB doc by slug or path
  * - GET  /kb/:channel/search         - Search KB content (keyword FTS)
@@ -35,7 +35,7 @@ export function createKBRoutes(options: KBHandlerOptions): Hono {
   app.use('*', requireAuth);
 
   // ---------------------------------------------------------------------------
-  // GET /kb - List all published KBs in space
+  // GET /kb - List all active KBs in space
   // ---------------------------------------------------------------------------
   app.get('/', async (c) => {
     const spaceId = getSpaceId(c);
@@ -65,13 +65,13 @@ export function createKBRoutes(options: KBHandlerOptions): Hono {
         return c.json({ error: 'Channel not found' }, 404);
       }
 
-      // Check KB exists and is published
+      // Check KB exists and is active (support legacy 'published' status)
       const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
       if (!kbRoot) {
         return c.json({ error: 'Knowledge base not found' }, 404);
       }
-      if (kbRoot.status !== 'published') {
-        return c.json({ error: 'Knowledge base is not published' }, 404);
+      if (kbRoot.status !== 'active' && kbRoot.status !== 'published') {
+        return c.json({ error: 'Knowledge base is not active' }, 404);
       }
 
       // Get KB tree - pattern is relative to KB root, so prepend /knowledgebase
@@ -81,24 +81,24 @@ export function createKBRoutes(options: KBHandlerOptions): Hono {
 
       const fullTree = await storage.globArtifacts(channel.id, kbPattern);
 
-      // Filter to only published docs and transform to KB-relative paths
-      const filterPublished = (
+      // Filter to only active docs (support legacy 'published' status) and transform to KB-relative paths
+      const filterActive = (
         nodes: typeof fullTree
       ): typeof fullTree => {
         return nodes
-          .filter((node) => node.status === 'published')
+          .filter((node) => node.status === 'active' || node.status === 'published')
           .map((node) => ({
             ...node,
             // Convert path from ltree format (knowledgebase.foo.bar) to KB-relative (/foo/bar)
             path: '/' + node.path.replace(/^knowledgebase\.?/, '').replace(/\./g, '/'),
-            children: filterPublished(node.children),
+            children: filterActive(node.children),
           }));
       };
 
       // The tree from glob includes the KB root - we want children only
       const kbTree = fullTree.length > 0 && fullTree[0].slug === 'knowledgebase'
-        ? filterPublished(fullTree[0].children)
-        : filterPublished(fullTree);
+        ? filterActive(fullTree[0].children)
+        : filterActive(fullTree);
 
       return c.json({
         name: channel.name,
@@ -134,13 +134,13 @@ export function createKBRoutes(options: KBHandlerOptions): Hono {
         return c.json({ error: 'Channel not found' }, 404);
       }
 
-      // Check KB exists and is published
+      // Check KB exists and is active (support legacy 'published' status)
       const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
       if (!kbRoot) {
         return c.json({ error: 'Knowledge base not found' }, 404);
       }
-      if (kbRoot.status !== 'published') {
-        return c.json({ error: 'Knowledge base is not published' }, 404);
+      if (kbRoot.status !== 'active' && kbRoot.status !== 'published') {
+        return c.json({ error: 'Knowledge base is not active' }, 404);
       }
 
       // Try to find doc by slug first (more common case)
@@ -178,8 +178,8 @@ export function createKBRoutes(options: KBHandlerOptions): Hono {
         return c.json({ error: `Document not found: ${identifier}` }, 404);
       }
 
-      // Verify it's a published doc under KB
-      if (doc.status !== 'published') {
+      // Verify it's an active doc under KB (support legacy 'published' status)
+      if (doc.status !== 'active' && doc.status !== 'published') {
         return c.json({ error: `Document not found: ${identifier}` }, 404);
       }
 
@@ -237,13 +237,13 @@ export function createKBRoutes(options: KBHandlerOptions): Hono {
         return c.json({ error: 'Channel not found' }, 404);
       }
 
-      // Check KB exists and is published
+      // Check KB exists and is active (support legacy 'published' status)
       const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
       if (!kbRoot) {
         return c.json({ error: 'Knowledge base not found' }, 404);
       }
-      if (kbRoot.status !== 'published') {
-        return c.json({ error: 'Knowledge base is not published' }, 404);
+      if (kbRoot.status !== 'active' && kbRoot.status !== 'published') {
+        return c.json({ error: 'Knowledge base is not active' }, 404);
       }
 
       // Semantic mode not implemented yet
@@ -254,17 +254,17 @@ export function createKBRoutes(options: KBHandlerOptions): Hono {
         }, 501);
       }
 
-      // Use FTS search with KB path filter
+      // Use FTS search with KB path filter (no status filter - we'll filter for both 'active' and legacy 'published')
       // The storage.listArtifacts search uses PostgreSQL FTS
       const searchResults = await storage.listArtifacts(channel.id, {
         search: query,
-        status: 'published',
-        limit: limit * 2, // Fetch extra to filter by path
+        limit: limit * 3, // Fetch extra to filter by path and status
       });
 
-      // Filter to KB docs only (path starts with 'knowledgebase')
+      // Filter to active KB docs only (support legacy 'published' status)
       let kbResults = searchResults.filter(
-        (a) => a.path.startsWith('knowledgebase') && a.type === 'doc'
+        (a) => a.path.startsWith('knowledgebase') && a.type === 'doc' &&
+          (a.status === 'active' || a.status === 'published')
       );
 
       // Apply path filter if specified

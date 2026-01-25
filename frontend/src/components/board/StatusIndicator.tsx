@@ -8,33 +8,37 @@ interface StatusIndicatorProps {
   size?: number
 }
 
+/** Task-specific statuses that show colored dots */
+const TASK_STATUSES = ['pending', 'in_progress', 'done', 'blocked', 'archived'] as const
+
 /**
- * Status indicator dot/ring for artifacts.
- * - Filled dot: published, pending, in_progress, done, blocked
- * - Ring (outline): draft
- * - No indicator: archived
+ * Status indicator dot for task artifacts only.
+ *
+ * Non-task statuses (draft/active/archived) use typography-based
+ * treatment in the tree item itself, so no indicator is shown here.
+ *
+ * Task status colors:
+ * - pending: gray
+ * - in_progress: blue
+ * - done: green
+ * - blocked: red
+ * - archived: gray (muted)
  */
 export function StatusIndicator({ status, className, size = 6 }: StatusIndicatorProps) {
-  // Archived gets no indicator
-  if (status === 'archived') {
+  // Only show indicator for task-specific statuses
+  if (!TASK_STATUSES.includes(status as typeof TASK_STATUSES[number])) {
     return null
   }
-
-  const isRing = status === 'draft'
 
   return (
     <span
       className={cn(
         'inline-block rounded-full flex-shrink-0',
-        // Ring vs filled
-        isRing ? 'border-[1.5px]' : '',
-        // Status colors
-        status === 'draft' && 'border-[#de946a]',
-        status === 'published' && 'bg-green-500',
         status === 'pending' && 'bg-[#8c8c8c]',
         status === 'in_progress' && 'bg-blue-500',
         status === 'done' && 'bg-green-500',
         status === 'blocked' && 'bg-red-500',
+        status === 'archived' && 'bg-gray-500',
         className
       )}
       style={{ width: size, height: size }}

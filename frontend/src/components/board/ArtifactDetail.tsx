@@ -8,8 +8,8 @@
  * - CAS (compare-and-swap) for conflict handling
  */
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react'
-import { Pencil, Save, AlertTriangle, Copy, Check, ArrowLeft, ChevronDown, History, RotateCcw, Archive, MoreHorizontal } from 'lucide-react'
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import { Save, AlertTriangle, Copy, Check, ArrowLeft, History, RotateCcw, Archive, MoreHorizontal, ChevronDown } from 'lucide-react'
 import Markdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -17,7 +17,7 @@ import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/pris
 import { cn } from '../../lib/utils'
 import { apiFetch } from '../../lib/api'
 import { getArtifactIcon, isSpaArtifact } from '../../lib/artifact-icons'
-import type { Artifact, ArtifactStatus, ArtifactTreeNode, ArtifactVersion } from '../../types/artifact'
+import type { Artifact, ArtifactType, ArtifactStatus, ArtifactTreeNode, ArtifactVersion } from '../../types/artifact'
 import { McpPropsEditor, type McpProps } from './McpPropsEditor'
 import { AgentPropsEditor, type AgentProps } from './AgentPropsEditor'
 import { FocusPropsEditor, type FocusProps } from './FocusPropsEditor'
@@ -33,7 +33,8 @@ import { useIsDarkMode } from '../../hooks/useIsDarkMode'
 // =============================================================================
 
 interface ArtifactDetailProps {
-  artifact: Artifact
+  /** Existing artifact to view/edit. If undefined, component is in create mode. */
+  artifact?: Artifact
   channelId: string
   apiHost: string
   /** Space ID for OAuth flows (system.app artifacts) */
@@ -45,6 +46,8 @@ interface ArtifactDetailProps {
   onBack?: () => void
   /** Callback to archive the artifact (recursive) */
   onArchive?: () => void
+  /** Initial type for create mode (from header dropdown) */
+  initialType?: ArtifactType
 }
 
 interface ConflictInfo {
@@ -68,20 +71,66 @@ interface PropsValidationError {
 // Constants
 // =============================================================================
 
-// Status colors for the badge
-const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
-  published: 'bg-green-200 text-green-700 dark:bg-green-900 dark:text-green-300',
-  archived: 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
-  pending: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
-  in_progress: 'bg-blue-200 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
-  done: 'bg-green-200 text-green-700 dark:bg-green-900 dark:text-green-300',
-  blocked: 'bg-red-200 text-red-700 dark:bg-red-900 dark:text-red-300',
+// Status options based on type
+const DOC_STATUSES: ArtifactStatus[] = ['draft', 'active', 'archived']
+const TASK_STATUSES: ArtifactStatus[] = ['pending', 'in_progress', 'done', 'blocked', 'archived']
+
+// Available types for creation
+const ARTIFACT_TYPES: { value: ArtifactType; label: string }[] = [
+  { value: 'doc', label: 'Document' },
+  { value: 'folder', label: 'Folder' },
+  { value: 'task', label: 'Task' },
+  { value: 'decision', label: 'Decision' },
+  { value: 'code', label: 'Code' },
+  { value: 'knowledgebase', label: 'Knowledge Base' },
+  { value: 'system.mcp', label: 'MCP Server' },
+  { value: 'system.agent', label: 'Agent' },
+  { value: 'system.environment', label: 'Environment' },
+  { value: 'system.focus', label: 'Focus' },
+  { value: 'system.playbook', label: 'Playbook' },
+  { value: 'system.app', label: 'App' },
+]
+
+// Default status based on type (human-created artifacts default to 'active', tasks to 'pending')
+const DEFAULT_STATUS: Record<ArtifactType, ArtifactStatus> = {
+  doc: 'active',
+  folder: 'active',
+  task: 'pending',
+  decision: 'active',
+  code: 'active',
+  knowledgebase: 'active',
+  asset: 'active',
+  'system.mcp': 'active',
+  'system.agent': 'active',
+  'system.environment': 'active',
+  'system.focus': 'active',
+  'system.playbook': 'active',
+  'system.app': 'active',
 }
 
-// Status options based on type
-const DOC_STATUSES: ArtifactStatus[] = ['draft', 'published', 'archived']
-const TASK_STATUSES: ArtifactStatus[] = ['pending', 'in_progress', 'done', 'blocked']
+// Slug validation regex
+const SLUG_REGEX = /^[a-z0-9-]+(\.[a-z0-9]+)*$/
+
+// Debounce delay for auto-generating slug from title (ms)
+const SLUG_DEBOUNCE_MS = 150
+
+/**
+ * Convert a title to a slug:
+ * - Lowercase
+ * - Replace spaces with hyphens
+ * - Remove non-alphanumeric characters (except hyphens and dots)
+ * - Collapse multiple hyphens
+ * - Trim leading/trailing hyphens
+ */
+function titleToSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9.-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
 
 // File extensions for syntax highlighting
 const EXT_TO_LANG: Record<string, string> = {
@@ -164,17 +213,28 @@ export function ArtifactDetail({
   onLinkClick,
   onBack,
   onArchive,
+  initialType,
 }: ArtifactDetailProps) {
   // Theme detection for syntax highlighting
   const isDarkMode = useIsDarkMode()
 
-  // Edit state
-  const [isEditing, setIsEditing] = useState(false)
+  // Detect create mode (no existing artifact)
+  const isCreateMode = !artifact
+
+  // Edit state - in create mode, always editing
+  const [isEditing, setIsEditing] = useState(isCreateMode)
   const [editTitle, setEditTitle] = useState('')
   const [editTldr, setEditTldr] = useState('')
   const [editContent, setEditContent] = useState('')
   const [editStatus, setEditStatus] = useState<ArtifactStatus>('draft')
-  const [editParentSlug, setEditParentSlug] = useState('')
+  const [editProps, setEditProps] = useState<Record<string, unknown>>({})
+
+  // Create mode specific state
+  const [editSlug, setEditSlug] = useState('')
+  const [editType, setEditType] = useState<ArtifactType>(initialType || 'doc')
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false)
+  const [slugError, setSlugError] = useState<string | null>(null)
+  const slugDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // UI state
   const [saving, setSaving] = useState(false)
@@ -191,9 +251,63 @@ export function ArtifactDetail({
   // Overflow menu state
   const [overflowOpen, setOverflowOpen] = useState(false)
 
-  // Fetch version content when a historical version is selected
+  // Content textarea ref for focus management
+  const contentTextareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Auto-resize content textarea to fit content (max 70vh)
   useEffect(() => {
-    if (!selectedVersion || !channelId) {
+    const textarea = contentTextareaRef.current
+    if (!textarea || !isEditing) return
+
+    const resize = () => {
+      // Reset to min-height first to get accurate scrollHeight
+      textarea.style.height = '100px'
+      const maxHeight = window.innerHeight * 0.7
+      const newHeight = Math.max(100, Math.min(textarea.scrollHeight, maxHeight))
+      textarea.style.height = `${newHeight}px`
+    }
+
+    // Small delay to ensure DOM is ready
+    requestAnimationFrame(resize)
+    textarea.addEventListener('input', resize)
+    return () => textarea.removeEventListener('input', resize)
+  }, [isEditing, editContent])
+
+  // Unsaved changes prompt state
+  const [showUnsavedPrompt, setShowUnsavedPrompt] = useState(false)
+  const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null)
+
+  // Debounced slug generation from title (create mode only)
+  useEffect(() => {
+    if (!isCreateMode || slugManuallyEdited) return
+
+    if (slugDebounceRef.current) {
+      clearTimeout(slugDebounceRef.current)
+    }
+
+    if (!editTitle.trim()) {
+      setEditSlug('')
+      return
+    }
+
+    slugDebounceRef.current = setTimeout(() => {
+      const generatedSlug = titleToSlug(editTitle)
+      if (generatedSlug) {
+        setEditSlug(generatedSlug)
+        setSlugError(null)
+      }
+    }, SLUG_DEBOUNCE_MS)
+
+    return () => {
+      if (slugDebounceRef.current) {
+        clearTimeout(slugDebounceRef.current)
+      }
+    }
+  }, [isCreateMode, editTitle, slugManuallyEdited])
+
+  // Fetch version content when a historical version is selected (edit mode only)
+  useEffect(() => {
+    if (!selectedVersion || !channelId || isCreateMode) {
       setVersionData(null)
       return
     }
@@ -203,7 +317,7 @@ export function ArtifactDetail({
       setError(null)
       try {
         const response = await apiFetch(
-          `${apiHost}/channels/${channelId}/artifacts/${artifact.slug}/versions/${selectedVersion}`
+          `${apiHost}/channels/${channelId}/artifacts/${artifact!.slug}/versions/${selectedVersion}`
         )
         if (!response.ok) {
           throw new Error('Failed to load version')
@@ -219,56 +333,132 @@ export function ArtifactDetail({
     }
 
     fetchVersion()
-  }, [selectedVersion, channelId, apiHost, artifact.slug])
+  }, [selectedVersion, channelId, apiHost, artifact?.slug, isCreateMode])
 
-  // Clear version selection when artifact changes
+  // Reset edit state when artifact changes (including transitions between create/edit modes)
   useEffect(() => {
+    // When artifact changes, exit edit mode and sync form state with artifact data
+    // This handles:
+    // 1. Navigating to a different artifact while editing
+    // 2. Transitioning from create mode to view mode after save
+    // 3. Refreshing artifact data after an update
+    if (artifact) {
+      setIsEditing(false)
+      setEditTitle(artifact.title || '')
+      setEditTldr(artifact.tldr || '')
+      setEditContent(artifact.content)
+      setEditStatus(artifact.status)
+      setEditProps((artifact.props as Record<string, unknown>) || {})
+    } else {
+      // Create mode - reset to defaults
+      setEditTitle('')
+      setEditTldr('')
+      setEditContent('')
+      setEditStatus('draft')
+      setEditProps({})
+      setEditSlug('')
+      setEditType(initialType || 'doc')
+      setSlugManuallyEdited(false)
+      setSlugError(null)
+    }
+    // Clear version selection
     setSelectedVersion(null)
     setVersionData(null)
-  }, [artifact.slug])
+  }, [artifact?.slug, artifact?.version, initialType])
 
   // Check if viewing a historical version
-  const isViewingHistory = selectedVersion !== null && versionData !== null
+  const isViewingHistory = !isCreateMode && selectedVersion !== null && versionData !== null
 
   // Asset detection - use contentType (MIME type) from artifact
-  const isAsset = isPreviewableMime(artifact.contentType)
-  const assetUrl = `${apiHost}/channels/${channelId}/assets/${artifact.slug}`
+  const isAsset = !isCreateMode && isPreviewableMime(artifact?.contentType)
+  const assetUrl = artifact ? `${apiHost}/channels/${channelId}/assets/${artifact.slug}` : ''
 
-  // Code detection
-  const isInteractiveApp = artifact.type === 'code' && isSpaArtifact(artifact.slug)
-  const isCodeArtifact = (artifact.type === 'code' || hasCodeExtension(artifact.slug)) && !isInteractiveApp
-  const codeLanguage = getLanguageFromSlug(artifact.slug)
-
-  // Get available parent options
-  const parentOptions = getParentOptions(tree, artifact.slug)
+  // Code detection (for existing artifacts or create mode with code type)
+  const currentType = isCreateMode ? editType : artifact!.type
+  const currentSlug = isCreateMode ? editSlug : artifact!.slug
+  const isInteractiveApp = currentType === 'code' && isSpaArtifact(currentSlug)
+  const isCodeArtifact = (currentType === 'code' || hasCodeExtension(currentSlug)) && !isInteractiveApp
+  const codeLanguage = getLanguageFromSlug(currentSlug)
 
   // Build artifact map for mention highlighting (title lookup)
   const artifactMap = useMemo(() => buildArtifactMap(tree), [tree])
 
   // Get status options based on type
-  const statusOptions = artifact.type === 'task' ? TASK_STATUSES : DOC_STATUSES
+  const statusOptions = currentType === 'task' ? TASK_STATUSES : DOC_STATUSES
 
-  // Enter edit mode
-  const startEditing = useCallback(() => {
+  // Enter edit mode (for existing artifacts only)
+  // If focusContent is true, focus the content textarea after entering edit mode
+  const startEditing = useCallback((focusContent = false) => {
+    if (isCreateMode || !artifact) return
     setEditTitle(artifact.title || '')
-    setEditTldr(artifact.tldr)
+    setEditTldr(artifact.tldr || '')
     setEditContent(artifact.content)
     setEditStatus(artifact.status)
-    setEditParentSlug(artifact.parentSlug || '')
+    setEditProps((artifact.props as Record<string, unknown>) || {})
     setIsEditing(true)
     setError(null)
     setConflict(null)
-  }, [artifact])
 
-  // Cancel editing
+    // Focus content textarea after state update if requested
+    if (focusContent) {
+      setTimeout(() => {
+        contentTextareaRef.current?.focus()
+      }, 0)
+    }
+  }, [artifact, isCreateMode])
+
+  // Cancel editing (or cancel create)
   const cancelEditing = useCallback(() => {
-    setIsEditing(false)
-    setError(null)
-    setConflict(null)
+    if (isCreateMode) {
+      // In create mode, cancel goes back
+      onBack?.()
+    } else {
+      setIsEditing(false)
+      setError(null)
+      setConflict(null)
+    }
+  }, [isCreateMode, onBack])
+
+  // ESC key handling: first ESC cancels editing, second ESC closes board
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        // Don't interfere with inputs that might have their own ESC handling
+        const target = e.target as HTMLElement
+        if (target.tagName === 'SELECT') return
+
+        if (isEditing) {
+          // First ESC: cancel editing
+          e.preventDefault()
+          cancelEditing()
+        } else if (onBack && !showUnsavedPrompt) {
+          // Second ESC (or first if not editing): close board
+          e.preventDefault()
+          onBack()
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isEditing, cancelEditing, onBack, showUnsavedPrompt])
+
+  // Handle slug change in create mode
+  const handleSlugChange = useCallback((value: string) => {
+    const normalized = value.toLowerCase().replace(/\s+/g, '-')
+    setEditSlug(normalized)
+    setSlugManuallyEdited(true)
+
+    if (normalized && !SLUG_REGEX.test(normalized)) {
+      setSlugError('Use lowercase letters, numbers, and hyphens only')
+    } else {
+      setSlugError(null)
+    }
   }, [])
 
-  // Build CAS changes array (metadata only, not content)
+  // Build CAS changes array (metadata only, not content) - edit mode only
   const buildChanges = useCallback(() => {
+    if (isCreateMode || !artifact) return []
     const changes: Array<{ field: string; oldValue: unknown; newValue: unknown }> = []
 
     if (editTitle !== (artifact.title || '')) {
@@ -281,20 +471,118 @@ export function ArtifactDetail({
     if (editStatus !== artifact.status) {
       changes.push({ field: 'status', oldValue: artifact.status, newValue: editStatus })
     }
-    if (editParentSlug !== (artifact.parentSlug || '')) {
-      changes.push({ field: 'parentSlug', oldValue: artifact.parentSlug, newValue: editParentSlug || null })
+    // Props changes (for system.* types)
+    if (JSON.stringify(editProps) !== JSON.stringify(artifact.props || {})) {
+      changes.push({ field: 'props', oldValue: artifact.props, newValue: editProps })
     }
 
     return changes
-  }, [artifact, editTitle, editTldr, editStatus, editParentSlug])
+  }, [artifact, isCreateMode, editTitle, editTldr, editStatus, editProps])
 
-  // Check if content has changed
+  // Check if content has changed (edit mode only)
   const hasContentChanged = useCallback(() => {
+    if (isCreateMode || !artifact) return editContent.length > 0
     return editContent !== artifact.content
-  }, [artifact.content, editContent])
+  }, [artifact, isCreateMode, editContent])
 
-  // Save changes
+  // Check if create form has required fields
+  const isCreateFormValid = useMemo(() => {
+    if (!isCreateMode) return true
+    // Only slug is required - TLDR is optional
+    return editSlug && !slugError
+  }, [isCreateMode, editSlug, slugError])
+
+  // Handle navigation with unsaved changes check
+  const handleNavigate = useCallback((callback: () => void) => {
+    const hasUnsaved = isCreateMode
+      ? (editSlug || editTitle || editTldr || editContent) // Any data entered in create mode
+      : (buildChanges().length > 0 || hasContentChanged())
+
+    if (isEditing && hasUnsaved) {
+      setPendingNavigation(() => callback)
+      setShowUnsavedPrompt(true)
+    } else {
+      callback()
+    }
+  }, [isEditing, isCreateMode, editSlug, editTitle, editTldr, editContent, buildChanges, hasContentChanged])
+
+  // Confirm discard and navigate
+  const confirmDiscard = useCallback(() => {
+    setShowUnsavedPrompt(false)
+    setIsEditing(false)
+    if (pendingNavigation) {
+      pendingNavigation()
+      setPendingNavigation(null)
+    }
+  }, [pendingNavigation])
+
+  // Cancel navigation, continue editing
+  const cancelNavigation = useCallback(() => {
+    setShowUnsavedPrompt(false)
+    setPendingNavigation(null)
+  }, [])
+
+  // Save changes (create or update)
   const saveChanges = async () => {
+    // Handle create mode
+    if (isCreateMode) {
+      if (!isCreateFormValid) return
+
+      setSaving(true)
+      setError(null)
+      setPropsValidationError(null)
+
+      try {
+        const response = await apiFetch(`${apiHost}/channels/${channelId}/artifacts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            slug: editSlug,
+            type: editType,
+            title: editTitle || undefined,
+            tldr: editTldr,
+            content: editContent || `# ${editTitle || editSlug}\n\n${editTldr}`,
+            status: DEFAULT_STATUS[editType],
+            props: Object.keys(editProps).length > 0 ? editProps : undefined,
+            sender: 'user', // TODO: Get from auth context
+          }),
+        })
+
+        if (response.status === 409) {
+          setError(`An artifact with slug "${editSlug}" already exists`)
+          return
+        }
+
+        if (response.status === 400) {
+          const data = await response.json().catch(() => ({}))
+          // API returns { error: 'validation_error', details: [...] } for validation errors
+          if (data.details && Array.isArray(data.details)) {
+            setPropsValidationError({
+              violations: data.details,
+              schema: data.schema,
+            })
+            return
+          }
+          throw new Error(data.error === 'validation_error' ? 'Validation failed' : (data.error || 'Validation failed'))
+        }
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.error || 'Failed to create artifact')
+        }
+
+        const newArtifact = await response.json()
+        onUpdate(newArtifact)
+        // Don't setIsEditing(false) - parent will navigate to the new artifact
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to create')
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
+
+    // Handle edit mode (existing artifact)
     const changes = buildChanges()
     const contentChanged = hasContentChanged()
 
@@ -306,24 +594,25 @@ export function ArtifactDetail({
     setSaving(true)
     setError(null)
     setConflict(null)
+    setPropsValidationError(null)
 
     try {
-      let updatedArtifact = artifact
+      let updatedArtifact = artifact!
 
       // First, handle content changes via the edit endpoint
       if (contentChanged) {
-        const editResponse = await apiFetch(`${apiHost}/channels/${channelId}/artifacts/${artifact.slug}/edit`, {
+        const editResponse = await apiFetch(`${apiHost}/channels/${channelId}/artifacts/${artifact!.slug}/edit`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            old_string: artifact.content,
+            old_string: artifact!.content,
             new_string: editContent,
             sender: 'user', // TODO: Get from auth context
           }),
         })
 
         if (editResponse.status === 409) {
-          setConflict({ field: 'content', expected: artifact.content, actual: 'modified by another user' })
+          setConflict({ field: 'content', expected: artifact!.content, actual: 'modified by another user' })
           return
         }
 
@@ -338,7 +627,7 @@ export function ArtifactDetail({
 
       // Then, handle metadata changes via PATCH
       if (changes.length > 0) {
-        const patchResponse = await apiFetch(`${apiHost}/channels/${channelId}/artifacts/${artifact.slug}`, {
+        const patchResponse = await apiFetch(`${apiHost}/channels/${channelId}/artifacts/${artifact!.slug}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -353,8 +642,21 @@ export function ArtifactDetail({
           return
         }
 
+        if (patchResponse.status === 400) {
+          const data = await patchResponse.json().catch(() => ({}))
+          // API returns { error: 'validation_error', details: [...] } for validation errors
+          if (data.details && Array.isArray(data.details)) {
+            setPropsValidationError({
+              violations: data.details,
+              schema: data.schema,
+            })
+            return
+          }
+          throw new Error(data.error === 'validation_error' ? 'Validation failed' : (data.error || 'Validation failed'))
+        }
+
         if (!patchResponse.ok) {
-          const data = await patchResponse.json()
+          const data = await patchResponse.json().catch(() => ({}))
           throw new Error(data.error || 'Failed to save')
         }
 
@@ -371,8 +673,9 @@ export function ArtifactDetail({
     }
   }
 
-  // Handle MCP props updates (inline, no edit mode needed)
+  // Handle MCP props updates (inline, no edit mode needed) - edit mode only
   const handlePropsUpdate = async (newProps: Record<string, unknown>) => {
+    if (isCreateMode || !artifact) return
     setSaving(true)
     setPropsValidationError(null)
     try {
@@ -391,14 +694,15 @@ export function ArtifactDetail({
 
       if (response.status === 400) {
         const data = await response.json().catch(() => ({}))
-        if (data.violations && Array.isArray(data.violations)) {
+        // API returns { error: 'validation_error', details: [...] } for validation errors
+        if (data.details && Array.isArray(data.details)) {
           setPropsValidationError({
-            violations: data.violations,
+            violations: data.details,
             schema: data.schema,
           })
           return
         }
-        throw new Error(data.error || 'Invalid props')
+        throw new Error(data.error === 'validation_error' ? 'Validation failed' : (data.error || 'Invalid props'))
       }
 
       if (!response.ok) {
@@ -419,13 +723,15 @@ export function ArtifactDetail({
 
   // Copy content to clipboard
   const copyContent = async () => {
-    await navigator.clipboard.writeText(artifact.content)
+    if (isCreateMode) return
+    await navigator.clipboard.writeText(artifact!.content)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // Handle inline status change (not in edit mode)
+  // Handle inline status change (not in edit mode) - edit mode only
   const handleStatusChange = async (newStatus: ArtifactStatus) => {
+    if (isCreateMode || !artifact) return
     // Skip if status hasn't actually changed
     if (newStatus === artifact.status) return
 
@@ -461,7 +767,14 @@ export function ArtifactDetail({
     }
   }
 
-  const hasChanges = buildChanges().length > 0
+  // For create mode, check form validity; for edit mode, check for changes
+  const hasChanges = isCreateMode ? isCreateFormValid : (buildChanges().length > 0 || hasContentChanged())
+
+  // Get type label for header (create mode)
+  const getTypeLabel = (type: ArtifactType): string => {
+    const found = ARTIFACT_TYPES.find(t => t.value === type)
+    return found ? found.label : type
+  }
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -470,8 +783,8 @@ export function ArtifactDetail({
         {/* Back button */}
         {onBack && (
           <button
-            onClick={onBack}
-            className="text-primary hover:text-primary/80 transition-colors flex-shrink-0"
+            onClick={() => handleNavigate(onBack)}
+            className="text-foreground hover:text-muted-foreground transition-colors flex-shrink-0"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -481,7 +794,10 @@ export function ArtifactDetail({
         <div className="flex items-center gap-2 min-w-0 flex-1">
           {/* Type icon */}
           {(() => {
-            const Icon = getArtifactIcon(artifact)
+            const iconArtifact = isCreateMode
+              ? { slug: editSlug || 'new', type: editType, status: DEFAULT_STATUS[editType] }
+              : artifact!
+            const Icon = getArtifactIcon(iconArtifact)
             return <Icon className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
           })()}
           {isEditing ? (
@@ -489,82 +805,39 @@ export function ArtifactDetail({
               type="text"
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
-              placeholder="Title (optional)"
-              className="flex-1 min-w-0 px-2 py-1 text-base font-medium bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+              placeholder={isCreateMode ? `${getTypeLabel(editType)} name` : (artifact?.slug || 'name')}
+              className="flex-1 min-w-0 px-2 py-1 text-base font-medium bg-secondary border border-border focus:outline-none focus:ring-0 focus:border-foreground"
+              autoFocus={isCreateMode}
             />
           ) : (
-            <span className="font-semibold text-base text-foreground truncate">
-              {artifact.title || artifact.slug}
-            </span>
-          )}
-          {/* Status dropdown */}
-          <StatusDropdown
-            status={isEditing ? editStatus : artifact.status}
-            options={statusOptions}
-            onChange={isEditing ? setEditStatus : handleStatusChange}
-            disabled={saving}
-          />
-          {/* Slug (when different from title) */}
-          {!isEditing && artifact.title && artifact.title !== artifact.slug && (
-            <span className="text-base text-muted-foreground truncate flex-shrink-0">
-              {artifact.slug}
+            <span
+              className={cn(
+                "font-semibold text-base text-foreground truncate",
+                !isViewingHistory && "cursor-text hover:bg-secondary/30 px-1 -mx-1 rounded"
+              )}
+              onClick={!isViewingHistory ? () => startEditing() : undefined}
+            >
+              {/* Show title if present, otherwise slug as fallback */}
+              {artifact!.title || artifact!.slug}
             </span>
           )}
         </div>
 
-        {/* Action icons (right) */}
+        {/* Action icons (right) - only shown when not editing */}
         <div className="flex items-center gap-1 flex-shrink-0">
-          {isEditing ? (
+          {!isEditing && !isCreateMode ? (
             <>
-              <button
-                className="px-2 py-1 text-base text-muted-foreground hover:text-foreground transition-colors"
-                onClick={cancelEditing}
-                disabled={saving}
-              >
-                Cancel
-              </button>
-              <button
-                className={cn(
-                  "flex items-center gap-1 px-2 py-1 text-base rounded transition-colors",
-                  hasChanges && !saving
-                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                    : "bg-secondary text-muted-foreground cursor-not-allowed"
-                )}
-                onClick={saveChanges}
-                disabled={!hasChanges || saving}
-              >
-                <Save className="w-3 h-3" />
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-            </>
-          ) : (
-            <>
-              {/* Edit - direct icon */}
-              <button
-                className={cn(
-                  "p-1.5 rounded transition-colors",
-                  isViewingHistory
-                    ? "text-muted-foreground/50 cursor-not-allowed"
-                    : "hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
-                )}
-                onClick={isViewingHistory ? undefined : startEditing}
-                title={isViewingHistory ? "Cannot edit historical version" : "Edit"}
-                disabled={isViewingHistory}
-              >
-                <Pencil className="w-4 h-4" />
-              </button>
-              {/* Copy content - direct icon */}
-              {!isAsset && (
-                <button
-                  className="p-1.5 rounded hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground"
-                  onClick={copyContent}
-                  title="Copy content"
-                >
-                  {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-                </button>
+              {/* Status badge */}
+              {!isViewingHistory && (
+                <StatusDropdown
+                  status={artifact!.status}
+                  options={statusOptions}
+                  onChange={handleStatusChange}
+                  disabled={saving}
+                />
               )}
               {/* Overflow menu for version history + archive */}
-              {((artifact.versions?.length ?? 0) > 0 || onArchive) && (
+              {((artifact!.versions?.length ?? 0) > 0 || onArchive) && (
                 <div className="relative">
                   <button
                     onClick={() => setOverflowOpen(!overflowOpen)}
@@ -582,7 +855,7 @@ export function ArtifactDetail({
                       />
                       <div className="absolute right-0 top-full mt-1 z-20 bg-popover border border-border rounded shadow-lg py-1 min-w-[160px]">
                         {/* Version history */}
-                        {artifact.versions && artifact.versions.length > 0 && (
+                        {artifact!.versions && artifact!.versions.length > 0 && (
                           <>
                             <div className="px-3 py-1 text-xs text-muted-foreground uppercase tracking-wide">
                               Versions
@@ -599,7 +872,7 @@ export function ArtifactDetail({
                             >
                               Current
                             </button>
-                            {[...artifact.versions].reverse().map((version) => (
+                            {[...artifact!.versions].reverse().map((version) => (
                               <button
                                 key={version}
                                 onClick={() => {
@@ -619,7 +892,7 @@ export function ArtifactDetail({
                         {/* Archive */}
                         {onArchive && (
                           <>
-                            {artifact.versions && artifact.versions.length > 0 && (
+                            {artifact!.versions && artifact!.versions.length > 0 && (
                               <div className="border-t border-border my-1" />
                             )}
                             <button
@@ -646,7 +919,7 @@ export function ArtifactDetail({
                 </div>
               )}
             </>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -683,52 +956,112 @@ export function ArtifactDetail({
         />
       )}
 
-      {/* TLDR section */}
-      <div className="px-3 py-2 border-b border-border bg-secondary/20">
-        {isEditing ? (
-          <textarea
-            value={editTldr}
-            onChange={(e) => setEditTldr(e.target.value)}
-            placeholder="Brief summary (required)"
-            className="w-full px-2 py-1.5 text-base bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-            rows={2}
-          />
-        ) : (
-          <p className="text-base text-muted-foreground">
-            {isViewingHistory ? versionData!.tldr : artifact.tldr}
-          </p>
-        )}
-      </div>
+      {/* Unsaved changes prompt */}
+      {showUnsavedPrompt && (
+        <UnsavedChangesPrompt
+          onDiscard={confirmDiscard}
+          onContinue={cancelNavigation}
+        />
+      )}
+
+      {/* Form heading for props-only system types */}
+      {['system.mcp', 'system.focus', 'system.environment'].includes(currentType) && (
+        <div className="px-3 py-3 border-b border-border">
+          <h2 className="text-lg font-semibold text-foreground">
+            {isCreateMode ? `New ${getTypeLabel(currentType)}` : getTypeLabel(currentType)}
+          </h2>
+        </div>
+      )}
+
+      {/* Create mode: Slug and Type fields */}
+      {isCreateMode && (
+        <div className="px-3 py-4 border-b border-border space-y-6">
+          {/* Slug input */}
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground uppercase mb-2">
+              Slug <span className="text-muted-foreground/70">*</span>
+            </label>
+            <input
+              type="text"
+              value={editSlug}
+              onChange={(e) => handleSlugChange(e.target.value)}
+              placeholder="my-artifact-slug"
+              className={cn(
+                "w-full px-0 py-1 text-base bg-transparent border-0 border-b focus:outline-none focus:border-muted-foreground transition-colors",
+                slugError
+                  ? "border-destructive"
+                  : "border-border"
+              )}
+            />
+            {slugError && (
+              <p className="text-base text-destructive mt-1">{slugError}</p>
+            )}
+          </div>
+
+        </div>
+      )}
+
 
       {/* Type-specific metadata (MCP props, Agent props, Focus props) */}
-      {artifact.type === 'system.mcp' && (
+      {currentType === 'system.mcp' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
             <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <McpPropsEditor
-            props={(artifact.props as unknown as McpProps) || { transport: 'stdio' as const }}
+            props={isEditing || isCreateMode ? (editProps as unknown as McpProps) || { transport: 'stdio' as const } : (artifact?.props as unknown as McpProps) || { transport: 'stdio' as const }}
             onChange={(updates) => {
-              const currentProps = (artifact.props as unknown as McpProps) || { transport: 'stdio' as const }
-              handlePropsUpdate({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
+              // Get current props (from editProps if editing, else from artifact)
+              const currentProps = ((isEditing ? editProps : artifact?.props) as unknown as McpProps) || { transport: 'stdio' as const }
+              const newProps = { ...currentProps, ...updates } as unknown as Record<string, unknown>
+
+              // Auto-enter edit mode if not already editing
+              if (!isEditing && !isCreateMode && artifact) {
+                setEditTitle(artifact.title || '')
+                setEditTldr(artifact.tldr || '')
+                setEditContent(artifact.content)
+                setEditStatus(artifact.status)
+                setEditProps(newProps)
+                setIsEditing(true)
+                setError(null)
+                setConflict(null)
+              } else {
+                setEditProps(newProps)
+              }
             }}
             channel={channelId}
-            mcpSlug={artifact.slug}
-            secrets={artifact.secrets as Record<string, SecretMetadata>}
+            mcpSlug={isCreateMode ? editSlug : artifact!.slug}
+            secrets={isCreateMode ? {} : artifact!.secrets as Record<string, SecretMetadata>}
+            isCreateMode={isCreateMode}
           />
         </div>
       )}
 
-      {artifact.type === 'system.agent' && (
+      {currentType === 'system.agent' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
             <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <AgentPropsEditor
-            props={(artifact.props as unknown as AgentProps) || { engine: 'claude' }}
+            props={isEditing || isCreateMode ? (editProps as unknown as AgentProps) || { engine: 'claude' } : (artifact?.props as unknown as AgentProps) || { engine: 'claude' }}
             onChange={(updates) => {
-              const currentProps = (artifact.props as unknown as AgentProps) || { engine: 'claude' }
-              handlePropsUpdate({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
+              // Get current props (from editProps if editing, else from artifact)
+              const currentProps = (isEditing ? editProps : artifact?.props) as AgentProps || { engine: 'claude' }
+              const newProps = { ...currentProps, ...updates } as unknown as Record<string, unknown>
+
+              // Auto-enter edit mode if not already editing
+              if (!isEditing && !isCreateMode && artifact) {
+                setEditTitle(artifact.title || '')
+                setEditTldr(artifact.tldr || '')
+                setEditContent(artifact.content)
+                setEditStatus(artifact.status)
+                setEditProps(newProps)
+                setIsEditing(true)
+                setError(null)
+                setConflict(null)
+              } else {
+                setEditProps(newProps)
+              }
             }}
             channelId={channelId}
             apiHost={apiHost}
@@ -736,31 +1069,46 @@ export function ArtifactDetail({
         </div>
       )}
 
-      {artifact.type === 'system.focus' && (
+      {currentType === 'system.focus' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
             <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <FocusPropsEditor
-            props={(artifact.props as unknown as FocusProps) || { agents: [] }}
+            props={isEditing || isCreateMode ? (editProps as unknown as FocusProps) || { agents: [] } : (artifact?.props as unknown as FocusProps) || { agents: [] }}
             onChange={(updates) => {
-              const currentProps = (artifact.props as unknown as FocusProps) || { agents: [] }
-              handlePropsUpdate({ ...currentProps, ...updates } as unknown as Record<string, unknown>)
+              // Get current props (from editProps if editing, else from artifact)
+              const currentProps = ((isEditing ? editProps : artifact?.props) as unknown as FocusProps) || { agents: [] }
+              const newProps = { ...currentProps, ...updates } as unknown as Record<string, unknown>
+
+              // Auto-enter edit mode if not already editing
+              if (!isEditing && !isCreateMode && artifact) {
+                setEditTitle(artifact.title || '')
+                setEditTldr(artifact.tldr || '')
+                setEditContent(artifact.content)
+                setEditStatus(artifact.status)
+                setEditProps(newProps)
+                setIsEditing(true)
+                setError(null)
+                setConflict(null)
+              } else {
+                setEditProps(newProps)
+              }
             }}
             apiHost={apiHost}
           />
         </div>
       )}
 
-      {artifact.type === 'system.environment' && (
+      {!isCreateMode && artifact!.type === 'system.environment' && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
             <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <EnvEditor
-            variables={((artifact.props as { variables?: Record<string, string> })?.variables) || {}}
-            secrets={(artifact.secrets as Record<string, SecretMetadata>) || {}}
-            artifactSlug={artifact.slug}
+            variables={((artifact!.props as { variables?: Record<string, string> })?.variables) || {}}
+            secrets={(artifact!.secrets as Record<string, SecretMetadata>) || {}}
+            artifactSlug={artifact!.slug}
             channelId={channelId}
             onVariablesChange={(variables) => {
               handlePropsUpdate({ variables })
@@ -769,20 +1117,20 @@ export function ArtifactDetail({
         </div>
       )}
 
-      {artifact.type === 'system.app' && spaceId && (
+      {!isCreateMode && artifact!.type === 'system.app' && spaceId && (
         <div className="px-3 py-3 border-b border-border">
           {saving && (
             <div className="text-base text-muted-foreground mb-2">Saving...</div>
           )}
           <AppPropsDisplay
-            props={(artifact.props as unknown as AppProps) || { provider: '' }}
-            secrets={artifact.secrets}
-            slug={artifact.slug}
+            props={(artifact!.props as unknown as AppProps) || { provider: '' }}
+            secrets={artifact!.secrets}
+            slug={artifact!.slug}
             spaceId={spaceId}
             channelId={channelId}
             onStatusChange={() => {
               // Refetch artifact to get updated secrets metadata
-              apiFetch(`${apiHost}/channels/${channelId}/artifacts/${artifact.slug}`)
+              apiFetch(`${apiHost}/channels/${channelId}/artifacts/${artifact!.slug}`)
                 .then(res => res.json())
                 .then(data => onUpdate(data))
                 .catch(console.error)
@@ -791,65 +1139,74 @@ export function ArtifactDetail({
         </div>
       )}
 
-      {/* Parent selection (edit mode only) */}
-      {isEditing && (
-        <div className="px-3 py-2 border-b border-border">
-          <label className="block text-base text-muted-foreground mb-1">Parent</label>
-          <select
-            value={editParentSlug}
-            onChange={(e) => setEditParentSlug(e.target.value)}
-            className="w-full px-2 py-1.5 text-base bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
-          >
-            <option value="">(root level)</option>
-            {parentOptions.map((opt) => (
-              <option key={opt.slug} value={opt.slug}>
-                {opt.path}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
 
       {/* Content area */}
-      <div className={cn("flex-1 min-h-0", isInteractiveApp ? "overflow-hidden flex flex-col" : "overflow-y-auto")}>
+      <div className={cn("flex-1 min-h-0 relative", isInteractiveApp && !isCreateMode ? "overflow-hidden flex flex-col" : "overflow-y-auto")}>
+        {/* Floating copy button - absolute so it doesn't push content down */}
+        {/* Hide for system types that don't have meaningful content (mcp, focus, environment) */}
+        {!isEditing && !isCreateMode && !isAsset && !versionLoading && !['system.mcp', 'system.focus', 'system.environment'].includes(currentType) && (
+          <button
+            className="absolute top-1 right-2 z-10 p-1.5 rounded hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
+            onClick={copyContent}
+            title="Copy content"
+          >
+            {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+          </button>
+        )}
         {versionLoading ? (
           <div className="flex items-center justify-center h-20">
             <span className="text-base text-muted-foreground">Loading version...</span>
           </div>
-        ) : isEditing ? (
-          <div className="h-full p-3">
+        ) : isEditing && !['system.mcp', 'system.focus', 'system.environment'].includes(currentType) ? (
+          <div className="px-3 pt-3">
             <textarea
+              ref={contentTextareaRef}
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
-              placeholder={isCodeArtifact ? 'Code content...' : 'Markdown content...'}
+              placeholder={isCodeArtifact ? 'Code...' : currentType === 'system.agent' ? 'Describe the agent behaviour or ask the custodian to do it for you' : 'Write or paste markdown'}
               className={cn(
-                "w-full h-full px-3 py-2 text-base bg-secondary rounded border border-border",
-                "focus:outline-none focus:ring-1 focus:ring-primary resize-none",
+                "w-full px-0 py-1 text-base bg-transparent border-0 border-b border-border",
+                "focus:outline-none focus:border-muted-foreground transition-colors resize-none overflow-y-auto",
                 isCodeArtifact && "font-mono"
               )}
+              style={{ minHeight: '100px', maxHeight: '70vh' }}
             />
           </div>
+        ) : ['system.mcp', 'system.focus', 'system.environment'].includes(currentType) ? (
+          // system.mcp, system.focus, system.environment don't have user-editable content
+          null
         ) : isInteractiveApp ? (
           <SpaRenderer
-            content={isViewingHistory ? versionData!.content : artifact.content}
+            content={isViewingHistory ? versionData!.content : artifact!.content}
             channel={channelId}
-            slug={artifact.slug}
+            slug={artifact!.slug}
           />
         ) : isAsset ? (
           <div className="p-3">
             <AssetPreview
               url={assetUrl}
-              filename={artifact.slug}
-              contentType={artifact.contentType}
-              alt={artifact.title || artifact.slug}
+              filename={artifact!.slug}
+              contentType={artifact!.contentType}
+              alt={artifact!.title || artifact!.slug}
             />
           </div>
         ) : isCodeArtifact ? (
-          <CodeContent content={isViewingHistory ? versionData!.content : artifact.content} language={codeLanguage} isDarkMode={isDarkMode} />
+          <div
+            className={cn(!isViewingHistory && "cursor-text")}
+            onClick={!isViewingHistory ? () => startEditing(true) : undefined}
+          >
+            <CodeContent content={isViewingHistory ? versionData!.content : artifact!.content} language={codeLanguage} isDarkMode={isDarkMode} />
+          </div>
+        ) : ['system.mcp', 'system.focus', 'system.environment'].includes(currentType) ? (
+          // These system types don't have user-visible content
+          null
         ) : (
-          <div className="p-3">
+          <div
+            className={cn("p-3", !isViewingHistory && "cursor-text")}
+            onClick={!isViewingHistory ? () => startEditing(true) : undefined}
+          >
             <ArtifactContent
-              content={isViewingHistory ? versionData!.content : artifact.content}
+              content={isViewingHistory ? versionData!.content : artifact!.content}
               onLinkClick={onLinkClick}
               artifacts={artifactMap}
               isDarkMode={isDarkMode}
@@ -858,24 +1215,53 @@ export function ArtifactDetail({
         )}
       </div>
 
-      {/* Metadata footer */}
-      {!isEditing && (
+
+      {/* Metadata footer - view mode only (not create mode) */}
+      {!isEditing && !isCreateMode && (
         <div className="px-3 py-2 border-t border-border text-base text-muted-foreground space-y-1">
+          {/* Slug (immutable identifier) */}
+          <div className="font-mono text-muted-foreground/70">{artifact!.slug}</div>
           {/* Created/Updated info */}
           <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-            <span>Created by <span className="text-foreground">@{artifact.createdBy}</span> · {formatRelativeTime(artifact.createdAt)}</span>
-            {artifact.updatedAt && artifact.updatedAt !== artifact.createdAt && (
-              <span>Updated {formatRelativeTime(artifact.updatedAt)}</span>
+            <span>Created by <span className="text-foreground">@{artifact!.createdBy}</span> · {formatRelativeTime(artifact!.createdAt)}</span>
+            {artifact!.updatedAt && artifact!.updatedAt !== artifact!.createdAt && (
+              <span>Updated {formatRelativeTime(artifact!.updatedAt)}</span>
             )}
           </div>
           {/* Assignees */}
-          {(artifact.assignees?.length ?? 0) > 0 && (
-            <div>Assignees: {artifact.assignees?.map(a => `@${a}`).join(', ')}</div>
+          {(artifact!.assignees?.length ?? 0) > 0 && (
+            <div>Assignees: {artifact!.assignees?.map(a => `@${a}`).join(', ')}</div>
           )}
           {/* Labels */}
-          {(artifact.labels?.length ?? 0) > 0 && (
-            <div>Labels: {artifact.labels?.join(', ')}</div>
+          {(artifact!.labels?.length ?? 0) > 0 && (
+            <div>Labels: {artifact!.labels?.join(', ')}</div>
           )}
+        </div>
+      )}
+
+      {/* Sticky bottom bar with Cancel/Save - edit mode only */}
+      {isEditing && (
+        <div className="sticky bottom-0 px-3 py-3 border-t-2 border-border bg-secondary/50 flex items-center justify-end gap-2">
+          <button
+            className="px-3 py-1.5 text-base text-foreground/70 hover:text-foreground transition-colors"
+            onClick={cancelEditing}
+            disabled={saving}
+          >
+            Cancel
+          </button>
+          <button
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-base rounded transition-colors",
+              hasChanges && !saving
+                ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "bg-secondary text-muted-foreground cursor-not-allowed"
+            )}
+            onClick={saveChanges}
+            disabled={!hasChanges || saving}
+          >
+            <Save className="w-3.5 h-3.5" />
+            {saving ? 'Saving...' : 'Save'}
+          </button>
         </div>
       )}
     </div>
@@ -887,7 +1273,8 @@ export function ArtifactDetail({
 // =============================================================================
 
 /**
- * Status dropdown with color-coded pill and popover menu.
+ * Status dropdown - plain text style (draft/active/archived).
+ * No brackets, no underline, just subtle text treatment.
  */
 function StatusDropdown({
   status,
@@ -902,19 +1289,39 @@ function StatusDropdown({
 }) {
   const [open, setOpen] = useState(false)
 
+  // Text colors for status
+  // draft: light grey, active: white/foreground, archived: darker grey
+  // task statuses: pending=grey, in_progress=blue, done=green, blocked=red
+  const getStatusColor = (s: ArtifactStatus) => {
+    switch (s) {
+      case 'draft': return 'text-gray-400'
+      case 'active': return 'text-foreground'
+      case 'archived': return 'text-gray-500'
+      case 'pending': return 'text-gray-400'
+      case 'in_progress': return 'text-blue-400'
+      case 'done': return 'text-green-400'
+      case 'blocked': return 'text-red-400'
+      default: return 'text-muted-foreground'
+    }
+  }
+
+  // Plain text, capitalized
+  const formatStatus = (s: ArtifactStatus) =>
+    s.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
+
   return (
-    <div className="relative flex-shrink-0">
+    <div className="relative">
       <button
         onClick={() => !disabled && setOpen(!open)}
         disabled={disabled}
         className={cn(
-          "flex items-center gap-1 px-2 py-0.5 text-base rounded transition-colors",
-          STATUS_COLORS[status] || STATUS_COLORS.draft,
-          disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:opacity-80"
+          "text-base transition-colors flex items-center gap-1",
+          getStatusColor(status),
+          disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:opacity-70"
         )}
       >
-        <span>{status.replace('_', ' ')}</span>
-        <ChevronDown className="w-3 h-3" />
+        {formatStatus(status)}
+        {!disabled && <ChevronDown className="w-3 h-3" />}
       </button>
 
       {/* Dropdown menu */}
@@ -935,15 +1342,12 @@ function StatusDropdown({
                   setOpen(false)
                 }}
                 className={cn(
-                  "w-full px-3 py-1.5 text-base text-left hover:bg-secondary transition-colors flex items-center gap-2",
+                  "w-full px-3 py-1.5 text-base text-left hover:bg-secondary transition-colors",
+                  getStatusColor(opt),
                   opt === status && "bg-secondary/50"
                 )}
               >
-                <span className={cn(
-                  "w-2 h-2 rounded-full",
-                  STATUS_COLORS[opt]?.split(' ')[0] || 'bg-gray-200'
-                )} />
-                <span>{opt.replace('_', ' ')}</span>
+                {formatStatus(opt)}
               </button>
             ))}
           </div>
@@ -1020,6 +1424,45 @@ function ConflictDialog({
             </button>
             <button
               className="px-2 py-1 text-base text-yellow-700 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-100"
+              onClick={onContinue}
+            >
+              Continue Editing
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Prompt shown when user tries to navigate away with unsaved changes.
+ */
+function UnsavedChangesPrompt({
+  onDiscard,
+  onContinue,
+}: {
+  onDiscard: () => void
+  onContinue: () => void
+}) {
+  return (
+    <div className="px-3 py-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <div className="font-medium text-base text-amber-800 dark:text-amber-200">Unsaved Changes</div>
+          <div className="text-base text-amber-700 dark:text-amber-300 mt-1">
+            You have unsaved changes. Discard them?
+          </div>
+          <div className="flex gap-2 mt-2">
+            <button
+              className="px-2 py-1 text-base bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 rounded hover:bg-amber-300 dark:hover:bg-amber-700"
+              onClick={onDiscard}
+            >
+              Discard
+            </button>
+            <button
+              className="px-2 py-1 text-base text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100"
               onClick={onContinue}
             >
               Continue Editing
@@ -1186,39 +1629,6 @@ function getLanguageFromSlug(slug: string): string {
     if (lower.endsWith(ext)) return lang
   }
   return 'text'
-}
-
-interface ParentOption {
-  slug: string
-  path: string
-}
-
-function getParentOptions(nodes: ArtifactTreeNode[], excludeSlug: string, prefix = ''): ParentOption[] {
-  const options: ParentOption[] = []
-
-  for (const node of nodes) {
-    if (node.slug === excludeSlug) continue
-
-    const path = prefix ? `${prefix}/${node.slug}` : node.slug
-    options.push({ slug: node.slug, path })
-
-    if (node.children) {
-      const isExcludedChild = isDescendant(node.children, excludeSlug)
-      if (!isExcludedChild) {
-        options.push(...getParentOptions(node.children, excludeSlug, path))
-      }
-    }
-  }
-
-  return options
-}
-
-function isDescendant(nodes: ArtifactTreeNode[], slug: string): boolean {
-  for (const node of nodes) {
-    if (node.slug === slug) return true
-    if (node.children && isDescendant(node.children, slug)) return true
-  }
-  return false
 }
 
 /**

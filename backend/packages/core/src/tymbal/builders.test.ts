@@ -98,7 +98,7 @@ describe('Tymbal Builders', () => {
         slug: 'my-doc',
         type: 'doc',
         tldr: 'A document',
-        status: 'published',
+        status: 'active',
       });
       const parsed = JSON.parse(result);
       expect(parsed.artifact.action).toBe('create');

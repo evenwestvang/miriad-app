@@ -82,7 +82,7 @@ export async function seedSpace(storage: Storage, spaceId: string): Promise<void
     tldr: 'Coordinates and facilitates work',
     content: LEAD_AGENT_CONTENT,
     createdBy: 'system',
-    status: 'published',
+    status: 'active',
   });
 
   // 3. Create open focus type
@@ -94,7 +94,7 @@ export async function seedSpace(storage: Storage, spaceId: string): Promise<void
     tldr: 'Flexible workspace for any kind of work',
     content: OPEN_FOCUS_CONTENT,
     createdBy: 'system',
-    status: 'published',
+    status: 'active',
   });
 
   // 4. Add lead to roster

@@ -49,7 +49,7 @@ function createMockArtifact(overrides: Partial<StoredArtifact> = {}): StoredArti
     tldr: 'A test artifact',
     content: '# Test\n\nThis is test content.',
     path: 'test_artifact',
-    status: 'published',
+    status: 'active',
     refs: [],
     assignees: [],
     labels: [],
@@ -69,7 +69,7 @@ function createMockArtifactSummary(overrides: Partial<ArtifactSummary> = {}): Ar
     type: 'doc',
     title: 'Test Artifact',
     tldr: 'A test artifact',
-    status: 'published',
+    status: 'active',
     assignees: [],
     labels: [],
     createdAt: '2026-01-01T00:00:00Z',
@@ -84,7 +84,7 @@ function createMockTreeNode(overrides: Partial<ArtifactTreeNode> = {}): Artifact
     path: 'test_artifact',
     type: 'doc',
     title: 'Test Artifact',
-    status: 'published',
+    status: 'active',
     assignees: [],
     children: [],
     ...overrides,
@@ -174,7 +174,7 @@ function createMockStorage(): Storage {
     })),
     editArtifact: vi.fn(async () => mockArtifact),
     archiveArtifact: vi.fn(async () => ({ ...mockArtifact, status: 'archived' as const })),
-    archiveArtifactRecursive: vi.fn(async () => ({ archived: [{ slug: 'test-artifact', previousStatus: 'published' }] })),
+    archiveArtifactRecursive: vi.fn(async () => ({ archived: [{ slug: 'test-artifact', previousStatus: 'active' }] })),
     listArtifacts: vi.fn(async () => [createMockArtifactSummary()]),
     globArtifacts: vi.fn(async () => [createMockTreeNode()]),
     checkpointArtifact: vi.fn(async () => createMockVersion()),
@@ -547,7 +547,7 @@ describe('Artifact Routes', () => {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          changes: [{ field: 'status', old_value: 'published', new_value: 'archived' }],
+          changes: [{ field: 'status', old_value: 'active', new_value: 'archived' }],
           sender: 'tester',
         }),
       });
@@ -562,7 +562,7 @@ describe('Artifact Routes', () => {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          changes: [{ field: 'status', oldValue: 'published', newValue: 'archived' }],
+          changes: [{ field: 'status', oldValue: 'active', newValue: 'archived' }],
           sender: 'tester',
         }),
       });
@@ -573,7 +573,7 @@ describe('Artifact Routes', () => {
         expect.arrayContaining([
           expect.objectContaining({
             field: 'status',
-            oldValue: 'published',
+            oldValue: 'active',
             newValue: 'archived',
           }),
         ]),
@@ -584,14 +584,14 @@ describe('Artifact Routes', () => {
     it('returns 409 on CAS conflict', async () => {
       vi.mocked(mockStorage.updateArtifactWithCAS).mockResolvedValueOnce({
         success: false,
-        conflict: { field: 'status', expected: 'published', actual: 'draft' },
+        conflict: { field: 'status', expected: 'active', actual: 'draft' },
       });
 
       const res = await app.request(`/channels/${TEST_CHANNEL_ID}/artifacts/test-artifact`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          changes: [{ field: 'status', old_value: 'published', new_value: 'archived' }],
+          changes: [{ field: 'status', old_value: 'active', new_value: 'archived' }],
           sender: 'tester',
         }),
       });
@@ -622,7 +622,7 @@ describe('Artifact Routes', () => {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          changes: [{ field: 'status', old_value: 'published', new_value: 'archived' }],
+          changes: [{ field: 'status', old_value: 'active', new_value: 'archived' }],
           sender: 'tester',
         }),
       });

@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react'
 import { Plus, X, Server } from 'lucide-react'
 import { EditableField } from '../ui/editable-field'
-import { SegmentedControl } from '../ui/segmented-control'
-import { apiFetch, fetchBackends, type BackendInfo } from '../../lib/api'
+import { apiFetch } from '../../lib/api'
 import { cn } from '../../lib/utils'
 
 // Agent props types - matches server schema
+// Note: engine and model are handled by backend defaults, not exposed in UI
+// Note: agentName is handled at spawn time (callsign), not in the definition
 export interface AgentProps {
-  engine: string
+  engine?: string
   model?: string
   nameTheme?: string
-  agentName?: string
   mcp?: McpReference[]
   featuredChannelStarter?: boolean
 }
@@ -27,13 +27,6 @@ interface AgentPropsEditorProps {
   apiHost: string
 }
 
-// Fallback engine options if API fails
-const FALLBACK_ENGINE_OPTIONS = [
-  { value: 'claude', label: 'Claude' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'codex', label: 'Codex' },
-]
-
 // Available MCP artifact from API
 interface McpArtifact {
   slug: string
@@ -46,27 +39,6 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
   const [availableMcps, setAvailableMcps] = useState<McpArtifact[]>([])
   const [mcpLoading, setMcpLoading] = useState(false)
   const [showMcpPicker, setShowMcpPicker] = useState(false)
-  const [engineOptions, setEngineOptions] = useState(FALLBACK_ENGINE_OPTIONS)
-
-  // Fetch available backends/engines
-  useEffect(() => {
-    async function loadBackends() {
-      try {
-        const backends = await fetchBackends()
-        const options = backends.map((b: BackendInfo) => ({
-          value: b.name,
-          label: b.name.charAt(0).toUpperCase() + b.name.slice(1),
-        }))
-        if (options.length > 0) {
-          setEngineOptions(options)
-        }
-      } catch (error) {
-        console.warn('Failed to fetch backends, using fallback:', error)
-        // Keep fallback options
-      }
-    }
-    loadBackends()
-  }, [])
 
   // Fetch available MCPs from current channel and root
   useEffect(() => {
@@ -105,7 +77,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
     fetchMcps()
   }, [channelId, apiHost])
 
-  // Add MCP to the list
+  // Add MCP to the list (keeps picker open for multi-select)
   const addMcp = (mcp: McpArtifact) => {
     const currentMcps = props.mcp || []
     // Check if already added
@@ -119,7 +91,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
       }
       onChange({ mcp: [...currentMcps, newRef] })
     }
-    setShowMcpPicker(false)
+    // Don't close picker - let user add multiple MCPs
   }
 
   // Remove MCP from the list
@@ -146,31 +118,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
   })
 
   return (
-    <div className="space-y-4">
-      {/* Engine Selection */}
-      <SegmentedControl<string>
-        label="Engine"
-        value={props.engine || 'claude'}
-        onChange={(value) => onChange({ engine: value })}
-        options={engineOptions}
-      />
-
-      {/* Model */}
-      <EditableField
-        label="Model"
-        value={props.model || ''}
-        onChange={(value) => onChange({ model: value || undefined })}
-        placeholder="e.g., claude-sonnet-4-20250514"
-      />
-
-      {/* Agent Name (fixed callsign) */}
-      <EditableField
-        label="Agent Name (Fixed Callsign)"
-        value={props.agentName || ''}
-        onChange={(value) => onChange({ agentName: value || undefined })}
-        placeholder="Leave empty for auto-generated name"
-      />
-
+    <div className="space-y-8">
       {/* Name Theme */}
       <EditableField
         label="Name Theme"
@@ -181,7 +129,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
 
       {/* MCP Servers */}
       <div className="space-y-2">
-        <label className="block text-base font-medium text-muted-foreground uppercase">
+        <label className="block text-xs font-medium text-muted-foreground uppercase">
           MCP Servers
         </label>
 
@@ -216,9 +164,10 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
               <button
                 type="button"
                 onClick={() => setShowMcpPicker(false)}
-                className="text-base text-muted-foreground hover:text-foreground"
+                className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                title="Cancel"
               >
-                Cancel
+                <X className="w-4 h-4" />
               </button>
             </div>
             {mcpLoading ? (
@@ -263,8 +212,8 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
             type="button"
             onClick={() => setShowMcpPicker(true)}
             className={cn(
-              "flex items-center gap-1.5 px-2 py-1.5 text-base rounded border border-dashed",
-              "border-border text-muted-foreground hover:text-foreground hover:border-primary/50",
+              "flex items-center gap-1.5 px-2 py-1.5 text-base border border-border",
+              "bg-secondary text-foreground hover:bg-secondary/80",
               "transition-colors"
             )}
           >
@@ -274,22 +223,24 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
         )}
       </div>
 
-      {/* Featured Channel Starter */}
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="featuredChannelStarter"
-          checked={props.featuredChannelStarter || false}
-          onChange={(e) => onChange({ featuredChannelStarter: e.target.checked || undefined })}
-          className="w-4 h-4 rounded border-border text-primary focus:ring-primary focus:ring-offset-0"
-        />
-        <label htmlFor="featuredChannelStarter" className="text-base text-foreground">
-          Featured channel starter
+      {/* Channel Starter */}
+      <div className="space-y-2">
+        <label className="block text-xs font-medium text-muted-foreground uppercase">
+          Channel Starter
         </label>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="featuredChannelStarter"
+            checked={props.featuredChannelStarter || false}
+            onChange={(e) => onChange({ featuredChannelStarter: e.target.checked || undefined })}
+            className="w-4 h-4 bg-secondary border border-border text-foreground accent-foreground focus:ring-0 focus:ring-offset-0"
+          />
+          <label htmlFor="featuredChannelStarter" className="text-base text-foreground">
+            Suggest this agent when starting new channels
+          </label>
+        </div>
       </div>
-      <p className="text-base text-muted-foreground -mt-2">
-        Show this agent as a suggested starter when creating new channels
-      </p>
     </div>
   )
 }

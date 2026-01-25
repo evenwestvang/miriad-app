@@ -282,7 +282,7 @@ export function EnvEditor({
     }
   }
 
-  const inputClasses = 'flex-1 h-8 px-2 text-base font-mono bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary'
+  const inputClasses = 'flex-1 h-8 px-2 text-base font-mono bg-secondary border border-border focus:outline-none focus:ring-0 focus:border-foreground'
 
   return (
     <div className={cn('space-y-6', className)}>
@@ -468,7 +468,7 @@ export function EnvEditor({
                     onChange={(e) => setSecretModalKey(e.target.value)}
                     placeholder="SECRET_NAME"
                     className={cn(
-                      'w-full h-9 px-3 text-base font-mono bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary',
+                      'w-full h-9 px-3 text-base font-mono bg-secondary border border-border focus:outline-none focus:ring-0 focus:border-foreground',
                       !isValidEnvKey(secretModalKey) && secretModalKey && 'border-red-500'
                     )}
                   />
@@ -485,7 +485,7 @@ export function EnvEditor({
                     value={secretModalValue}
                     onChange={(e) => setSecretModalValue(e.target.value)}
                     placeholder="Enter secret value"
-                    className="w-full h-9 px-3 pr-10 text-base font-mono bg-secondary rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="w-full h-9 px-3 pr-10 text-base font-mono bg-secondary border border-border focus:outline-none focus:ring-0 focus:border-foreground"
                   />
                   <button
                     type="button"

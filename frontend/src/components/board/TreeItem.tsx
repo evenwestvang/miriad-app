@@ -63,8 +63,10 @@ export function TreeItem({
   const rowRef = useRef<HTMLDivElement>(null)
   const Icon = getArtifactIcon({ slug, type, status, contentType })
 
-  // Show status indicator for tasks, and for other types when not 'published'
-  const showStatus = type === 'task' || (status && status !== 'published')
+  // Show status indicator dot only for tasks (non-tasks use typography treatment)
+  const showStatusIndicator = type === 'task'
+  // Typography treatment for non-task statuses
+  const isDraft = type !== 'task' && status === 'draft'
 
   const isDragging = draggedSlug === slug
   const isDragActive = draggedSlug !== null
@@ -136,7 +138,7 @@ export function TreeItem({
         dropZone === 'on' && "bg-primary/20 ring-1 ring-inset ring-primary",
         isInvalidDropTarget && isDragActive && "cursor-not-allowed"
       )}
-      style={{ paddingLeft: `${8 + depth * 12}px`, paddingRight: '16px' }}
+      style={{ paddingLeft: `${12 + depth * 16}px`, paddingRight: '12px' }}
       onClick={onSelect}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
@@ -148,7 +150,7 @@ export function TreeItem({
       {dropZone === 'above' && (
         <div
           className="absolute left-0 right-0 top-0 h-0.5 bg-primary z-10 pointer-events-none"
-          style={{ marginLeft: `${8 + depth * 12}px` }}
+          style={{ marginLeft: `${8 + depth * 16}px` }}
         />
       )}
 
@@ -156,11 +158,11 @@ export function TreeItem({
       {dropZone === 'below' && (
         <div
           className="absolute left-0 right-0 bottom-0 h-0.5 bg-primary z-10 pointer-events-none"
-          style={{ marginLeft: `${8 + depth * 12}px` }}
+          style={{ marginLeft: `${8 + depth * 16}px` }}
         />
       )}
 
-      {/* Expand/collapse chevron */}
+      {/* Expand/collapse chevron - always reserve space */}
       <button
         className={cn(
           "w-4 h-4 flex items-center justify-center flex-shrink-0",
@@ -182,12 +184,17 @@ export function TreeItem({
       {/* Type icon */}
       <Icon className="w-4 h-4 text-[var(--cast-text-subtle)] flex-shrink-0" />
 
-      {/* Name with status indicator */}
+      {/* Name with status indicator (tasks) or typography treatment (non-tasks) */}
       <span className="flex items-center gap-1.5 min-w-0 flex-1">
-        <span className="text-base truncate text-[var(--cast-text-secondary)]">
+        <span className={cn(
+          "text-base truncate",
+          isDraft
+            ? "text-muted-foreground"
+            : "text-foreground"
+        )}>
           {title || slug}
         </span>
-        {showStatus && <StatusIndicator status={status} />}
+        {showStatusIndicator && <StatusIndicator status={status} />}
       </span>
     </div>
   )

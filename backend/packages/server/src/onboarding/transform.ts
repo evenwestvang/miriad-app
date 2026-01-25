@@ -49,7 +49,7 @@ export function transformMcpServer(mcp: SanityMcpServer): ArtifactSeed {
     tldr: mcp.capabilities || `MCP server: ${mcp.name}`,
     content: '', // system.mcp stores config in props, not content
     createdBy: 'system',
-    status: 'published',
+    status: 'active',
     props,
   };
 }
@@ -87,7 +87,7 @@ export function transformAgentTemplate(
     tldr: agent.description || `Agent: ${agent.name}`,
     content: agent.systemPrompt || '',
     createdBy: 'system',
-    status: 'published',
+    status: 'active',
     props,
   };
 }
@@ -104,7 +104,7 @@ export function transformPlaybook(playbook: SanityPlaybook): ArtifactSeed {
     tldr: playbook.description || `Playbook: ${playbook.name}`,
     content: playbook.content || '',
     createdBy: 'system',
-    status: 'published',
+    status: 'active',
     labels: playbook.tags,
   };
 }

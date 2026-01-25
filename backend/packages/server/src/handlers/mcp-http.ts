@@ -135,7 +135,7 @@ const TOOLS: McpToolDefinition[] = [
         },
         status: {
           type: 'string',
-          enum: ['draft', 'published', 'pending', 'in_progress', 'done', 'blocked'],
+          enum: ['draft', 'active', 'pending', 'in_progress', 'done', 'blocked'],
           description: 'Artifact status',
         },
         assignees: {
@@ -150,7 +150,7 @@ const TOOLS: McpToolDefinition[] = [
         },
         channel: channelProperty,
       },
-      required: ['slug', 'type', 'tldr', 'content'],
+      required: ['slug', 'type', 'content'],
     },
   },
   {
@@ -528,7 +528,7 @@ Messages without @mentions are logged but won't notify anyone.`,
   // ---------------------------------------------------------------------------
   {
     name: 'kb_list',
-    description: 'List all published knowledge bases in the space. Returns KB channel, title, and description.',
+    description: 'List all active knowledge bases in the space. Returns KB channel, title, and description.',
     inputSchema: {
       type: 'object' as const,
       properties: {},
@@ -682,7 +682,7 @@ const toolHandlers: Record<string, ToolHandler> = {
       tldr,
       content,
       parentSlug,
-      status: status as 'draft' | 'published' | 'archived' | 'pending' | 'in_progress' | 'done' | 'blocked' | undefined,
+      status: status as 'draft' | 'active' | 'archived' | 'pending' | 'in_progress' | 'done' | 'blocked' | undefined,
       assignees,
       labels,
       createdBy: callsign,
@@ -760,7 +760,7 @@ const toolHandlers: Record<string, ToolHandler> = {
 
     const artifacts = await storage.listArtifacts(targetChannelId, {
       type: type as 'doc' | 'folder' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook' | undefined,
-      status: status as 'draft' | 'published' | 'archived' | 'pending' | 'in_progress' | 'done' | 'blocked' | undefined,
+      status: status as 'draft' | 'active' | 'archived' | 'pending' | 'in_progress' | 'done' | 'blocked' | undefined,
       assignee,
       parentSlug: parentSlug as string | 'root' | undefined,
       search,
@@ -956,7 +956,7 @@ const toolHandlers: Record<string, ToolHandler> = {
       tldr: source.tldr,
       content: source.content,
       parentSlug,
-      status: source.status as 'draft' | 'published' | 'archived' | 'pending' | 'in_progress' | 'done' | 'blocked' | undefined,
+      status: source.status as 'draft' | 'active' | 'archived' | 'pending' | 'in_progress' | 'done' | 'blocked' | undefined,
       assignees: source.assignees,
       labels: source.labels,
       props: source.props,
@@ -1580,7 +1580,7 @@ const toolHandlers: Record<string, ToolHandler> = {
       // System types (props schemas from @cast/core)
       'system.agent': {
         description: 'Agent definition specifying AI engine, model, and capabilities. Agents are spawned from these definitions when added to a channel roster.',
-        statusValues: ['draft', 'published', 'archived'],
+        statusValues: ['draft', 'active', 'archived'],
         example: {
           slug: 'engineer',
           type: 'system.agent',
@@ -1592,7 +1592,7 @@ const toolHandlers: Record<string, ToolHandler> = {
 
       'system.focus': {
         description: 'Channel template defining default agents and initial setup. When a channel is created with this focus, the specified agents are automatically spawned.',
-        statusValues: ['draft', 'published', 'archived'],
+        statusValues: ['draft', 'active', 'archived'],
         example: {
           slug: 'code-review',
           type: 'system.focus',
@@ -1604,7 +1604,7 @@ const toolHandlers: Record<string, ToolHandler> = {
 
       'system.mcp': {
         description: 'MCP server configuration for stdio or HTTP transports. Referenced by system.agent to provide tools to agents.',
-        statusValues: ['draft', 'published', 'archived'],
+        statusValues: ['draft', 'active', 'archived'],
         example: {
           slug: 'github-mcp',
           type: 'system.mcp',
@@ -1616,7 +1616,7 @@ const toolHandlers: Record<string, ToolHandler> = {
 
       'system.playbook': {
         description: 'Workflow guidelines and conventions for a channel. Agents should read playbooks when joining to understand how work is done.',
-        statusValues: ['draft', 'published', 'archived'],
+        statusValues: ['draft', 'active', 'archived'],
         example: {
           slug: 'git-workflow',
           type: 'system.playbook',
@@ -1629,7 +1629,7 @@ const toolHandlers: Record<string, ToolHandler> = {
       // Standard content types (no props schemas)
       'doc': {
         description: 'General documentation: specs, plans, notes, READMEs. The default artifact type for most content.',
-        statusValues: ['draft', 'published', 'archived'],
+        statusValues: ['draft', 'active', 'archived'],
         example: {
           slug: 'api-spec',
           type: 'doc',
@@ -1655,7 +1655,7 @@ const toolHandlers: Record<string, ToolHandler> = {
 
       'decision': {
         description: 'Logged choices with rationale. Use to document architectural decisions, tradeoffs considered, and why a path was chosen.',
-        statusValues: ['draft', 'published', 'archived'],
+        statusValues: ['draft', 'active', 'archived'],
         example: {
           slug: 'use-postgres',
           type: 'decision',
@@ -1667,7 +1667,7 @@ const toolHandlers: Record<string, ToolHandler> = {
 
       'code': {
         description: 'Code snippets and file references. Slug should include file extension for syntax highlighting (e.g., auth.ts, config.json).',
-        statusValues: ['draft', 'published', 'archived'],
+        statusValues: ['draft', 'active', 'archived'],
         example: {
           slug: 'auth-middleware.ts',
           type: 'code',
@@ -1718,7 +1718,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     const knowledgeBases = await storage.listPublishedKnowledgeBases(spaceId);
 
     const hint = knowledgeBases.length === 0
-      ? 'No published knowledge bases found in this space.'
+      ? 'No active knowledge bases found in this space.'
       : `${knowledgeBases.length} knowledge base${knowledgeBases.length !== 1 ? 's' : ''} available.`;
 
     return JSON.stringify({ knowledgeBases, hint }, null, 2);
@@ -1733,13 +1733,13 @@ const toolHandlers: Record<string, ToolHandler> = {
       throw new Error(`Knowledge base not found: ${kb}`);
     }
 
-    // Check KB exists and is published
+    // Check KB exists and is active (support legacy 'published' status)
     const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
     if (!kbRoot) {
       throw new Error(`Knowledge base not found: ${kb}`);
     }
-    if (kbRoot.status !== 'published') {
-      throw new Error(`Knowledge base is not published: ${kb}`);
+    if (kbRoot.status !== 'active' && kbRoot.status !== 'published') {
+      throw new Error(`Knowledge base is not active: ${kb}`);
     }
 
     // Get KB tree
@@ -1750,12 +1750,12 @@ const toolHandlers: Record<string, ToolHandler> = {
 
     const fullTree = await storage.globArtifacts(channel.id, kbPattern);
 
-    // Filter to only published docs and format as text tree
+    // Filter to only active docs (support legacy 'published' status) and format as text tree
     type TreeNode = { slug: string; path: string; title?: string; tldr?: string; status: string; type: string; children: TreeNode[] };
 
     const formatTree = (nodes: TreeNode[], indent = 0): string => {
       return nodes
-        .filter((node) => node.status === 'published')
+        .filter((node) => node.status === 'active' || node.status === 'published')
         .map((node) => {
           const prefix = '  '.repeat(indent);
           const title = node.title || node.slug;
@@ -1785,13 +1785,13 @@ const toolHandlers: Record<string, ToolHandler> = {
       throw new Error(`Knowledge base not found: ${kb}`);
     }
 
-    // Check KB exists and is published
+    // Check KB exists and is active (support legacy 'published' status)
     const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
     if (!kbRoot) {
       throw new Error(`Knowledge base not found: ${kb}`);
     }
-    if (kbRoot.status !== 'published') {
-      throw new Error(`Knowledge base is not published: ${kb}`);
+    if (kbRoot.status !== 'active' && kbRoot.status !== 'published') {
+      throw new Error(`Knowledge base is not active: ${kb}`);
     }
 
     // Try to find doc by slug first
@@ -1824,8 +1824,8 @@ const toolHandlers: Record<string, ToolHandler> = {
       throw new Error(`Document not found: ${doc}`);
     }
 
-    // Verify it's a published doc under KB
-    if (artifact.status !== 'published') {
+    // Verify it's an active doc under KB (support legacy 'published' status)
+    if (artifact.status !== 'active' && artifact.status !== 'published') {
       throw new Error(`Document not found: ${doc}`);
     }
 
@@ -1863,13 +1863,13 @@ const toolHandlers: Record<string, ToolHandler> = {
       throw new Error(`Knowledge base not found: ${kb}`);
     }
 
-    // Check KB exists and is published
+    // Check KB exists and is active (support legacy 'published' status)
     const kbRoot = await storage.getArtifact(channel.id, 'knowledgebase');
     if (!kbRoot) {
       throw new Error(`Knowledge base not found: ${kb}`);
     }
-    if (kbRoot.status !== 'published') {
-      throw new Error(`Knowledge base is not published: ${kb}`);
+    if (kbRoot.status !== 'active' && kbRoot.status !== 'published') {
+      throw new Error(`Knowledge base is not active: ${kb}`);
     }
 
     // Semantic mode not implemented
@@ -1882,16 +1882,16 @@ const toolHandlers: Record<string, ToolHandler> = {
 
     const limit = Math.min(Math.max(limitParam || 5, 1), 50);
 
-    // Use FTS search with KB path filter
+    // Use FTS search with KB path filter (no status filter - we'll filter after for both 'active' and legacy 'published')
     const searchResults = await storage.listArtifacts(channel.id, {
       search: query,
-      status: 'published',
-      limit: limit * 2, // Fetch extra to filter by path
+      limit: limit * 3, // Fetch extra to filter by path and status
     });
 
-    // Filter to KB docs only
+    // Filter to active KB docs only (support legacy 'published' status)
     let kbResults = searchResults.filter(
-      (a) => a.path.startsWith('knowledgebase') && a.type === 'doc'
+      (a) => a.path.startsWith('knowledgebase') && a.type === 'doc' &&
+        (a.status === 'active' || a.status === 'published')
     );
 
     // Apply path filter if specified

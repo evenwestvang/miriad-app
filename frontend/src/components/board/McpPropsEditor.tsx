@@ -42,9 +42,11 @@ interface McpPropsEditorProps {
   mcpSlug?: string
   /** Secrets metadata for this MCP artifact */
   secrets?: Record<string, SecretMetadata>
+  /** Whether we're in create mode (secrets disabled) */
+  isCreateMode?: boolean
 }
 
-export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: McpPropsEditorProps) {
+export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets, isCreateMode }: McpPropsEditorProps) {
   const transport = props.transport || 'stdio'
   const [oauthExpanded, setOauthExpanded] = useState(props.auth?.type === 'oauth')
 
@@ -68,7 +70,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-8">
       {/* Transport Type */}
       <SegmentedControl<McpTransport>
         label="Transport"
@@ -82,7 +84,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
 
       {/* stdio transport fields */}
       {transport === 'stdio' && (
-        <div className="space-y-3">
+        <div className="space-y-6">
           {/* Command */}
           <EditableField
             label="Command"
@@ -99,16 +101,8 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
             placeholder="e.g., -y @modelcontextprotocol/server-github"
           />
 
-          {/* Working Directory */}
-          <EditableField
-            label="Working Directory"
-            value={props.cwd || ''}
-            onChange={(value) => onChange({ cwd: value || undefined })}
-            placeholder="/path/to/working/dir"
-          />
-
           {/* Environment Variables and Secrets */}
-          {channel && mcpSlug ? (
+          {channel && mcpSlug && !isCreateMode ? (
             <EnvEditor
               variables={props.env || {}}
               secrets={secrets || {}}
@@ -118,20 +112,32 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
               showExpansionHint
             />
           ) : (
-            <KeyValueEditor
-              label="Environment Variables"
-              entries={envToEntries(props.env)}
-              onChange={(entries) => onChange({ env: entriesToEnv(entries) })}
-              keyPlaceholder="VARIABLE_NAME"
-              valuePlaceholder="value or ${ENV_REF}"
-            />
+            <>
+              <KeyValueEditor
+                label="Environment Variables"
+                entries={envToEntries(props.env)}
+                onChange={(entries) => onChange({ env: entriesToEnv(entries) })}
+                keyPlaceholder="VARIABLE_NAME"
+                valuePlaceholder="value or ${ENV_REF}"
+              />
+              {isCreateMode && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-muted-foreground uppercase">
+                    Secrets
+                  </label>
+                  <div className="text-base text-muted-foreground">
+                    Secrets can be added after you have created the MCP server
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
 
       {/* http transport fields */}
       {transport === 'http' && (
-        <div className="space-y-3">
+        <div className="space-y-6">
           {/* URL */}
           <EditableField
             label="URL"
@@ -150,7 +156,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
           />
 
           {/* Environment Variables and Secrets */}
-          {channel && mcpSlug ? (
+          {channel && mcpSlug && !isCreateMode ? (
             <EnvEditor
               variables={props.env || {}}
               secrets={secrets || {}}
@@ -160,13 +166,25 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
               showExpansionHint
             />
           ) : (
-            <KeyValueEditor
-              label="Environment Variables"
-              entries={envToEntries(props.env)}
-              onChange={(entries) => onChange({ env: entriesToEnv(entries) })}
-              keyPlaceholder="VARIABLE_NAME"
-              valuePlaceholder="value or ${ENV_REF}"
-            />
+            <>
+              <KeyValueEditor
+                label="Environment Variables"
+                entries={envToEntries(props.env)}
+                onChange={(entries) => onChange({ env: entriesToEnv(entries) })}
+                keyPlaceholder="VARIABLE_NAME"
+                valuePlaceholder="value or ${ENV_REF}"
+              />
+              {isCreateMode && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-muted-foreground uppercase">
+                    Secrets
+                  </label>
+                  <div className="text-base text-muted-foreground">
+                    Secrets can be added after you have created the MCP server
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* OAuth Authentication Section */}
@@ -203,7 +221,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
 
             {/* OAuth configuration (expanded) */}
             {hasOAuth && oauthExpanded && (
-              <div className="px-3 pb-3 pt-1 space-y-3 border-t border-border/50">
+              <div className="px-3 pb-3 pt-2 space-y-6 border-t border-border/50">
                 {/* Connection status and button */}
                 {channel && mcpSlug && (
                   <div>
@@ -302,7 +320,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets }: M
         label="Capabilities"
         value={props.capabilities || ''}
         onChange={(value) => onChange({ capabilities: value || undefined })}
-        placeholder="Describe what this MCP server provides..."
+        placeholder="Optionally describe MCP capabilities"
         multiline
         minHeight="min-h-[4rem]"
       />
