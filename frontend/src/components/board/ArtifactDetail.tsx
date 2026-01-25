@@ -112,7 +112,7 @@ const DEFAULT_STATUS: Record<ArtifactType, ArtifactStatus> = {
 const SLUG_REGEX = /^[a-z0-9-]+(\.[a-z0-9]+)*$/
 
 // Debounce delay for auto-generating slug from title (ms)
-const SLUG_DEBOUNCE_MS = 2000
+const SLUG_DEBOUNCE_MS = 150
 
 /**
  * Convert a title to a slug:
@@ -1035,17 +1035,15 @@ export function ArtifactDetail({
 
       {/* Content area */}
       <div className={cn("flex-1 min-h-0 relative", isInteractiveApp && !isCreateMode ? "overflow-hidden flex flex-col" : "overflow-y-auto")}>
-        {/* Floating copy button */}
+        {/* Floating copy button - absolute so it doesn't push content down */}
         {!isEditing && !isCreateMode && !isAsset && !versionLoading && (
-          <div className="sticky top-0 z-10 flex justify-end px-2 py-1">
-            <button
-              className="p-1.5 rounded hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
-              onClick={copyContent}
-              title="Copy content"
-            >
-              {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-            </button>
-          </div>
+          <button
+            className="absolute top-1 right-2 z-10 p-1.5 rounded hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
+            onClick={copyContent}
+            title="Copy content"
+          >
+            {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+          </button>
         )}
         {versionLoading ? (
           <div className="flex items-center justify-center h-20">
