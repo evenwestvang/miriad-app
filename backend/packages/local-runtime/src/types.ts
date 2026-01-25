@@ -19,6 +19,8 @@ export interface ActivateAgentMessage {
   systemPrompt: string;
   mcpServers?: McpServerConfig[];
   workspacePath: string;
+  /** Engine to use for this agent (default: 'claude-sdk') */
+  engine?: 'claude-sdk' | 'nuum';
 }
 
 export interface DeliverMessageMessage {
@@ -258,6 +260,8 @@ export interface AgentState {
   mcpServers?: McpServerConfig[];
   /** Per-request environment variables and secrets */
   environment?: Record<string, string>;
+  /** Engine used for this agent */
+  engine: 'claude-sdk' | 'nuum';
   activatedAt: string;
   lastActivity: string;
 }
