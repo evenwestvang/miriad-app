@@ -223,8 +223,11 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
         )}
       </div>
 
-      {/* Featured Channel Starter */}
-      <div>
+      {/* Channel Starter */}
+      <div className="space-y-2">
+        <label className="block text-xs font-medium text-muted-foreground uppercase">
+          Channel Starter
+        </label>
         <div className="flex items-center gap-2">
           <input
             type="checkbox"
