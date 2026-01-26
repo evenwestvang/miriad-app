@@ -5,6 +5,8 @@
  * Auth will be added later via WorkOS.
  */
 
+import type { Message } from '../types'
+
 // API host - use env var or default to local dev server (port 3234 to avoid conflicts)
 // This is the single source of truth for backend URL - all HTTP and WebSocket calls should use this
 export const API_HOST = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3234'
@@ -299,4 +301,63 @@ export async function fetchBackends(): Promise<BackendInfo[]> {
     throw new Error('Failed to fetch backends')
   }
   return response.json()
+}
+
+// =============================================================================
+// Structured Ask Functions
+// =============================================================================
+
+export interface StructuredAskResponseResult {
+  ok: boolean
+  messageId: string
+  followUpMessageId: string
+  formState: 'submitted'
+}
+
+/**
+ * Submit a response to a structured ask form.
+ */
+export async function submitStructuredAskResponse(
+  channelId: string,
+  messageId: string,
+  response: Record<string, unknown>,
+  respondedBy: string
+): Promise<StructuredAskResponseResult> {
+  return apiPost<StructuredAskResponseResult>(
+    `/channels/${channelId}/messages/${messageId}/respond`,
+    { response, respondedBy }
+  )
+}
+
+interface StructuredAskDismissResult {
+  ok: boolean
+  messageId: string
+  followUpMessageId: string
+  formState: 'dismissed'
+}
+
+/**
+ * Dismiss/cancel a structured ask form.
+ */
+export async function dismissStructuredAsk(
+  channelId: string,
+  messageId: string,
+  dismissedBy: string
+): Promise<StructuredAskDismissResult> {
+  return apiPost<StructuredAskDismissResult>(
+    `/channels/${channelId}/messages/${messageId}/dismiss`,
+    { dismissedBy }
+  )
+}
+
+/**
+ * Get all pending structured asks for a channel.
+ * This fetches from the database, not just loaded messages.
+ */
+export async function getPendingAsks(
+  channelId: string
+): Promise<{ messages: Message[] }> {
+  return apiJson<{ messages: Message[] }>(
+    `/channels/${channelId}/pending-asks`
+  )
 }

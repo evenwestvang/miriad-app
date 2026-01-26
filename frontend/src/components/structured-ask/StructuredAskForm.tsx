@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Send } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import type { StructuredAskMessage, StructuredAskField } from '../../types'
+import type { StructuredAskMessage, StructuredAskField, SummonRequestResponse } from '../../types'
 import {
   RadioField,
   CheckboxField,
@@ -9,34 +9,48 @@ import {
   TextField,
   TextareaField,
 } from './fields'
-import { SummonRequestField, SummonRequestSubmitted } from './SummonRequestField'
+import { SummonRequestField } from './SummonRequestField'
 
 interface StructuredAskFormProps {
   message: StructuredAskMessage
-  myName: string
   onSubmit: (messageId: string, response: Record<string, unknown>) => void
+  /** Called when user cancels/dismisses the form */
+  onCancel?: (messageId: string) => void
+  spaceId?: string
+  apiHost?: string
+  roster?: { callsign: string; runtimeId?: string | null }[]
+  /** When true, shows sender callsign and close button in header (for popup mode) */
+  popupMode?: boolean
+  /** Called when close button is clicked (only in popup mode) */
+  onClose?: () => void
 }
 
-type FormValues = Record<string, string | string[]>
+type FormValues = Record<string, string | string[] | SummonRequestResponse[]>
 
-export function StructuredAskForm({ message, myName, onSubmit }: StructuredAskFormProps) {
+export function StructuredAskForm({ message, onSubmit, onCancel, spaceId, apiHost, roster, popupMode, onClose }: StructuredAskFormProps) {
   const { formData, formState, response, respondedBy } = message
 
-  const { prompt, fields, submitLabel, to } = formData
+  const { prompt, fields, submitLabel, cancelLabel } = formData
   const isSubmitted = formState === 'submitted'
-  const canSubmit = to.length === 0 || to.includes(myName)
+  const isDismissed = formState === 'dismissed'
+  // For now, any user can submit (single-user system)
+  const canSubmit = true
 
   // Initialize form values
   const [values, setValues] = useState<FormValues>(() => {
     const initial: FormValues = {}
     for (const field of fields) {
       if (field.type === 'summon_request') {
-        // Opt-out: ALL agents enabled by default
-        initial[field.id] = field.agents?.map((a) => a.callsign) || []
+        // Opt-out: ALL agents enabled by default (runtimeId will be set when runtimes load)
+        initial[field.name] = field.agents.map(agent => ({
+          callsign: agent.callsign,
+          runtimeId: null
+        }))
       } else if (field.type === 'checkbox') {
-        initial[field.id] = []
+        initial[field.name] = field.default || []
       } else {
-        initial[field.id] = ''
+        // radio, select, text, textarea
+        initial[field.name] = field.default || ''
       }
     }
     return initial
@@ -44,8 +58,8 @@ export function StructuredAskForm({ message, myName, onSubmit }: StructuredAskFo
 
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const handleFieldChange = (fieldId: string, value: string | string[]) => {
-    setValues((prev) => ({ ...prev, [fieldId]: value }))
+  const handleFieldChange = (fieldName: string, value: string | string[] | SummonRequestResponse[]) => {
+    setValues((prev) => ({ ...prev, [fieldName]: value }))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -61,59 +75,125 @@ export function StructuredAskForm({ message, myName, onSubmit }: StructuredAskFo
   }
 
   // Determine visual state
-  const isTargeted = canSubmit && !isSubmitted
+  const isTargeted = canSubmit && !isSubmitted && !isDismissed
 
   return (
     <div
       className={cn(
-        'border p-4 max-w-md',
-        isSubmitted && 'bg-muted/50 border-muted',
+        'max-w-md border p-4 bg-white dark:bg-card',
+        (isSubmitted || isDismissed) && 'bg-muted/50 border-muted',
         isTargeted && 'border-yellow-500/50 ring-1 ring-yellow-500/20',
-        !isSubmitted && !isTargeted && 'bg-[#f5f5f5] dark:bg-[var(--cast-bg-active)] border-[var(--cast-border-default)]'
+        !isSubmitted && !isDismissed && !isTargeted && 'bg-[#f5f5f5] dark:bg-[var(--cast-bg-active)] border-[var(--cast-border-default)]'
       )}
     >
+      {/* Popup header with sender and close button */}
+      {popupMode && (
+        <div className="flex items-center justify-between mb-3 -mt-1">
+          <span className="text-xs text-muted-foreground">@{message.sender}</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-muted-foreground hover:text-foreground p-0.5 -mr-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Prompt */}
       <p className="text-base font-medium mb-4">{prompt}</p>
 
-      {/* Targeted indicator */}
-      {to.length > 0 && !isSubmitted && (
+      {/* Pending indicator */}
+      {!isSubmitted && !isDismissed && !popupMode && (
         <div className="text-xs text-muted-foreground mb-3">
-          {canSubmit ? (
-            <span className="text-yellow-500">Waiting for your response</span>
-          ) : (
-            <span>Waiting for: {to.map((t) => `@${t}`).join(', ')}</span>
-          )}
+          <span className="text-yellow-500">Waiting for your response</span>
         </div>
       )}
 
       {isSubmitted ? (
-        <SubmittedView fields={fields} response={response || {}} respondedBy={respondedBy} />
+        <>
+          <p className="text-xs text-muted-foreground mb-3">
+            Submitted{respondedBy ? ` by @${respondedBy}` : ''}
+          </p>
+          <div className="space-y-4 opacity-50">
+            {fields.map((field) => (
+              <FieldRenderer
+                key={field.name}
+                field={field}
+                value={response?.[field.name] ?? values[field.name]}
+                onChange={() => {}}
+                disabled={true}
+                spaceId={spaceId}
+                apiHost={apiHost}
+                roster={roster}
+              />
+            ))}
+          </div>
+        </>
+      ) : isDismissed ? (
+        <>
+          <p className="text-xs text-muted-foreground mb-3">
+            Dismissed{message.dismissedBy ? ` by @${message.dismissedBy}` : ''}
+          </p>
+          <div className="space-y-4 opacity-50">
+            {fields.map((field) => (
+              <FieldRenderer
+                key={field.name}
+                field={field}
+                value={values[field.name]}
+                onChange={() => {}}
+                disabled={true}
+                spaceId={spaceId}
+                apiHost={apiHost}
+                roster={roster}
+              />
+            ))}
+          </div>
+        </>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           {fields.map((field) => (
             <FieldRenderer
-              key={field.id}
+              key={field.name}
               field={field}
-              value={values[field.id]}
-              onChange={(value) => handleFieldChange(field.id, value)}
+              value={values[field.name]}
+              onChange={(value) => handleFieldChange(field.name, value)}
               disabled={!canSubmit || isSubmitting}
+              spaceId={spaceId}
+              apiHost={apiHost}
+              roster={roster}
             />
           ))}
 
           {canSubmit && (
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className={cn(
-                'flex items-center gap-2 px-4 py-2 text-base font-medium',
-                'bg-primary text-primary-foreground hover:bg-primary/90',
-                'disabled:opacity-50 disabled:cursor-not-allowed',
-                'transition-colors'
-              )}
-            >
-              <Send className="w-4 h-4" />
-              {isSubmitting ? 'Submitting...' : (submitLabel || 'Submit')}
-            </button>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => onCancel?.(message.id)}
+                disabled={isSubmitting}
+                className={cn(
+                  'px-4 py-2 text-base font-medium',
+                  'text-muted-foreground hover:text-foreground hover:bg-secondary/50',
+                  'disabled:opacity-50 disabled:cursor-not-allowed',
+                  'transition-colors'
+                )}
+              >
+                {cancelLabel || 'Cancel'}
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 text-base font-medium',
+                  'bg-primary text-primary-foreground hover:bg-primary/90',
+                  'disabled:opacity-50 disabled:cursor-not-allowed',
+                  'transition-colors'
+                )}
+              >
+                <Send className="w-4 h-4" />
+                {isSubmitting ? 'Submitting...' : (submitLabel || 'Submit')}
+              </button>
+            </div>
           )}
         </form>
       )}
@@ -123,18 +203,21 @@ export function StructuredAskForm({ message, myName, onSubmit }: StructuredAskFo
 
 interface FieldRendererProps {
   field: StructuredAskField
-  value: string | string[]
-  onChange: (value: string | string[]) => void
+  value: string | string[] | SummonRequestResponse[]
+  onChange: (value: string | string[] | SummonRequestResponse[]) => void
   disabled: boolean
+  spaceId?: string
+  apiHost?: string
+  roster?: { callsign: string; runtimeId?: string | null }[]
 }
 
-function FieldRenderer({ field, value, onChange, disabled }: FieldRendererProps) {
+function FieldRenderer({ field, value, onChange, disabled, spaceId, apiHost, roster }: FieldRendererProps) {
   switch (field.type) {
     case 'radio':
       return (
         <RadioField
           field={field}
-          value={value}
+          value={value as string | string[]}
           onChange={onChange}
           disabled={disabled}
         />
@@ -143,7 +226,7 @@ function FieldRenderer({ field, value, onChange, disabled }: FieldRendererProps)
       return (
         <CheckboxField
           field={field}
-          value={value}
+          value={value as string | string[]}
           onChange={onChange}
           disabled={disabled}
         />
@@ -152,7 +235,7 @@ function FieldRenderer({ field, value, onChange, disabled }: FieldRendererProps)
       return (
         <SelectField
           field={field}
-          value={value}
+          value={value as string | string[]}
           onChange={onChange}
           disabled={disabled}
         />
@@ -161,7 +244,7 @@ function FieldRenderer({ field, value, onChange, disabled }: FieldRendererProps)
       return (
         <TextField
           field={field}
-          value={value}
+          value={value as string | string[]}
           onChange={onChange}
           disabled={disabled}
         />
@@ -170,7 +253,7 @@ function FieldRenderer({ field, value, onChange, disabled }: FieldRendererProps)
       return (
         <TextareaField
           field={field}
-          value={value}
+          value={value as string | string[]}
           onChange={onChange}
           disabled={disabled}
         />
@@ -179,80 +262,15 @@ function FieldRenderer({ field, value, onChange, disabled }: FieldRendererProps)
       return (
         <SummonRequestField
           field={field}
-          value={Array.isArray(value) ? value : []}
+          value={Array.isArray(value) ? value as SummonRequestResponse[] : []}
           onChange={onChange}
           disabled={disabled}
+          spaceId={spaceId}
+          apiHost={apiHost}
+          roster={roster}
         />
       )
     default:
       return null
   }
-}
-
-interface SubmittedViewProps {
-  fields: StructuredAskField[]
-  response: Record<string, unknown>
-  respondedBy?: string
-}
-
-function SubmittedView({ fields, response, respondedBy }: SubmittedViewProps) {
-  return (
-    <div className="space-y-3">
-      {respondedBy && (
-        <p className="text-xs text-muted-foreground">
-          Submitted by @{respondedBy}
-        </p>
-      )}
-      {fields.map((field) => {
-        const value = response[field.id]
-        return (
-          <SubmittedFieldValue key={field.id} field={field} value={value} />
-        )
-      })}
-    </div>
-  )
-}
-
-interface SubmittedFieldValueProps {
-  field: StructuredAskField
-  value: unknown
-}
-
-function SubmittedFieldValue({ field, value }: SubmittedFieldValueProps) {
-  if (field.type === 'summon_request') {
-    const approvedCallsigns = Array.isArray(value) ? value as string[] : []
-    return <SummonRequestSubmitted field={field} approvedCallsigns={approvedCallsigns} />
-  }
-
-  // Format display value
-  let displayValue: string
-  if (Array.isArray(value)) {
-    // For checkbox, find labels
-    if (field.type === 'checkbox') {
-      const labels = value.map((v) => {
-        const opt = field.options.find((o) => o.value === v)
-        return opt?.label || v
-      })
-      displayValue = labels.join(', ')
-    } else {
-      displayValue = value.join(', ')
-    }
-  } else if (typeof value === 'string') {
-    // For radio/select, find label
-    if ((field.type === 'radio' || field.type === 'select') && 'options' in field) {
-      const opt = field.options.find((o) => o.value === value)
-      displayValue = opt?.label || value
-    } else {
-      displayValue = value
-    }
-  } else {
-    displayValue = String(value ?? '')
-  }
-
-  return (
-    <div className="space-y-1">
-      <label className="text-xs font-medium text-muted-foreground">{field.label}</label>
-      <p className="text-base">{displayValue || <span className="text-muted-foreground italic">No response</span>}</p>
-    </div>
-  )
 }

@@ -73,6 +73,22 @@ async function migrate(): Promise<void> {
     ON messages(channel_id, id)
   `;
 
+  // Add state column for structured asks (pending, completed, dismissed)
+  await sql`
+    DO $$ BEGIN
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS state VARCHAR(50);
+    EXCEPTION
+      WHEN duplicate_column THEN NULL;
+    END $$
+  `;
+
+  // Index for efficiently querying pending asks by channel
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_messages_channel_type_state
+    ON messages(channel_id, type, state)
+    WHERE state IS NOT NULL
+  `;
+
   // ---------------------------------------------------------------------------
   // Users Table
   // ---------------------------------------------------------------------------

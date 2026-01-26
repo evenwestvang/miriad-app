@@ -49,6 +49,10 @@ export interface Message {
   response?: Record<string, unknown>
   respondedBy?: string
   respondedAt?: string
+  dismissedBy?: string
+  dismissedAt?: string
+  // DB-level state for stateful messages (structured_ask: pending, completed, dismissed)
+  state?: string
   // Asset artifact slugs attached to this message
   attachmentSlugs?: string[]
   // For attachment type messages (content is an object)
@@ -343,44 +347,56 @@ export interface ArtifactTreeNode {
 // =============================================================================
 
 interface BaseField {
-  id: string
-  label: string
-  description?: string
+  name: string           // Field identifier (used as key in response)
+  label: string          // Display label
   required?: boolean
 }
 
 export interface RadioField extends BaseField {
   type: 'radio'
-  options: { value: string; label: string }[]
+  options: string[]
+  default?: string
 }
 
 export interface CheckboxField extends BaseField {
   type: 'checkbox'
-  options: { value: string; label: string }[]
+  options: string[]
+  default?: string[]
 }
 
 export interface SelectField extends BaseField {
   type: 'select'
-  options: { value: string; label: string }[]
+  options: string[]
+  default?: string
 }
 
 export interface TextField extends BaseField {
   type: 'text'
   placeholder?: string
+  default?: string
 }
 
 export interface TextareaField extends BaseField {
   type: 'textarea'
   placeholder?: string
+  default?: string
+}
+
+export interface SummonRequestAgent {
+  callsign: string
+  definitionSlug: string
+  purpose: string
+}
+
+/** Response value for a summon_request field - includes runtime selection */
+export interface SummonRequestResponse {
+  callsign: string
+  runtimeId: string | null
 }
 
 export interface SummonRequestField extends BaseField {
   type: 'summon_request'
-  agents: {
-    callsign: string
-    definitionSlug: string
-    purpose: string
-  }[]
+  agents: SummonRequestAgent[]
 }
 
 export type StructuredAskField =
@@ -395,10 +411,10 @@ export interface StructuredAskFormData {
   prompt: string
   fields: StructuredAskField[]
   submitLabel?: string
-  to: string[]
+  cancelLabel?: string
 }
 
-export type StructuredAskFormState = 'pending' | 'submitted'
+export type StructuredAskFormState = 'pending' | 'submitted' | 'dismissed'
 
 export interface StructuredAskMessage {
   id: string
@@ -406,12 +422,14 @@ export interface StructuredAskMessage {
   channelId: string
   sender: string
   timestamp: string
-  content: string
+  content: string          // The prompt text (duplicated from formData for display)
   formData: StructuredAskFormData
   formState: StructuredAskFormState
-  response?: Record<string, unknown>
+  response?: Record<string, string | string[] | SummonRequestResponse[]>
   respondedBy?: string
   respondedAt?: string
+  dismissedBy?: string
+  dismissedAt?: string
 }
 
 export function isStructuredAskMessage(value: unknown): value is StructuredAskMessage {
@@ -429,7 +447,7 @@ export function isStructuredAskField(value: unknown): value is StructuredAskFiel
   if (typeof value !== 'object' || value === null) return false
   const field = value as StructuredAskField
   return (
-    typeof field.id === 'string' &&
+    typeof field.name === 'string' &&
     typeof field.label === 'string' &&
     ['radio', 'checkbox', 'select', 'text', 'textarea', 'summon_request'].includes(field.type)
   )

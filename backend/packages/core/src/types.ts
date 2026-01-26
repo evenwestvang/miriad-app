@@ -70,6 +70,12 @@ export interface StoredMessage {
 
   /** JSONB metadata for extensibility */
   metadata?: Record<string, unknown>;
+
+  /**
+   * State for stateful message types (e.g., structured_ask).
+   * Values: "pending", "completed", "dismissed"
+   */
+  state?: string;
 }
 
 /**
@@ -87,6 +93,7 @@ export interface CreateMessageInput {
   addressedAgents?: string[];
   turnId?: string;
   metadata?: Record<string, unknown>;
+  state?: string;
 }
 
 /**
@@ -107,6 +114,10 @@ export interface GetMessagesParams {
   sender?: string;
   /** If true, include tool call messages (default: false - only text messages) */
   includeToolCalls?: boolean;
+  /** Filter by message type (e.g., 'structured_ask') */
+  type?: string;
+  /** Filter by message state (e.g., 'pending') */
+  state?: string;
 }
 
 // =============================================================================

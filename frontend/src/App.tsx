@@ -27,6 +27,8 @@ import {
   apiFetch,
   checkAuth,
   logout,
+  submitStructuredAskResponse,
+  dismissStructuredAsk,
   type AuthSession,
 } from "./lib/api";
 import { LoginPage } from "./components/LoginPage";
@@ -1062,6 +1064,37 @@ export function App() {
     setSelectedAgent(null);
   }, []);
 
+  // Handle structured ask form submission
+  const handleStructuredAskSubmit = useCallback(
+    async (messageId: string, response: Record<string, unknown>) => {
+      if (!selectedThread) return;
+      try {
+        await submitStructuredAskResponse(
+          selectedThread,
+          messageId,
+          response,
+          currentUser
+        );
+      } catch (error) {
+        console.error("Failed to submit structured ask response:", error);
+      }
+    },
+    [selectedThread, currentUser]
+  );
+
+  // Handle structured ask form cancellation
+  const handleStructuredAskCancel = useCallback(
+    async (messageId: string) => {
+      if (!selectedThread) return;
+      try {
+        await dismissStructuredAsk(selectedThread, messageId, currentUser);
+      } catch (error) {
+        console.error("Failed to dismiss structured ask:", error);
+      }
+    },
+    [selectedThread, currentUser]
+  );
+
   // Handle agent mute (optimistic update)
   const handleAgentMute = useCallback((callsign: string) => {
     setRoster((prev) => {
@@ -1276,6 +1309,7 @@ export function App() {
                 threadAgentType={currentThread?.agentType}
                 apiHost={API_HOST}
                 channelId={selectedThread || ""}
+                spaceId={authSession?.spaceId}
                 roster={rosterWithWorkingState}
                 isSwitching={isSwitchingChannel}
                 isLoading={showLoadingSpinner}
@@ -1287,6 +1321,8 @@ export function App() {
                   setPreSelectedAgentSlug(agentSlug);
                   setSummonOpen(true);
                 }}
+                onStructuredAskSubmit={handleStructuredAskSubmit}
+                onStructuredAskCancel={handleStructuredAskCancel}
               />
               {/* Input area with detail panel + roster bar above message input */}
               <div className="border-t border-border bg-card">
@@ -1324,6 +1360,9 @@ export function App() {
                       setPreSelectedAgentSlug(undefined);
                     }}
                     preSelectedAgentSlug={preSelectedAgentSlug}
+                    messages={messages}
+                    onStructuredAskSubmit={handleStructuredAskSubmit}
+                    onStructuredAskCancel={handleStructuredAskCancel}
                   />
                 </div>
                 {/* Message input below roster */}

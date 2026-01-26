@@ -1994,6 +1994,25 @@ export function createApp(options: AppOptions): Hono {
     }
   });
 
+  // Get pending structured asks for a channel
+  // Uses the partial index on (channel_id, type, state) for efficient queries
+  app.get("/channels/:channelId/pending-asks", async (c) => {
+    const spaceId = getSpaceId(c);
+    const channelId = c.req.param("channelId");
+
+    try {
+      const messages = await storage.getMessages(spaceId, channelId, {
+        type: "structured_ask",
+        state: "pending",
+        limit: 100, // Reasonable limit for pending asks
+      });
+      return c.json({ messages });
+    } catch (error) {
+      console.error("[PendingAsks] Error getting pending asks:", error);
+      return c.json({ error: "Failed to get pending asks" }, 500);
+    }
+  });
+
   app.post("/channels/:channelId/messages", async (c) => {
     const spaceId = getSpaceId(c);
     const channelId = c.req.param("channelId");
@@ -2075,6 +2094,432 @@ export function createApp(options: AppOptions): Hono {
     } catch (error) {
       console.error("[Messages] Error sending message:", error);
       return c.json({ error: "Failed to send message" }, 500);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Structured Ask Response Endpoint
+  // ---------------------------------------------------------------------------
+
+  /**
+   * POST /channels/:channelId/messages/:messageId/respond
+   *
+   * Submit a response to a structured ask form.
+   * - Updates the original message content with response data
+   * - Posts a follow-up message with human-readable response
+   * - Triggers actions (e.g., summon agents for summon_request fields)
+   */
+  app.post("/channels/:channelId/messages/:messageId/respond", async (c) => {
+    const channelId = c.req.param("channelId");
+    const messageId = c.req.param("messageId");
+    const spaceId = getSpaceId(c);
+
+    let body: {
+      response: Record<string, unknown>;
+      respondedBy: string;
+    };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+
+    const { response, respondedBy } = body;
+
+    if (!response || typeof response !== "object") {
+      return c.json({ error: "response is required and must be an object" }, 400);
+    }
+
+    if (!respondedBy || typeof respondedBy !== "string") {
+      return c.json({ error: "respondedBy is required and must be a string" }, 400);
+    }
+
+    try {
+      // Get the original message
+      const originalMessage = await storage.getMessage(spaceId, messageId);
+      if (!originalMessage) {
+        return c.json({ error: "Message not found" }, 404);
+      }
+
+      if (originalMessage.type !== "structured_ask") {
+        return c.json({ error: "Message is not a structured_ask" }, 400);
+      }
+
+      // Parse the original content
+      const originalContent = originalMessage.content as Record<string, unknown>;
+      if (originalContent.formState === "submitted") {
+        return c.json({ error: "Form has already been submitted" }, 400);
+      }
+
+      const now = new Date().toISOString();
+
+      // Update the message content with response
+      const updatedContent = {
+        ...originalContent,
+        formState: "submitted",
+        response,
+        respondedBy,
+        respondedAt: now,
+      };
+
+      await storage.updateMessage(spaceId, messageId, {
+        content: updatedContent,
+        state: "completed",
+      });
+
+      // Broadcast the update via Tymbal
+      if (connectionManager) {
+        const frame = tymbal.set(messageId, {
+          type: "structured_ask",
+          sender: originalMessage.sender,
+          senderType: originalMessage.senderType,
+          content: updatedContent,
+          timestamp: originalMessage.timestamp,
+          state: "completed",
+        });
+        await connectionManager.broadcast(channelId, frame);
+      }
+
+      // Build human-readable response message
+      const fields = originalContent.fields as Array<{
+        name: string;
+        label: string;
+        type: string;
+        agents?: Array<{ callsign: string; definitionSlug: string; purpose: string }>;
+      }>;
+
+      const responseLines: string[] = [];
+      for (const field of fields) {
+        const value = response[field.name];
+        if (field.type === "summon_request") {
+          // For summon_request, list approved agents
+          // Value is array of {callsign, runtimeId} objects or plain strings (backwards compat)
+          const approvedCallsigns = new Set<string>();
+          if (Array.isArray(value)) {
+            for (const item of value) {
+              if (typeof item === "object" && item !== null && "callsign" in item) {
+                approvedCallsigns.add((item as { callsign: string }).callsign);
+              } else if (typeof item === "string") {
+                approvedCallsigns.add(item);
+              }
+            }
+          }
+          const approvedAgents = field.agents?.filter((a) =>
+            approvedCallsigns.has(a.callsign)
+          ) || [];
+          if (approvedAgents.length > 0) {
+            responseLines.push(
+              `- **${field.label}:** ${approvedAgents.map((a) => `@${a.callsign}`).join(", ")}`
+            );
+          } else {
+            responseLines.push(`- **${field.label}:** *(none selected)*`);
+          }
+        } else if (Array.isArray(value)) {
+          responseLines.push(`- **${field.label}:** ${value.join(", ") || "*(none)*"}`);
+        } else if (typeof value === "string" && value) {
+          responseLines.push(`- **${field.label}:** ${value}`);
+        } else {
+          responseLines.push(`- **${field.label}:** *(empty)*`);
+        }
+      }
+
+      // Post follow-up message from user to the agent who created the ask
+      const followUpMessageId = generateMessageId();
+      const agentSender = originalMessage.sender;
+
+      const responseMessageContent = responseLines.length > 0
+        ? `@${agentSender}: @${respondedBy} submitted their response:\n\n${responseLines.join("\n")}`
+        : `@${agentSender}: @${respondedBy} submitted an empty response.`;
+
+      await storage.saveMessage({
+        id: followUpMessageId,
+        spaceId,
+        channelId,
+        sender: respondedBy,
+        senderType: "user",
+        type: "user",
+        content: responseMessageContent,
+        isComplete: true,
+        addressedAgents: [agentSender],
+      });
+
+      // Broadcast the follow-up message
+      if (connectionManager) {
+        const followUpFrame = tymbal.set(followUpMessageId, {
+          type: "user",
+          sender: respondedBy,
+          senderType: "user",
+          content: responseMessageContent,
+          timestamp: now,
+          mentions: [agentSender],
+        });
+        await connectionManager.broadcast(channelId, followUpFrame);
+      }
+
+      // Invoke the agent who created the ask so they see the response
+      const invoker = createAgentInvokerAdapter({
+        agentManager,
+        storage,
+        spaceId,
+        connectionManager,
+        runtimeSend,
+      });
+      const followUpMessage: Message = {
+        id: followUpMessageId,
+        channelId,
+        sender: respondedBy,
+        senderType: "user",
+        type: "user",
+        content: `@${agentSender} ${responseMessageContent}`,
+        timestamp: now,
+        isComplete: true,
+        addressedAgents: [agentSender],
+      };
+      await invoker.invokeAgents(channelId, [agentSender], followUpMessage);
+
+      // Handle summon_request actions - add approved agents to roster
+      // Response format: {callsign: string, runtimeId: string | null}[]
+      // Agents will activate on first @mention
+      const summonedAgents: string[] = [];
+      console.log(`[StructuredAsk] Processing ${fields.length} fields for summon actions`);
+      for (const field of fields) {
+        console.log(`[StructuredAsk] Field: ${field.name}, type: ${field.type}, has agents: ${!!field.agents}`);
+        if (field.type === "summon_request" && field.agents) {
+          const approvedAgents = response[field.name];
+          console.log(`[StructuredAsk] Approved agents for ${field.name}:`, JSON.stringify(approvedAgents));
+          if (!Array.isArray(approvedAgents)) continue;
+
+          // Build a map of callsign -> runtimeId from the response
+          const runtimeMap = new Map<string, string | null>();
+          for (const item of approvedAgents) {
+            if (typeof item === "object" && item !== null && "callsign" in item) {
+              runtimeMap.set(
+                item.callsign as string,
+                (item as { callsign: string; runtimeId?: string | null }).runtimeId ?? null
+              );
+            } else if (typeof item === "string") {
+              // Backwards compat: plain string array
+              runtimeMap.set(item, null);
+            }
+          }
+
+          for (const agent of field.agents) {
+            if (!runtimeMap.has(agent.callsign)) continue;
+            const selectedRuntimeId = runtimeMap.get(agent.callsign) ?? null;
+
+            try {
+              // Check if agent already exists in roster
+              const existingEntry = await storage.getRosterByCallsign(
+                channelId,
+                agent.callsign
+              );
+              if (existingEntry) {
+                console.log(
+                  `[StructuredAsk] Agent ${agent.callsign} already in roster, skipping`
+                );
+                continue;
+              }
+
+              console.log(
+                `[StructuredAsk] Adding ${agent.callsign} (${agent.definitionSlug}) to roster on runtime ${selectedRuntimeId || "default"}`
+              );
+
+              // Add to roster - agent will activate on first @mention
+              await storage.addToRoster({
+                channelId,
+                callsign: agent.callsign,
+                agentType: agent.definitionSlug,
+                status: "active",
+                runtimeId: selectedRuntimeId,
+              });
+
+              // Broadcast roster event so UI updates
+              const fullEntry = await storage.getRosterByCallsign(
+                channelId,
+                agent.callsign
+              );
+              if (fullEntry && connectionManager) {
+                const rosterFrame = {
+                  i: generateMessageId(),
+                  t: now,
+                  v: {
+                    type: "roster",
+                    action: "agent_joined",
+                    agent: {
+                      callsign: fullEntry.callsign,
+                      agentType: fullEntry.agentType,
+                      status: fullEntry.status,
+                      runtimeId: fullEntry.runtimeId,
+                      runtimeName: fullEntry.runtimeName,
+                      runtimeStatus: fullEntry.runtimeStatus,
+                    },
+                  },
+                  c: channelId,
+                };
+                await connectionManager.broadcast(
+                  channelId,
+                  JSON.stringify(rosterFrame)
+                );
+              }
+
+              summonedAgents.push(agent.callsign);
+            } catch (summonError) {
+              console.error(
+                `[StructuredAsk] Failed to add ${agent.callsign} to roster:`,
+                summonError
+              );
+            }
+          }
+        }
+      }
+
+      return c.json({
+        ok: true,
+        messageId,
+        followUpMessageId,
+        formState: "submitted",
+        summonedAgents,
+      });
+    } catch (error) {
+      console.error("[StructuredAsk] Error submitting response:", error);
+      return c.json({ error: "Failed to submit response" }, 500);
+    }
+  });
+
+  /**
+   * POST /channels/:channelId/messages/:messageId/dismiss
+   *
+   * Dismiss/cancel a structured ask form.
+   * - Updates the message state to 'dismissed'
+   * - Posts a follow-up message notifying the agent
+   */
+  app.post("/channels/:channelId/messages/:messageId/dismiss", async (c) => {
+    const channelId = c.req.param("channelId");
+    const messageId = c.req.param("messageId");
+    const spaceId = getSpaceId(c);
+
+    let body: { dismissedBy: string };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+
+    const { dismissedBy } = body;
+
+    if (!dismissedBy || typeof dismissedBy !== "string") {
+      return c.json({ error: "dismissedBy is required and must be a string" }, 400);
+    }
+
+    try {
+      // Get the original message
+      const originalMessage = await storage.getMessage(spaceId, messageId);
+      if (!originalMessage) {
+        return c.json({ error: "Message not found" }, 404);
+      }
+
+      if (originalMessage.type !== "structured_ask") {
+        return c.json({ error: "Message is not a structured_ask" }, 400);
+      }
+
+      // Parse the original content
+      const originalContent = originalMessage.content as Record<string, unknown>;
+      if (originalContent.formState === "submitted") {
+        return c.json({ error: "Form has already been submitted" }, 400);
+      }
+      if (originalContent.formState === "dismissed") {
+        return c.json({ error: "Form has already been dismissed" }, 400);
+      }
+
+      const now = new Date().toISOString();
+
+      // Update the message content
+      const updatedContent = {
+        ...originalContent,
+        formState: "dismissed",
+        dismissedBy,
+        dismissedAt: now,
+      };
+
+      await storage.updateMessage(spaceId, messageId, {
+        content: updatedContent,
+        state: "dismissed",
+      });
+
+      // Broadcast the update via Tymbal
+      if (connectionManager) {
+        const frame = tymbal.set(messageId, {
+          type: "structured_ask",
+          sender: originalMessage.sender,
+          senderType: originalMessage.senderType,
+          content: updatedContent,
+          timestamp: originalMessage.timestamp,
+          state: "dismissed",
+        });
+        await connectionManager.broadcast(channelId, frame);
+      }
+
+      // Get the cancel label and prompt from the form
+      const cancelLabel = (originalContent.cancelLabel as string) || "Cancel";
+      const prompt = (originalContent.prompt as string) || "your form";
+
+      // Post follow-up message to notify the agent
+      const agentSender = originalMessage.sender;
+      const followUpMessageId = generateMessageId();
+      const followUpContent = `@${agentSender}: @${dismissedBy} clicked "${cancelLabel}" on your form "${prompt}".`;
+
+      await storage.saveMessage({
+        id: followUpMessageId,
+        spaceId,
+        channelId,
+        sender: dismissedBy,
+        senderType: "user",
+        type: "user",
+        content: followUpContent,
+      });
+
+      // Broadcast the follow-up message
+      if (connectionManager) {
+        const msgFrame = tymbal.set(followUpMessageId, {
+          type: "user",
+          sender: dismissedBy,
+          senderType: "user",
+          content: followUpContent,
+          timestamp: now,
+        });
+        await connectionManager.broadcast(channelId, msgFrame);
+      }
+
+      // Invoke the agent so they see the dismissal
+      const invoker = createAgentInvokerAdapter({
+        agentManager,
+        storage,
+        spaceId,
+        connectionManager,
+        runtimeSend,
+      });
+      const followUpMessage: Message = {
+        id: followUpMessageId,
+        channelId,
+        sender: dismissedBy,
+        senderType: "user",
+        type: "user",
+        content: `@${agentSender}: @${dismissedBy} clicked "${cancelLabel}" on your form.`,
+        timestamp: now,
+        isComplete: true,
+        addressedAgents: [agentSender],
+      };
+      await invoker.invokeAgents(channelId, [agentSender], followUpMessage);
+
+      return c.json({
+        ok: true,
+        messageId,
+        followUpMessageId,
+        formState: "dismissed",
+      });
+    } catch (error) {
+      console.error("[StructuredAsk] Error dismissing form:", error);
+      return c.json({ error: "Failed to dismiss form" }, 500);
     }
   });
 

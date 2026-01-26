@@ -218,6 +218,8 @@ interface MessageListProps {
   apiHost?: string;
   /** Channel ID for artifact lookup */
   channelId?: string;
+  /** Space ID for runtime lookup */
+  spaceId?: string;
   /** Roster for agent type lookup */
   roster?: RosterAgent[];
   /** True immediately when channel switch starts (hides empty state) */
@@ -236,6 +238,8 @@ interface MessageListProps {
     messageId: string,
     response: Record<string, unknown>,
   ) => void;
+  /** Callback when user cancels/dismisses a structured ask */
+  onStructuredAskCancel?: (messageId: string) => void;
   /** Callback when user selects a starter agent from empty state */
   onSelectStarterAgent?: (agentSlug: string) => void;
 }
@@ -247,6 +251,7 @@ export function MessageList({
   myName = "",
   apiHost = "",
   channelId = "",
+  spaceId,
   roster = [],
   isSwitching = false,
   isLoading = false,
@@ -255,6 +260,7 @@ export function MessageList({
   isLoadingOlder = false,
   onRequestOlderMessages,
   onStructuredAskSubmit,
+  onStructuredAskCancel,
   onSelectStarterAgent,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -685,12 +691,15 @@ export function MessageList({
                           : threadAgentType
                       }
                       channelId={channelId}
+                      spaceId={spaceId}
+                      roster={roster}
                       rosterIndex={
                         message.sender
                           ? rosterIndexMap.get(message.sender)
                           : undefined
                       }
                       onStructuredAskSubmit={onStructuredAskSubmit}
+                      onStructuredAskCancel={onStructuredAskCancel}
                       showHeader={showHeader}
                     />
                   </div>
@@ -716,12 +725,18 @@ interface MessageItemProps {
   agentType?: string;
   /** Channel ID for Cartouche color shuffling */
   channelId?: string;
+  /** Space ID for runtime lookup */
+  spaceId?: string;
+  /** Roster for runtime lookup */
+  roster?: RosterAgent[];
   /** Roster index for Cartouche color assignment */
   rosterIndex?: number;
   onStructuredAskSubmit?: (
     messageId: string,
     response: Record<string, unknown>,
   ) => void;
+  /** Callback when user cancels/dismisses a structured ask */
+  onStructuredAskCancel?: (messageId: string) => void;
   /** Whether to show the header (glyph, name, timestamp). False for consecutive messages from same sender. */
   showHeader?: boolean;
 }
@@ -873,8 +888,11 @@ function MessageItem({
   artifacts,
   agentType,
   channelId = "",
+  spaceId,
+  roster = [],
   rosterIndex = 0,
   onStructuredAskSubmit,
+  onStructuredAskCancel,
   showHeader = true,
 }: MessageItemProps) {
   const isDarkMode = useIsDarkMode();
@@ -894,17 +912,18 @@ function MessageItem({
         : threadName;
 
   // Special handling for structured_ask messages
-  // API returns formData nested inside message.content as JSON
+  // Content contains: { prompt, fields, submitLabel, formState, response?, respondedBy?, respondedAt? }
   const contentObj =
     message.type === "structured_ask" &&
     message.content &&
     typeof message.content === "object"
       ? (message.content as Record<string, unknown>)
       : null;
-  const hasFormData = contentObj && "formData" in contentObj;
+  const hasFormFields = contentObj && "fields" in contentObj && "prompt" in contentObj;
 
-  if (message.type === "structured_ask" && hasFormData) {
+  if (message.type === "structured_ask" && hasFormFields) {
     // Transform to StructuredAskMessage shape expected by the form component
+    // The content object IS the form data (prompt, fields, etc.)
     const structuredAskMessage: StructuredAskMessage = {
       id: message.id,
       channelId: message.channelId,
@@ -912,13 +931,20 @@ function MessageItem({
       sender: message.sender,
       timestamp: message.timestamp,
       content: typeof contentObj.prompt === "string" ? contentObj.prompt : "",
-      formData: contentObj.formData as StructuredAskMessage["formData"],
+      formData: {
+        prompt: contentObj.prompt as string,
+        fields: contentObj.fields as StructuredAskMessage["formData"]["fields"],
+        submitLabel: contentObj.submitLabel as string | undefined,
+        cancelLabel: contentObj.cancelLabel as string | undefined,
+      },
       formState:
         (contentObj.formState as StructuredAskMessage["formState"]) ||
         "pending",
-      response: contentObj.response as Record<string, unknown> | undefined,
+      response: contentObj.response as StructuredAskMessage["response"],
       respondedBy: contentObj.respondedBy as string | undefined,
       respondedAt: contentObj.respondedAt as string | undefined,
+      dismissedBy: contentObj.dismissedBy as string | undefined,
+      dismissedAt: contentObj.dismissedAt as string | undefined,
     };
 
     return (
@@ -936,8 +962,11 @@ function MessageItem({
         )}
         <StructuredAskForm
           message={structuredAskMessage}
-          myName={myName}
           onSubmit={onStructuredAskSubmit || (() => {})}
+          onCancel={onStructuredAskCancel}
+          spaceId={spaceId}
+          apiHost={apiHost}
+          roster={roster}
         />
       </div>
     );

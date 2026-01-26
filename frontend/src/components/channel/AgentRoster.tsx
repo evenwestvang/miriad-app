@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { cn } from '../../lib/utils'
 import { AgentSummonPicker } from './AgentSummonPicker'
 import { DismissConfirmDialog } from './DismissConfirmDialog'
+import { PendingAsksIndicator } from './PendingAsksIndicator'
 import type { RosterAgent } from './MentionAutocomplete'
+import type { Message } from '../../types'
 
 // Re-export AgentType for backwards compatibility (used in App.tsx)
 export interface AgentType {
@@ -40,6 +42,12 @@ interface AgentRosterProps {
   onSummonClose?: () => void
   /** Pre-selected agent slug - skips browse and goes to configure */
   preSelectedAgentSlug?: string
+  /** All messages for pending asks indicator */
+  messages?: Message[]
+  /** Called when a structured ask is submitted */
+  onStructuredAskSubmit?: (messageId: string, response: Record<string, unknown>) => void
+  /** Called when a structured ask is cancelled */
+  onStructuredAskCancel?: (messageId: string) => void
 }
 
 interface AgentBadgeProps {
@@ -124,6 +132,9 @@ export function AgentRoster({
   summonOpen = false,
   onSummonClose,
   preSelectedAgentSlug,
+  messages = [],
+  onStructuredAskSubmit,
+  onStructuredAskCancel,
 }: AgentRosterProps) {
   // Note: agentTypes and onAgentAdded are deprecated but kept for backwards compatibility
   void _agentTypes
@@ -161,6 +172,18 @@ export function AgentRoster({
           <span className="text-[var(--cast-text-muted)]">No agents</span>
         )}
       </div>
+
+      {/* Pending asks indicator - right side */}
+      {channelId && (
+        <PendingAsksIndicator
+          channelId={channelId}
+          messages={messages}
+          spaceId={spaceId}
+          roster={roster}
+          onSubmit={onStructuredAskSubmit}
+          onCancel={onStructuredAskCancel}
+        />
+      )}
 
       {/* Summon agent picker (controlled by parent via summonOpen prop) */}
       {canManageAgents && channelId && (

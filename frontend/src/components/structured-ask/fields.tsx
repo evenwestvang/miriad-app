@@ -35,7 +35,7 @@ export function RadioField({ field, value, onChange, disabled }: FieldProps<Radi
       <div className="space-y-1.5">
         {field.options.map((option) => (
           <label
-            key={option.value}
+            key={option}
             className={cn(
               'flex items-center gap-2 cursor-pointer',
               disabled && 'cursor-not-allowed opacity-50'
@@ -43,14 +43,14 @@ export function RadioField({ field, value, onChange, disabled }: FieldProps<Radi
           >
             <input
               type="radio"
-              name={field.id}
-              value={option.value}
-              checked={value === option.value}
+              name={field.name}
+              value={option}
+              checked={value === option}
               onChange={(e) => onChange(e.target.value)}
               disabled={disabled}
               className="h-4 w-4 text-primary border-border focus:ring-primary"
             />
-            <span className="text-base">{option.label}</span>
+            <span className="text-base">{option}</span>
           </label>
         ))}
       </div>
@@ -61,11 +61,11 @@ export function RadioField({ field, value, onChange, disabled }: FieldProps<Radi
 export function CheckboxField({ field, value, onChange, disabled }: FieldProps<CheckboxFieldType>) {
   const selectedValues = Array.isArray(value) ? value : []
 
-  const handleChange = (optionValue: string, checked: boolean) => {
+  const handleChange = (option: string, checked: boolean) => {
     if (checked) {
-      onChange([...selectedValues, optionValue])
+      onChange([...selectedValues, option])
     } else {
-      onChange(selectedValues.filter((v) => v !== optionValue))
+      onChange(selectedValues.filter((v) => v !== option))
     }
   }
 
@@ -75,7 +75,7 @@ export function CheckboxField({ field, value, onChange, disabled }: FieldProps<C
       <div className="space-y-1.5">
         {field.options.map((option) => (
           <label
-            key={option.value}
+            key={option}
             className={cn(
               'flex items-center gap-2 cursor-pointer',
               disabled && 'cursor-not-allowed opacity-50'
@@ -83,13 +83,13 @@ export function CheckboxField({ field, value, onChange, disabled }: FieldProps<C
           >
             <input
               type="checkbox"
-              value={option.value}
-              checked={selectedValues.includes(option.value)}
-              onChange={(e) => handleChange(option.value, e.target.checked)}
+              value={option}
+              checked={selectedValues.includes(option)}
+              onChange={(e) => handleChange(option, e.target.checked)}
               disabled={disabled}
               className="h-4 w-4 rounded text-primary border-border focus:ring-primary"
             />
-            <span className="text-base">{option.label}</span>
+            <span className="text-base">{option}</span>
           </label>
         ))}
       </div>
@@ -113,8 +113,8 @@ export function SelectField({ field, value, onChange, disabled }: FieldProps<Sel
       >
         <option value="">Select...</option>
         {field.options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
+          <option key={option} value={option}>
+            {option}
           </option>
         ))}
       </select>

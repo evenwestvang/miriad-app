@@ -202,6 +202,7 @@ interface MessageRow {
   addressed_agents: string[] | null;
   turn_id: string | null;
   metadata: Record<string, unknown> | null;
+  state: string | null;
 }
 
 interface ChannelRow {
@@ -342,7 +343,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const result = await sql<MessageRow>`
       INSERT INTO messages (
         id, space_id, channel_id, sender, sender_type, type, content,
-        timestamp, is_complete, addressed_agents, turn_id, metadata
+        timestamp, is_complete, addressed_agents, turn_id, metadata, state
       )
       VALUES (
         ${id},
@@ -356,7 +357,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ${isComplete},
         ${input.addressedAgents ?? null},
         ${input.turnId ?? null},
-        ${input.metadata ? JSON.stringify(input.metadata) : null}
+        ${input.metadata ? JSON.stringify(input.metadata) : null},
+        ${input.state ?? null}
       )
       RETURNING *
     `;
@@ -383,15 +385,19 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     params?: GetMessagesParams
   ): Promise<StoredMessage[]> {
     const limit = params?.limit ?? 50;
-    const { since, before, newestFirst, search, sender, includeToolCalls } = params ?? {};
+    const { since, before, newestFirst, search, sender, includeToolCalls, type, state } = params ?? {};
 
     // Build search pattern for ILIKE (null if no search)
     const searchPattern = search ? `%${search}%` : null;
     // Ensure sender is null not undefined for postgres.js type safety
     const senderFilter = sender ?? null;
+    // Type and state filters (null if not specified)
+    const typeFilter = type ?? null;
+    const stateFilter = state ?? null;
     // By default, only return conversation messages (user, agent, assistant, system, error)
     // Tool calls, tool results, status updates, idle markers, etc. are filtered out
-    const conversationOnly = !includeToolCalls;
+    // But if type filter is specified, include that type regardless
+    const conversationOnly = !includeToolCalls && !typeFilter;
 
     let result: MessageRow[];
 
@@ -405,6 +411,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           AND id < ${before}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${typeFilter}::text IS NULL OR type = ${typeFilter})
+          AND (${stateFilter}::text IS NULL OR state = ${stateFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}
@@ -418,6 +426,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           AND id > ${since}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${typeFilter}::text IS NULL OR type = ${typeFilter})
+          AND (${stateFilter}::text IS NULL OR state = ${stateFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}
@@ -431,6 +441,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           AND id < ${before}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${typeFilter}::text IS NULL OR type = ${typeFilter})
+          AND (${stateFilter}::text IS NULL OR state = ${stateFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id DESC
         LIMIT ${limit}
@@ -444,6 +456,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           AND channel_id = ${channelId}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${typeFilter}::text IS NULL OR type = ${typeFilter})
+          AND (${stateFilter}::text IS NULL OR state = ${stateFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id DESC
         LIMIT ${limit}
@@ -457,6 +471,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           AND channel_id = ${channelId}
           AND (${searchPattern}::text IS NULL OR (content::text ILIKE ${searchPattern} OR sender ILIKE ${searchPattern}))
           AND (${senderFilter}::text IS NULL OR sender = ${senderFilter})
+          AND (${typeFilter}::text IS NULL OR type = ${typeFilter})
+          AND (${stateFilter}::text IS NULL OR state = ${stateFilter})
           AND (${conversationOnly} = false OR type IN ('user', 'agent', 'assistant', 'system', 'error'))
         ORDER BY id ASC
         LIMIT ${limit}
@@ -575,6 +591,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     }
     if (update.metadata !== undefined) {
       updateObj.metadata = JSON.stringify(update.metadata);
+    }
+    if (update.state !== undefined) {
+      updateObj.state = update.state;
     }
 
     if (Object.keys(updateObj).length === 0) return;
@@ -2978,6 +2997,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       addressedAgents: row.addressed_agents ?? undefined,
       turnId: row.turn_id ?? undefined,
       metadata: metadata ?? undefined,
+      state: row.state ?? undefined,
     };
   }
 

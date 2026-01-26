@@ -487,6 +487,90 @@ Messages without @mentions are logged but won't notify anyone.`,
       required: ['status'],
     },
   },
+  {
+    name: 'structured_ask',
+    description: `Post a structured form to the channel for users to fill out. Use this when you need specific input from users in a structured format rather than free-form text.
+
+Field types:
+• radio - Single choice from options
+• checkbox - Multiple choices from options  
+• select - Dropdown single choice
+• text - Single line text input
+• textarea - Multi-line text input
+• summon_request - Propose agents to summon (user can modify before submitting)
+
+The form persists in the channel until submitted. When submitted, you'll receive a follow-up message with the user's responses.`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        prompt: {
+          type: 'string',
+          description: 'Question or context shown above the form',
+        },
+        fields: {
+          type: 'array',
+          description: 'Form fields',
+          items: {
+            type: 'object',
+            properties: {
+              type: {
+                type: 'string',
+                enum: ['radio', 'checkbox', 'select', 'text', 'textarea', 'summon_request'],
+                description: 'Field type',
+              },
+              name: {
+                type: 'string',
+                description: 'Field identifier (used as key in response)',
+              },
+              label: {
+                type: 'string',
+                description: 'Display label for the field',
+              },
+              required: {
+                type: 'boolean',
+                description: 'Whether field is required (default: false)',
+              },
+              options: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Options for radio/checkbox/select fields',
+              },
+              placeholder: {
+                type: 'string',
+                description: 'Placeholder text for text/textarea fields',
+              },
+              default: {
+                description: 'Default value (string for most fields, string[] for checkbox)',
+              },
+              agents: {
+                type: 'array',
+                description: 'For summon_request: proposed agents to summon',
+                items: {
+                  type: 'object',
+                  properties: {
+                    callsign: { type: 'string', description: 'Proposed callsign for the agent' },
+                    definitionSlug: { type: 'string', description: 'Agent type (e.g., "nuum-production-builder")' },
+                    purpose: { type: 'string', description: 'Why this agent is needed' },
+                  },
+                  required: ['callsign', 'definitionSlug', 'purpose'],
+                },
+              },
+            },
+            required: ['type', 'name', 'label'],
+          },
+        },
+        submitLabel: {
+          type: 'string',
+          description: 'Custom submit button text (default: "Submit")',
+        },
+        cancelLabel: {
+          type: 'string',
+          description: 'Custom cancel button text (default: "Cancel")',
+        },
+      },
+      required: ['prompt', 'fields'],
+    },
+  },
   // ---------------------------------------------------------------------------
   // Channel Awareness Tools
   // ---------------------------------------------------------------------------
@@ -1322,6 +1406,122 @@ const toolHandlers: Record<string, ToolHandler> = {
     return JSON.stringify({
       status,
       timestamp: now,
+    }, null, 2);
+  },
+
+  async structured_ask(args, { storage, spaceId, channelId, callsign, connectionManager }) {
+    const { prompt, fields, submitLabel, cancelLabel } = args as {
+      prompt: string;
+      fields: Array<{
+        type: 'radio' | 'checkbox' | 'select' | 'text' | 'textarea' | 'summon_request';
+        name: string;
+        label: string;
+        required?: boolean;
+        options?: string[];
+        placeholder?: string;
+        default?: string | string[];
+        agents?: Array<{
+          callsign: string;
+          definitionSlug: string;
+          purpose: string;
+        }>;
+      }>;
+      submitLabel?: string;
+      cancelLabel?: string;
+    };
+
+    if (!prompt || typeof prompt !== 'string') {
+      throw new Error('prompt is required and must be a string');
+    }
+
+    if (!fields || !Array.isArray(fields) || fields.length === 0) {
+      throw new Error('fields is required and must be a non-empty array');
+    }
+
+    // Validate fields
+    for (const field of fields) {
+      if (!field.type || !field.name || !field.label) {
+        throw new Error('Each field must have type, name, and label');
+      }
+
+      const validTypes = ['radio', 'checkbox', 'select', 'text', 'textarea', 'summon_request'];
+      if (!validTypes.includes(field.type)) {
+        throw new Error(`Invalid field type: ${field.type}. Must be one of: ${validTypes.join(', ')}`);
+      }
+
+      // Validate options for choice fields
+      if (['radio', 'checkbox', 'select'].includes(field.type)) {
+        if (!field.options || !Array.isArray(field.options) || field.options.length === 0) {
+          throw new Error(`Field "${field.name}" of type "${field.type}" requires non-empty options array`);
+        }
+      }
+
+      // Validate agents for summon_request
+      if (field.type === 'summon_request') {
+        if (!field.agents || !Array.isArray(field.agents) || field.agents.length === 0) {
+          throw new Error(`Field "${field.name}" of type "summon_request" requires non-empty agents array`);
+        }
+        for (const agent of field.agents) {
+          if (!agent.callsign || !agent.definitionSlug || !agent.purpose) {
+            throw new Error('Each agent in summon_request must have callsign, definitionSlug, and purpose');
+          }
+        }
+        // Check for callsign collisions with existing roster
+        for (const agent of field.agents) {
+          const existing = await storage.getRosterByCallsign(channelId, agent.callsign);
+          if (existing) {
+            throw new Error(`Callsign "${agent.callsign}" already exists in this channel's roster. Choose a different callsign.`);
+          }
+        }
+      }
+    }
+
+    const messageId = generateMessageId();
+    const now = new Date().toISOString();
+
+    // Build the structured ask content
+    const content = {
+      prompt,
+      fields,
+      submitLabel: submitLabel || 'Submit',
+      cancelLabel: cancelLabel || 'Cancel',
+      formState: 'pending' as const,
+    };
+
+    // Save as a structured_ask message
+    await storage.saveMessage({
+      id: messageId,
+      spaceId,
+      channelId,
+      sender: callsign,
+      senderType: 'agent',
+      type: 'structured_ask',
+      content,
+      isComplete: true,
+      metadata: { method: 'structured_ask' },
+      state: 'pending',
+    });
+
+    // Broadcast to WebSocket clients
+    if (connectionManager) {
+      const frame = tymbal.set(messageId, {
+        type: 'structured_ask',
+        sender: callsign,
+        senderType: 'agent',
+        content,
+        timestamp: now,
+        method: 'structured_ask',
+        state: 'pending',
+      });
+      await connectionManager.broadcast(channelId, frame);
+    }
+
+    return JSON.stringify({
+      id: messageId,
+      timestamp: now,
+      prompt,
+      fieldCount: fields.length,
+      hint: 'Form posted to channel. You will receive a message when the user submits their response.',
     }, null, 2);
   },
 

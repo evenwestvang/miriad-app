@@ -1,5 +1,5 @@
 export { StructuredAskForm } from './StructuredAskForm'
-export { SummonRequestField, SummonRequestSubmitted } from './SummonRequestField'
+export { SummonRequestField } from './SummonRequestField'
 export {
   RadioField,
   CheckboxField,

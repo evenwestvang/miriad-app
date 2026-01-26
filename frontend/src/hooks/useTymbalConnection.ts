@@ -67,7 +67,7 @@ interface MessageValue {
   // For agent_output frames
   agentOutput?: AgentOutput
   // For agent_state frames
-  state?: AgentState
+  state?: AgentState | string  // AgentState for agent_state frames, string for message state (pending/completed/dismissed)
   toolName?: string
   // For tool_call frames (flat format)
   toolCallId?: string
@@ -287,7 +287,7 @@ export function useTymbalConnection({
         if (value.type === 'agent_state' && value.state) {
           const agentKey = `${currentChannelId}:${value.sender}`
           const stateInfo: AgentStateInfo = {
-            state: value.state,
+            state: value.state as AgentState,
             toolName: value.toolName,
             updatedAt: Date.now(),
           }
@@ -540,6 +540,7 @@ export function useTymbalConnection({
           timestamp: frame.t,
           method: value.method,
           attachmentSlugs: value.attachmentSlugs,
+          state: typeof value.state === 'string' ? value.state : undefined,
         })
         return
       }
