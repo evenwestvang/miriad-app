@@ -32,6 +32,8 @@ interface AgentSummonPickerProps {
   roster: RosterAgent[]
   /** Channel ID for API calls */
   channelId: string
+  /** Channel name for contextual name generation */
+  channelName?: string
   /** Space ID for fetching runtimes */
   spaceId?: string
   /** API host */
@@ -83,6 +85,7 @@ function getFallbackCallsign(agent: AvailableAgent, roster: RosterAgent[]): stri
 export function AgentSummonPicker({
   roster,
   channelId,
+  channelName,
   spaceId,
   apiHost,
   onClose,
@@ -300,11 +303,20 @@ export function AgentSummonPicker({
     setCallsignError(validateCallsign(normalized))
   }
 
-  // Generate a unique name based on theme
-  const generateName = useCallback(async (theme: string): Promise<string | null> => {
+  // Generate a unique name based on context
+  const generateName = useCallback(async (options: {
+    theme?: string
+    role?: string
+    channelName?: string
+  }): Promise<string | null> => {
     try {
+      const params = new URLSearchParams()
+      if (options.theme) params.set('theme', options.theme)
+      if (options.role) params.set('role', options.role)
+      if (options.channelName) params.set('channelName', options.channelName)
+
       const response = await apiFetch(
-        `${apiHost}/channels/${channelId}/agents/generateName?theme=${encodeURIComponent(theme)}`
+        `${apiHost}/channels/${channelId}/agents/generateName?${params.toString()}`
       )
       if (response.ok) {
         const data = await response.json()
@@ -321,29 +333,26 @@ export function AgentSummonPicker({
     setSelectedAgent(agent)
     setState('configure')
 
-    // If agent has a nameTheme, generate a unique name
-    if (agent.nameTheme) {
-      setIsGeneratingName(true)
-      setCallsign('') // Clear while loading
-      setCallsignError(null)
+    // Always generate a unique name (backend defaults if no context provided)
+    setIsGeneratingName(true)
+    setCallsign('') // Clear while loading
+    setCallsignError(null)
 
-      const generatedName = await generateName(agent.nameTheme)
-      if (generatedName) {
-        setCallsign(generatedName)
-        setCallsignError(validateCallsign(generatedName))
-      } else {
-        // Fall back to default names if generation fails
-        const fallback = getFallbackCallsign(agent, roster)
-        setCallsign(fallback)
-        setCallsignError(validateCallsign(fallback))
-      }
-      setIsGeneratingName(false)
+    const generatedName = await generateName({
+      theme: agent.nameTheme,
+      role: agent.slug,
+      channelName,
+    })
+    if (generatedName) {
+      setCallsign(generatedName)
+      setCallsignError(validateCallsign(generatedName))
     } else {
-      // No theme - use fallback names
+      // Fall back to default names if generation fails
       const fallback = getFallbackCallsign(agent, roster)
       setCallsign(fallback)
       setCallsignError(validateCallsign(fallback))
     }
+    setIsGeneratingName(false)
   }
 
   // Go back to browse state

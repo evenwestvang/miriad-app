@@ -668,20 +668,20 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
   /**
    * GET /channels/:id/agents/generateName - Generate a unique agent callsign
    *
-   * Uses Claude Sonnet to generate a name fitting the theme that's unique
+   * Uses Claude Haiku to generate a name fitting the context that's unique
    * to the channel roster.
    *
    * Query params:
    *   - theme: Name theme (e.g., "wild birds of Canada")
+   *   - role: Agent role (e.g., "builder", "researcher")
+   *   - channelName: Channel name for context (e.g., "cast-dev")
    */
   app.get("/:channelId/agents/generateName", async (c) => {
     const spaceId = getSpaceId(c);
     const channelId = c.req.param("channelId");
-    const theme = c.req.query("theme");
-
-    if (!theme) {
-      return c.json({ error: "theme query parameter is required" }, 400);
-    }
+    const theme = c.req.query("theme")?.trim();
+    const role = c.req.query("role")?.trim();
+    const channelName = c.req.query("channelName")?.trim();
 
     try {
       // Get current roster to know which names to avoid
@@ -697,11 +697,31 @@ function createAgentRoutes(options: AgentRoutesOptions): Hono {
         return c.json({ error: "Anthropic API key not configured" }, 400);
       }
 
-      // Call Claude to generate a name
-      const prompt =
-        takenNames.length > 0
-          ? `Generate a single short callsign (One word, lowercase) for an AI agent. The theme is: "${theme}". These names are already taken: ${takenNames.join(", ")}. Return ONLY the callsign, nothing else.`
-          : `Generate a single short callsign (One word, lowercase) for an AI agent. The theme is: "${theme}". Return ONLY the callsign, nothing else.`;
+      // Build contextual prompt
+      const contextParts: string[] = [];
+      if (role) contextParts.push(`Role: ${role}`);
+      if (theme) contextParts.push(`Theme: ${theme}`);
+
+      const channelVibe = channelName
+        ? `\nChannel: #${channelName} — let the channel name inspire the vibe of the callsign.`
+        : "";
+
+      const contextBlock = contextParts.length > 0
+        ? contextParts.join("\n")
+        : "Style: humble and righteous robots from science fiction";
+
+      const takenBlock = takenNames.length > 0
+        ? `\nAlready taken: ${takenNames.join(", ")}`
+        : "";
+
+      const prompt = `Generate a memorable one-word callsign (lowercase) for an AI agent.
+
+${contextBlock}${channelVibe}
+
+Avoid: generic names, numbers, "agent-" prefixes, overly grandiose names.
+Prefer: evocative, memorable, names that match the channel's tone.${takenBlock}
+
+Return ONLY the callsign, nothing else.`;
 
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",

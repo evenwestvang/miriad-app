@@ -1310,6 +1310,7 @@ export function App() {
                     leader={leader}
                     agentTypes={agentTypes}
                     channelId={selectedThread || undefined}
+                    channelName={currentThread?.agentName}
                     spaceId={authSession?.spaceId}
                     apiHost={API_HOST}
                     onAgentAdded={handleAgentAdded}
