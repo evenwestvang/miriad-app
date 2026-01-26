@@ -375,6 +375,8 @@ Use \`read_instructions\` to learn about additional platform features:
 - **Interactive mini-apps** — Build visualizations, prototypes, or tools as runnable \`.app.js\` artifacts → \`interactive-artifacts\`
 - **Knowledge bases** — Create or query shared repositories of documentation → \`knowledge-bases\`
 - **MCP servers** — Configure external integrations when setting up agent definitions → \`system-mcp\`
+- **Structured questions** — Use \`structured_ask\` for critical questions, project surveys, and secret collection. Forms persist until answered and surface in a "pending asks" indicator. Great for gathering requirements and highlighting critical asks → \`structured-asks\`
+- **Team assembly** — Use \`structured_ask\` with \`summon_request\` to propose agents to add. You suggest the team composition, the user can modify before confirming → \`structured-asks\`
 
 ### Code Execution Environment
 
@@ -641,8 +643,12 @@ export class AgentManager {
     channelId: string,
     callsign: string,
   ): Promise<McpServerConfig[]> {
-    const { getSystemMcp, getValidOAuthToken, getAgentDefinitionWithChannel, getRoster } =
-      this.config;
+    const {
+      getSystemMcp,
+      getValidOAuthToken,
+      getAgentDefinitionWithChannel,
+      getRoster,
+    } = this.config;
 
     // Skip if system.mcp derivation not configured
     if (!getSystemMcp || !getAgentDefinitionWithChannel || !getRoster) {
@@ -699,15 +705,17 @@ export class AgentManager {
           continue;
         }
 
-        const props = mcp.props as {
-          transport?: "stdio" | "http";
-          url?: string;
-          command?: string;
-          args?: string[];
-          variables?: Record<string, string>;
-          cwd?: string;
-          oauth?: { type: "oauth" };
-        } | undefined;
+        const props = mcp.props as
+          | {
+              transport?: "stdio" | "http";
+              url?: string;
+              command?: string;
+              args?: string[];
+              variables?: Record<string, string>;
+              cwd?: string;
+              oauth?: { type: "oauth" };
+            }
+          | undefined;
 
         if (!props?.transport) {
           console.log(
