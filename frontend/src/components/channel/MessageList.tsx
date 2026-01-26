@@ -521,12 +521,20 @@ export function MessageList({
           threadName === "root" ? (
             // Root channel has a special empty state with Custodian CTA
             <RootChannelEmptyState
-              onSpawnCustodian={onSelectStarterAgent ? () => onSelectStarterAgent("custodian") : undefined}
+              onSpawnCustodian={
+                onSelectStarterAgent
+                  ? () => onSelectStarterAgent("custodian")
+                  : undefined
+              }
             />
           ) : threadName === "first-channel" ? (
             // First channel has intro to Miriad with Guide CTA
             <FirstChannelEmptyState
-              onSpawnGuide={onSelectStarterAgent ? () => onSelectStarterAgent("guide") : undefined}
+              onSpawnGuide={
+                onSelectStarterAgent
+                  ? () => onSelectStarterAgent("guide")
+                  : undefined
+              }
             />
           ) : onSelectStarterAgent ? (
             <ChannelEmptyState
@@ -787,7 +795,12 @@ function groupMessages(messages: Message[]): MessageOrGroup[] {
   const result: MessageOrGroup[] = [];
 
   // Filter out send_message and set_status tool calls (redundant - they echo into the thread)
+  // Also filter out event messages (system nudges not meant for user display)
   const filteredMessages = messages.filter((msg) => {
+    // Hide event messages from the chat UI
+    if (msg.type === "event") {
+      return false;
+    }
     if (
       msg.type === "tool_call" &&
       (msg.toolName === "mcp__miriad__send_message" ||
@@ -897,7 +910,8 @@ function MessageItem({
 }: MessageItemProps) {
   const isDarkMode = useIsDarkMode();
   const isUser = message.senderType === "user";
-  const hasAttachments = message.attachmentSlugs && message.attachmentSlugs.length > 0;
+  const hasAttachments =
+    message.attachmentSlugs && message.attachmentSlugs.length > 0;
 
   // Contextual messages: agent messages not sent via send_message (thinking out loud)
   const isContextual =
@@ -919,7 +933,8 @@ function MessageItem({
     typeof message.content === "object"
       ? (message.content as Record<string, unknown>)
       : null;
-  const hasFormFields = contentObj && "fields" in contentObj && "prompt" in contentObj;
+  const hasFormFields =
+    contentObj && "fields" in contentObj && "prompt" in contentObj;
 
   if (message.type === "structured_ask" && hasFormFields) {
     // Transform to StructuredAskMessage shape expected by the form component
@@ -1028,8 +1043,8 @@ function MessageItem({
         <div className="flex items-center gap-2 text-base text-muted-foreground px-3 py-2">
           <Coffee size={14} className="flex-shrink-0" />
           <span>
-            Summoning{" "}
-            <span className="font-medium">{statusContent.callsign}</span>...
+            Summoned{" "}
+            <span className="font-medium">{statusContent.callsign}</span>
           </span>
         </div>
       );
@@ -1118,7 +1133,7 @@ function MessageItem({
     }
 
     // Extract slug from URL (last path segment) for asset rendering
-    const slug = attachmentData.url.split('/').pop() || attachmentData.filename;
+    const slug = attachmentData.url.split("/").pop() || attachmentData.filename;
 
     return (
       <div className="flex flex-col min-w-0 max-w-[80%] relative">
@@ -1137,7 +1152,9 @@ function MessageItem({
           {/* Title - show prominently if provided */}
           {attachmentData.title && (
             <div className="px-3 py-2 border-b border-border bg-secondary/30">
-              <div className="font-medium text-base">{attachmentData.title}</div>
+              <div className="font-medium text-base">
+                {attachmentData.title}
+              </div>
             </div>
           )}
           {/* Attachment preview */}

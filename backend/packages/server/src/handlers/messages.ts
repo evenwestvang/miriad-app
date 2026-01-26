@@ -247,14 +247,14 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
   app.post('/:channelId/messages', async (c) => {
     const channelId = c.req.param('channelId');
 
-    let body: { content?: string; sender?: string; senderType?: 'user' | 'agent'; attachSlugs?: string[] };
+    let body: { content?: string; sender?: string; senderType?: 'user' | 'agent'; type?: 'event'; attachSlugs?: string[] };
     try {
       body = await c.req.json();
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
 
-    const { content, sender, senderType = 'user', attachSlugs } = body;
+    const { content, sender, senderType = 'user', type, attachSlugs } = body;
 
     if (!content) {
       return c.json({ error: 'Message content required' }, 400);
@@ -301,7 +301,8 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
     const now = new Date().toISOString();
 
     // Determine message type based on sender type (per StoredMessageType spec)
-    const messageType = senderType === 'user' ? 'user' : 'agent_message';
+    // Allow explicit 'event' type override for system-initiated messages
+    const messageType = type === 'event' ? 'event' : senderType === 'user' ? 'user' : 'agent_message';
 
     // Build metadata with attachmentSlugs if provided
     const metadata: Record<string, unknown> | undefined =

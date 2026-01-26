@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { X, Loader2, Search, ChevronLeft, CircleDashed, ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { apiFetch } from '../../lib/api'
+import { apiFetch, sendEventMessage } from '../../lib/api'
 import type { RosterAgent } from './MentionAutocomplete'
 
 /**
@@ -398,8 +398,23 @@ export function AgentSummonPicker({
       // Remember the runtime selection for next time
       setLastUsedRuntime(selectedRuntimeId)
 
+      // Check if this is the first agent in the channel
+      const isFirstAgent = roster.filter(r => r.agentType).length === 0
+
       // Success - close picker (roster will update via WebSocket event)
       onClose()
+
+      // If first agent, send a nudge after a short delay
+      if (isFirstAgent) {
+        setTimeout(() => {
+          sendEventMessage(
+            channelId,
+            `@${callsign} The user is not seeing this message, this is the system giving you a nudge: You are the first agent in this channel. Greet the user and get things kicked off according to your role.`
+          ).catch(err => {
+            console.error('Failed to send first-agent nudge:', err)
+          })
+        }, 300)
+      }
     } catch (err) {
       setCallsignError(err instanceof Error ? err.message : 'Failed to summon agent')
     } finally {

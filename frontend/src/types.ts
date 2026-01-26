@@ -114,6 +114,7 @@ export type MessageType =
   | 'roster'
   | 'structured_ask'
   | 'attachment'
+  | 'event'
 
 // Tymbal frame types (wire format)
 export type TymbalFrame =

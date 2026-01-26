@@ -20,7 +20,8 @@ export type StoredMessageType =
   | 'error'
   | 'idle'
   | 'structured_ask'
-  | 'attachment';
+  | 'attachment'
+  | 'event';
 
 /**
  * A message as stored in the database.

@@ -361,3 +361,22 @@ export async function getPendingAsks(
     `/channels/${channelId}/pending-asks`
   )
 }
+
+// =============================================================================
+// Event Messages
+// =============================================================================
+
+/**
+ * Send an event message to a channel.
+ * Event messages (type: 'event') are hidden from the chat UI but trigger agents.
+ * Used for system-initiated nudges like first-agent greetings.
+ */
+export async function sendEventMessage(
+  channelId: string,
+  content: string
+): Promise<{ id: string }> {
+  return apiPost<{ id: string }>(
+    `/channels/${channelId}/messages`,
+    { content, sender: '__event__', senderType: 'user', type: 'event' }
+  )
+}
