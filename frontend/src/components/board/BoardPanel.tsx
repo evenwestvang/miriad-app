@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { LayoutGrid, Paperclip } from 'lucide-react'
+import { LayoutGrid } from 'lucide-react'
 import { generateKeyBetween } from 'fractional-indexing'
 import { cn } from '../../lib/utils'
 import { apiFetch } from '../../lib/api'
@@ -564,6 +564,10 @@ export function BoardPanel({
           filterVisible={filterVisible}
           onFilterToggle={handleFilterToggle}
           hasActiveFilter={!!filterText}
+          onUploadClick={() => {
+            setIsUploading(true)
+            setArchivedItems([])
+          }}
         />
       )}
 
@@ -706,25 +710,6 @@ export function BoardPanel({
         />
       )}
 
-      {/* Floating upload button - bottom right corner */}
-      {channelId && !isCreating && !isUploading && !selectedArtifactData && (
-        <button
-          className={cn(
-            "absolute bottom-4 right-4 p-2.5 rounded-md",
-            "bg-secondary hover:bg-secondary/80 border border-border",
-            "text-muted-foreground hover:text-foreground",
-            "shadow-sm transition-colors",
-            "z-10"
-          )}
-          onClick={() => {
-            setIsUploading(true)
-            setArchivedItems([])
-          }}
-          title="Upload file"
-        >
-          <Paperclip className="w-4 h-4" />
-        </button>
-      )}
     </aside>
   )
 }

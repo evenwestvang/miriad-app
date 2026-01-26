@@ -93,6 +93,27 @@ export function AssetUpload({ channelId, apiHost, onComplete, onCancel }: AssetU
     }
   }, [])
 
+  // Detect when file picker is cancelled (window regains focus without files selected)
+  useEffect(() => {
+    let focusTimeout: ReturnType<typeof setTimeout> | null = null
+
+    const handleFocus = () => {
+      // Small delay to let the change event fire first if files were selected
+      focusTimeout = setTimeout(() => {
+        // If we still have no uploads after focus returns, user cancelled
+        if (uploads.length === 0 && hasOpenedRef.current) {
+          onCancel()
+        }
+      }, 300)
+    }
+
+    window.addEventListener('focus', handleFocus)
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+      if (focusTimeout) clearTimeout(focusTimeout)
+    }
+  }, [uploads.length, onCancel])
+
   // Upload a single file
   const uploadFile = useCallback((item: UploadItem) => {
     const formData = new FormData()

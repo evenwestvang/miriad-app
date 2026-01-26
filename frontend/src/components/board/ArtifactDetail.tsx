@@ -1168,9 +1168,9 @@ export function ArtifactDetail({
               onChange={(e) => setEditContent(e.target.value)}
               placeholder={isCodeArtifact ? 'Code...' : currentType === 'system.agent' ? 'Describe the agent behaviour or ask the custodian to do it for you' : 'Write or paste markdown'}
               className={cn(
-                "w-full px-0 py-1 text-base bg-transparent border-0 border-b border-border",
-                "focus:outline-none focus:border-muted-foreground transition-colors resize-none overflow-y-auto",
-                isCodeArtifact && "font-mono"
+                "w-full px-0 py-1 bg-transparent border-0",
+                "focus:outline-none transition-colors resize-none overflow-y-auto",
+                isCodeArtifact ? "font-mono text-[0.8125rem] leading-[1.5]" : "text-base"
               )}
               style={{ minHeight: '100px', maxHeight: '70vh' }}
             />
@@ -1195,7 +1195,11 @@ export function ArtifactDetail({
           </div>
         ) : isCodeArtifact ? (
           <div
-            className={cn(!isViewingHistory && "cursor-text")}
+            className={cn(
+              "min-h-full",
+              !isViewingHistory && "cursor-text",
+              isDarkMode ? "bg-[#282c34]" : "bg-[#fafafa]"
+            )}
             onClick={!isViewingHistory ? () => startEditing(true) : undefined}
           >
             <CodeContent content={isViewingHistory ? versionData!.content : artifact!.content} language={codeLanguage} isDarkMode={isDarkMode} />
@@ -1205,7 +1209,7 @@ export function ArtifactDetail({
           null
         ) : (
           <div
-            className={cn("p-3", !isViewingHistory && "cursor-text")}
+            className={cn("p-3 min-h-full", !isViewingHistory && "cursor-text")}
             onClick={!isViewingHistory ? () => startEditing(true) : undefined}
           >
             <ArtifactContent
@@ -1330,16 +1334,14 @@ function SlugDisplay({
   if (!slug) return null
 
   return (
-    <div className="px-3 py-2 border-t border-border flex items-center gap-2">
-      <span className="font-mono text-base text-muted-foreground/70 truncate flex-1">
-        {slug}
-      </span>
+    <div className="px-3 py-2 border-t border-border">
       <button
         onClick={handleCopy}
-        className="p-1 rounded hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground flex-shrink-0"
+        className="flex items-center gap-1.5 font-mono text-base text-muted-foreground/70 hover:text-muted-foreground transition-colors"
         title="Copy slug"
       >
-        {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+        <span className="truncate">{slug}</span>
+        {copied ? <Check className="w-3.5 h-3.5 text-green-500 flex-shrink-0" /> : <Copy className="w-3.5 h-3.5 flex-shrink-0" />}
       </button>
     </div>
   )

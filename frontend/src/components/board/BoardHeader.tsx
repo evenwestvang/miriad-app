@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, X, FileText, CheckSquare, Code, ChevronDown, Server, Bot, KeyRound, Search, Folder } from 'lucide-react'
+import { Plus, X, FileText, CheckSquare, Code, ChevronDown, Server, Bot, KeyRound, Search, Folder, Upload } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { ArtifactType } from '../../types/artifact'
 
@@ -28,6 +28,8 @@ interface BoardHeaderProps {
   onFilterToggle?: () => void
   /** Whether there's an active filter (to highlight the filter icon) */
   hasActiveFilter?: boolean
+  /** Callback when upload is clicked */
+  onUploadClick?: () => void
 }
 
 export function BoardHeader({
@@ -37,6 +39,7 @@ export function BoardHeader({
   filterVisible,
   onFilterToggle,
   hasActiveFilter,
+  onUploadClick,
 }: BoardHeaderProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -128,6 +131,22 @@ export function BoardHeader({
                   </button>
                 )
               })}
+              {/* Upload file */}
+              {onUploadClick && (
+                <>
+                  <div className="border-t border-border my-1" />
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-base text-foreground hover:bg-secondary/50 transition-colors"
+                    onClick={() => {
+                      setDropdownOpen(false)
+                      onUploadClick()
+                    }}
+                  >
+                    <Upload className="w-4 h-4 text-muted-foreground" />
+                    Upload file
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
