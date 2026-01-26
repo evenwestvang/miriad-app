@@ -191,7 +191,7 @@ export function BoardPanel({
     }
 
     fetchArtifact()
-  }, [channelId, selectedSlug, apiHost, refreshTrigger])
+  }, [channelId, selectedSlug, apiHost])
 
   // Handle resize
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -280,7 +280,10 @@ export function BoardPanel({
       setArchivedItems(data.items || [{ slug: selectedSlug, previousStatus: 'active' }])
 
       // Clear selection and go back to tree
-      setSelectedSlug(null)
+      setSelectedArtifactData(null)
+      if (onClearSelection) {
+        onClearSelection()
+      }
 
       // Refresh tree
       apiFetch(`${apiHost}/channels/${channelId}/artifacts/tree?pattern=/**&format=json`)
@@ -290,7 +293,7 @@ export function BoardPanel({
     } catch (err) {
       console.error('Archive error:', err)
     }
-  }, [channelId, selectedSlug, apiHost, setSelectedSlug])
+  }, [channelId, selectedSlug, apiHost, onClearSelection])
 
   // Undo archive (restore previous statuses)
   const handleUndoArchive = useCallback(async (items: ArchivedItem[]) => {
@@ -553,10 +556,6 @@ export function BoardPanel({
             setIsCreating(true)
             setArchivedItems([]) // Clear archive toast on create
           }}
-          onUploadClick={() => {
-            setIsUploading(true)
-            setArchivedItems([]) // Clear archive toast on upload
-          }}
           onClose={() => {
             setArchivedItems([]) // Clear archive toast on close
             onClose()
@@ -565,6 +564,10 @@ export function BoardPanel({
           filterVisible={filterVisible}
           onFilterToggle={handleFilterToggle}
           hasActiveFilter={!!filterText}
+          onUploadClick={() => {
+            setIsUploading(true)
+            setArchivedItems([])
+          }}
         />
       )}
 
@@ -706,6 +709,7 @@ export function BoardPanel({
           onDismiss={dismissArchiveToast}
         />
       )}
+
     </aside>
   )
 }

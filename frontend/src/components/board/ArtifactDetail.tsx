@@ -71,16 +71,15 @@ interface PropsValidationError {
 // Constants
 // =============================================================================
 
-// Status options based on type
-const DOC_STATUSES: ArtifactStatus[] = ['draft', 'active', 'archived']
-const TASK_STATUSES: ArtifactStatus[] = ['pending', 'in_progress', 'done', 'blocked', 'archived']
+// Status options based on type (archived is not user-selectable)
+const DOC_STATUSES: ArtifactStatus[] = ['draft', 'active']
+const TASK_STATUSES: ArtifactStatus[] = ['pending', 'in_progress', 'done', 'blocked']
 
-// Available types for creation
+// Available types for creation (decision and system.app are hidden from UI)
 const ARTIFACT_TYPES: { value: ArtifactType; label: string }[] = [
   { value: 'doc', label: 'Document' },
   { value: 'folder', label: 'Folder' },
   { value: 'task', label: 'Task' },
-  { value: 'decision', label: 'Decision' },
   { value: 'code', label: 'Code' },
   { value: 'knowledgebase', label: 'Knowledge Base' },
   { value: 'system.mcp', label: 'MCP Server' },
@@ -88,7 +87,6 @@ const ARTIFACT_TYPES: { value: ArtifactType; label: string }[] = [
   { value: 'system.environment', label: 'Environment' },
   { value: 'system.focus', label: 'Focus' },
   { value: 'system.playbook', label: 'Playbook' },
-  { value: 'system.app', label: 'App' },
 ]
 
 // Default status based on type (human-created artifacts default to 'active', tasks to 'pending')
@@ -419,30 +417,6 @@ export function ArtifactDetail({
     }
   }, [isCreateMode, onBack])
 
-  // ESC key handling: first ESC cancels editing, second ESC closes board
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // Don't interfere with inputs that might have their own ESC handling
-        const target = e.target as HTMLElement
-        if (target.tagName === 'SELECT') return
-
-        if (isEditing) {
-          // First ESC: cancel editing
-          e.preventDefault()
-          cancelEditing()
-        } else if (onBack && !showUnsavedPrompt) {
-          // Second ESC (or first if not editing): close board
-          e.preventDefault()
-          onBack()
-        }
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isEditing, cancelEditing, onBack, showUnsavedPrompt])
-
   // Handle slug change in create mode
   const handleSlugChange = useCallback((value: string) => {
     const normalized = value.toLowerCase().replace(/\s+/g, '-')
@@ -770,6 +744,62 @@ export function ArtifactDetail({
   // For create mode, check form validity; for edit mode, check for changes
   const hasChanges = isCreateMode ? isCreateFormValid : (buildChanges().length > 0 || hasContentChanged())
 
+  // Handle ESC with unsaved changes warning
+  const handleCancelWithWarning = useCallback(() => {
+    if (hasChanges) {
+      // Show unsaved changes prompt instead of immediately canceling
+      setPendingNavigation(() => cancelEditing)
+      setShowUnsavedPrompt(true)
+    } else {
+      cancelEditing()
+    }
+  }, [hasChanges, cancelEditing])
+
+  // Keyboard handling: ESC to cancel (with warning), Cmd+Enter to save
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+Enter or Ctrl+Enter to save (or cancel if no changes)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        if (isEditing && !saving) {
+          e.preventDefault()
+          if (hasChanges) {
+            saveChanges()
+          } else {
+            // No changes - act as cancel (exit edit mode)
+            cancelEditing()
+          }
+        }
+        return
+      }
+
+      if (e.key === 'Escape') {
+        // Don't interfere with inputs that might have their own ESC handling
+        const target = e.target as HTMLElement
+        if (target.tagName === 'SELECT') return
+
+        // If unsaved changes warning is showing, dismiss it
+        if (showUnsavedPrompt) {
+          e.preventDefault()
+          cancelNavigation()
+          return
+        }
+
+        if (isEditing) {
+          // First ESC: cancel editing (with unsaved changes warning)
+          e.preventDefault()
+          handleCancelWithWarning()
+        } else if (onBack) {
+          // Second ESC (or first if not editing): close board
+          e.preventDefault()
+          onBack()
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isEditing, handleCancelWithWarning, cancelEditing, cancelNavigation, onBack, showUnsavedPrompt, hasChanges, saving, saveChanges])
+
   // Get type label for header (create mode)
   const getTypeLabel = (type: ArtifactType): string => {
     const found = ARTIFACT_TYPES.find(t => t.value === type)
@@ -973,33 +1003,6 @@ export function ArtifactDetail({
         </div>
       )}
 
-      {/* Create mode: Slug and Type fields */}
-      {isCreateMode && (
-        <div className="px-3 py-4 border-b border-border space-y-6">
-          {/* Slug input */}
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground uppercase mb-2">
-              Slug <span className="text-muted-foreground/70">*</span>
-            </label>
-            <input
-              type="text"
-              value={editSlug}
-              onChange={(e) => handleSlugChange(e.target.value)}
-              placeholder="my-artifact-slug"
-              className={cn(
-                "w-full px-0 py-1 text-base bg-transparent border-0 border-b focus:outline-none focus:border-muted-foreground transition-colors",
-                slugError
-                  ? "border-destructive"
-                  : "border-border"
-              )}
-            />
-            {slugError && (
-              <p className="text-base text-destructive mt-1">{slugError}</p>
-            )}
-          </div>
-
-        </div>
-      )}
 
 
       {/* Type-specific metadata (MCP props, Agent props, Focus props) */}
@@ -1165,9 +1168,9 @@ export function ArtifactDetail({
               onChange={(e) => setEditContent(e.target.value)}
               placeholder={isCodeArtifact ? 'Code...' : currentType === 'system.agent' ? 'Describe the agent behaviour or ask the custodian to do it for you' : 'Write or paste markdown'}
               className={cn(
-                "w-full px-0 py-1 text-base bg-transparent border-0 border-b border-border",
-                "focus:outline-none focus:border-muted-foreground transition-colors resize-none overflow-y-auto",
-                isCodeArtifact && "font-mono"
+                "w-full px-0 py-1 bg-transparent border-0",
+                "focus:outline-none transition-colors resize-none overflow-y-auto",
+                isCodeArtifact ? "font-mono text-[0.8125rem] leading-[1.5]" : "text-base"
               )}
               style={{ minHeight: '100px', maxHeight: '70vh' }}
             />
@@ -1192,7 +1195,11 @@ export function ArtifactDetail({
           </div>
         ) : isCodeArtifact ? (
           <div
-            className={cn(!isViewingHistory && "cursor-text")}
+            className={cn(
+              "min-h-full",
+              !isViewingHistory && "cursor-text",
+              isDarkMode ? "bg-[#282c34]" : "bg-[#fafafa]"
+            )}
             onClick={!isViewingHistory ? () => startEditing(true) : undefined}
           >
             <CodeContent content={isViewingHistory ? versionData!.content : artifact!.content} language={codeLanguage} isDarkMode={isDarkMode} />
@@ -1202,7 +1209,7 @@ export function ArtifactDetail({
           null
         ) : (
           <div
-            className={cn("p-3", !isViewingHistory && "cursor-text")}
+            className={cn("p-3 min-h-full", !isViewingHistory && "cursor-text")}
             onClick={!isViewingHistory ? () => startEditing(true) : undefined}
           >
             <ArtifactContent
@@ -1216,11 +1223,17 @@ export function ArtifactDetail({
       </div>
 
 
-      {/* Metadata footer - view mode only (not create mode) */}
+      {/* Slug display with copy - shown in all modes */}
+      <SlugDisplay
+        slug={isCreateMode ? editSlug : artifact!.slug}
+        isCreateMode={isCreateMode}
+        onChange={isCreateMode ? handleSlugChange : undefined}
+        error={isCreateMode ? slugError : null}
+      />
+
+      {/* Metadata footer - view mode only (not create mode, not editing) */}
       {!isEditing && !isCreateMode && (
         <div className="px-3 py-2 border-t border-border text-base text-muted-foreground space-y-1">
-          {/* Slug (immutable identifier) */}
-          <div className="font-mono text-muted-foreground/70">{artifact!.slug}</div>
           {/* Created/Updated info */}
           <div className="flex flex-wrap gap-x-3 gap-y-0.5">
             <span>Created by <span className="text-foreground">@{artifact!.createdBy}</span> · {formatRelativeTime(artifact!.createdAt)}</span>
@@ -1244,7 +1257,7 @@ export function ArtifactDetail({
         <div className="sticky bottom-0 px-3 py-3 border-t-2 border-border bg-secondary/50 flex items-center justify-end gap-2">
           <button
             className="px-3 py-1.5 text-base text-foreground/70 hover:text-foreground transition-colors"
-            onClick={cancelEditing}
+            onClick={handleCancelWithWarning}
             disabled={saving}
           >
             Cancel
@@ -1271,6 +1284,68 @@ export function ArtifactDetail({
 // =============================================================================
 // Sub-components
 // =============================================================================
+
+/**
+ * Slug display with copy button - shown in all modes (create, edit, view).
+ * In create mode, renders an editable input field.
+ */
+function SlugDisplay({
+  slug,
+  isCreateMode,
+  onChange,
+  error,
+}: {
+  slug: string
+  isCreateMode: boolean
+  onChange?: (value: string) => void
+  error?: string | null
+}) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    if (!slug) return
+    await navigator.clipboard.writeText(slug)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  // In create mode, always show the input (even if empty)
+  if (isCreateMode) {
+    return (
+      <div className="px-3 py-2 border-t border-border">
+        <input
+          type="text"
+          value={slug}
+          onChange={(e) => onChange?.(e.target.value)}
+          placeholder="my-artifact-slug"
+          className={cn(
+            "w-full font-mono text-base bg-transparent border-0 focus:outline-none text-muted-foreground/70 placeholder:text-muted-foreground/40",
+            error && "text-destructive"
+          )}
+        />
+        {error && (
+          <p className="text-base text-destructive mt-1">{error}</p>
+        )}
+      </div>
+    )
+  }
+
+  // Don't show if no slug in view/edit mode
+  if (!slug) return null
+
+  return (
+    <div className="px-3 py-2 border-t border-border">
+      <button
+        onClick={handleCopy}
+        className="flex items-center gap-1.5 font-mono text-base text-muted-foreground/70 hover:text-muted-foreground transition-colors"
+        title="Copy slug"
+      >
+        <span className="truncate">{slug}</span>
+        {copied ? <Check className="w-3.5 h-3.5 text-green-500 flex-shrink-0" /> : <Copy className="w-3.5 h-3.5 flex-shrink-0" />}
+      </button>
+    </div>
+  )
+}
 
 /**
  * Status dropdown - plain text style (draft/active/archived).

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, X, Upload, FileText, CheckSquare, GitBranch, Code, ChevronDown, Server, Bot, Plug2, KeyRound, Filter } from 'lucide-react'
+import { Plus, X, FileText, CheckSquare, Code, ChevronDown, Server, Bot, KeyRound, Search, Folder, Upload } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { ArtifactType } from '../../types/artifact'
 
@@ -7,21 +7,19 @@ import type { ArtifactType } from '../../types/artifact'
 const CONTENT_TYPES: { value: ArtifactType; label: string; icon: typeof FileText }[] = [
   { value: 'doc', label: 'Doc', icon: FileText },
   { value: 'task', label: 'Task', icon: CheckSquare },
-  { value: 'decision', label: 'Decision', icon: GitBranch },
   { value: 'code', label: 'Code', icon: Code },
+  { value: 'folder', label: 'Folder', icon: Folder },
 ]
 
 // System types (configuration artifacts)
 const SYSTEM_TYPES: { value: ArtifactType; label: string; icon: typeof FileText }[] = [
   { value: 'system.agent', label: 'Agent', icon: Bot },
   { value: 'system.mcp', label: 'MCP Server', icon: Server },
-  { value: 'system.app', label: 'App', icon: Plug2 },
   { value: 'system.environment', label: 'Environment', icon: KeyRound },
 ]
 
 interface BoardHeaderProps {
   onCreateClick: (type: ArtifactType) => void
-  onUploadClick: () => void
   onClose: () => void
   canCreate?: boolean
   /** Whether the filter bar is visible */
@@ -30,16 +28,18 @@ interface BoardHeaderProps {
   onFilterToggle?: () => void
   /** Whether there's an active filter (to highlight the filter icon) */
   hasActiveFilter?: boolean
+  /** Callback when upload is clicked */
+  onUploadClick?: () => void
 }
 
 export function BoardHeader({
   onCreateClick,
-  onUploadClick,
   onClose,
   canCreate = true,
   filterVisible,
   onFilterToggle,
   hasActiveFilter,
+  onUploadClick,
 }: BoardHeaderProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -131,19 +131,22 @@ export function BoardHeader({
                   </button>
                 )
               })}
-              {/* Divider before upload */}
-              <div className="border-t border-border my-1" />
-              {/* Upload option */}
-              <button
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-base text-foreground hover:bg-secondary/50 transition-colors"
-                onClick={() => {
-                  setDropdownOpen(false)
-                  onUploadClick()
-                }}
-              >
-                <Upload className="w-4 h-4 text-muted-foreground" />
-                Upload File
-              </button>
+              {/* Upload file */}
+              {onUploadClick && (
+                <>
+                  <div className="border-t border-border my-1" />
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-base text-foreground hover:bg-secondary/50 transition-colors"
+                    onClick={() => {
+                      setDropdownOpen(false)
+                      onUploadClick()
+                    }}
+                  >
+                    <Upload className="w-4 h-4 text-muted-foreground" />
+                    Upload file
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -160,7 +163,7 @@ export function BoardHeader({
             onClick={onFilterToggle}
             title={filterVisible ? "Hide filter (Esc)" : "Filter artifacts (/ or ⌘K)"}
           >
-            <Filter className="w-4 h-4" />
+            <Search className="w-4 h-4" />
           </button>
         )}
         <button

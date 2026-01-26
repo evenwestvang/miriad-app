@@ -138,7 +138,7 @@ export function TreeItem({
         dropZone === 'on' && "bg-primary/20 ring-1 ring-inset ring-primary",
         isInvalidDropTarget && isDragActive && "cursor-not-allowed"
       )}
-      style={{ paddingLeft: `${12 + depth * 16}px`, paddingRight: '12px' }}
+      style={{ paddingLeft: `${12 + depth * 20}px`, paddingRight: '12px' }}
       onClick={onSelect}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
@@ -150,7 +150,7 @@ export function TreeItem({
       {dropZone === 'above' && (
         <div
           className="absolute left-0 right-0 top-0 h-0.5 bg-primary z-10 pointer-events-none"
-          style={{ marginLeft: `${8 + depth * 16}px` }}
+          style={{ marginLeft: `${8 + depth * 20}px` }}
         />
       )}
 
@@ -158,14 +158,14 @@ export function TreeItem({
       {dropZone === 'below' && (
         <div
           className="absolute left-0 right-0 bottom-0 h-0.5 bg-primary z-10 pointer-events-none"
-          style={{ marginLeft: `${8 + depth * 16}px` }}
+          style={{ marginLeft: `${8 + depth * 20}px` }}
         />
       )}
 
       {/* Expand/collapse chevron - always reserve space */}
       <button
         className={cn(
-          "w-4 h-4 flex items-center justify-center flex-shrink-0",
+          "w-6 h-6 -m-1 flex items-center justify-center flex-shrink-0 rounded hover:bg-secondary/50",
           !hasChildren && "invisible"
         )}
         onClick={(e) => {

@@ -709,7 +709,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     const artifact = await storage.createArtifact(targetChannelId, {
       slug,
       channelId: targetChannelId,
-      type: type as 'doc' | 'folder' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook',
+      type: type as 'doc' | 'folder' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook' | 'system.app',
       title,
       tldr,
       content,
@@ -792,7 +792,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     }
 
     const artifacts = await storage.listArtifacts(targetChannelId, {
-      type: type as 'doc' | 'folder' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook' | undefined,
+      type: type as 'doc' | 'folder' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook' | 'system.app' | undefined,
       status: status as 'draft' | 'active' | 'archived' | 'pending' | 'in_progress' | 'done' | 'blocked' | undefined,
       assignee,
       parentSlug: parentSlug as string | 'root' | undefined,
@@ -984,7 +984,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     const artifact = await storage.createArtifact(targetChannelId, {
       slug: targetSlug,
       channelId: targetChannelId,
-      type: source.type as 'doc' | 'folder' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook',
+      type: source.type as 'doc' | 'folder' | 'task' | 'code' | 'decision' | 'knowledgebase' | 'system.mcp' | 'system.agent' | 'system.focus' | 'system.playbook' | 'system.app',
       title: source.title,
       tldr: source.tldr,
       content: source.content,
