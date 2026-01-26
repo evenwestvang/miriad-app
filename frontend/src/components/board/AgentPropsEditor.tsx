@@ -119,6 +119,39 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
 
   return (
     <div className="space-y-8">
+      {/* Engine Selection */}
+      <div className="space-y-2">
+        <label className="block text-xs font-medium text-muted-foreground uppercase">
+          Engine
+        </label>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => onChange({ engine: 'claude-sdk' })}
+            className={cn(
+              "px-3 py-1.5 text-base rounded-l border transition-colors",
+              (!props.engine || props.engine === 'claude-sdk')
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-secondary text-foreground border-border hover:bg-secondary/80"
+            )}
+          >
+            Claude
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange({ engine: 'nuum' })}
+            className={cn(
+              "px-3 py-1.5 text-base rounded-r border transition-colors",
+              props.engine === 'nuum'
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-secondary text-foreground border-border hover:bg-secondary/80"
+            )}
+          >
+            Nuum
+          </button>
+        </div>
+      </div>
+
       {/* Name Theme */}
       <EditableField
         label="Name Theme"
