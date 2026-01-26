@@ -252,6 +252,9 @@ export function ArtifactDetail({
   // Content textarea ref for focus management
   const contentTextareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // Track click vs text selection to avoid triggering edit mode when selecting text
+  const mouseDownRef = useRef<{ x: number; y: number; time: number } | null>(null)
+
   // Auto-resize content textarea to fit content (max 70vh)
   useEffect(() => {
     const textarea = contentTextareaRef.current
@@ -404,6 +407,31 @@ export function ArtifactDetail({
       }, 0)
     }
   }, [artifact, isCreateMode])
+
+  // Handle click-to-edit, but not if user is selecting text
+  const handleEditClick = useCallback((focusContent = false) => {
+    // Check if user has made a text selection
+    const selection = window.getSelection()
+    if (selection && selection.toString().length > 0) {
+      return // Don't enter edit mode if text is selected
+    }
+
+    // Check if this was a drag (mouse moved significantly since mousedown)
+    if (mouseDownRef.current) {
+      const timeSinceMouseDown = Date.now() - mouseDownRef.current.time
+      // If click took longer than 300ms, user might be selecting - let them finish
+      if (timeSinceMouseDown > 300) {
+        return
+      }
+    }
+
+    startEditing(focusContent)
+  }, [startEditing])
+
+  // Track mousedown for drag detection
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    mouseDownRef.current = { x: e.clientX, y: e.clientY, time: Date.now() }
+  }, [])
 
   // Cancel editing (or cancel create)
   const cancelEditing = useCallback(() => {
@@ -845,7 +873,8 @@ export function ArtifactDetail({
                 "font-semibold text-base text-foreground truncate",
                 !isViewingHistory && "cursor-text hover:bg-secondary/30 px-1 -mx-1 rounded"
               )}
-              onClick={!isViewingHistory ? () => startEditing() : undefined}
+              onMouseDown={!isViewingHistory ? handleMouseDown : undefined}
+              onClick={!isViewingHistory ? () => handleEditClick() : undefined}
             >
               {/* Show title if present, otherwise slug as fallback */}
               {artifact!.title || artifact!.slug}
@@ -1200,7 +1229,8 @@ export function ArtifactDetail({
               !isViewingHistory && "cursor-text",
               isDarkMode ? "bg-[#282c34]" : "bg-[#fafafa]"
             )}
-            onClick={!isViewingHistory ? () => startEditing(true) : undefined}
+            onMouseDown={!isViewingHistory ? handleMouseDown : undefined}
+            onClick={!isViewingHistory ? () => handleEditClick(true) : undefined}
           >
             <CodeContent content={isViewingHistory ? versionData!.content : artifact!.content} language={codeLanguage} isDarkMode={isDarkMode} />
           </div>
@@ -1210,7 +1240,8 @@ export function ArtifactDetail({
         ) : (
           <div
             className={cn("p-3 min-h-full", !isViewingHistory && "cursor-text")}
-            onClick={!isViewingHistory ? () => startEditing(true) : undefined}
+            onMouseDown={!isViewingHistory ? handleMouseDown : undefined}
+            onClick={!isViewingHistory ? () => handleEditClick(true) : undefined}
           >
             <ArtifactContent
               content={isViewingHistory ? versionData!.content : artifact!.content}
