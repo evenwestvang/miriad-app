@@ -1,3 +1,4 @@
+import { Shield } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type {
   RadioField as RadioFieldType,
@@ -5,6 +6,7 @@ import type {
   SelectField as SelectFieldType,
   TextField as TextFieldType,
   TextareaField as TextareaFieldType,
+  SecretField as SecretFieldType,
 } from '../../types'
 
 interface FieldProps<T> {
@@ -158,6 +160,46 @@ export function TextareaField({ field, value, onChange, disabled }: FieldProps<T
           disabled && 'cursor-not-allowed opacity-50'
         )}
       />
+    </div>
+  )
+}
+
+export function SecretField({ field, value, onChange, disabled }: FieldProps<SecretFieldType>) {
+  // For submitted/dismissed forms, show placeholder instead of actual value
+  const displayValue = value === '<secret encrypted>' ? '' : (typeof value === 'string' ? value : '')
+  const isEncrypted = value === '<secret encrypted>'
+  
+  return (
+    <div className="space-y-2">
+      <FieldLabel field={field} />
+      {isEncrypted ? (
+        <div className="w-full px-3 py-2 text-base rounded-md border border-border bg-muted text-muted-foreground italic">
+          &lt;secret encrypted&gt;
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+            <Shield className="w-3.5 h-3.5" />
+            <span>This value will be encrypted and never shown in chat</span>
+          </div>
+          <input
+            type="password"
+            value={displayValue}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={field.placeholder ?? 'Enter secret value...'}
+            disabled={disabled}
+            autoComplete="off"
+            className={cn(
+              'w-full px-3 py-2 text-base rounded-md border border-border bg-background',
+              'focus:outline-none focus:ring-1 focus:ring-primary',
+              disabled && 'cursor-not-allowed opacity-50'
+            )}
+          />
+        </>
+      )}
+      <div className="text-xs text-muted-foreground">
+        → {field.targetKey} on {field.targetSlug} in #{field.targetChannel}
+      </div>
     </div>
   )
 }

@@ -2153,45 +2153,93 @@ export function createApp(options: AppOptions): Hono {
 
       const now = new Date().toISOString();
 
-      // Update the message content with response
-      const updatedContent = {
-        ...originalContent,
-        formState: "submitted",
-        response,
-        respondedBy,
-        respondedAt: now,
-      };
-
-      await storage.updateMessage(spaceId, messageId, {
-        content: updatedContent,
-        state: "completed",
-      });
-
-      // Broadcast the update via Tymbal
-      if (connectionManager) {
-        const frame = tymbal.set(messageId, {
-          type: "structured_ask",
-          sender: originalMessage.sender,
-          senderType: originalMessage.senderType,
-          content: updatedContent,
-          timestamp: originalMessage.timestamp,
-          state: "completed",
-        });
-        await connectionManager.broadcast(channelId, frame);
-      }
-
       // Build human-readable response message
       const fields = originalContent.fields as Array<{
         name: string;
         label: string;
         type: string;
         agents?: Array<{ callsign: string; definitionSlug: string; purpose: string }>;
+        // For secret fields
+        targetChannel?: string;
+        targetSlug?: string;
+        targetKey?: string;
       }>;
+
+      // Process secret fields first - store them and replace values with placeholder
+      const secretsSet: Array<{ targetChannel: string; targetSlug: string; targetKey: string }> = [];
+      const sanitizedResponse = { ...response };
+      
+      for (const field of fields) {
+        if (field.type === "secret" && field.targetChannel && field.targetSlug && field.targetKey) {
+          const secretValue = response[field.name];
+          if (typeof secretValue === "string" && secretValue) {
+            // Resolve the target channel
+            const targetChannel = await storage.resolveChannel(spaceId, field.targetChannel);
+            if (!targetChannel) {
+              console.error(`[StructuredAsk] Secret target channel not found: ${field.targetChannel}`);
+              continue;
+            }
+            
+            // Store the secret
+            try {
+              await storage.setSecret(spaceId, targetChannel.id, field.targetSlug, field.targetKey, {
+                value: secretValue,
+              });
+              secretsSet.push({
+                targetChannel: field.targetChannel,
+                targetSlug: field.targetSlug,
+                targetKey: field.targetKey,
+              });
+              console.log(`[StructuredAsk] Secret set: ${field.targetKey} on ${field.targetSlug} in ${field.targetChannel}`);
+            } catch (secretError) {
+              console.error(`[StructuredAsk] Failed to set secret ${field.targetKey}:`, secretError);
+            }
+          }
+          // Replace the secret value with placeholder in the stored response
+          sanitizedResponse[field.name] = "<secret encrypted>";
+        }
+      }
+
+      // Update the stored response to use sanitized values (secrets replaced with placeholder)
+      const updatedContentWithSanitizedResponse = {
+        ...originalContent,
+        formState: "submitted",
+        response: sanitizedResponse,
+        respondedBy,
+        respondedAt: now,
+      };
+
+      await storage.updateMessage(spaceId, messageId, {
+        content: updatedContentWithSanitizedResponse,
+        state: "completed",
+      });
+
+      // Broadcast the update via Tymbal (with sanitized response)
+      if (connectionManager) {
+        const frame = tymbal.set(messageId, {
+          type: "structured_ask",
+          sender: originalMessage.sender,
+          senderType: originalMessage.senderType,
+          content: updatedContentWithSanitizedResponse,
+          timestamp: originalMessage.timestamp,
+          state: "completed",
+        });
+        await connectionManager.broadcast(channelId, frame);
+      }
 
       const responseLines: string[] = [];
       for (const field of fields) {
         const value = response[field.name];
-        if (field.type === "summon_request") {
+        if (field.type === "secret") {
+          // For secrets, show that it was set with target info
+          if (typeof value === "string" && value) {
+            responseLines.push(
+              `- **${field.label}:** ${field.targetKey} was set on ${field.targetSlug} in #${field.targetChannel}`
+            );
+          } else {
+            responseLines.push(`- **${field.label}:** *(not provided)*`);
+          }
+        } else if (field.type === "summon_request") {
           // For summon_request, list approved agents
           // Value is array of {callsign, runtimeId} objects or plain strings (backwards compat)
           const approvedCallsigns = new Set<string>();
@@ -2379,6 +2427,7 @@ export function createApp(options: AppOptions): Hono {
         followUpMessageId,
         formState: "submitted",
         summonedAgents,
+        secretsSet,
       });
     } catch (error) {
       console.error("[StructuredAsk] Error submitting response:", error);

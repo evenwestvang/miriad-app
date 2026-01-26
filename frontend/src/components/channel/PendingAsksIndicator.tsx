@@ -217,8 +217,8 @@ export function PendingAsksIndicator({
             'bottom-full right-0 mb-2',
             // Styling to match AgentSummonPicker
             'bg-card border border-border rounded-lg shadow-lg',
-            // Size constraints
-            'min-w-[280px] max-w-[400px]'
+            // Size: list view is narrower, form view needs room for max-w-md form
+            selectedAsk ? 'w-[480px]' : 'min-w-[280px] max-w-[320px]'
           )}
         >
           {selectedAsk ? (

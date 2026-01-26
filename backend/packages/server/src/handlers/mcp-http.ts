@@ -498,6 +498,7 @@ Field types:
 • text - Single line text input
 • textarea - Multi-line text input
 • summon_request - Propose agents to summon (user can modify before submitting)
+• secret - Sensitive input (API keys, passwords) that gets encrypted and stored on an artifact
 
 The form persists in the channel until submitted. When submitted, you'll receive a follow-up message with the user's responses.`,
     inputSchema: {
@@ -515,7 +516,7 @@ The form persists in the channel until submitted. When submitted, you'll receive
             properties: {
               type: {
                 type: 'string',
-                enum: ['radio', 'checkbox', 'select', 'text', 'textarea', 'summon_request'],
+                enum: ['radio', 'checkbox', 'select', 'text', 'textarea', 'summon_request', 'secret'],
                 description: 'Field type',
               },
               name: {
@@ -554,6 +555,19 @@ The form persists in the channel until submitted. When submitted, you'll receive
                   },
                   required: ['callsign', 'definitionSlug', 'purpose'],
                 },
+              },
+              // For secret fields: target artifact where the secret will be stored
+              targetChannel: {
+                type: 'string',
+                description: 'For secret: channel name or ID where the target artifact lives',
+              },
+              targetSlug: {
+                type: 'string',
+                description: 'For secret: artifact slug (system.mcp or system.environment)',
+              },
+              targetKey: {
+                type: 'string',
+                description: 'For secret: key name for the secret (e.g., "OPENAI_API_KEY")',
               },
             },
             required: ['type', 'name', 'label'],
@@ -1413,7 +1427,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     const { prompt, fields, submitLabel, cancelLabel } = args as {
       prompt: string;
       fields: Array<{
-        type: 'radio' | 'checkbox' | 'select' | 'text' | 'textarea' | 'summon_request';
+        type: 'radio' | 'checkbox' | 'select' | 'text' | 'textarea' | 'summon_request' | 'secret';
         name: string;
         label: string;
         required?: boolean;
@@ -1425,6 +1439,10 @@ const toolHandlers: Record<string, ToolHandler> = {
           definitionSlug: string;
           purpose: string;
         }>;
+        // For secret fields
+        targetChannel?: string;
+        targetSlug?: string;
+        targetKey?: string;
       }>;
       submitLabel?: string;
       cancelLabel?: string;
@@ -1444,7 +1462,7 @@ const toolHandlers: Record<string, ToolHandler> = {
         throw new Error('Each field must have type, name, and label');
       }
 
-      const validTypes = ['radio', 'checkbox', 'select', 'text', 'textarea', 'summon_request'];
+      const validTypes = ['radio', 'checkbox', 'select', 'text', 'textarea', 'summon_request', 'secret'];
       if (!validTypes.includes(field.type)) {
         throw new Error(`Invalid field type: ${field.type}. Must be one of: ${validTypes.join(', ')}`);
       }
@@ -1472,6 +1490,13 @@ const toolHandlers: Record<string, ToolHandler> = {
           if (existing) {
             throw new Error(`Callsign "${agent.callsign}" already exists in this channel's roster. Choose a different callsign.`);
           }
+        }
+      }
+
+      // Validate target for secret fields
+      if (field.type === 'secret') {
+        if (!field.targetChannel || !field.targetSlug || !field.targetKey) {
+          throw new Error(`Field "${field.name}" of type "secret" requires targetChannel, targetSlug, and targetKey`);
         }
       }
     }

@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Send } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { StructuredAskMessage, StructuredAskField, SummonRequestResponse } from '../../types'
 import {
@@ -8,6 +7,7 @@ import {
   SelectField,
   TextField,
   TextareaField,
+  SecretField,
 } from './fields'
 import { SummonRequestField } from './SummonRequestField'
 
@@ -103,13 +103,6 @@ export function StructuredAskForm({ message, onSubmit, onCancel, spaceId, apiHos
       {/* Prompt */}
       <p className="text-base font-medium mb-4">{prompt}</p>
 
-      {/* Pending indicator */}
-      {!isSubmitted && !isDismissed && !popupMode && (
-        <div className="text-xs text-muted-foreground mb-3">
-          <span className="text-yellow-500">Waiting for your response</span>
-        </div>
-      )}
-
       {isSubmitted ? (
         <>
           <p className="text-xs text-muted-foreground mb-3">
@@ -184,13 +177,12 @@ export function StructuredAskForm({ message, onSubmit, onCancel, spaceId, apiHos
                 type="submit"
                 disabled={isSubmitting}
                 className={cn(
-                  'flex items-center gap-2 px-4 py-2 text-base font-medium',
+                  'px-4 py-2 text-base font-medium',
                   'bg-primary text-primary-foreground hover:bg-primary/90',
                   'disabled:opacity-50 disabled:cursor-not-allowed',
                   'transition-colors'
                 )}
               >
-                <Send className="w-4 h-4" />
                 {isSubmitting ? 'Submitting...' : (submitLabel || 'Submit')}
               </button>
             </div>
@@ -268,6 +260,15 @@ function FieldRenderer({ field, value, onChange, disabled, spaceId, apiHost, ros
           spaceId={spaceId}
           apiHost={apiHost}
           roster={roster}
+        />
+      )
+    case 'secret':
+      return (
+        <SecretField
+          field={field}
+          value={value as string | string[]}
+          onChange={onChange}
+          disabled={disabled}
         />
       )
     default:

@@ -399,6 +399,16 @@ export interface SummonRequestField extends BaseField {
   agents: SummonRequestAgent[]
 }
 
+export interface SecretField extends BaseField {
+  type: 'secret'
+  placeholder?: string
+  default?: string
+  // Target for where to store the secret
+  targetChannel: string  // channel name or ID
+  targetSlug: string     // artifact slug (system.mcp or system.environment)
+  targetKey: string      // secret key name (e.g., "OPENAI_API_KEY")
+}
+
 export type StructuredAskField =
   | RadioField
   | CheckboxField
@@ -406,6 +416,7 @@ export type StructuredAskField =
   | TextField
   | TextareaField
   | SummonRequestField
+  | SecretField
 
 export interface StructuredAskFormData {
   prompt: string

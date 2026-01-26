@@ -6,4 +6,5 @@ export {
   SelectField,
   TextField,
   TextareaField,
+  SecretField,
 } from './fields'
