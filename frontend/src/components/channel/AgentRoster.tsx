@@ -18,6 +18,8 @@ interface AgentRosterProps {
   agentTypes?: AgentType[]
   /** Channel ID for API calls */
   channelId?: string
+  /** Channel name for contextual name generation */
+  channelName?: string
   /** Space ID for runtime fetching */
   spaceId?: string
   /** API host */
@@ -111,6 +113,7 @@ export function AgentRoster({
   leader,
   agentTypes: _agentTypes = [],
   channelId,
+  channelName,
   spaceId,
   apiHost = '',
   onAgentAdded: _onAgentAdded,
@@ -164,6 +167,7 @@ export function AgentRoster({
         <AgentSummonPicker
           roster={roster}
           channelId={channelId}
+          channelName={channelName}
           spaceId={spaceId}
           apiHost={apiHost}
           onClose={() => onSummonClose?.()}
