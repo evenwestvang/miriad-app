@@ -130,7 +130,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
             onClick={() => onChange({ engine: 'claude-sdk' })}
             className={cn(
               "px-3 py-1.5 text-base rounded-l border transition-colors",
-              (!props.engine || props.engine === 'claude-sdk')
+              props.engine !== 'nuum'
                 ? "bg-primary text-primary-foreground border-primary"
                 : "bg-secondary text-foreground border-border hover:bg-secondary/80"
             )}
@@ -147,9 +147,20 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
                 : "bg-secondary text-foreground border-border hover:bg-secondary/80"
             )}
           >
-            Nuum
+            Nuum*
           </button>
         </div>
+        <p className="text-xs text-muted-foreground mt-1">
+          *) Nuum is an experimental agent engine.{' '}
+          <a 
+            href="https://github.com/miriad-systems/nuum" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="underline hover:text-foreground transition-colors"
+          >
+            Read more
+          </a>
+        </p>
       </div>
 
       {/* Name Theme */}
