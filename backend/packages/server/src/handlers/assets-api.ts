@@ -251,6 +251,285 @@ export function createAssetsApiRoutes(options: AssetsApiHandlerOptions): Hono<{ 
   });
 
   // ---------------------------------------------------------------------------
+  // POST /api/assets/:channelId/presign - Get presigned URL for direct S3 upload
+  // ---------------------------------------------------------------------------
+  app.post('/:channelId/presign', async (c) => {
+    const container = getContainerAuth(c);
+    const channelIdParam = c.req.param('channelId');
+
+    try {
+      // Check if presigned uploads are supported
+      if (!assetStorage.getPresignedUploadUrl) {
+        return c.json(
+          { error: 'Presigned uploads not supported by this storage backend' },
+          501
+        );
+      }
+
+      // Resolve channel
+      const channel = await storage.resolveChannel(container.spaceId, channelIdParam);
+      if (!channel) {
+        return c.json({ error: 'Channel not found' }, 404);
+      }
+
+      // Verify container has access to this channel
+      if (container.channelId !== channel.id) {
+        return c.json({ error: 'Access denied - container bound to different channel' }, 403);
+      }
+
+      const body = await c.req.json();
+      const { slug, contentType, fileSize, tldr, title, parentSlug, attachToLatestMessage } = body;
+
+      if (!slug) {
+        return c.json({ error: 'Missing required field: slug' }, 400);
+      }
+      if (!contentType) {
+        return c.json({ error: 'Missing required field: contentType' }, 400);
+      }
+      if (typeof fileSize !== 'number' || fileSize <= 0) {
+        return c.json({ error: 'Missing or invalid field: fileSize (must be positive number)' }, 400);
+      }
+
+      // Validate slug format
+      const slugValidation = SlugSchema.safeParse(slug);
+      if (!slugValidation.success) {
+        return c.json({ error: slugValidation.error.errors[0].message }, 400);
+      }
+
+      // Check for slug collision
+      const existingArtifact = await storage.getArtifact(channel.id, slug);
+      if (existingArtifact) {
+        const lastDot = slug.lastIndexOf('.');
+        const baseName = lastDot > 0 ? slug.slice(0, lastDot) : slug;
+        const ext = lastDot > 0 ? slug.slice(lastDot) : '';
+        const suggestion = `${baseName}-descriptive${ext}`;
+        return c.json(
+          {
+            error: 'SLUG_EXISTS',
+            message: `An artifact with slug '${slug}' already exists. Choose a more descriptive name like '${suggestion}'.`,
+          },
+          409
+        );
+      }
+
+      // Generate presigned URL
+      const presigned = await assetStorage.getPresignedUploadUrl({
+        channelId: channel.id,
+        slug,
+        contentType,
+        fileSize,
+      });
+
+      // Return presigned URL and metadata for the confirm step
+      return c.json({
+        uploadUrl: presigned.uploadUrl,
+        method: presigned.method,
+        headers: presigned.headers,
+        expiresIn: presigned.expiresIn,
+        // Echo back metadata for the confirm step
+        metadata: {
+          slug,
+          contentType,
+          fileSize,
+          tldr,
+          title,
+          parentSlug,
+          attachToLatestMessage: attachToLatestMessage === true,
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('exceeds maximum')) {
+        return c.json({ error: error.message }, 413);
+      }
+      console.error('[Assets API] Error generating presigned URL:', error);
+      return c.json({ error: 'Failed to generate presigned URL' }, 500);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // POST /api/assets/:channelId/confirm - Confirm upload and create artifact
+  // ---------------------------------------------------------------------------
+  app.post('/:channelId/confirm', async (c) => {
+    const container = getContainerAuth(c);
+    const channelIdParam = c.req.param('channelId');
+
+    try {
+      // Check if presigned uploads are supported
+      if (!assetStorage.verifyUpload) {
+        return c.json(
+          { error: 'Upload verification not supported by this storage backend' },
+          501
+        );
+      }
+
+      // Resolve channel
+      const channel = await storage.resolveChannel(container.spaceId, channelIdParam);
+      if (!channel) {
+        return c.json({ error: 'Channel not found' }, 404);
+      }
+
+      // Verify container has access to this channel
+      if (container.channelId !== channel.id) {
+        return c.json({ error: 'Access denied - container bound to different channel' }, 403);
+      }
+
+      const body = await c.req.json();
+      const { slug, tldr, title, parentSlug, attachToLatestMessage } = body;
+
+      if (!slug) {
+        return c.json({ error: 'Missing required field: slug' }, 400);
+      }
+
+      // Validate slug format
+      const slugValidation = SlugSchema.safeParse(slug);
+      if (!slugValidation.success) {
+        return c.json({ error: slugValidation.error.errors[0].message }, 400);
+      }
+
+      // Check artifact doesn't already exist (race condition protection)
+      const existingArtifact = await storage.getArtifact(channel.id, slug);
+      if (existingArtifact) {
+        return c.json(
+          { error: 'SLUG_EXISTS', message: `Artifact '${slug}' already exists` },
+          409
+        );
+      }
+
+      // Verify the file was actually uploaded to S3
+      let uploadInfo: { fileSize: number; contentType: string };
+      try {
+        uploadInfo = await assetStorage.verifyUpload(channel.id, slug);
+      } catch (err) {
+        return c.json(
+          {
+            error: 'UPLOAD_NOT_FOUND',
+            message: `File not found in storage. Did you upload to the presigned URL?`,
+          },
+          404
+        );
+      }
+
+      // Handle message attachment if requested
+      let attachedToMessageId: string | undefined;
+      if (attachToLatestMessage) {
+        const messages = await storage.getMessagesByChannelId(channel.id, {
+          sender: container.callsign,
+          newestFirst: true,
+          limit: 1,
+          includeToolCalls: false,
+        });
+
+        if (messages.length === 0) {
+          return c.json(
+            {
+              error: 'NO_MESSAGE_TO_ATTACH',
+              message:
+                'You must send a message before attaching files. Use send_message first, then upload with attachToLatestMessage: true.',
+            },
+            400
+          );
+        }
+
+        attachedToMessageId = messages[0].id;
+        const originalMessage = messages[0];
+
+        // Update the message's metadata to include this attachment slug
+        const existingMetadata = (originalMessage.metadata || {}) as Record<string, unknown>;
+        const existingSlugs = (existingMetadata.attachmentSlugs as string[]) || [];
+        const newAttachmentSlugs = [...existingSlugs, slug];
+        await storage.updateMessage(container.spaceId, attachedToMessageId, {
+          metadata: {
+            ...existingMetadata,
+            attachmentSlugs: newAttachmentSlugs,
+          },
+        });
+
+        // Broadcast updated message via WebSocket
+        const frame = tymbal.set(attachedToMessageId, {
+          type: originalMessage.type,
+          sender: originalMessage.sender,
+          senderType: originalMessage.senderType,
+          content: originalMessage.content,
+          attachmentSlugs: newAttachmentSlugs,
+        });
+        await connectionManager.broadcast(channel.id, frame);
+      }
+
+      // Create artifact record
+      const artifact = await storage.createArtifact(channel.id, {
+        slug,
+        channelId: channel.id,
+        type: 'asset',
+        title,
+        tldr,
+        content: '', // Binary content stored separately
+        parentSlug,
+        status: 'active',
+        contentType: uploadInfo.contentType,
+        fileSize: uploadInfo.fileSize,
+        attachedToMessageId,
+        createdBy: container.callsign,
+      });
+
+      return c.json(
+        {
+          slug: artifact.slug,
+          type: artifact.type,
+          contentType: uploadInfo.contentType,
+          fileSize: uploadInfo.fileSize,
+          url: `/api/assets/${channelIdParam}/${slug}`,
+        },
+        201
+      );
+    } catch (error) {
+      console.error('[Assets API] Error confirming upload:', error);
+      return c.json({ error: 'Failed to confirm upload' }, 500);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // PUT /api/assets/:channelId/upload/:slug - Direct upload endpoint (local dev)
+  // This is the target of "presigned" URLs in local filesystem mode
+  // ---------------------------------------------------------------------------
+  app.put('/:channelId/upload/:slug', async (c) => {
+    const channelIdParam = c.req.param('channelId');
+    const slug = c.req.param('slug');
+
+    try {
+      // Check if direct buffer upload is supported (local filesystem only)
+      if (!assetStorage.saveAssetBuffer) {
+        return c.json(
+          { error: 'Direct upload not supported by this storage backend' },
+          501
+        );
+      }
+
+      // Look up channel by ID (no auth required - mimics S3 presigned URL behavior)
+      // Security note: In production, this endpoint doesn't exist (S3 handles it)
+      // In local dev, we trust the presign step already validated access
+      const channel = await storage.getChannelById(channelIdParam);
+      if (!channel) {
+        return c.json({ error: 'Channel not found' }, 404);
+      }
+
+      // Read raw body
+      const arrayBuffer = await c.req.arrayBuffer();
+      const data = Buffer.from(arrayBuffer);
+
+      // Save directly to storage
+      await assetStorage.saveAssetBuffer(channel.id, slug, data);
+
+      return c.json({ success: true });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('exceeds maximum')) {
+        return c.json({ error: error.message }, 413);
+      }
+      console.error('[Assets API] Error in direct upload:', error);
+      return c.json({ error: 'Failed to upload asset' }, 500);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
   // GET /api/assets/:channelId/:slug - Download asset
   // ---------------------------------------------------------------------------
   app.get('/:channelId/:slug', async (c) => {

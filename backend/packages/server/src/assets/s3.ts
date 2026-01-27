@@ -14,9 +14,10 @@ import {
   DeleteObjectCommand,
   HeadObjectCommand,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import * as fs from 'node:fs/promises';
 import { getMimeType, MAX_ASSET_FILE_SIZE } from '@cast/core';
-import type { AssetStorage, SaveAssetInput, SaveAssetResult, ReadAssetStreamResult } from './index.js';
+import type { AssetStorage, SaveAssetInput, SaveAssetResult, ReadAssetStreamResult, PresignedUploadResult } from './index.js';
 
 // =============================================================================
 // Types
@@ -241,6 +242,82 @@ export function createS3AssetStorage(
     }
   }
 
+  /**
+   * Generate a presigned URL for direct upload to S3
+   * This bypasses Lambda's 6MB payload limit
+   */
+  async function getPresignedUploadUrl(input: {
+    channelId: string;
+    slug: string;
+    contentType: string;
+    fileSize: number;
+  }): Promise<{
+    uploadUrl: string;
+    method: 'PUT';
+    headers: Record<string, string>;
+    expiresIn: number;
+  }> {
+    const { channelId, slug, contentType, fileSize } = input;
+
+    // Validate file size
+    if (fileSize > maxFileSize) {
+      throw new Error(
+        `File size ${fileSize} exceeds maximum allowed ${maxFileSize} bytes`
+      );
+    }
+
+    const key = getAssetPath(channelId, slug);
+    const expiresIn = 3600; // 1 hour
+
+    const command = new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      ContentType: contentType,
+      ContentLength: fileSize,
+    });
+
+    const uploadUrl = await getSignedUrl(client, command, { expiresIn });
+
+    return {
+      uploadUrl,
+      method: 'PUT',
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': fileSize.toString(),
+      },
+      expiresIn,
+    };
+  }
+
+  /**
+   * Verify an asset was uploaded successfully by checking S3
+   */
+  async function verifyUpload(
+    channelId: string,
+    slug: string
+  ): Promise<{ fileSize: number; contentType: string }> {
+    const key = getAssetPath(channelId, slug);
+
+    try {
+      const response = await client.send(
+        new HeadObjectCommand({
+          Bucket: bucketName,
+          Key: key,
+        })
+      );
+
+      return {
+        fileSize: response.ContentLength ?? 0,
+        contentType: response.ContentType ?? 'application/octet-stream',
+      };
+    } catch (err) {
+      if ((err as { name?: string }).name === 'NotFound') {
+        throw new Error(`Asset not found in storage: ${slug}`);
+      }
+      throw err;
+    }
+  }
+
   return {
     saveAsset,
     readAsset,
@@ -248,5 +325,7 @@ export function createS3AssetStorage(
     assetExists,
     deleteAsset,
     getAssetPath,
+    getPresignedUploadUrl,
+    verifyUpload,
   };
 }

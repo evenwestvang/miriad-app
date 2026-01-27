@@ -48,9 +48,33 @@ export interface ReadAssetStreamResult {
   contentType?: string;
 }
 
+/** Input for generating a presigned upload URL */
+export interface PresignedUploadInput {
+  channelId: string;
+  slug: string;
+  contentType: string;
+  /** Expected file size in bytes (for validation) */
+  fileSize: number;
+}
+
+/** Result from generating a presigned upload URL */
+export interface PresignedUploadResult {
+  /** Presigned URL for direct upload to storage */
+  uploadUrl: string;
+  /** HTTP method to use (PUT for S3) */
+  method: 'PUT';
+  /** Headers to include in the upload request */
+  headers: Record<string, string>;
+  /** URL expiration time in seconds */
+  expiresIn: number;
+}
+
 export interface AssetStorage {
   /** Save a binary asset to storage */
   saveAsset(input: SaveAssetInput): Promise<SaveAssetResult>;
+
+  /** Save raw buffer directly (used by local upload endpoint) */
+  saveAssetBuffer?(channelId: string, slug: string, data: Buffer): Promise<SaveAssetResult>;
 
   /** Read an asset from storage (buffers entire file - use readAssetStream for large files) */
   readAsset(channelId: string, slug: string): Promise<Buffer>;
@@ -66,6 +90,12 @@ export interface AssetStorage {
 
   /** Get the file path for an asset (for direct serving) */
   getAssetPath(channelId: string, slug: string): string;
+
+  /** Generate a presigned URL for direct upload (bypasses Lambda payload limits) */
+  getPresignedUploadUrl?(input: PresignedUploadInput): Promise<PresignedUploadResult>;
+
+  /** Verify an asset was uploaded successfully (check it exists in storage) */
+  verifyUpload?(channelId: string, slug: string): Promise<{ fileSize: number; contentType: string }>;
 }
 
 // =============================================================================
@@ -198,12 +228,99 @@ export function createFilesystemAssetStorage(
     }
   }
 
+  /**
+   * Generate a "presigned" URL for local upload
+   * This returns a URL pointing to the local server's upload endpoint
+   */
+  async function getPresignedUploadUrl(input: PresignedUploadInput & { serverUrl?: string }): Promise<PresignedUploadResult> {
+    const { channelId, slug, contentType, fileSize, serverUrl: inputServerUrl } = input;
+
+    // Validate file size
+    if (fileSize > maxFileSize) {
+      throw new Error(
+        `File size ${fileSize} exceeds maximum allowed ${maxFileSize} bytes`
+      );
+    }
+
+    // For local dev, we return a URL to our own upload endpoint
+    // The server will need to handle PUT requests to this path
+    const serverUrl = inputServerUrl || process.env.CAST_API_URL || 'http://localhost:3000';
+    const uploadUrl = `${serverUrl}/api/assets/${channelId}/upload/${slug}`;
+
+    return {
+      uploadUrl,
+      method: 'PUT',
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': fileSize.toString(),
+      },
+      expiresIn: 3600, // Not enforced for local, but keeps interface consistent
+    };
+  }
+
+  /**
+   * Verify an asset was uploaded successfully
+   */
+  async function verifyUpload(
+    channelId: string,
+    slug: string
+  ): Promise<{ fileSize: number; contentType: string }> {
+    const filePath = getAssetPath(channelId, slug);
+
+    try {
+      const stats = await fs.stat(filePath);
+      const contentType = getMimeType(slug);
+
+      return {
+        fileSize: stats.size,
+        contentType,
+      };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new Error(`Asset not found in storage: ${slug}`);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Save raw buffer directly (used by the local upload endpoint)
+   */
+  async function saveAssetBuffer(
+    channelId: string,
+    slug: string,
+    data: Buffer
+  ): Promise<SaveAssetResult> {
+    if (data.length > maxFileSize) {
+      throw new Error(
+        `File size ${data.length} exceeds maximum allowed ${maxFileSize} bytes`
+      );
+    }
+
+    const filePath = getAssetPath(channelId, slug);
+    const dir = path.dirname(filePath);
+
+    await ensureDir(dir);
+    await fs.writeFile(filePath, data);
+
+    const contentType = getMimeType(slug);
+
+    return {
+      filePath,
+      contentType,
+      fileSize: data.length,
+    };
+  }
+
   return {
     saveAsset,
+    saveAssetBuffer,
     readAsset,
     assetExists,
     deleteAsset,
     getAssetPath,
+    getPresignedUploadUrl,
+    verifyUpload,
   };
 }
 
