@@ -466,9 +466,9 @@ async function startFlyMachine(
         path: '/workspace',
       }],
       guest: {
-        cpu_kind: 'shared',
-        cpus: 2,
-        memory_mb: 4096,
+        cpu_kind: (process.env.FLY_CPU_KIND ?? 'performance') as 'shared' | 'performance',
+        cpus: parseInt(process.env.FLY_CPUS ?? '4', 10),
+        memory_mb: parseInt(process.env.FLY_MEMORY_MB ?? '16384', 10),
       },
       restart: {
         policy: 'no',
