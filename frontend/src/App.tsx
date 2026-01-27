@@ -975,18 +975,87 @@ export function App() {
       if (!selectedThread) return;
 
       // Upload attachments first (inverted flow) and collect slugs
+      // Files >5MB use presigned URL flow to bypass Lambda limits
+      const PRESIGNED_THRESHOLD = 5 * 1024 * 1024;
       let attachSlugs: string[] | undefined;
       if (attachments && attachments.length > 0) {
+        const sender = authSession?.user?.callsign || "user";
         const uploadResults = await Promise.all(
           attachments.map(async (file) => {
-            const formData = new FormData();
-            formData.append("file", file);
-            formData.append("slug", file.name);
-            formData.append("tldr", `Attachment: ${file.name}`);
-            formData.append("sender", authSession?.user?.callsign || "user");
-            // Note: no attachToMessageId - we'll pass slugs to message endpoint
+            const slug = file.name;
+            const tldr = `Attachment: ${file.name}`;
 
             try {
+              // Large files use presigned URL flow
+              if (file.size > PRESIGNED_THRESHOLD) {
+                // Step 1: Get presigned URL
+                const presignResponse = await apiFetch(
+                  `/channels/${selectedThread}/assets/presign`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      slug,
+                      contentType: file.type || "application/octet-stream",
+                      fileSize: file.size,
+                      tldr,
+                      sender,
+                    }),
+                  }
+                );
+
+                if (!presignResponse.ok) {
+                  const error = await presignResponse.json();
+                  console.error("Failed to get presigned URL:", error);
+                  return null;
+                }
+
+                const presignData = await presignResponse.json();
+
+                // Step 2: Upload directly to S3
+                const uploadResponse = await fetch(presignData.uploadUrl, {
+                  method: presignData.method,
+                  headers: presignData.headers || {},
+                  body: file,
+                });
+
+                if (!uploadResponse.ok) {
+                  console.error("S3 upload failed:", uploadResponse.status);
+                  return null;
+                }
+
+                // Step 3: Confirm upload
+                const confirmResponse = await apiFetch(
+                  `/channels/${selectedThread}/assets/confirm`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      slug: presignData.slug,
+                      tldr,
+                      sender,
+                      contentType: file.type || "application/octet-stream",
+                    }),
+                  }
+                );
+
+                if (!confirmResponse.ok) {
+                  const error = await confirmResponse.json();
+                  console.error("Failed to confirm upload:", error);
+                  return null;
+                }
+
+                const data = await confirmResponse.json();
+                return data.slug as string;
+              }
+
+              // Small files use direct multipart upload
+              const formData = new FormData();
+              formData.append("file", file);
+              formData.append("slug", slug);
+              formData.append("tldr", tldr);
+              formData.append("sender", sender);
+
               const response = await apiFetch(
                 `/channels/${selectedThread}/assets`,
                 {
