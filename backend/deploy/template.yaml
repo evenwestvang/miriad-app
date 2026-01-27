@@ -87,6 +87,21 @@ Parameters:
     Type: String
     Description: Fly.io region (e.g., iad, fra)
     Default: 'iad'
+  FlyMemoryMb:
+    Type: Number
+    Description: Fly.io machine memory in MB
+    Default: 16384
+  FlyCpus:
+    Type: Number
+    Description: Fly.io machine CPU count
+    Default: 4
+  FlyCpuKind:
+    Type: String
+    Description: Fly.io CPU type (shared or performance)
+    AllowedValues:
+      - shared
+      - performance
+    Default: 'performance'
   SpaceId:
     Type: String
     Description: Default space ID for agents
@@ -170,6 +185,9 @@ Resources:
           FLY_APP_NAME: !Ref FlyAppName
           FLY_REGION: !Ref FlyRegion
           FLY_IMAGE: !Ref AgentImageUri
+          FLY_MEMORY_MB: !Ref FlyMemoryMb
+          FLY_CPUS: !Ref FlyCpus
+          FLY_CPU_KIND: !Ref FlyCpuKind
           SPACE_ID: !Ref SpaceId
           CAST_CONTAINER_SECRET: !Ref ContainerSecret
           ASSET_STORAGE_BACKEND: s3
