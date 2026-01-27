@@ -11,26 +11,10 @@ export interface Asset {
 
 export type UploadState = 'idle' | 'uploading' | 'success' | 'error'
 
-// Allowed file types - expanded to include audio/video
-const ALLOWED_TYPES = [
-  'image/png',
-  'image/jpeg',
-  'image/gif',
-  'image/svg+xml',
-  'image/webp',
-  'application/pdf',
-  'audio/mpeg',
-  'audio/wav',
-  'audio/ogg',
-  'audio/mp4',
-  'audio/flac',
-  'video/mp4',
-  'video/webm',
-  'video/quicktime',
-]
+const MAX_SIZE_BYTES = 500 * 1024 * 1024 // 500MB - presigned URLs bypass Lambda limits
 
-const ALLOWED_EXTENSIONS = '.png,.jpg,.jpeg,.gif,.svg,.webp,.pdf,.mp3,.wav,.ogg,.m4a,.flac,.mp4,.webm,.mov'
-const MAX_SIZE_BYTES = 100 * 1024 * 1024 // 100MB for video support
+// Files larger than this use presigned URL flow (Lambda has 6MB limit)
+const PRESIGNED_THRESHOLD = 5 * 1024 * 1024 // 5MB
 
 interface AssetUploadProps {
   channelId: string
@@ -114,13 +98,118 @@ export function AssetUpload({ channelId, apiHost, onComplete, onCancel }: AssetU
     }
   }, [uploads.length, onCancel])
 
-  // Upload a single file
-  const uploadFile = useCallback((item: UploadItem) => {
+  // Upload a single file - uses presigned URL for large files
+  const uploadFile = useCallback(async (item: UploadItem) => {
+    setUploads(prev => prev.map(u =>
+      u.slug === item.slug ? { ...u, state: 'uploading' } : u
+    ))
+
+    const tldr = `Uploaded file: ${item.file.name}`
+
+    // For large files, use presigned URL flow to bypass Lambda limits
+    if (item.file.size > PRESIGNED_THRESHOLD) {
+      try {
+        // Step 1: Get presigned URL
+        const presignResponse = await fetch(`${apiHost}/channels/${channelId}/assets/presign`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            slug: item.slug,
+            contentType: item.file.type || 'application/octet-stream',
+            fileSize: item.file.size,
+            tldr,
+            sender: 'user',
+          }),
+        })
+
+        if (!presignResponse.ok) {
+          const error = await presignResponse.json().catch(() => ({ error: 'Presign failed' }))
+          throw new Error(error.error || `Presign failed (${presignResponse.status})`)
+        }
+
+        const presignData = await presignResponse.json()
+
+        // Step 2: Upload directly to S3 using XHR for progress tracking
+        const xhr = new XMLHttpRequest()
+        xhrRefs.current.set(item.slug, xhr)
+
+        await new Promise<void>((resolve, reject) => {
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const progress = Math.round((e.loaded / e.total) * 100)
+              setUploads(prev => prev.map(u =>
+                u.slug === item.slug ? { ...u, progress } : u
+              ))
+            }
+          }
+
+          xhr.onload = () => {
+            xhrRefs.current.delete(item.slug)
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve()
+            } else {
+              reject(new Error(`S3 upload failed (${xhr.status})`))
+            }
+          }
+
+          xhr.onerror = () => {
+            xhrRefs.current.delete(item.slug)
+            reject(new Error('Network error during S3 upload'))
+          }
+
+          xhr.open(presignData.method, presignData.uploadUrl)
+          // Set headers from presigned response
+          Object.entries(presignData.headers || {}).forEach(([key, value]) => {
+            xhr.setRequestHeader(key, value as string)
+          })
+          xhr.send(item.file)
+        })
+
+        // Step 3: Confirm upload
+        const confirmResponse = await fetch(`${apiHost}/channels/${channelId}/assets/confirm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            slug: presignData.slug,
+            tldr,
+            sender: 'user',
+            contentType: item.file.type || 'application/octet-stream',
+          }),
+        })
+
+        if (!confirmResponse.ok) {
+          const error = await confirmResponse.json().catch(() => ({ error: 'Confirm failed' }))
+          throw new Error(error.error || `Confirm failed (${confirmResponse.status})`)
+        }
+
+        const response = await confirmResponse.json()
+        const asset: Asset = {
+          slug: response.slug,
+          url: response.url,
+          mimeType: response.contentType,
+          size: response.fileSize,
+          tldr,
+        }
+        setUploads(prev => prev.map(u =>
+          u.slug === item.slug ? { ...u, state: 'success', progress: 100, asset } : u
+        ))
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Upload failed'
+        setUploads(prev => prev.map(u =>
+          u.slug === item.slug ? { ...u, state: 'error', error: errorMsg } : u
+        ))
+      }
+      return
+    }
+
+    // For small files, use direct multipart upload
     const formData = new FormData()
     formData.append('file', item.file)
     formData.append('slug', item.slug)
-    formData.append('tldr', `Uploaded file: ${item.file.name}`)
-    formData.append('sender', 'user') // Required by backend
+    formData.append('tldr', tldr)
+    formData.append('sender', 'user')
 
     const xhr = new XMLHttpRequest()
     xhrRefs.current.set(item.slug, xhr)
@@ -139,13 +228,12 @@ export function AssetUpload({ channelId, apiHost, onComplete, onCancel }: AssetU
       if (xhr.status === 200 || xhr.status === 201) {
         try {
           const response = JSON.parse(xhr.responseText)
-          // Backend returns { slug, type, contentType, fileSize, url } directly
           const asset: Asset = {
             slug: response.slug,
             url: response.url,
             mimeType: response.contentType,
             size: response.fileSize,
-            tldr: `Uploaded file: ${item.file.name}`,
+            tldr,
           }
           setUploads(prev => prev.map(u =>
             u.slug === item.slug ? { ...u, state: 'success', progress: 100, asset } : u
@@ -174,10 +262,6 @@ export function AssetUpload({ channelId, apiHost, onComplete, onCancel }: AssetU
       ))
     }
 
-    setUploads(prev => prev.map(u =>
-      u.slug === item.slug ? { ...u, state: 'uploading' } : u
-    ))
-
     xhr.open('POST', `${apiHost}/channels/${channelId}/assets`)
     xhr.withCredentials = true
     xhr.send(formData)
@@ -200,17 +284,7 @@ export function AssetUpload({ channelId, apiHost, onComplete, onCancel }: AssetU
 
       // Validate size
       if (file.size > MAX_SIZE_BYTES) {
-        errors.push(`${file.name}: Too large (max 100MB)`)
-        continue
-      }
-
-      // Validate type (be lenient - allow if extension matches)
-      const ext = file.name.split('.').pop()?.toLowerCase()
-      const validExt = ALLOWED_EXTENSIONS.includes(`.${ext}`)
-      const validType = ALLOWED_TYPES.includes(file.type)
-
-      if (!validType && !validExt) {
-        errors.push(`${file.name}: Unsupported file type`)
+        errors.push(`${file.name}: Too large (max 500MB)`)
         continue
       }
 
@@ -265,11 +339,10 @@ export function AssetUpload({ channelId, apiHost, onComplete, onCancel }: AssetU
 
   return (
     <div className="flex flex-col h-full">
-      {/* Hidden file input - multiple allowed */}
+      {/* Hidden file input - multiple allowed, any file type */}
       <input
         ref={fileInputRef}
         type="file"
-        accept={ALLOWED_EXTENSIONS}
         multiple
         className="hidden"
         onChange={handleFileSelect}

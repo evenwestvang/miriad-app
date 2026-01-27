@@ -1178,6 +1178,204 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
   });
 
   // ---------------------------------------------------------------------------
+  // POST /channels/:channelId/assets/presign - Get presigned URL for direct S3 upload
+  //
+  // For large files (>6MB), the frontend should use this flow:
+  // 1. POST /presign with metadata → get uploadUrl
+  // 2. PUT to uploadUrl → upload directly to S3
+  // 3. POST /confirm → create artifact record
+  // ---------------------------------------------------------------------------
+  app.post('/:channelId/assets/presign', async (c) => {
+    if (!assetStorage) {
+      return c.json({ error: 'Asset storage not configured' }, 501);
+    }
+
+    const channelId = c.req.param('channelId');
+
+    try {
+      const spaceId = getSpaceId(c);
+      const channel = await storage.resolveChannel(spaceId, channelId);
+
+      if (!channel) {
+        return c.json({ error: 'Channel not found' }, 404);
+      }
+
+      // Check if presigned uploads are supported
+      if (!assetStorage.getPresignedUploadUrl) {
+        return c.json(
+          { error: 'Presigned uploads not supported by this storage backend' },
+          501
+        );
+      }
+
+      const body = await c.req.json();
+      const { slug, contentType, fileSize, tldr, title, parentSlug, sender, attachToMessageId } = body;
+
+      if (!slug || !contentType || !fileSize || !tldr || !sender) {
+        return c.json(
+          { error: 'Missing required fields: slug, contentType, fileSize, tldr, sender' },
+          400
+        );
+      }
+
+      // Normalize and validate slug
+      const normalizedSlug = slugify(slug);
+      const slugValidation = SlugSchema.safeParse(normalizedSlug);
+      if (!slugValidation.success) {
+        return c.json({ error: slugValidation.error.errors[0].message }, 400);
+      }
+
+      // Check for existing artifact
+      const existingArtifact = await storage.getArtifact(channel.id, normalizedSlug);
+      if (existingArtifact) {
+        return c.json({ error: `Asset already exists: ${normalizedSlug}` }, 409);
+      }
+
+      // Get presigned URL
+      const presigned = await assetStorage.getPresignedUploadUrl({
+        channelId: channel.id,
+        slug: normalizedSlug,
+        contentType,
+        fileSize,
+      });
+
+      return c.json({
+        uploadUrl: presigned.uploadUrl,
+        method: presigned.method,
+        headers: presigned.headers,
+        expiresIn: presigned.expiresIn,
+        slug: normalizedSlug,
+        // Echo back metadata for confirm step
+        metadata: { tldr, title, parentSlug, sender, attachToMessageId, contentType, fileSize },
+      });
+    } catch (error) {
+      console.error('[Artifacts] Error getting presigned URL:', error);
+      return c.json({ error: 'Failed to get presigned URL' }, 500);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // POST /channels/:channelId/assets/confirm - Confirm upload and create artifact
+  // ---------------------------------------------------------------------------
+  app.post('/:channelId/assets/confirm', async (c) => {
+    if (!assetStorage) {
+      return c.json({ error: 'Asset storage not configured' }, 501);
+    }
+
+    const channelId = c.req.param('channelId');
+
+    try {
+      const spaceId = getSpaceId(c);
+      const channel = await storage.resolveChannel(spaceId, channelId);
+
+      if (!channel) {
+        return c.json({ error: 'Channel not found' }, 404);
+      }
+
+      // Check if presigned uploads are supported
+      if (!assetStorage.verifyUpload) {
+        return c.json(
+          { error: 'Presigned uploads not supported by this storage backend' },
+          501
+        );
+      }
+
+      const body = await c.req.json();
+      const { slug, tldr, title, parentSlug, sender, attachToMessageId, contentType } = body;
+
+      if (!slug || !tldr || !sender) {
+        return c.json({ error: 'Missing required fields: slug, tldr, sender' }, 400);
+      }
+
+      // Verify the file was actually uploaded to S3
+      let uploadInfo: { fileSize: number; contentType: string };
+      try {
+        uploadInfo = await assetStorage.verifyUpload(channel.id, slug);
+      } catch {
+        return c.json(
+          {
+            error: 'Upload verification failed',
+            message: `File not found in storage. Did you upload to the presigned URL?`,
+          },
+          400
+        );
+      }
+
+      // Validate message exists if attaching to message
+      let targetMessage: Awaited<ReturnType<typeof storage.getMessage>> | undefined;
+      if (attachToMessageId) {
+        targetMessage = await storage.getMessage(spaceId, attachToMessageId);
+        if (!targetMessage) {
+          return c.json({ error: 'Message not found' }, 404);
+        }
+        if (targetMessage.channelId !== channel.id) {
+          return c.json({ error: 'Message does not belong to this channel' }, 400);
+        }
+      }
+
+      // Create artifact record
+      const artifact = await storage.createArtifact(channel.id, {
+        slug,
+        channelId: channel.id,
+        type: 'asset',
+        title: title || slug,
+        tldr,
+        content: '',
+        status: 'active',
+        parentSlug,
+        contentType: contentType || uploadInfo.contentType,
+        fileSize: uploadInfo.fileSize,
+        attachedToMessageId: attachToMessageId,
+        createdBy: sender,
+      });
+
+      // Broadcast artifact creation
+      await broadcastArtifactEvent(connectionManager, channel.id, 'create', {
+        slug: artifact.slug,
+        type: artifact.type,
+        title: artifact.title,
+        tldr: artifact.tldr,
+        status: artifact.status,
+      });
+
+      // If attaching to message, update message metadata and broadcast
+      if (targetMessage && attachToMessageId) {
+        const existingMetadata = (targetMessage.metadata || {}) as Record<string, unknown>;
+        const existingSlugs = (existingMetadata.attachmentSlugs as string[]) || [];
+        const newAttachmentSlugs = [...existingSlugs, slug];
+
+        await storage.updateMessage(spaceId, attachToMessageId, {
+          metadata: {
+            ...existingMetadata,
+            attachmentSlugs: newAttachmentSlugs,
+          },
+        });
+
+        // Broadcast updated message via WebSocket so clients see the attachment immediately
+        const frame = tymbal.set(attachToMessageId, {
+          type: targetMessage.type,
+          sender: targetMessage.sender,
+          senderType: targetMessage.senderType,
+          content: targetMessage.content,
+          attachmentSlugs: newAttachmentSlugs,
+        });
+        await connectionManager.broadcast(channel.id, frame);
+      }
+
+      return c.json({
+        slug: artifact.slug,
+        type: artifact.type,
+        contentType: uploadInfo.contentType,
+        fileSize: uploadInfo.fileSize,
+        url: `/channels/${channelId}/assets/${slug}`,
+      }, 201);
+    } catch (error) {
+      console.error('[Artifacts] Error confirming upload:', error);
+      return c.json({ error: 'Failed to confirm upload' }, 500);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
   // GET /channels/:channelId/assets/:slug - Serve artifact content
   //
   // Serves different artifact types:
@@ -1211,25 +1409,19 @@ export function createArtifactRoutes(options: ArtifactHandlerOptions): Hono {
           return c.json({ error: 'Asset storage not configured' }, 501);
         }
 
-        const mimeType = artifact.contentType || getMimeType(slug);
+        // Use presigned URL for S3 backend (bypasses Lambda's 6MB response limit)
+        if (assetStorage.getPresignedDownloadUrl) {
+          const { downloadUrl } = await assetStorage.getPresignedDownloadUrl(
+            channel.id,
+            slug
+          );
 
-        // Use streaming if available (S3 backend) to handle large files
-        if (assetStorage.readAssetStream) {
-          const { stream, contentLength, contentType } = await assetStorage.readAssetStream(channel.id, slug);
-
-          const headers: Record<string, string> = {
-            'Content-Type': contentType || mimeType,
-            'Cache-Control': 'public, max-age=31536000, immutable',
-          };
-
-          if (contentLength !== undefined) {
-            headers['Content-Length'] = contentLength.toString();
-          }
-
-          return new Response(stream, { headers });
+          // Redirect to presigned S3 URL
+          return c.redirect(downloadUrl, 302);
         }
 
         // Fallback to buffered read for filesystem backend
+        const mimeType = artifact.contentType || getMimeType(slug);
         const data = await assetStorage.readAsset(channel.id, slug);
 
         return new Response(data, {
