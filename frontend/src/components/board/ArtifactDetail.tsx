@@ -24,7 +24,7 @@ import { FocusPropsEditor, type FocusProps } from './FocusPropsEditor'
 import { AppPropsDisplay, type AppProps } from './AppPropsDisplay'
 import { EnvEditor, type SecretMetadata } from '../ui/env-editor'
 import { SpaRenderer } from './SpaRenderer'
-import { AssetPreview, isPreviewableMime } from '../ui/asset-preview'
+import { AssetPreview } from '../ui/asset-preview'
 import { highlightMentions, type ArtifactInfo } from '../../utils'
 import { useIsDarkMode } from '../../hooks/useIsDarkMode'
 
@@ -370,8 +370,8 @@ export function ArtifactDetail({
   // Check if viewing a historical version
   const isViewingHistory = !isCreateMode && selectedVersion !== null && versionData !== null
 
-  // Asset detection - use contentType (MIME type) from artifact
-  const isAsset = !isCreateMode && isPreviewableMime(artifact?.contentType)
+  // Asset detection - show preview for all asset-type artifacts
+  const isAsset = !isCreateMode && artifact?.type === 'asset'
   const assetUrl = artifact ? `${apiHost}/channels/${channelId}/assets/${artifact.slug}` : ''
 
   // Code detection (for existing artifacts or create mode with code type)

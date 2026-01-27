@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react'
-import { Download, ExternalLink, MoreVertical } from 'lucide-react'
+import { Download, ExternalLink, MoreVertical, FileIcon } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
 // =============================================================================
@@ -242,6 +242,31 @@ export function AssetPreview({
     )
   }
 
-  // Unknown type - no preview available
-  return null
+  // Unknown/generic file type - show file icon with download
+  if (compact) {
+    return (
+      <div className={cn('relative group', className)}>
+        <div className="flex items-center gap-2 p-3 border border-border rounded bg-secondary/30">
+          <FileIcon className="w-5 h-5 text-muted-foreground" />
+          <span className="text-sm text-foreground truncate max-w-[200px]">{filename}</span>
+        </div>
+        {/* Kebab menu - visible on hover */}
+        <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <CompactKebabMenu url={url} filename={filename} />
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className={cn('space-y-3', className)}>
+      <div className="flex items-center gap-3 p-4 border border-border rounded bg-secondary/30">
+        <FileIcon className="w-8 h-8 text-muted-foreground" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground truncate">{filename}</p>
+          <p className="text-xs text-muted-foreground">{contentType || 'Unknown file type'}</p>
+        </div>
+      </div>
+      <AssetActions url={url} filename={filename} />
+    </div>
+  )
 }
