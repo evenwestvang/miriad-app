@@ -26,6 +26,9 @@ interface FileDropZoneProps {
   disabled?: boolean
 }
 
+// Files larger than this use presigned URL flow (Lambda has 6MB limit)
+const PRESIGNED_THRESHOLD = 5 * 1024 * 1024 // 5MB
+
 // System files to filter out
 const IGNORED_FILES = [
   '.ds_store',
@@ -241,24 +244,87 @@ export function FileDropZone({
     }
   }, [apiHost, channelId])
 
-  // Upload a single file
+  // Upload a single file - uses presigned URL for large files
   const uploadFile = useCallback(async (
     fileWithPath: FileWithPath,
     parentSlug: string | null
   ): Promise<boolean> => {
     const { file, relativePath } = fileWithPath
     const slug = fileSlugify(file.name)
-
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('slug', slug)
-    formData.append('tldr', `Uploaded: ${relativePath}`)
-    formData.append('sender', 'user')
-    if (parentSlug) {
-      formData.append('parentSlug', parentSlug)
-    }
+    const tldr = `Uploaded: ${relativePath}`
 
     try {
+      // For large files, use presigned URL flow to bypass Lambda limits
+      if (file.size > PRESIGNED_THRESHOLD) {
+        // Step 1: Get presigned URL
+        const presignPayload: Record<string, unknown> = {
+          slug,
+          contentType: file.type || 'application/octet-stream',
+          fileSize: file.size,
+          tldr,
+          sender: 'user',
+        }
+        if (parentSlug) {
+          presignPayload.parentSlug = parentSlug
+        }
+
+        const presignResponse = await fetch(`${apiHost}/channels/${channelId}/assets/presign`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(presignPayload),
+        })
+
+        if (!presignResponse.ok) {
+          console.error('Presign failed:', await presignResponse.text())
+          return false
+        }
+
+        const presignData = await presignResponse.json()
+
+        // Step 2: Upload directly to S3
+        const uploadResponse = await fetch(presignData.uploadUrl, {
+          method: presignData.method,
+          headers: presignData.headers || {},
+          body: file,
+        })
+
+        if (!uploadResponse.ok) {
+          console.error('S3 upload failed:', uploadResponse.status)
+          return false
+        }
+
+        // Step 3: Confirm upload
+        const confirmPayload: Record<string, unknown> = {
+          slug: presignData.slug,
+          tldr,
+          sender: 'user',
+          contentType: file.type || 'application/octet-stream',
+        }
+        if (parentSlug) {
+          confirmPayload.parentSlug = parentSlug
+        }
+
+        const confirmResponse = await fetch(`${apiHost}/channels/${channelId}/assets/confirm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(confirmPayload),
+        })
+
+        return confirmResponse.ok || confirmResponse.status === 201
+      }
+
+      // For small files, use direct multipart upload
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('slug', slug)
+      formData.append('tldr', tldr)
+      formData.append('sender', 'user')
+      if (parentSlug) {
+        formData.append('parentSlug', parentSlug)
+      }
+
       const response = await fetch(`${apiHost}/channels/${channelId}/assets`, {
         method: 'POST',
         credentials: 'include',
