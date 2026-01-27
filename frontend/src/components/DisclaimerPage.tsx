@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { Loader2, AlertTriangle } from 'lucide-react'
+import { Loader2, AlertTriangle, MessageSquareWarning } from 'lucide-react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { fetchDisclaimer, acceptDisclaimer, type DisclaimerResponse } from '../lib/api'
@@ -100,13 +100,16 @@ export function DisclaimerPage({ onAccept }: DisclaimerPageProps) {
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-8">
       <div className="max-w-2xl w-full space-y-8">
-        {/* Header */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold text-foreground">
-            {disclaimer.title}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Version {disclaimer.version}
+        {/* Preamble */}
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+            <MessageSquareWarning className="w-8 h-8 text-primary" />
+          </div>
+          <h2 className="text-xl font-semibold text-foreground">
+            Before you begin
+          </h2>
+          <p className="text-muted-foreground text-base leading-relaxed">
+            Miriad runs agents in "yolo" mode — they act without asking permission. When you use the Miriad Cloud, they are sandboxed and can only burn tokens. If you decide to give them credentials (GitHub, AWS, etc.), you're trusting them with real access. This disclaimer is just to make it clear that this is your choice and your responsibility.
           </p>
         </div>
 
