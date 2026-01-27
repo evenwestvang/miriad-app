@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react'
+// Note: We removed blob URL fetching - see comment below useAssetMetadata
 import {
   Download,
   ExternalLink,
@@ -42,10 +43,7 @@ type MetadataState =
   | { status: 'success'; metadata: AssetMetadata }
   | { status: 'error'; error: string }
 
-type BlobState =
-  | { status: 'loading' }
-  | { status: 'success'; blobUrl: string }
-  | { status: 'error'; error: string }
+
 
 // =============================================================================
 // MIME-type icon selection
@@ -129,58 +127,10 @@ function useAssetMetadata(
   return state
 }
 
-/**
- * Fetch asset binary with credentials and create blob URL.
- */
-function useAuthenticatedBlobUrl(url: string): BlobState {
-  const [state, setState] = useState<BlobState>({ status: 'loading' })
-
-  useEffect(() => {
-    let cancelled = false
-    let blobUrl: string | null = null
-
-    async function fetchBlob() {
-      try {
-        const response = await fetch(url, {
-          credentials: 'include',
-        })
-
-        if (response.status === 401) {
-          throw new Error('Authentication required')
-        }
-
-        if (!response.ok) {
-          throw new Error(`Failed to load (${response.status})`)
-        }
-
-        const blob = await response.blob()
-
-        if (cancelled) return
-
-        blobUrl = URL.createObjectURL(blob)
-        setState({ status: 'success', blobUrl })
-      } catch (err) {
-        if (cancelled) return
-        setState({
-          status: 'error',
-          error: err instanceof Error ? err.message : 'Failed to load',
-        })
-      }
-    }
-
-    setState({ status: 'loading' })
-    fetchBlob()
-
-    return () => {
-      cancelled = true
-      if (blobUrl) {
-        URL.revokeObjectURL(blobUrl)
-      }
-    }
-  }, [url])
-
-  return state
-}
+// Note: We no longer fetch blobs for attachments. Instead, we pass the API URL
+// directly to media elements (<img>, <audio>, <video>) and download links.
+// The browser handles the S3 redirect automatically for these elements.
+// This avoids CORS issues with credentialed fetch + S3 presigned URLs.
 
 // =============================================================================
 // Loading/Error/Card Components
@@ -220,13 +170,13 @@ function AssetError({ slug, error }: { slug: string; error: string }) {
 
 interface AssetCardProps {
   metadata: AssetMetadata
-  blobUrl: string
+  assetUrl: string
 }
 
 /**
  * Card view for non-previewable assets or compact mode fallback.
  */
-function AssetCard({ metadata, blobUrl }: AssetCardProps) {
+function AssetCard({ metadata, assetUrl }: AssetCardProps) {
   const Icon = getIconForMime(metadata.contentType)
   const displayName = metadata.title || metadata.slug
 
@@ -245,7 +195,7 @@ function AssetCard({ metadata, blobUrl }: AssetCardProps) {
       </div>
       <div className="flex gap-1">
         <a
-          href={blobUrl}
+          href={assetUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="p-1.5 hover:bg-[var(--cast-bg-hover)] text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] transition-colors"
@@ -254,7 +204,7 @@ function AssetCard({ metadata, blobUrl }: AssetCardProps) {
           <ExternalLink className="w-4 h-4" />
         </a>
         <a
-          href={blobUrl}
+          href={assetUrl}
           download={metadata.slug}
           className="p-1.5 hover:bg-[var(--cast-bg-hover)] text-[var(--cast-text-muted)] hover:text-[var(--cast-text-primary)] transition-colors"
           title="Download"
@@ -280,7 +230,8 @@ interface AssetRendererProps {
 
 /**
  * Renders a single asset attachment by slug.
- * Fetches metadata first to determine content type, then loads the binary.
+ * Fetches metadata to determine content type, then renders with direct URL.
+ * Browser handles S3 redirects automatically for media elements.
  */
 export function AssetRenderer({
   slug,
@@ -291,30 +242,26 @@ export function AssetRenderer({
 }: AssetRendererProps) {
   const metadataState = useAssetMetadata(slug, channelId, apiHost)
   const assetUrl = `${apiHost}/channels/${channelId}/assets/${slug}`
-  const blobState = useAuthenticatedBlobUrl(assetUrl)
 
-  // Show loading if either metadata or blob is loading
-  if (metadataState.status === 'loading' || blobState.status === 'loading') {
+  // Show loading while fetching metadata
+  if (metadataState.status === 'loading') {
     return <AssetLoading slug={slug} />
   }
 
-  // Show error if either failed
+  // Show error if metadata fetch failed
   if (metadataState.status === 'error') {
     return <AssetError slug={slug} error={metadataState.error} />
   }
-  if (blobState.status === 'error') {
-    return <AssetError slug={slug} error={blobState.error} />
-  }
 
   const { metadata } = metadataState
-  const { blobUrl } = blobState
   const displayName = metadata.title || metadata.slug
 
   // Try to render with shared AssetPreview for previewable types
+  // Pass the API URL directly - browser handles S3 redirect for media elements
   if (isPreviewableMime(metadata.contentType)) {
     const preview = (
       <AssetPreview
-        url={blobUrl}
+        url={assetUrl}
         filename={metadata.slug}
         contentType={metadata.contentType}
         alt={displayName}
@@ -331,7 +278,7 @@ export function AssetRenderer({
   }
 
   // Card view for non-previewable types or when preview returns null
-  return <AssetCard metadata={metadata} blobUrl={blobUrl} />
+  return <AssetCard metadata={metadata} assetUrl={assetUrl} />
 }
 
 interface MessageAttachmentsProps {
