@@ -318,6 +318,33 @@ export function createS3AssetStorage(
     }
   }
 
+  /**
+   * Generate a presigned URL for direct download from S3
+   * This bypasses Lambda's 6MB response payload limit
+   */
+  async function getPresignedDownloadUrl(
+    channelId: string,
+    slug: string
+  ): Promise<{
+    downloadUrl: string;
+    expiresIn: number;
+  }> {
+    const key = getAssetPath(channelId, slug);
+    const expiresIn = 3600; // 1 hour
+
+    const command = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    });
+
+    const downloadUrl = await getSignedUrl(client, command, { expiresIn });
+
+    return {
+      downloadUrl,
+      expiresIn,
+    };
+  }
+
   return {
     saveAsset,
     readAsset,
@@ -327,5 +354,6 @@ export function createS3AssetStorage(
     getAssetPath,
     getPresignedUploadUrl,
     verifyUpload,
+    getPresignedDownloadUrl,
   };
 }

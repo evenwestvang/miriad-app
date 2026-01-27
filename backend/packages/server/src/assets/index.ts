@@ -96,6 +96,14 @@ export interface AssetStorage {
 
   /** Verify an asset was uploaded successfully (check it exists in storage) */
   verifyUpload?(channelId: string, slug: string): Promise<{ fileSize: number; contentType: string }>;
+
+  /** Generate a presigned URL for direct download (bypasses Lambda response limits) */
+  getPresignedDownloadUrl?(channelId: string, slug: string): Promise<PresignedDownloadResult>;
+}
+
+export interface PresignedDownloadResult {
+  downloadUrl: string;
+  expiresIn: number;
 }
 
 // =============================================================================

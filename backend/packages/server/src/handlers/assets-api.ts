@@ -560,26 +560,18 @@ export function createAssetsApiRoutes(options: AssetsApiHandlerOptions): Hono<{ 
 
       const mimeType = artifact.contentType || getMimeType(slug);
 
-      // Use streaming if available (S3 backend) for large files
-      if (assetStorage.readAssetStream) {
-        const { stream, contentLength, contentType } = await assetStorage.readAssetStream(
+      // Use presigned URL for S3 backend (bypasses Lambda's 6MB response limit)
+      if (assetStorage.getPresignedDownloadUrl) {
+        const { downloadUrl } = await assetStorage.getPresignedDownloadUrl(
           channel.id,
           slug
         );
 
-        const headers: Record<string, string> = {
-          'Content-Type': contentType || mimeType,
-          'Cache-Control': 'public, max-age=31536000, immutable',
-        };
-
-        if (contentLength !== undefined) {
-          headers['Content-Length'] = contentLength.toString();
-        }
-
-        return new Response(stream, { headers });
+        // Redirect to presigned S3 URL
+        return c.redirect(downloadUrl, 302);
       }
 
-      // Fallback to buffered read
+      // Fallback to buffered read (local filesystem)
       const data = await assetStorage.readAsset(channel.id, slug);
 
       return new Response(data, {
