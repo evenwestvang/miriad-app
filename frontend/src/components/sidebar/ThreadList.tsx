@@ -3,6 +3,7 @@ import { Plus, Radical } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { Agent, Thread } from '../../types'
 import { NewChannelModal } from '../focus'
+import { SanityLogo } from '../icons/SanityLogo'
 
 // Thread with extended state info
 export interface ThreadWithState extends Thread {
@@ -251,6 +252,17 @@ export function ThreadList({
           anchorRef={newChannelButtonRef}
         />
       )}
+
+      {/* Footer */}
+      <a
+        href="https://sanity.io"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex flex-col items-end gap-1 px-4 py-3 text-xs text-[var(--cast-text-subtle)] hover:text-[var(--cast-text-secondary)] transition-colors"
+      >
+        <span>Experiment from</span>
+        <SanityLogo className="h-3.5 opacity-50" />
+      </a>
     </div>
   )
 }
