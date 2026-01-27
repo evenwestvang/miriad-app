@@ -6,7 +6,8 @@
  */
 
 import { useState, useEffect } from 'react'
-import { Loader2, AlertTriangle, MessageSquareWarning } from 'lucide-react'
+import { Loader2, AlertTriangle } from 'lucide-react'
+import miriadLogo from '../assets/miriad-logo.svg'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { fetchDisclaimer, acceptDisclaimer, type DisclaimerResponse } from '../lib/api'
@@ -102,8 +103,9 @@ export function DisclaimerPage({ onAccept }: DisclaimerPageProps) {
       <div className="max-w-2xl w-full space-y-8">
         {/* Preamble */}
         <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-            <MessageSquareWarning className="w-8 h-8 text-primary" />
+          <div className="flex flex-col items-center gap-2">
+            <img src={miriadLogo} alt="Miriad" className="w-12 h-12" />
+            <span className="text-[#ff6600] font-semibold tracking-wide" style={{ fontFamily: 'Inter, sans-serif' }}>MIRIAD</span>
           </div>
           <h2 className="text-xl font-semibold text-foreground">
             Before you begin
