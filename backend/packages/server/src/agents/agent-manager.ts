@@ -791,9 +791,17 @@ export class AgentManager {
     config: McpServerConfig,
     sharedEnv: Record<string, string>,
   ): McpServerConfig {
-    // Expand ${VAR} references from shared environment
+    // Expand ${VAR} references - MCP's own env takes precedence over shared,
+    // but only if the MCP value is a literal (not itself a ${...} reference)
     const expand = (str: string): string =>
-      str.replace(/\$\{(\w+)\}/g, (_, name) => sharedEnv[name] ?? "");
+      str.replace(/\$\{(\w+)\}/g, (_, name) => {
+        const mcpValue = config.env?.[name];
+        // Use MCP's value only if it's a literal (not a reference that needs expansion)
+        if (mcpValue && !mcpValue.includes("${")) {
+          return mcpValue;
+        }
+        return sharedEnv[name] ?? "";
+      });
 
     return {
       ...config,
