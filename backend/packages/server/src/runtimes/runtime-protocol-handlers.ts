@@ -419,6 +419,17 @@ export function createRuntimeProtocolHandlers(
         // Update connection with runtimeId (use effective ID in case we reused existing)
         await storage.updateConnectionRuntime(state.connectionId, effectiveRuntimeId);
 
+        // Broadcast online state for all agents bound to this runtime
+        // This mirrors handleDisconnect which broadcasts offline state
+        const boundAgents = await storage.getAgentsByRuntime(effectiveRuntimeId);
+        const now = new Date().toISOString();
+        for (const agent of boundAgents) {
+          await broadcastAgentState(agent.channelId, agent.callsign, 'online', now);
+        }
+        if (boundAgents.length > 0) {
+          console.log(`[RuntimeProtocolHandlers] Broadcast online state for ${boundAgents.length} agents on runtime ${effectiveRuntimeId}`);
+        }
+
         // Send confirmation (use effective ID so client knows which ID to use)
         const response = JSON.stringify({
           type: 'runtime_connected',
