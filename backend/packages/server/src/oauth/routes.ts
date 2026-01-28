@@ -25,6 +25,7 @@ import {
   type PendingAuthState,
 } from "./flow.js";
 import { exchangeCodeForTokens } from "./tokens.js";
+import { deleteRegistration } from "./registration.js";
 
 /**
  * In-memory store for pending authorization states.
@@ -198,6 +199,9 @@ export function createOAuthRoutes(options: OAuthRoutesOptions): Hono {
       }
 
       await deleteOAuthTokens(storage, resolvedChannel.id, mcpSlug);
+
+      // Also clear cached client registration to ensure fresh registration on reconnect
+      deleteRegistration(resolvedChannel.id, mcpSlug);
 
       return c.json({ success: true });
     } catch (error) {
