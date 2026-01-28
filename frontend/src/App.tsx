@@ -141,6 +141,8 @@ export function App() {
   const [isDisconnected, setIsDisconnected] = useState(false);
   // Artifact event counter - increment to trigger board refresh
   const [artifactEventTrigger, setArtifactEventTrigger] = useState(0);
+  // Agent state event counter - triggers fast polling on RuntimeStatusDropdown
+  const [agentStateEventCounter, setAgentStateEventCounter] = useState(0);
   // Selected agent for detail panel (callsign or null)
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   // Summon picker open state (controlled from MessageInput button)
@@ -420,6 +422,10 @@ export function App() {
       event.state,
       event.lastHeartbeat,
     );
+    // Trigger fast polling on RuntimeStatusDropdown for runtime status changes
+    if (event.state === "online" || event.state === "offline") {
+      setAgentStateEventCounter((c) => c + 1);
+    }
     // Close detail panel if dismissed agent was selected (via broadcast from another client)
     if (event.state === "dismissed") {
       setSelectedAgent((current) =>
@@ -1296,6 +1302,7 @@ export function App() {
               setRosterRefreshKey((k) => k + 1)
             }}
             onDisconnectedStateChange={setIsDisconnected}
+            agentStateEventCounter={agentStateEventCounter}
           />
         )}
 
