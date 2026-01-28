@@ -50,6 +50,8 @@ interface RuntimeStatusDropdownProps {
   onRuntimeStatusChange?: () => void
   /** Called when the disconnected state changes (no runtime online AND no API key) */
   onDisconnectedStateChange?: (isDisconnected: boolean) => void
+  /** Counter that increments when an agent_state frame is received - triggers fast polling */
+  agentStateEventCounter?: number
 }
 
 // Temporary hack: identify Miriad Cloud by name
@@ -65,7 +67,7 @@ function isRuntimeStale(runtime: Runtime): boolean {
   return now - lastSeen > STALE_TIMEOUT_MS
 }
 
-export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settingsOpen, onRuntimeStatusChange, onDisconnectedStateChange }: RuntimeStatusDropdownProps) {
+export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settingsOpen, onRuntimeStatusChange, onDisconnectedStateChange, agentStateEventCounter }: RuntimeStatusDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [runtimes, setRuntimes] = useState<Runtime[]>([])
   const [loading, setLoading] = useState(true)
@@ -77,6 +79,8 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   const [deletingRuntime, setDeletingRuntime] = useState<string | null>(null)
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null)
   const [hasCheckedRuntimes, setHasCheckedRuntimes] = useState(false)
+  // Fast polling: poll every 1s for 10s after agent_state event, then back to normal 30s
+  const [fastPollUntil, setFastPollUntil] = useState<number | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   // Track previous runtime statuses to detect changes
   const prevRuntimeStatusesRef = useRef<Map<string, 'online' | 'offline'>>(new Map())
@@ -106,14 +110,33 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
     }
   }, [apiHost, spaceId, isOpen, settingsOpen])
 
+  // Trigger fast polling mode when agent_state event is received
+  useEffect(() => {
+    if (agentStateEventCounter !== undefined && agentStateEventCounter > 0) {
+      // Enable fast polling for 10 seconds
+      setFastPollUntil(Date.now() + 10000)
+      // Immediately fetch to get fresh state
+      fetchRuntimes()
+    }
+  }, [agentStateEventCounter])
+
+  // Determine current poll interval
+  // Priority: startingCloud (2s) > fastPoll (1s) > normal (30s)
+  const isInFastPollMode = fastPollUntil !== null && Date.now() < fastPollUntil
+  const pollInterval = startingCloud ? 2000 : isInFastPollMode ? 1000 : 30000
+
   // Fetch status on mount and periodically
-  // Poll faster (every 2s) when starting cloud, otherwise every 30s
   useEffect(() => {
     fetchRuntimes()
-    const pollInterval = startingCloud ? 2000 : 30000
-    const interval = setInterval(fetchRuntimes, pollInterval)
+    const interval = setInterval(() => {
+      fetchRuntimes()
+      // Check if fast poll mode has expired
+      if (fastPollUntil !== null && Date.now() >= fastPollUntil) {
+        setFastPollUntil(null)
+      }
+    }, pollInterval)
     return () => clearInterval(interval)
-  }, [apiHost, spaceId, startingCloud])
+  }, [apiHost, spaceId, pollInterval])
 
   // Close on outside click (but not when no runtimes are online)
   useEffect(() => {
