@@ -711,7 +711,7 @@ export class AgentManager {
               url?: string;
               command?: string;
               args?: string[];
-              variables?: Record<string, string>;
+              env?: Record<string, string>;
               cwd?: string;
               oauth?: { type: "oauth" };
             }
@@ -731,7 +731,7 @@ export class AgentManager {
           transport: props.transport,
           command: props.command,
           args: props.args,
-          env: props.variables,
+          env: props.env,
           cwd: props.cwd,
           url: props.url,
         };
