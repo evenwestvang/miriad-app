@@ -18,6 +18,7 @@ export interface McpProps {
   cwd?: string
   // http transport fields
   url?: string
+  headers?: Record<string, string>
   // Description
   capabilities?: string
 }
@@ -113,6 +114,15 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets, isC
             value={props.url || ''}
             onChange={(value) => onChange({ url: value || undefined })}
             placeholder="https://mcp.example.com/sse"
+          />
+
+          {/* Headers */}
+          <KeyValueEditor
+            label="Headers"
+            entries={envToEntries(props.headers)}
+            onChange={(entries) => onChange({ headers: entriesToEnv(entries) })}
+            keyPlaceholder="Header-Name"
+            valuePlaceholder="value or ${ENV_REF}"
           />
 
           {/* OAuth Authentication */}
