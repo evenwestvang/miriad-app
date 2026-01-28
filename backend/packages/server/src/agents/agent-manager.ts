@@ -791,12 +791,9 @@ export class AgentManager {
     config: McpServerConfig,
     sharedEnv: Record<string, string>,
   ): McpServerConfig {
-    // Expand ${VAR} references - MCP's own env takes precedence over shared
+    // Expand ${VAR} references from shared environment
     const expand = (str: string): string =>
-      str.replace(
-        /\$\{(\w+)\}/g,
-        (_, name) => config.env?.[name] ?? sharedEnv[name] ?? "",
-      );
+      str.replace(/\$\{(\w+)\}/g, (_, name) => sharedEnv[name] ?? "");
 
     return {
       ...config,
