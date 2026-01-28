@@ -253,6 +253,32 @@ describe('RuntimeProtocolHandlers', () => {
         expect.stringContaining('offline')
       );
     });
+
+    it('should broadcast agent_state frame (not status frame) on disconnect', async () => {
+      // This test ensures the frontend receives the correct frame type
+      // Frontend expects: { type: 'agent_state', state: 'offline' }
+      // NOT: { type: 'status', content: 'offline...' }
+      mockStorage._setRosterEntry(TEST_CHANNEL_ID, 'fox', 'active', TEST_RUNTIME_ID);
+
+      await handlers.handleDisconnect(TEST_RUNTIME_ID);
+
+      // Verify broadcast was called
+      expect(mockBroadcast).toHaveBeenCalled();
+      
+      // Parse the broadcast payload and verify frame structure
+      const broadcastCall = mockBroadcast.mock.calls.find(
+        call => call[0] === TEST_CHANNEL_ID
+      );
+      expect(broadcastCall).toBeDefined();
+      
+      const frameStr = broadcastCall![1];
+      const frame = JSON.parse(frameStr);
+      
+      // Must be agent_state type for frontend to handle it
+      expect(frame.v.type).toBe('agent_state');
+      expect(frame.v.state).toBe('offline');
+      expect(frame.v.sender).toBe('fox');
+    });
   });
 });
 
