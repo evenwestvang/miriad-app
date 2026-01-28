@@ -430,3 +430,133 @@ describe('Agent State Transitions', () => {
     });
   });
 });
+
+describe('handleRuntimeReady', () => {
+  /**
+   * Tests for runtime reconnection behavior.
+   * When a runtime reconnects, it should broadcast online state for all bound agents.
+   */
+
+  function createExtendedMockStorage() {
+    const base = createMockStorage();
+    const runtimes = new Map<string, { id: string; spaceId: string; name: string; status: string }>();
+
+    return {
+      ...base,
+      getRuntime: vi.fn(async (id: string) => runtimes.get(id) ?? null),
+      getRuntimeByName: vi.fn(async () => null),
+      createRuntime: vi.fn(async (data: { id: string; spaceId: string; name: string }) => {
+        const runtime = { ...data, status: 'online' };
+        runtimes.set(data.id, runtime);
+        return runtime;
+      }),
+      updateRuntime: vi.fn(async (id: string, update: { status?: string }) => {
+        const runtime = runtimes.get(id);
+        if (runtime && update.status) {
+          runtime.status = update.status;
+        }
+      }),
+      updateConnectionRuntime: vi.fn(async () => {}),
+      _setRuntime: (id: string, spaceId: string, name: string, status: string = 'online') => {
+        runtimes.set(id, { id, spaceId, name, status });
+      },
+    };
+  }
+
+  it('should broadcast online state for all bound agents on reconnect', async () => {
+    const mockStorage = createExtendedMockStorage();
+    const mockBroadcast = vi.fn(async () => {});
+    const mockSend = vi.fn(async () => true);
+    const mockSendError = vi.fn(async () => {});
+
+    const handlers = createRuntimeProtocolHandlers({
+      storage: mockStorage as unknown as Storage,
+      broadcast: mockBroadcast,
+      send: mockSend,
+      sendError: mockSendError,
+    });
+
+    // Set up existing runtime (simulating reconnect scenario)
+    mockStorage._setRuntime(TEST_RUNTIME_ID, TEST_SPACE_ID, 'test-runtime', 'offline');
+
+    // Set up agents bound to this runtime
+    mockStorage._setRosterEntry(TEST_CHANNEL_ID, 'fox', 'active', TEST_RUNTIME_ID);
+    mockStorage._setRosterEntry(TEST_CHANNEL_ID, 'bear', 'active', TEST_RUNTIME_ID);
+
+    const state: RuntimeConnectionState = {
+      connectionId: TEST_CONNECTION_ID,
+      channelId: null,
+      protocol: 'runtime',
+      runtimeId: null,
+      spaceId: null,
+      serverId: 'server_1',
+    };
+
+    // Runtime reconnects
+    await handlers.handleRuntimeReady(state, {
+      type: 'runtime_ready',
+      runtimeId: TEST_RUNTIME_ID,
+      spaceId: TEST_SPACE_ID,
+      name: 'test-runtime',
+    });
+
+    // Should broadcast online state for both agents
+    expect(mockBroadcast).toHaveBeenCalledTimes(2);
+
+    // Verify frame structure for first agent
+    const foxCall = mockBroadcast.mock.calls.find(
+      call => call[1].includes('"sender":"fox"')
+    );
+    expect(foxCall).toBeDefined();
+    const foxFrame = JSON.parse(foxCall![1]);
+    expect(foxFrame.v.type).toBe('agent_state');
+    expect(foxFrame.v.state).toBe('online');
+    expect(foxFrame.v.sender).toBe('fox');
+
+    // Verify frame structure for second agent
+    const bearCall = mockBroadcast.mock.calls.find(
+      call => call[1].includes('"sender":"bear"')
+    );
+    expect(bearCall).toBeDefined();
+    const bearFrame = JSON.parse(bearCall![1]);
+    expect(bearFrame.v.type).toBe('agent_state');
+    expect(bearFrame.v.state).toBe('online');
+    expect(bearFrame.v.sender).toBe('bear');
+  });
+
+  it('should not broadcast if no agents are bound to runtime', async () => {
+    const mockStorage = createExtendedMockStorage();
+    const mockBroadcast = vi.fn(async () => {});
+    const mockSend = vi.fn(async () => true);
+    const mockSendError = vi.fn(async () => {});
+
+    const handlers = createRuntimeProtocolHandlers({
+      storage: mockStorage as unknown as Storage,
+      broadcast: mockBroadcast,
+      send: mockSend,
+      sendError: mockSendError,
+    });
+
+    // Set up runtime with no bound agents
+    mockStorage._setRuntime(TEST_RUNTIME_ID, TEST_SPACE_ID, 'test-runtime', 'offline');
+
+    const state: RuntimeConnectionState = {
+      connectionId: TEST_CONNECTION_ID,
+      channelId: null,
+      protocol: 'runtime',
+      runtimeId: null,
+      spaceId: null,
+      serverId: 'server_1',
+    };
+
+    await handlers.handleRuntimeReady(state, {
+      type: 'runtime_ready',
+      runtimeId: TEST_RUNTIME_ID,
+      spaceId: TEST_SPACE_ID,
+      name: 'test-runtime',
+    });
+
+    // No broadcasts since no agents bound
+    expect(mockBroadcast).not.toHaveBeenCalled();
+  });
+});
