@@ -841,6 +841,7 @@ export class AgentManager {
 
     // Resolve shared environment for ${VAR} expansion
     const sharedEnv = await this.resolveEnvironment(spaceId, channelId);
+    console.log(`[AgentManager] sharedEnv keys for MCP expansion:`, Object.keys(sharedEnv));
 
     const configs: McpServerConfig[] = [];
 
@@ -906,6 +907,7 @@ export class AgentManager {
     console.log(
       `[AgentManager] Total MCP configs for channelId ${channelId}: ${expandedConfigs.length}`,
     );
+    console.log(`[AgentManager] Expanded MCP configs:`, JSON.stringify(expandedConfigs));
     return expandedConfigs;
   }
 
