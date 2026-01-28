@@ -852,9 +852,11 @@ Return ONLY the callsign, nothing else.`;
         "paused",
       );
 
-      // Update roster status to paused and clear callbackUrl
+      // Update roster status to paused and clear all runtime bindings
       await storage.updateRosterEntry(channelId, rosterEntry.id, {
         status: "paused",
+        runtimeId: undefined,
+        lastHeartbeat: undefined,
         callbackUrl: undefined,
       });
 
@@ -1039,9 +1041,11 @@ Return ONLY the callsign, nothing else.`;
         "dismissed",
       );
 
-      // Update roster status to archived and clear callbackUrl
+      // Update roster status to archived and clear all runtime bindings
       await storage.updateRosterEntry(channelId, rosterEntry.id, {
         status: "archived",
+        runtimeId: undefined,
+        lastHeartbeat: undefined,
         callbackUrl: undefined,
       });
 
