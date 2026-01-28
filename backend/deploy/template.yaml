@@ -566,6 +566,8 @@ Resources:
       Environment:
         Variables:
           CONNECTIONS_TABLE: !Ref ConnectionsTable
+          WEBSOCKET_ENDPOINT: !Sub https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+          PLANETSCALE_URL: !Ref PlanetScaleUrl
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
