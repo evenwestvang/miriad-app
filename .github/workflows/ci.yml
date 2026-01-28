@@ -1,8 +1,10 @@
-# CI Pipeline - Runs on all pull requests
+# CI Pipeline - Runs on pull requests and pushes to main
 name: CI
 
 on:
   pull_request:
+    branches: [main]
+  push:
     branches: [main]
 
 concurrency:
