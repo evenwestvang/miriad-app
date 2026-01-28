@@ -44,7 +44,7 @@ class MockWebSocket extends EventEmitter {
 function createMockStorage() {
   const runtimes = new Map<string, { id: string; spaceId: string; name: string; status: string; config: unknown }>();
   const channels = new Map<string, { id: string; spaceId: string; name: string }>();
-  const rosterEntries = new Map<string, { runtimeId?: string; id?: string; lastHeartbeat?: string }>();
+  const rosterEntries = new Map<string, { runtimeId?: string; id?: string; lastHeartbeat?: string; status?: string }>();
 
   return {
     getRuntime: vi.fn(async (id: string) => runtimes.get(id) ?? null),
@@ -82,8 +82,8 @@ function createMockStorage() {
     _setChannel: (id: string, spaceId: string, name: string) => {
       channels.set(id, { id, spaceId, name });
     },
-    _setRosterEntry: (channelId: string, callsign: string, runtimeId?: string) => {
-      rosterEntries.set(`${channelId}:${callsign}`, { runtimeId, id: `roster_${callsign}` });
+    _setRosterEntry: (channelId: string, callsign: string, runtimeId?: string, status: string = 'active') => {
+      rosterEntries.set(`${channelId}:${callsign}`, { runtimeId, id: `roster_${callsign}`, status });
     },
     _runtimes: runtimes,
   };
@@ -319,6 +319,9 @@ describe('RuntimeConnectionManager', () => {
       });
       await new Promise((r) => setTimeout(r, 50));
 
+      // Set up roster entry (required for frame handling)
+      mockStorage._setRosterEntry('channel_1', 'fox', 'rt_001');
+
       // Set up agent as online
       const agentId = 'space_123:channel_1:fox';
       agentStateManager.handleActivate(agentId);
@@ -388,8 +391,9 @@ describe('RuntimeConnectionManager', () => {
       });
       await new Promise((r) => setTimeout(r, 50));
 
-      // Set up channel
+      // Set up channel and roster entry (required for frame handling)
       mockStorage._setChannel('channel_1', 'space_123', 'test-channel');
+      mockStorage._setRosterEntry('channel_1', 'fox', 'rt_001');
 
       // Set up agent as online
       const agentId = 'space_123:channel_1:fox';

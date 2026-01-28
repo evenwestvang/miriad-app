@@ -574,14 +574,8 @@ export function createRuntimeProtocolHandlers(
             callbackUrl: undefined,
           });
 
-          // Broadcast offline status
-          const statusFrame = tymbal.set(generateMessageId(), {
-            type: 'status',
-            sender: callsign,
-            senderType: 'agent',
-            content: `offline (runtime disconnected)`,
-          });
-          await broadcast(channelId, JSON.stringify(statusFrame));
+          // Broadcast offline status using proper agent_state frame
+          await broadcastAgentState(channelId, callsign, 'offline', new Date().toISOString());
         }
 
         console.log(`[RuntimeProtocolHandlers] Runtime disconnected: ${runtimeId}, cleared ${boundAgents.length} agent bindings`);
