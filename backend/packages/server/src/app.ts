@@ -381,10 +381,12 @@ interface AgentRoutesOptions {
   storage: Storage;
   connectionManager: ConnectionManager;
   agentManager: AgentManager;
+  /** Send function for runtime WebSocket connections (LocalRuntime) */
+  runtimeSend?: (connectionId: string, data: string) => Promise<boolean>;
 }
 
 function createAgentRoutes(options: AgentRoutesOptions): Hono {
-  const { storage, connectionManager, agentManager } = options;
+  const { storage, connectionManager, agentManager, runtimeSend } = options;
   const app = new Hono();
 
   /**
@@ -765,6 +767,49 @@ Return ONLY the callsign, nothing else.`;
   });
 
   /**
+   * Helper: Send suspend message to runtime via WebSocket.
+   * This terminates the agent process in the LocalRuntime container.
+   */
+  async function sendSuspendToRuntime(
+    spaceId: string,
+    channelId: string,
+    callsign: string,
+    runtimeId: string | null | undefined,
+    reason: string,
+  ): Promise<void> {
+    if (!runtimeId || !runtimeSend) {
+      console.log(`[Agents] No runtime to suspend for ${callsign}`);
+      return;
+    }
+
+    try {
+      const runtime = await storage.getRuntime(runtimeId);
+      const wsConnectionId = runtime?.config?.wsConnectionId;
+
+      if (!wsConnectionId) {
+        console.log(`[Agents] Runtime ${runtimeId} has no WebSocket connection`);
+        return;
+      }
+
+      const agentId = `${spaceId}:${channelId}:${callsign}`;
+      const suspendMsg = JSON.stringify({
+        type: "suspend",
+        agentId,
+        reason,
+      });
+
+      const sent = await runtimeSend(wsConnectionId, suspendMsg);
+      if (sent) {
+        console.log(`[Agents] Sent suspend to runtime for ${callsign}: ${reason}`);
+      } else {
+        console.warn(`[Agents] Failed to send suspend to runtime for ${callsign}`);
+      }
+    } catch (error) {
+      console.warn(`[Agents] Error sending suspend to runtime:`, error);
+    }
+  }
+
+  /**
    * POST /channels/:id/agents/:callsign/pause - Pause an agent
    *
    * Stops the container and sets status to 'paused'.
@@ -796,17 +841,16 @@ Return ONLY the callsign, nothing else.`;
 
       console.log(`[Agents] Pausing ${callsign} in channel ${channelId}`);
 
-      // Stop container if running
       const spaceId = getSpaceId(c);
-      try {
-        await agentManager.suspend(spaceId, channelId, callsign);
-      } catch (stopError) {
-        console.warn(
-          `[Agents] Error stopping container for ${callsign}:`,
-          stopError,
-        );
-        // Continue anyway - container may already be stopped
-      }
+
+      // Send suspend message to runtime via WebSocket (terminates agent process)
+      await sendSuspendToRuntime(
+        spaceId,
+        channelId,
+        callsign,
+        rosterEntry.runtimeId,
+        "paused",
+      );
 
       // Update roster status to paused and clear callbackUrl
       await storage.updateRosterEntry(channelId, rosterEntry.id, {
@@ -984,17 +1028,16 @@ Return ONLY the callsign, nothing else.`;
 
       console.log(`[Agents] Dismissing ${callsign} in channel ${channelId}`);
 
-      // Stop container if running
       const spaceId = getSpaceId(c);
-      try {
-        await agentManager.suspend(spaceId, channelId, callsign);
-      } catch (stopError) {
-        console.warn(
-          `[Agents] Error stopping container for ${callsign}:`,
-          stopError,
-        );
-        // Continue anyway - container may already be stopped
-      }
+
+      // Send suspend message to runtime via WebSocket (terminates agent process)
+      await sendSuspendToRuntime(
+        spaceId,
+        channelId,
+        callsign,
+        rosterEntry.runtimeId,
+        "dismissed",
+      );
 
       // Update roster status to archived and clear callbackUrl
       await storage.updateRosterEntry(channelId, rosterEntry.id, {
@@ -1966,6 +2009,7 @@ export function createApp(options: AppOptions): Hono {
     storage,
     connectionManager,
     agentManager,
+    runtimeSend,
   });
   app.route("/channels", agentRoutes);
 
@@ -2026,6 +2070,24 @@ export function createApp(options: AppOptions): Hono {
 
     if (!body.sender || !body.content) {
       return c.json({ error: "sender and content are required" }, 400);
+    }
+
+    // Block messages from paused/archived agents
+    // Check if sender is an agent (not the human user)
+    const senderRosterEntry = await storage.getRosterByCallsign(
+      channelId,
+      body.sender,
+    );
+    if (senderRosterEntry) {
+      // Sender is an agent - check their status
+      if (senderRosterEntry.status === "paused") {
+        console.log(`[Messages] Blocked message from paused agent @${body.sender}`);
+        return c.json({ error: "Agent is paused and cannot send messages" }, 403);
+      }
+      if (senderRosterEntry.status === "archived") {
+        console.log(`[Messages] Blocked message from archived agent @${body.sender}`);
+        return c.json({ error: "Agent is archived and cannot send messages" }, 403);
+      }
     }
 
     try {
