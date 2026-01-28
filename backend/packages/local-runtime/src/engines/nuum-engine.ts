@@ -35,6 +35,8 @@ interface NuumUserMessage {
     url?: string;
     headers?: Record<string, string>;
   }>;
+  // Environment variables for bash commands and MCP server spawns
+  environment?: Record<string, string>;
 }
 
 interface NuumControlMessage {
@@ -247,9 +249,12 @@ class NuumProcess implements EngineProcess {
           message.mcpServers.map(s => [s.name, s])
         );
       }
+      if (message.environment && Object.keys(message.environment).length > 0) {
+        nuumMsg.environment = message.environment;
+      }
 
       this._state = 'busy';
-      console.log(`[NuumProcess] Sending user message: ${formatted.slice(0, 100)}...`);
+      console.log(`[NuumProcess] Sending user message: ${formatted.slice(0, 100)}... (env: ${Object.keys(message.environment || {}).length} vars)`);
       this.proc.stdin.write(JSON.stringify(nuumMsg) + '\n');
     } else if (message.type === 'control') {
       const nuumMsg: NuumControlMessage = {

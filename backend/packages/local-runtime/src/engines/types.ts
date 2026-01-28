@@ -58,6 +58,8 @@ export interface EngineMessage {
   systemPrompt?: string;
   /** Updated MCP servers for this turn */
   mcpServers?: McpServerConfig[];
+  /** Environment variables for this turn (for bash commands, MCP server spawns) */
+  environment?: Record<string, string>;
 }
 
 export interface EngineProcess {

@@ -82,6 +82,8 @@ interface AgentInstance {
   messageStream: MessageStream | null;
   /** Engine process for subprocess-based engines (Nuum only) */
   engineProcess: EngineProcess | null;
+  /** Pending engine config for lazy spawn (Nuum only - spawn deferred to first message) */
+  pendingEngineConfig: EngineConfig | null;
 }
 
 // =============================================================================
@@ -292,40 +294,23 @@ export class AgentManager {
       isProcessing: false,
       messageStream: null,
       engineProcess: null,
+      pendingEngineConfig: null,
     };
 
     console.log(`[AgentManager]   Stored mcpServers in state:`, JSON.stringify(instance.state.mcpServers));
     this.agents.set(agentId, instance);
 
-    // For Nuum engine, spawn the subprocess now
+    // For Nuum engine, defer spawn to first message (when environment is known)
     if (engineId === 'nuum') {
-      try {
-        const nuumEngine = this.engineManager.getEngine('nuum');
-        if (!nuumEngine) {
-          throw new Error('Nuum engine not registered');
-        }
-
-        const engineConfig: EngineConfig = {
-          agentId,
-          workspacePath: resolvedPath,
-          systemPrompt,
-          mcpServers,
-          environment: instance.state.environment,
-        };
-
-        console.log(`[AgentManager] @${callsign} spawning Nuum engine...`);
-        instance.engineProcess = await nuumEngine.spawn(engineConfig);
-
-        // Start consuming output and feeding to bridge
-        this.consumeEngineOutput(instance);
-
-        console.log(`[AgentManager] @${callsign} Nuum engine spawned (pid: ${instance.engineProcess.pid})`);
-      } catch (error) {
-        console.error(`[AgentManager] Failed to spawn Nuum engine for ${agentId}:`, error);
-        instance.state.status = 'error';
-        this.config.onError?.(agentId, error as Error);
-        return;
-      }
+      // Store config for lazy spawn - environment will be added when first message arrives
+      instance.pendingEngineConfig = {
+        agentId,
+        workspacePath: resolvedPath,
+        systemPrompt,
+        mcpServers,
+        // environment intentionally omitted - will be set from message
+      };
+      console.log(`[AgentManager] @${callsign} Nuum engine spawn deferred to first message`);
     }
 
     // Signal checkin (SDK ready)
@@ -422,6 +407,7 @@ export class AgentManager {
 
   /**
    * Deliver message to Nuum engine (subprocess).
+   * Lazy spawns the engine on first message (when environment is known).
    */
   private async deliverMessageToNuum(
     instance: AgentInstance,
@@ -429,18 +415,51 @@ export class AgentManager {
   ): Promise<void> {
     const { callsign } = parseAgentId(instance.state.agentId);
 
+    // Lazy spawn: if engine not running, spawn now with environment from state
     if (!instance.engineProcess) {
-      console.error(`[AgentManager] @${callsign} Nuum engine not running`);
-      return;
+      if (!instance.pendingEngineConfig) {
+        console.error(`[AgentManager] @${callsign} Nuum engine not running and no pending config`);
+        return;
+      }
+
+      try {
+        const nuumEngine = this.engineManager.getEngine('nuum');
+        if (!nuumEngine) {
+          throw new Error('Nuum engine not registered');
+        }
+
+        // Add environment from state (set by deliverMessage before this call)
+        const engineConfig: EngineConfig = {
+          ...instance.pendingEngineConfig,
+          environment: instance.state.environment,
+        };
+
+        console.log(`[AgentManager] @${callsign} lazy spawning Nuum engine with environment (${Object.keys(instance.state.environment || {}).length} vars)...`);
+        instance.engineProcess = await nuumEngine.spawn(engineConfig);
+
+        // Start consuming output and feeding to bridge
+        this.consumeEngineOutput(instance);
+
+        console.log(`[AgentManager] @${callsign} Nuum engine spawned (pid: ${instance.engineProcess.pid})`);
+
+        // Clear pending config - no longer needed
+        instance.pendingEngineConfig = null;
+      } catch (error) {
+        console.error(`[AgentManager] Failed to spawn Nuum engine for @${callsign}:`, error);
+        instance.state.status = 'error';
+        this.config.onError?.(instance.state.agentId, error as Error);
+        return;
+      }
     }
 
-    // Send message to engine process
+    // Send message to engine process with environment for per-turn updates
     instance.engineProcess.send({
       type: 'user',
       content: message.content,
       sender: message.sender,
       systemPrompt: message.systemPrompt,
       mcpServers: message.mcpServers,
+      environment: instance.state.environment,
     });
 
     instance.state.status = 'busy';
