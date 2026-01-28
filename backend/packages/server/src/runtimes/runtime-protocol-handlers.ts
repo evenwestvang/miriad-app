@@ -519,6 +519,19 @@ export function createRuntimeProtocolHandlers(
       try {
         const { channelId, callsign } = parseAgentId(agentId);
 
+        // Check roster status before processing frame
+        const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
+        if (!rosterEntry) {
+          console.log(`[RuntimeProtocolHandlers] Unknown agent @${callsign}, ignoring frame`);
+          return;
+        }
+
+        // Block frames from paused/archived agents
+        if (rosterEntry.status === 'paused' || rosterEntry.status === 'archived') {
+          console.log(`[RuntimeProtocolHandlers] Blocked frame from ${rosterEntry.status} agent @${callsign}`);
+          return;
+        }
+
         // Broadcast frame to channel
         const serialized = JSON.stringify(frame);
         await broadcast(channelId, serialized);
@@ -529,13 +542,10 @@ export function createRuntimeProtocolHandlers(
         }
 
         // Update roster lastHeartbeat on activity (keeps agent marked as online)
-        const rosterEntry = await storage.getRosterByCallsign(channelId, callsign);
-        if (rosterEntry) {
-          const now = new Date().toISOString();
-          await storage.updateRosterEntry(channelId, rosterEntry.id, {
-            lastHeartbeat: now,
-          });
-        }
+        const now = new Date().toISOString();
+        await storage.updateRosterEntry(channelId, rosterEntry.id, {
+          lastHeartbeat: now,
+        });
       } catch (error) {
         console.error('[RuntimeProtocolHandlers] Error handling frame:', error);
       }
@@ -556,6 +566,14 @@ export function createRuntimeProtocolHandlers(
           const channelId = agent.channelId;
           const callsign = agent.callsign;
 
+          // Clear runtime binding from roster entry
+          // This allows the agent to be re-bound to a different runtime on next activation
+          await storage.updateRosterEntry(channelId, agent.id, {
+            runtimeId: undefined,
+            lastHeartbeat: undefined,
+            callbackUrl: undefined,
+          });
+
           // Broadcast offline status
           const statusFrame = tymbal.set(generateMessageId(), {
             type: 'status',
@@ -566,7 +584,7 @@ export function createRuntimeProtocolHandlers(
           await broadcast(channelId, JSON.stringify(statusFrame));
         }
 
-        console.log(`[RuntimeProtocolHandlers] Runtime disconnected: ${runtimeId}`);
+        console.log(`[RuntimeProtocolHandlers] Runtime disconnected: ${runtimeId}, cleared ${boundAgents.length} agent bindings`);
       } catch (error) {
         console.error('[RuntimeProtocolHandlers] Error handling disconnect:', error);
       }
