@@ -8,7 +8,7 @@ mkdir -p "$HOME/.npm-global/bin" "$HOME/.npm-global/lib"
 # Install Claude Code skills if not already present
 if [ ! -d "$HOME/.claude/skills" ]; then
     echo "Installing Claude Code skills..."
-    npx --yes skills add -g vercel-labs/skills@find-skills || true
+    npx skills add -g --yes vercel-labs/skills@find-skills || true
 fi
 
 # Start the runtime
