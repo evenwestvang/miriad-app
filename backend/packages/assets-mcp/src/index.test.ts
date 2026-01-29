@@ -16,6 +16,39 @@ import {
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
+// Helper to mock the 3-step presigned URL upload flow
+// Moved to module scope so both uploadAsset and path resolution tests can use it
+function mockPresignedUploadFlow(options: {
+  slug: string;
+  contentType?: string;
+  fileSize?: number;
+  url?: string;
+}) {
+  // Step 1: POST /presign → get uploadUrl
+  mockFetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      uploadUrl: "https://s3.example.com/presigned",
+      method: "PUT",
+      headers: { "Content-Type": options.contentType ?? "image/png" },
+    }),
+  });
+
+  // Step 2: PUT to uploadUrl → upload file
+  mockFetch.mockResolvedValueOnce({ ok: true });
+
+  // Step 3: POST /confirm → create artifact
+  mockFetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      slug: options.slug,
+      contentType: options.contentType ?? "image/png",
+      fileSize: options.fileSize ?? 8,
+      url: options.url ?? `https://cast.example.com/api/assets/channel-123/${options.slug}`,
+    }),
+  });
+}
+
 describe("getConfigFromEnv", () => {
   const originalEnv = process.env;
 
@@ -94,38 +127,6 @@ describe("uploadAsset", () => {
   afterEach(async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
-
-  // Helper to mock the 3-step presigned URL upload flow
-  function mockPresignedUploadFlow(options: {
-    slug: string;
-    contentType?: string;
-    fileSize?: number;
-    url?: string;
-  }) {
-    // Step 1: POST /presign → get uploadUrl
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        uploadUrl: "https://s3.example.com/presigned",
-        method: "PUT",
-        headers: { "Content-Type": options.contentType ?? "image/png" },
-      }),
-    });
-
-    // Step 2: PUT to uploadUrl → upload file
-    mockFetch.mockResolvedValueOnce({ ok: true });
-
-    // Step 3: POST /confirm → create artifact
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        slug: options.slug,
-        contentType: options.contentType ?? "image/png",
-        fileSize: options.fileSize ?? 8,
-        url: options.url ?? `https://cast.example.com/api/assets/channel-123/${options.slug}`,
-      }),
-    });
-  }
 
   it("uploads a file successfully", async () => {
     mockPresignedUploadFlow({ slug: "test-asset" });
@@ -236,16 +237,8 @@ describe("uploadAsset", () => {
     await expect(uploadAsset(input, config)).rejects.toThrow("slug is required");
   });
 
-  it.skip("succeeds when tldr is omitted", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        slug: "test-asset",
-        contentType: "image/png",
-        fileSize: 100,
-        url: "https://example.com/assets/test-asset",
-      }),
-    });
+  it("succeeds when tldr is omitted", async () => {
+    mockPresignedUploadFlow({ slug: "test-asset" });
 
     const input = {
       path: testFilePath,
@@ -578,16 +571,8 @@ describe("path resolution", () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  it.skip("resolves relative paths for upload", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        slug: "test-asset",
-        contentType: "image/png",
-        fileSize: 4,
-        url: "https://cast.example.com/api/assets/channel-123/test-asset",
-      }),
-    });
+  it("resolves relative paths for upload", async () => {
+    mockPresignedUploadFlow({ slug: "test-asset", fileSize: 4 });
 
     // Use relative path from temp dir
     const originalCwd = process.cwd();
