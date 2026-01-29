@@ -1,9 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createAgentInvokerAdapter } from './invoker-adapter.js';
+import { 
+  createAgentInvokerAdapter,
+  buildMcpConfigsFromContext,
+  expandMcpConfig,
+} from './invoker-adapter.js';
 import type { AgentManager } from './agent-manager.js';
-import type { Storage } from '@cast/storage';
+import type { Storage, AgentDefinitionSummary, McpArtifactData } from '@cast/storage';
 import type { Message } from '../handlers/messages.js';
 import type { ConnectionManager } from '../websocket/index.js';
+import type { McpServerConfig } from '../runtimes/runtime-protocol-handlers.js';
 
 // Mock the checkin module to avoid actual HTTP calls
 vi.mock('../handlers/checkin.js', () => ({
@@ -618,5 +623,761 @@ describe('createAgentInvokerAdapter', () => {
       expect(mockAgentManager.sendMessageCalls).toHaveLength(1);
       expect(mockAgentManager.sendMessageCalls[0].callsign).toBe('bear');
     });
+  });
+});
+
+// =============================================================================
+// expandMcpConfig Tests
+// =============================================================================
+
+describe('expandMcpConfig', () => {
+  it('expands ${VAR} references in env values', () => {
+    const config: McpServerConfig = {
+      name: 'test-mcp',
+      transport: 'stdio',
+      command: 'node',
+      env: {
+        API_KEY: '${MY_API_KEY}',
+        STATIC: 'unchanged',
+      },
+    };
+    const sharedEnv = { MY_API_KEY: 'secret-123' };
+
+    const result = expandMcpConfig(config, sharedEnv);
+
+    expect(result.env?.API_KEY).toBe('secret-123');
+    expect(result.env?.STATIC).toBe('unchanged');
+  });
+
+  it('expands ${VAR} references in args', () => {
+    const config: McpServerConfig = {
+      name: 'test-mcp',
+      transport: 'stdio',
+      command: 'node',
+      args: ['--token', '${TOKEN}', '--verbose'],
+    };
+    const sharedEnv = { TOKEN: 'abc123' };
+
+    const result = expandMcpConfig(config, sharedEnv);
+
+    expect(result.args).toEqual(['--token', 'abc123', '--verbose']);
+  });
+
+  it('expands ${VAR} references in url', () => {
+    const config: McpServerConfig = {
+      name: 'test-mcp',
+      transport: 'http',
+      url: 'https://api.example.com?key=${API_KEY}',
+    };
+    const sharedEnv = { API_KEY: 'key-456' };
+
+    const result = expandMcpConfig(config, sharedEnv);
+
+    expect(result.url).toBe('https://api.example.com?key=key-456');
+  });
+
+  it('expands ${VAR} references in headers', () => {
+    const config: McpServerConfig = {
+      name: 'test-mcp',
+      transport: 'http',
+      url: 'https://api.example.com',
+      headers: {
+        Authorization: 'Bearer ${AUTH_TOKEN}',
+        'X-Custom': 'static-value',
+      },
+    };
+    const sharedEnv = { AUTH_TOKEN: 'token-789' };
+
+    const result = expandMcpConfig(config, sharedEnv);
+
+    expect(result.headers?.Authorization).toBe('Bearer token-789');
+    expect(result.headers?.['X-Custom']).toBe('static-value');
+  });
+
+  it('replaces missing vars with empty string', () => {
+    const config: McpServerConfig = {
+      name: 'test-mcp',
+      transport: 'stdio',
+      command: 'node',
+      env: {
+        MISSING: '${DOES_NOT_EXIST}',
+      },
+    };
+    const sharedEnv = {};
+
+    const result = expandMcpConfig(config, sharedEnv);
+
+    expect(result.env?.MISSING).toBe('');
+  });
+
+  it('uses MCP own env value if not a reference', () => {
+    const config: McpServerConfig = {
+      name: 'test-mcp',
+      transport: 'stdio',
+      command: 'node',
+      env: {
+        LOCAL_VAR: 'local-value',
+        REF_VAR: '${SHARED_VAR}',
+      },
+    };
+    const sharedEnv = { SHARED_VAR: 'shared-value', LOCAL_VAR: 'should-not-use' };
+
+    const result = expandMcpConfig(config, sharedEnv);
+
+    expect(result.env?.LOCAL_VAR).toBe('local-value');
+    expect(result.env?.REF_VAR).toBe('shared-value');
+  });
+
+  it('handles multiple ${VAR} in same string', () => {
+    const config: McpServerConfig = {
+      name: 'test-mcp',
+      transport: 'http',
+      url: 'https://${HOST}:${PORT}/api',
+    };
+    const sharedEnv = { HOST: 'localhost', PORT: '8080' };
+
+    const result = expandMcpConfig(config, sharedEnv);
+
+    expect(result.url).toBe('https://localhost:8080/api');
+  });
+});
+
+// =============================================================================
+// buildMcpConfigsFromContext Tests
+// =============================================================================
+
+describe('buildMcpConfigsFromContext', () => {
+  const channelId = 'channel-123';
+  const authToken = 'test-auth-token';
+  const platformMcpUrl = 'https://api.cast.app';
+
+  describe('platform MCPs', () => {
+    it('adds miriad and miriad-files MCPs when platformMcpUrl and authToken provided', () => {
+      const result = buildMcpConfigsFromContext(
+        undefined, // no definition
+        new Map(),
+        {},
+        channelId,
+        authToken,
+        platformMcpUrl,
+      );
+
+      expect(result).toHaveLength(2);
+      
+      const miriad = result.find(c => c.name === 'miriad');
+      expect(miriad).toBeDefined();
+      expect(miriad?.transport).toBe('http');
+      expect(miriad?.url).toBe(`${platformMcpUrl}/mcp/${channelId}`);
+      expect(miriad?.headers?.Authorization).toBe(`Container ${authToken}`);
+
+      const miriadFiles = result.find(c => c.name === 'miriad-files');
+      expect(miriadFiles).toBeDefined();
+      expect(miriadFiles?.transport).toBe('stdio');
+      expect(miriadFiles?.env?.CAST_CONTAINER_TOKEN).toBe(authToken);
+    });
+
+    it('skips platform MCPs when platformMcpUrl is undefined', () => {
+      const result = buildMcpConfigsFromContext(
+        undefined,
+        new Map(),
+        {},
+        channelId,
+        authToken,
+        undefined, // no platformMcpUrl
+      );
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('skips platform MCPs when authToken is empty', () => {
+      const result = buildMcpConfigsFromContext(
+        undefined,
+        new Map(),
+        {},
+        channelId,
+        '', // empty authToken
+        platformMcpUrl,
+      );
+
+      expect(result).toHaveLength(0);
+    });
+  });
+
+  describe('system MCPs from definition', () => {
+    it('adds system MCPs referenced in agent definition', () => {
+      const definition: AgentDefinitionSummary = {
+        slug: 'test-agent',
+        channelId,
+        content: '',
+        props: {
+          mcp: [{ slug: 'my-mcp' }],
+        },
+      };
+
+      const mcpArtifacts = new Map<string, McpArtifactData>([
+        ['my-mcp', {
+          slug: 'my-mcp',
+          channelId,
+          props: {
+            transport: 'stdio',
+            command: 'node',
+            args: ['server.js'],
+          },
+        }],
+      ]);
+
+      const result = buildMcpConfigsFromContext(
+        definition,
+        mcpArtifacts,
+        {},
+        channelId,
+        authToken,
+        platformMcpUrl,
+      );
+
+      // 2 platform MCPs + 1 system MCP
+      expect(result).toHaveLength(3);
+      
+      const myMcp = result.find(c => c.name === 'my-mcp');
+      expect(myMcp).toBeDefined();
+      expect(myMcp?.transport).toBe('stdio');
+      expect(myMcp?.command).toBe('node');
+      expect(myMcp?.args).toEqual(['server.js']);
+    });
+
+    it('skips MCP if not found in pre-fetched artifacts', () => {
+      const definition: AgentDefinitionSummary = {
+        slug: 'test-agent',
+        channelId,
+        content: '',
+        props: {
+          mcp: [{ slug: 'missing-mcp' }],
+        },
+      };
+
+      const result = buildMcpConfigsFromContext(
+        definition,
+        new Map(), // empty - MCP not pre-fetched
+        {},
+        channelId,
+        authToken,
+        platformMcpUrl,
+      );
+
+      // Only platform MCPs, missing-mcp skipped
+      expect(result).toHaveLength(2);
+      expect(result.find(c => c.name === 'missing-mcp')).toBeUndefined();
+    });
+
+    it('skips MCP if no transport in props', () => {
+      const definition: AgentDefinitionSummary = {
+        slug: 'test-agent',
+        channelId,
+        content: '',
+        props: {
+          mcp: [{ slug: 'bad-mcp' }],
+        },
+      };
+
+      const mcpArtifacts = new Map<string, McpArtifactData>([
+        ['bad-mcp', {
+          slug: 'bad-mcp',
+          channelId,
+          props: {
+            // no transport!
+            command: 'node',
+          },
+        }],
+      ]);
+
+      const result = buildMcpConfigsFromContext(
+        definition,
+        mcpArtifacts,
+        {},
+        channelId,
+        authToken,
+        platformMcpUrl,
+      );
+
+      // Only platform MCPs
+      expect(result).toHaveLength(2);
+    });
+
+    it('skips OAuth MCPs', () => {
+      const definition: AgentDefinitionSummary = {
+        slug: 'test-agent',
+        channelId,
+        content: '',
+        props: {
+          mcp: [{ slug: 'oauth-mcp' }],
+        },
+      };
+
+      const mcpArtifacts = new Map<string, McpArtifactData>([
+        ['oauth-mcp', {
+          slug: 'oauth-mcp',
+          channelId,
+          props: {
+            transport: 'http',
+            url: 'https://oauth-service.com',
+            oauth: { type: 'oauth' },
+          },
+        }],
+      ]);
+
+      const result = buildMcpConfigsFromContext(
+        definition,
+        mcpArtifacts,
+        {},
+        channelId,
+        authToken,
+        platformMcpUrl,
+      );
+
+      // Only platform MCPs, OAuth MCP skipped
+      expect(result).toHaveLength(2);
+      expect(result.find(c => c.name === 'oauth-mcp')).toBeUndefined();
+    });
+  });
+
+  describe('${VAR} expansion', () => {
+    it('expands env vars in system MCP configs', () => {
+      const definition: AgentDefinitionSummary = {
+        slug: 'test-agent',
+        channelId,
+        content: '',
+        props: {
+          mcp: [{ slug: 'env-mcp' }],
+        },
+      };
+
+      const mcpArtifacts = new Map<string, McpArtifactData>([
+        ['env-mcp', {
+          slug: 'env-mcp',
+          channelId,
+          props: {
+            transport: 'stdio',
+            command: 'node',
+            env: {
+              API_KEY: '${SHARED_API_KEY}',
+            },
+          },
+        }],
+      ]);
+
+      const sharedEnv = { SHARED_API_KEY: 'secret-key-123' };
+
+      const result = buildMcpConfigsFromContext(
+        definition,
+        mcpArtifacts,
+        sharedEnv,
+        channelId,
+        authToken,
+        platformMcpUrl,
+      );
+
+      const envMcp = result.find(c => c.name === 'env-mcp');
+      expect(envMcp?.env?.API_KEY).toBe('secret-key-123');
+    });
+
+    it('does NOT expand vars in platform MCPs (miriad, miriad-files)', () => {
+      const sharedEnv = { 
+        CAST_API_URL: 'should-not-override',
+        CAST_CONTAINER_TOKEN: 'should-not-override',
+      };
+
+      const result = buildMcpConfigsFromContext(
+        undefined,
+        new Map(),
+        sharedEnv,
+        channelId,
+        authToken,
+        platformMcpUrl,
+      );
+
+      const miriadFiles = result.find(c => c.name === 'miriad-files');
+      // Platform MCP env should use the actual values, not expanded from sharedEnv
+      expect(miriadFiles?.env?.CAST_API_URL).toBe(platformMcpUrl);
+      expect(miriadFiles?.env?.CAST_CONTAINER_TOKEN).toBe(authToken);
+    });
+  });
+
+  describe('no definition', () => {
+    it('returns only platform MCPs when definition is undefined', () => {
+      const result = buildMcpConfigsFromContext(
+        undefined,
+        new Map(),
+        {},
+        channelId,
+        authToken,
+        platformMcpUrl,
+      );
+
+      expect(result).toHaveLength(2);
+      expect(result.map(c => c.name)).toEqual(['miriad', 'miriad-files']);
+    });
+  });
+});
+
+// =============================================================================
+// buildPromptFromContext Tests
+// =============================================================================
+
+import { buildPromptFromContext, resolveEnvironmentFromContext } from './invoker-adapter.js';
+import type { MessageDeliveryContext } from '@cast/storage';
+
+describe('buildPromptFromContext', () => {
+  // Helper to create a minimal context
+  function createContext(overrides: Partial<MessageDeliveryContext> = {}): MessageDeliveryContext {
+    return {
+      channel: { id: 'ch-1', name: 'test-channel', tagline: 'Test', mission: 'Testing' },
+      spaceOwnerCallsign: 'alice',
+      fullRoster: [],
+      agents: new Map(),
+      definitions: new Map(),
+      environments: [],
+      rootChannelId: 'root-channel',
+      ...overrides,
+    };
+  }
+
+  it('prefers channel definition over root definition', () => {
+    const context = createContext({
+      agents: new Map([
+        ['fox', { roster: { id: 'r1', callsign: 'fox', agentType: 'builder', status: 'active' }, runtime: null }],
+      ]),
+      definitions: new Map([
+        ['builder', [
+          { slug: 'builder', channelId: 'root-channel', title: 'Root Builder', tldr: null, content: 'Root builder content', props: null },
+          { slug: 'builder', channelId: 'ch-1', title: 'Channel Builder', tldr: null, content: 'Channel builder content', props: null },
+        ]],
+      ]),
+      fullRoster: [{ id: 'r1', callsign: 'fox', agentType: 'builder', status: 'active' }],
+    });
+
+    const prompt = buildPromptFromContext(context, 'ch-1', 'fox');
+
+    // The prompt should include channel-specific definition content
+    expect(prompt).toContain('Channel builder content');
+    expect(prompt).not.toContain('Root builder content');
+  });
+
+  it('falls back to root definition when no channel definition exists', () => {
+    const context = createContext({
+      agents: new Map([
+        ['fox', { roster: { id: 'r1', callsign: 'fox', agentType: 'builder', status: 'active' }, runtime: null }],
+      ]),
+      definitions: new Map([
+        ['builder', [
+          { slug: 'builder', channelId: 'root-channel', title: 'Root Builder', tldr: null, content: 'Root builder content', props: null },
+        ]],
+      ]),
+      fullRoster: [{ id: 'r1', callsign: 'fox', agentType: 'builder', status: 'active' }],
+    });
+
+    const prompt = buildPromptFromContext(context, 'ch-1', 'fox');
+
+    // Should use root definition when channel definition doesn't exist
+    expect(prompt).toContain('Root builder content');
+  });
+
+  it('handles missing definition gracefully', () => {
+    const context = createContext({
+      agents: new Map([
+        ['fox', { roster: { id: 'r1', callsign: 'fox', agentType: 'unknown-type', status: 'active' }, runtime: null }],
+      ]),
+      definitions: new Map(), // No definitions at all
+      fullRoster: [{ id: 'r1', callsign: 'fox', agentType: 'unknown-type', status: 'active' }],
+    });
+
+    // Should not throw, returns a prompt without definition content
+    const prompt = buildPromptFromContext(context, 'ch-1', 'fox');
+    expect(typeof prompt).toBe('string');
+  });
+
+  it('includes channel context in prompt', () => {
+    const context = createContext({
+      channel: { id: 'ch-1', name: 'my-channel', tagline: 'My tagline', mission: 'My mission' },
+      agents: new Map([
+        ['fox', { roster: { id: 'r1', callsign: 'fox', agentType: 'builder', status: 'active' }, runtime: null }],
+      ]),
+      definitions: new Map([
+        ['builder', [{ slug: 'builder', channelId: 'ch-1', title: 'Builder', tldr: null, content: 'Build stuff', props: null }]],
+      ]),
+      fullRoster: [{ id: 'r1', callsign: 'fox', agentType: 'builder', status: 'active' }],
+    });
+
+    const prompt = buildPromptFromContext(context, 'ch-1', 'fox');
+
+    expect(prompt).toContain('my-channel');
+  });
+
+  it('includes roster in prompt', () => {
+    const context = createContext({
+      agents: new Map([
+        ['fox', { roster: { id: 'r1', callsign: 'fox', agentType: 'builder', status: 'active' }, runtime: null }],
+      ]),
+      definitions: new Map([
+        ['builder', [{ slug: 'builder', channelId: 'ch-1', title: 'Builder', tldr: null, content: 'Build', props: null }]],
+      ]),
+      fullRoster: [
+        { id: 'r1', callsign: 'fox', agentType: 'builder', status: 'active' },
+        { id: 'r2', callsign: 'bear', agentType: 'reviewer', status: 'active' },
+      ],
+    });
+
+    const prompt = buildPromptFromContext(context, 'ch-1', 'fox');
+
+    // Roster should be included
+    expect(prompt).toContain('fox');
+    expect(prompt).toContain('bear');
+  });
+
+  it('includes space owner callsign', () => {
+    const context = createContext({
+      spaceOwnerCallsign: 'svale',
+      agents: new Map([
+        ['fox', { roster: { id: 'r1', callsign: 'fox', agentType: 'builder', status: 'active' }, runtime: null }],
+      ]),
+      definitions: new Map([
+        ['builder', [{ slug: 'builder', channelId: 'ch-1', title: 'Builder', tldr: null, content: 'Build', props: null }]],
+      ]),
+      fullRoster: [{ id: 'r1', callsign: 'fox', agentType: 'builder', status: 'active' }],
+    });
+
+    const prompt = buildPromptFromContext(context, 'ch-1', 'fox');
+
+    expect(prompt).toContain('svale');
+  });
+});
+
+// =============================================================================
+// resolveEnvironmentFromContext Tests
+// =============================================================================
+
+describe('resolveEnvironmentFromContext', () => {
+  // Helper to create minimal context
+  function createContext(overrides: Partial<MessageDeliveryContext> = {}): MessageDeliveryContext {
+    return {
+      channel: { id: 'ch-1', name: 'test-channel', tagline: 'Test', mission: 'Testing' },
+      spaceOwnerCallsign: 'alice',
+      fullRoster: [],
+      agents: new Map(),
+      definitions: new Map(),
+      environments: [],
+      rootChannelId: 'root-channel',
+      ...overrides,
+    };
+  }
+
+  // Mock storage with configurable secret values
+  function createMockStorageForEnv(secretValues: Record<string, string> = {}): Storage {
+    return {
+      getSecretValue: vi.fn(async (_spaceId: string, _channelId: string, _slug: string, key: string) => {
+        return secretValues[key] ?? null;
+      }),
+    } as unknown as Storage;
+  }
+
+  it('returns empty object when no environments', async () => {
+    const context = createContext({ environments: [] });
+    const storage = createMockStorageForEnv();
+
+    const result = await resolveEnvironmentFromContext(context, storage, 'space-1', 'ch-1');
+
+    expect(result).toEqual({});
+  });
+
+  it('loads root environment variables as base layer', async () => {
+    const context = createContext({
+      rootChannelId: 'root-channel',
+      environments: [
+        {
+          slug: 'system.environment',
+          channelId: 'root-channel',
+          props: { variables: { API_URL: 'https://api.example.com', DEBUG: 'false' } },
+          secrets: null,
+        },
+      ],
+    });
+    const storage = createMockStorageForEnv();
+
+    const result = await resolveEnvironmentFromContext(context, storage, 'space-1', 'ch-1');
+
+    expect(result).toEqual({
+      API_URL: 'https://api.example.com',
+      DEBUG: 'false',
+    });
+  });
+
+  it('channel environment overlays root (wins on conflict)', async () => {
+    const context = createContext({
+      rootChannelId: 'root-channel',
+      environments: [
+        {
+          slug: 'system.environment',
+          channelId: 'root-channel',
+          props: { variables: { API_URL: 'https://root.example.com', ROOT_ONLY: 'yes' } },
+          secrets: null,
+        },
+        {
+          slug: 'system.environment',
+          channelId: 'ch-1',
+          props: { variables: { API_URL: 'https://channel.example.com', CHANNEL_ONLY: 'yes' } },
+          secrets: null,
+        },
+      ],
+    });
+    const storage = createMockStorageForEnv();
+
+    const result = await resolveEnvironmentFromContext(context, storage, 'space-1', 'ch-1');
+
+    expect(result).toEqual({
+      API_URL: 'https://channel.example.com', // Channel wins
+      ROOT_ONLY: 'yes', // From root
+      CHANNEL_ONLY: 'yes', // From channel
+    });
+  });
+
+  it('decrypts secrets from root and channel', async () => {
+    const context = createContext({
+      rootChannelId: 'root-channel',
+      environments: [
+        {
+          slug: 'system.environment',
+          channelId: 'root-channel',
+          props: { variables: {} },
+          secrets: { ROOT_SECRET: { encrypted: '...', iv: '...' } },
+        },
+        {
+          slug: 'system.environment',
+          channelId: 'ch-1',
+          props: { variables: {} },
+          secrets: { CHANNEL_SECRET: { encrypted: '...', iv: '...' } },
+        },
+      ],
+    });
+    const storage = createMockStorageForEnv({
+      ROOT_SECRET: 'root-secret-value',
+      CHANNEL_SECRET: 'channel-secret-value',
+    });
+
+    const result = await resolveEnvironmentFromContext(context, storage, 'space-1', 'ch-1');
+
+    expect(result).toEqual({
+      ROOT_SECRET: 'root-secret-value',
+      CHANNEL_SECRET: 'channel-secret-value',
+    });
+  });
+
+  it('channel secret overwrites root secret with same key', async () => {
+    const context = createContext({
+      rootChannelId: 'root-channel',
+      environments: [
+        {
+          slug: 'system.environment',
+          channelId: 'root-channel',
+          props: { variables: {} },
+          secrets: { SHARED_SECRET: { encrypted: '...root...', iv: '...' } },
+        },
+        {
+          slug: 'system.environment',
+          channelId: 'ch-1',
+          props: { variables: {} },
+          secrets: { SHARED_SECRET: { encrypted: '...channel...', iv: '...' } },
+        },
+      ],
+    });
+    // Storage returns different values based on which channelId is passed
+    const storage = {
+      getSecretValue: vi.fn(async (_spaceId: string, channelId: string, _slug: string, _key: string) => {
+        return channelId === 'root-channel' ? 'root-secret' : 'channel-secret';
+      }),
+    } as unknown as Storage;
+
+    const result = await resolveEnvironmentFromContext(context, storage, 'space-1', 'ch-1');
+
+    // Channel secret should win
+    expect(result.SHARED_SECRET).toBe('channel-secret');
+  });
+
+  it('merges multiple environment artifacts alphabetically by slug', async () => {
+    const context = createContext({
+      rootChannelId: 'root-channel',
+      environments: [
+        {
+          slug: 'z-env', // Processed second (alphabetically)
+          channelId: 'ch-1',
+          props: { variables: { SHARED: 'from-z', Z_ONLY: 'z' } },
+          secrets: null,
+        },
+        {
+          slug: 'a-env', // Processed first (alphabetically)
+          channelId: 'ch-1',
+          props: { variables: { SHARED: 'from-a', A_ONLY: 'a' } },
+          secrets: null,
+        },
+      ],
+    });
+    const storage = createMockStorageForEnv();
+
+    const result = await resolveEnvironmentFromContext(context, storage, 'space-1', 'ch-1');
+
+    // 'z-env' is processed after 'a-env', so its SHARED value wins
+    expect(result).toEqual({
+      SHARED: 'from-z',
+      A_ONLY: 'a',
+      Z_ONLY: 'z',
+    });
+  });
+
+  it('process.env takes precedence over artifact values (security)', async () => {
+    // Set a process.env value for this test
+    const originalValue = process.env.TEST_SECURITY_VAR;
+    process.env.TEST_SECURITY_VAR = 'from-process-env';
+
+    try {
+      const context = createContext({
+        environments: [
+          {
+            slug: 'system.environment',
+            channelId: 'ch-1',
+            props: { variables: { TEST_SECURITY_VAR: 'from-artifact' } },
+            secrets: null,
+          },
+        ],
+      });
+      const storage = createMockStorageForEnv();
+
+      const result = await resolveEnvironmentFromContext(context, storage, 'space-1', 'ch-1');
+
+      // process.env should win
+      expect(result.TEST_SECURITY_VAR).toBe('from-process-env');
+    } finally {
+      // Restore original value
+      if (originalValue === undefined) {
+        delete process.env.TEST_SECURITY_VAR;
+      } else {
+        process.env.TEST_SECURITY_VAR = originalValue;
+      }
+    }
+  });
+
+  it('handles null props gracefully', async () => {
+    const context = createContext({
+      environments: [
+        {
+          slug: 'system.environment',
+          channelId: 'ch-1',
+          props: null,
+          secrets: null,
+        },
+      ],
+    });
+    const storage = createMockStorageForEnv();
+
+    const result = await resolveEnvironmentFromContext(context, storage, 'space-1', 'ch-1');
+
+    expect(result).toEqual({});
   });
 });
