@@ -36,7 +36,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     unzip \
     ca-certificates \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Playwright with browsers
+# Note: This installs system dependencies and browsers globally
+RUN npx playwright install --with-deps chromium
 
 # Install GitHub CLI (uses GITHUB_TOKEN env var for auth)
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
@@ -105,8 +110,9 @@ RUN useradd -m -s /bin/bash agent && chown -R agent:agent /app /workspace
 USER agent
 WORKDIR /workspace
 
-# Configure package installs to use workspace (persists on volume)
-# Note: Python enforces venv usage (EXTERNALLY-MANAGED) - this is intentional
+# Configure HOME to use workspace (persists on volume)
+# This ensures tools that write to $HOME (npm cache, playwright, etc.) persist
+ENV HOME=/workspace
 ENV NPM_CONFIG_PREFIX=/workspace/.npm-global
 ENV PATH="/workspace/.npm-global/bin:$PATH"
 
