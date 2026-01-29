@@ -5,7 +5,16 @@
  */
 
 // Interface
-export type { Storage, SetSecretInput } from './interface.js';
+export type {
+  Storage,
+  SetSecretInput,
+  MessageDeliveryContext,
+  RosterWithRuntime,
+  AgentDefinitionSummary,
+  EnvironmentArtifactData,
+  McpArtifactData,
+  StoredSecret,
+} from './interface.js';
 
 // Re-export types from @cast/core used by storage consumers
 export type { StoredConnection } from '@cast/core';

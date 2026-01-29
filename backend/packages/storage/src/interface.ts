@@ -72,6 +72,73 @@ export interface SetSecretInput {
 }
 
 // =============================================================================
+// Message Delivery Context Types (Batch Query Optimization)
+// =============================================================================
+
+/**
+ * Roster entry with runtime info for message delivery.
+ */
+export interface RosterWithRuntime {
+  roster: RosterEntry;
+  runtime: StoredRuntime | null;
+}
+
+/**
+ * Agent definition artifact summary.
+ */
+export interface AgentDefinitionSummary {
+  slug: string;
+  channelId: string;
+  props: Record<string, unknown> | null;
+}
+
+/**
+ * Environment artifact with secrets for decryption.
+ */
+export interface EnvironmentArtifactData {
+  slug: string;
+  channelId: string;
+  props: {
+    variables?: Record<string, string>;
+  } | null;
+  secrets: Record<string, StoredSecret> | null;
+}
+
+/**
+ * Stored secret structure (encrypted).
+ */
+export interface StoredSecret {
+  encrypted: string;
+  iv: string;
+  expiresAt?: string;
+}
+
+/**
+ * Complete context needed for message delivery to agents.
+ * Fetched in a single optimized query.
+ */
+export interface MessageDeliveryContext {
+  /** Roster entries with their runtime configs */
+  agents: Map<string, RosterWithRuntime>;
+  /** Agent definitions (keyed by slug, may have channel + root versions) */
+  definitions: Map<string, AgentDefinitionSummary[]>;
+  /** Environment artifacts (channel + root) */
+  environments: EnvironmentArtifactData[];
+  /** Root channel ID for this space */
+  rootChannelId: string | null;
+}
+
+/**
+ * MCP artifact data for config resolution.
+ */
+export interface McpArtifactData {
+  slug: string;
+  channelId: string;
+  props: Record<string, unknown> | null;
+  secrets: Record<string, StoredSecret> | null;
+}
+
+// =============================================================================
 // Storage Interface
 // =============================================================================
 
@@ -832,6 +899,45 @@ export interface Storage {
    * @param runtimeId - Runtime ID
    */
   deleteRuntime(runtimeId: string): Promise<void>;
+
+  // ---------------------------------------------------------------------------
+  // Message Delivery Context (Batch Query Optimization)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get all context needed for message delivery in optimized batch queries.
+   * Returns roster entries, runtime configs, agent definitions, and environment artifacts.
+   *
+   * This replaces multiple sequential queries with 1-2 optimized queries:
+   * - Roster entries with runtime JOIN
+   * - Agent definitions (channel + root)
+   * - Environment artifacts (channel + root)
+   *
+   * @param spaceId - Space ID (for root channel lookup)
+   * @param channelId - Channel ID
+   * @param callsigns - Agent callsigns to fetch context for
+   * @returns Complete delivery context for all agents
+   */
+  getMessageDeliveryContext(
+    spaceId: string,
+    channelId: string,
+    callsigns: string[],
+  ): Promise<MessageDeliveryContext>;
+
+  /**
+   * Get MCP artifacts by slugs from channel and root.
+   * Used after getMessageDeliveryContext to fetch MCP configs based on agent definition props.
+   *
+   * @param channelId - Channel ID to check first
+   * @param rootChannelId - Root channel ID for fallback
+   * @param slugs - MCP artifact slugs to fetch
+   * @returns Map of slug to MCP artifact data (channel version preferred over root)
+   */
+  getMcpArtifactsBySlug(
+    channelId: string,
+    rootChannelId: string | null,
+    slugs: string[],
+  ): Promise<Map<string, McpArtifactData>>;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
