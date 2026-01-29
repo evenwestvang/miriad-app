@@ -112,11 +112,11 @@ RUN useradd -m -s /bin/bash agent && chown -R agent:agent /app /workspace
 USER agent
 WORKDIR /workspace
 
-# Configure HOME to use workspace (persists on volume)
-# This ensures tools that write to $HOME (npm cache, playwright, etc.) persist
-ENV HOME=/workspace
-ENV NPM_CONFIG_PREFIX=/workspace/.npm-global
-ENV PATH="/workspace/.npm-global/bin:$PATH"
+# Configure HOME to a subdirectory of workspace (persists on volume)
+# This keeps dotfiles/caches separate from user's working files
+ENV HOME=/workspace/home
+ENV NPM_CONFIG_PREFIX=/workspace/home/.npm-global
+ENV PATH="/workspace/home/.npm-global/bin:$PATH"
 
 # Environment variables set at runtime:
 #   MIRIAD_CONFIG      - JSON config with credentials (RuntimeConfig)
