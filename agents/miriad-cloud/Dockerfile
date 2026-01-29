@@ -93,9 +93,9 @@ RUN npm install -g @anthropic-ai/claude-code
 COPY agents/miriad-cloud/scripts/miriad-tunnel /usr/local/bin/miriad-tunnel
 RUN chmod +x /usr/local/bin/miriad-tunnel
 
-# Install entrypoint script (ensures workspace dirs exist on volume mount)
-COPY agents/miriad-cloud/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Install start script (runs after Fly mounts volumes)
+COPY agents/miriad-cloud/scripts/start.sh /usr/local/bin/start.sh
+RUN chmod +x /usr/local/bin/start.sh
 
 # Create workspace and app directories
 RUN mkdir -p /workspace /app
@@ -137,7 +137,5 @@ ENV PATH="/workspace/home/.npm-global/bin:$PATH"
 #   "workspace": { "basePath": "/workspace" }
 # }
 
-# Run local-runtime CLI with 15 minute idle timeout
-# Container will exit after 15 minutes of inactivity
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["node", "/app/dist/cli.js", "start", "--idle-timeout", "15"]
+# Start script runs after Fly mounts volumes, handles initialization, then starts runtime
+CMD ["/usr/local/bin/start.sh"]
