@@ -87,6 +87,9 @@ RUN git.real config --system credential.helper '!f() { echo "username=x-access-t
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
 
+# Install global Claude Code skills
+RUN npx skills add -g vercel-labs/skills@find-skills
+
 # Install miriad-tunnel CLI
 COPY agents/miriad-cloud/scripts/miriad-tunnel /usr/local/bin/miriad-tunnel
 RUN chmod +x /usr/local/bin/miriad-tunnel
