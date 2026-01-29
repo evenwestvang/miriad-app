@@ -83,6 +83,8 @@ import type {
   AgentDefinitionSummary,
   EnvironmentArtifactData,
   McpArtifactData,
+  ChannelContext,
+  FocusTypeData,
 } from './interface.js';
 
 // =============================================================================
@@ -3531,15 +3533,6 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     channelId: string,
     callsigns: string[]
   ): Promise<MessageDeliveryContext> {
-    if (callsigns.length === 0) {
-      return {
-        agents: new Map(),
-        definitions: new Map(),
-        environments: [],
-        rootChannelId: null,
-      };
-    }
-
     // Single query with CTEs to fetch all data in one round-trip
     const result = await sql`
       WITH 
@@ -3550,7 +3543,35 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           LIMIT 1
         ),
         
-        -- Get roster entries with runtime info
+        -- Get current channel info
+        channel_data AS (
+          SELECT id, name, tagline, mission, focus_slug
+          FROM channels
+          WHERE id = ${channelId}
+        ),
+        
+        -- Get space owner's callsign
+        space_owner_data AS (
+          SELECT u.callsign
+          FROM spaces s
+          JOIN users u ON s.owner_id = u.id
+          WHERE s.id = ${spaceId}
+        ),
+        
+        -- Get full roster for the channel (for prompt building)
+        full_roster_data AS (
+          SELECT 
+            r.id, r.channel_id, r.callsign, r.agent_type, r.status,
+            r.created_at, r.callback_url, r.readmark, r.tunnel_hash,
+            r.last_heartbeat, r.route_hints, r.current, r.last_message_routed_at,
+            r.runtime_id, r.props,
+            rt.name as runtime_name, rt.status as runtime_status
+          FROM roster r
+          LEFT JOIN runtimes rt ON r.runtime_id = rt.id
+          WHERE r.channel_id = ${channelId} AND r.status != 'archived'
+        ),
+        
+        -- Get requested roster entries with full runtime info
         roster_data AS (
           SELECT 
             r.id, r.channel_id, r.callsign, r.agent_type, r.status,
@@ -3562,12 +3583,13 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
             rt.config as rt_config, rt.created_at as rt_created_at, rt.last_seen_at as rt_last_seen_at
           FROM roster r
           LEFT JOIN runtimes rt ON r.runtime_id = rt.id
-          WHERE r.channel_id = ${channelId} AND r.callsign = ANY(${callsigns})
+          WHERE r.channel_id = ${channelId} 
+            AND r.callsign = ANY(${callsigns.length > 0 ? callsigns : ['__none__']})
         ),
         
         -- Get agent definitions (channel + root)
         definition_data AS (
-          SELECT slug, channel_id, props
+          SELECT slug, channel_id, content, props
           FROM artifacts
           WHERE type = 'system.agent'
             AND slug = ANY(SELECT DISTINCT agent_type FROM roster_data WHERE agent_type IS NOT NULL)
@@ -3582,6 +3604,17 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           WHERE type = 'system.environment'
             AND channel_id IN (${channelId}, (SELECT id FROM root_channel))
             AND status != 'archived'
+        ),
+        
+        -- Get focus type artifact if channel has focusSlug
+        focus_data AS (
+          SELECT a.slug, a.content, a.props
+          FROM artifacts a
+          JOIN channel_data cd ON a.slug = cd.focus_slug
+          WHERE a.channel_id IN (${channelId}, (SELECT id FROM root_channel))
+            AND a.type = 'system.focus'
+            AND a.status != 'archived'
+          LIMIT 1
         )
       
       SELECT 
@@ -3623,6 +3656,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         jsonb_build_object(
           'slug', dd.slug,
           'channelId', dd.channel_id,
+          'content', dd.content,
           'props', dd.props
         ) as data
       FROM definition_data dd
@@ -3645,12 +3679,72 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         'root_channel' as _type,
         jsonb_build_object('id', rc.id) as data
       FROM root_channel rc
+      
+      UNION ALL
+      
+      SELECT 
+        'channel' as _type,
+        jsonb_build_object(
+          'id', cd.id,
+          'name', cd.name,
+          'tagline', cd.tagline,
+          'mission', cd.mission,
+          'focusSlug', cd.focus_slug
+        ) as data
+      FROM channel_data cd
+      
+      UNION ALL
+      
+      SELECT 
+        'full_roster' as _type,
+        jsonb_build_object(
+          'id', fr.id,
+          'channel_id', fr.channel_id,
+          'callsign', fr.callsign,
+          'agent_type', fr.agent_type,
+          'status', fr.status,
+          'created_at', fr.created_at,
+          'callback_url', fr.callback_url,
+          'readmark', fr.readmark,
+          'tunnel_hash', fr.tunnel_hash,
+          'last_heartbeat', fr.last_heartbeat,
+          'route_hints', fr.route_hints,
+          'current', fr.current,
+          'last_message_routed_at', fr.last_message_routed_at,
+          'runtime_id', fr.runtime_id,
+          'runtime_name', fr.runtime_name,
+          'runtime_status', fr.runtime_status,
+          'props', fr.props
+        ) as data
+      FROM full_roster_data fr
+      
+      UNION ALL
+      
+      SELECT 
+        'focus' as _type,
+        jsonb_build_object(
+          'slug', fd.slug,
+          'content', fd.content,
+          'props', fd.props
+        ) as data
+      FROM focus_data fd
+      
+      UNION ALL
+      
+      SELECT 
+        'space_owner' as _type,
+        jsonb_build_object('callsign', so.callsign) as data
+      FROM space_owner_data so
     `;
 
     // Process results into structured response
+    let channel: ChannelContext | null = null;
+    let spaceOwnerCallsign: string | null = null;
+    const fullRoster: RosterEntry[] = [];
     const agents = new Map<string, RosterWithRuntime>();
     const definitions = new Map<string, AgentDefinitionSummary[]>();
     const environments: EnvironmentArtifactData[] = [];
+    let focusType: FocusTypeData | null = null;
     let rootChannelId: string | null = null;
 
     for (const row of result) {
@@ -3702,6 +3796,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           existing.push({
             slug,
             channelId: data.channelId as string,
+            content: data.content as string,
             props: data.props as Record<string, unknown> | null,
           });
           definitions.set(slug, existing);
@@ -3722,10 +3817,72 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           rootChannelId = data.id as string;
           break;
         }
+        
+        case 'channel': {
+          channel = {
+            id: data.id as string,
+            name: data.name as string,
+            tagline: data.tagline as string | null,
+            mission: data.mission as string | null,
+            focusSlug: data.focusSlug as string | null,
+          };
+          break;
+        }
+        
+        case 'full_roster': {
+          fullRoster.push({
+            id: data.id as string,
+            channelId: data.channel_id as string,
+            callsign: data.callsign as string,
+            agentType: data.agent_type as string,
+            status: data.status as RosterStatus,
+            createdAt: (data.created_at as Date).toISOString(),
+            callbackUrl: (data.callback_url as string | null) ?? undefined,
+            readmark: (data.readmark as string | null) ?? undefined,
+            tunnelHash: (data.tunnel_hash as string | null) ?? undefined,
+            lastHeartbeat: data.last_heartbeat ? (data.last_heartbeat as Date).toISOString() : undefined,
+            routeHints: (data.route_hints as Record<string, string> | null) ?? undefined,
+            current: (data.current as RosterCurrent | null) ?? undefined,
+            lastMessageRoutedAt: data.last_message_routed_at ? (data.last_message_routed_at as Date).toISOString() : undefined,
+            runtimeId: (data.runtime_id as string | null) ?? undefined,
+            runtimeName: (data.runtime_name as string | null) ?? undefined,
+            runtimeStatus: (data.runtime_status as RuntimeStatus | null) ?? undefined,
+            props: (data.props as Record<string, unknown> | null) ?? undefined,
+          });
+          break;
+        }
+        
+        case 'focus': {
+          focusType = {
+            slug: data.slug as string,
+            content: data.content as string,
+            props: data.props as Record<string, unknown> | null,
+          };
+          break;
+        }
+        
+        case 'space_owner': {
+          spaceOwnerCallsign = data.callsign as string;
+          break;
+        }
       }
     }
 
-    return { agents, definitions, environments, rootChannelId };
+    // Ensure we have channel context (should always exist)
+    if (!channel) {
+      throw new Error(`Channel not found: ${channelId}`);
+    }
+
+    return { 
+      channel,
+      spaceOwnerCallsign,
+      fullRoster,
+      agents, 
+      definitions, 
+      environments, 
+      focusType,
+      rootChannelId,
+    };
   }
 
   async function getMcpArtifactsBySlug(

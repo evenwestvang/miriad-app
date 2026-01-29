@@ -89,6 +89,7 @@ export interface RosterWithRuntime {
 export interface AgentDefinitionSummary {
   slug: string;
   channelId: string;
+  content: string;
   props: Record<string, unknown> | null;
 }
 
@@ -114,16 +115,44 @@ export interface StoredSecret {
 }
 
 /**
+ * Channel context for prompt building.
+ */
+export interface ChannelContext {
+  id: string;
+  name: string;
+  tagline: string | null;
+  mission: string | null;
+  focusSlug: string | null;
+}
+
+/**
+ * Focus type artifact data.
+ */
+export interface FocusTypeData {
+  slug: string;
+  content: string;
+  props: Record<string, unknown> | null;
+}
+
+/**
  * Complete context needed for message delivery to agents.
  * Fetched in a single optimized query.
  */
 export interface MessageDeliveryContext {
-  /** Roster entries with their runtime configs */
+  /** Channel context (name, tagline, mission, focusSlug) */
+  channel: ChannelContext;
+  /** Space owner's callsign (human user) */
+  spaceOwnerCallsign: string | null;
+  /** Full roster for the channel (for prompt building) */
+  fullRoster: RosterEntry[];
+  /** Roster entries with their runtime configs (only requested callsigns) */
   agents: Map<string, RosterWithRuntime>;
   /** Agent definitions (keyed by slug, may have channel + root versions) */
   definitions: Map<string, AgentDefinitionSummary[]>;
   /** Environment artifacts (channel + root) */
   environments: EnvironmentArtifactData[];
+  /** Focus type artifact (if channel has focusSlug) */
+  focusType: FocusTypeData | null;
   /** Root channel ID for this space */
   rootChannelId: string | null;
 }

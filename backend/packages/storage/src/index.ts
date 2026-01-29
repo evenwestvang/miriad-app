@@ -14,6 +14,8 @@ export type {
   EnvironmentArtifactData,
   McpArtifactData,
   StoredSecret,
+  ChannelContext,
+  FocusTypeData,
 } from './interface.js';
 
 // Re-export types from @cast/core used by storage consumers
