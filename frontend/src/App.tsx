@@ -1263,6 +1263,11 @@ export function App() {
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Unified header - spans full width */}
       <header className="h-12 flex items-center gap-2 md:gap-3 px-3 md:px-5 border-b border-border bg-card flex-shrink-0">
+        {/* Branding - text only, no logo */}
+        <span className="font-semibold text-[#FF6600] text-base tracking-[0.05em]">
+          MIRIAD
+        </span>
+
         {/* Mobile: Channel name */}
         {selectedThread && (
           <span className="md:hidden font-medium text-foreground text-base truncate max-w-[120px]">
