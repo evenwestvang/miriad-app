@@ -42,7 +42,7 @@ import { SettingsModal, type SettingsSection } from "./components/settings";
 import { MobileNav, type MobileTab } from "./components/MobileNav";
 import { MobileMenu } from "./components/MobileMenu";
 import { RuntimeStatusDropdown } from "./components/RuntimeStatusDropdown";
-import miriadLogo from "./assets/miriad-logo.svg";
+
 
 // Auth mode: 'dev' (show LoginPage) or 'workos' (redirect to /auth/login)
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || "dev";
@@ -1263,13 +1263,7 @@ export function App() {
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Unified header - spans full width */}
       <header className="h-12 flex items-center gap-2 md:gap-3 px-3 md:px-5 border-b border-border bg-card flex-shrink-0">
-        {/* Branding */}
-        <img src={miriadLogo} alt="Miriad" className="h-6 w-6" />
-        <span className="font-semibold text-[#FF6600] text-base tracking-[0.05em]">
-          MIRIAD
-        </span>
-
-        {/* Mobile: Channel name inline after logo */}
+        {/* Mobile: Channel name */}
         {selectedThread && (
           <span className="md:hidden font-medium text-foreground text-base truncate max-w-[120px]">
             #{currentThread?.agentName || "channel"}
