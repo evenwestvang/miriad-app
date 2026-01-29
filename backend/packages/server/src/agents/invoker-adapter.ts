@@ -103,6 +103,102 @@ function buildPromptFromContext(
   });
 }
 
+/**
+ * Resolve environment variables and secrets from pre-fetched context.
+ *
+ * Hierarchy (specificity first - channel wins over root):
+ * 1. Root system.environment artifacts (base layer)
+ * 2. Channel system.environment artifacts (overlay - wins)
+ *
+ * Within each scope, multiple environment artifacts merge alphabetically by slug.
+ * process.env values take precedence over artifact values for security.
+ */
+async function resolveEnvironmentFromContext(
+  context: MessageDeliveryContext,
+  storage: Storage,
+  spaceId: string,
+  channelId: string,
+): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  const { environments, rootChannelId } = context;
+
+  if (environments.length === 0) {
+    return result;
+  }
+
+  try {
+    // Separate root vs channel environments
+    const rootEnvs = rootChannelId
+      ? environments.filter(e => e.channelId === rootChannelId)
+      : [];
+    const channelEnvs = environments.filter(e => e.channelId === channelId);
+
+    // Sort alphabetically by slug for deterministic ordering
+    rootEnvs.sort((a, b) => a.slug.localeCompare(b.slug));
+    channelEnvs.sort((a, b) => a.slug.localeCompare(b.slug));
+
+    // 1. Root first (base layer)
+    for (const env of rootEnvs) {
+      // Merge variables
+      if (env.props?.variables) {
+        Object.assign(result, env.props.variables);
+      }
+      // Decrypt secrets
+      if (env.secrets) {
+        for (const key of Object.keys(env.secrets)) {
+          const value = await storage.getSecretValue(
+            spaceId,
+            rootChannelId!,
+            env.slug,
+            key,
+          );
+          if (value !== null) {
+            result[key] = value;
+          }
+        }
+      }
+    }
+
+    // 2. Channel overlays (specificity wins)
+    for (const env of channelEnvs) {
+      // Merge variables (overwrites root)
+      if (env.props?.variables) {
+        Object.assign(result, env.props.variables);
+      }
+      // Decrypt secrets (overwrites root)
+      if (env.secrets) {
+        for (const key of Object.keys(env.secrets)) {
+          const value = await storage.getSecretValue(
+            spaceId,
+            channelId,
+            env.slug,
+            key,
+          );
+          if (value !== null) {
+            result[key] = value;
+          }
+        }
+      }
+    }
+
+    // process.env takes precedence over artifact values (security)
+    for (const key of Object.keys(result)) {
+      if (process.env[key]) {
+        result[key] = process.env[key]!;
+      }
+    }
+
+    console.log(
+      `[AgentInvoker] Resolved environment: ${rootEnvs.length} root + ${channelEnvs.length} channel artifacts, ${Object.keys(result).length} vars`,
+    );
+  } catch (error) {
+    console.error("[AgentInvoker] Error resolving environment:", error);
+    // Don't fail message delivery if environment resolution fails
+  }
+
+  return result;
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -309,8 +405,10 @@ export function createAgentInvokerAdapter(
                 );
               }
 
-              // Resolve environment variables and secrets for this channel
-              const environment = await agentManager.resolveEnvironment(
+              // Resolve environment variables and secrets from pre-fetched context
+              const environment = await resolveEnvironmentFromContext(
+                context,
+                storage,
                 spaceId,
                 channelId,
               );
