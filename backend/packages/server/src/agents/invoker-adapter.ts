@@ -219,7 +219,6 @@ export function createAgentInvokerAdapter(
                 channelId,
                 callsign,
               );
-              console.log("COWABUNGA", props);
               if (props) {
                 console.log(
                   `[AgentInvoker] @${callsign} props:`,
