@@ -1,7 +1,7 @@
 /**
  * Nuum Engine
  *
- * Subprocess engine running @miriad-systems/nuum via bunx.
+ * Subprocess engine running @sanity-labs/nuum via bunx.
  * Communicates via NDJSON over stdin/stdout, translates to SDKMessage format.
  */
 
@@ -95,7 +95,7 @@ class NuumProcess implements EngineProcess {
     }
 
     this.proc = spawn('bunx', [
-      '@miriad-systems/nuum@latest',
+      '@sanity-labs/nuum@latest',
       '--stdio',
       '--db', dbPath,
     ], {

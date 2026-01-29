@@ -6,7 +6,7 @@
  *
  * Current engines:
  * - ClaudeSDKEngine: In-process Claude Code SDK (default)
- * - NuumEngine: Subprocess running @miriad-systems/nuum via bunx
+ * - NuumEngine: Subprocess running @sanity-labs/nuum via bunx
  */
 
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';

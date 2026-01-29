@@ -153,7 +153,7 @@ export function AgentPropsEditor({ props, onChange, channelId, apiHost }: AgentP
         <p className="text-xs text-muted-foreground mt-1">
           *) Nuum is an experimental agent engine.{' '}
           <a 
-            href="https://github.com/miriad-systems/nuum" 
+            href="https://github.com/sanity-labs/nuum" 
             target="_blank" 
             rel="noopener noreferrer"
             className="underline hover:text-foreground transition-colors"
