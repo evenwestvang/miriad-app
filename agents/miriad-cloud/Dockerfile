@@ -41,6 +41,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Playwright with browsers
 # Note: This installs system dependencies and browsers globally
+# PLAYWRIGHT_BROWSERS_PATH ensures browsers are accessible regardless of HOME setting
+ENV PLAYWRIGHT_BROWSERS_PATH=/usr/local/share/ms-playwright
 RUN npx playwright install --with-deps chromium
 
 # Install GitHub CLI (uses GITHUB_TOKEN env var for auth)
@@ -87,9 +89,6 @@ RUN git.real config --system credential.helper '!f() { echo "username=x-access-t
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
 
-# Install global Claude Code skills
-RUN npx skills add -g vercel-labs/skills@find-skills
-
 # Install miriad-tunnel CLI
 COPY agents/miriad-cloud/scripts/miriad-tunnel /usr/local/bin/miriad-tunnel
 RUN chmod +x /usr/local/bin/miriad-tunnel
@@ -118,6 +117,11 @@ WORKDIR /workspace
 ENV HOME=/workspace
 ENV NPM_CONFIG_PREFIX=/workspace/.npm-global
 ENV PATH="/workspace/.npm-global/bin:$PATH"
+
+# Install global Claude Code skills (after HOME is set so they persist in /workspace)
+# Create directories first in same layer so they exist when npx runs
+RUN mkdir -p /workspace/.npm /workspace/.npm-global/lib /workspace/.claude && \
+    npx --yes skills add -g vercel-labs/skills@find-skills
 
 # Environment variables set at runtime:
 #   MIRIAD_CONFIG      - JSON config with credentials (RuntimeConfig)
