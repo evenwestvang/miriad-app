@@ -54,7 +54,7 @@ function buildUserMessage(message: Message): string {
  * Build system prompt from pre-fetched context.
  * Uses the batch-fetched MessageDeliveryContext to avoid per-agent queries.
  */
-function buildPromptFromContext(
+export function buildPromptFromContext(
   context: MessageDeliveryContext,
   channelId: string,
   callsign: string,
@@ -113,7 +113,7 @@ function buildPromptFromContext(
  * Within each scope, multiple environment artifacts merge alphabetically by slug.
  * process.env values take precedence over artifact values for security.
  */
-async function resolveEnvironmentFromContext(
+export async function resolveEnvironmentFromContext(
   context: MessageDeliveryContext,
   storage: Storage,
   spaceId: string,
@@ -206,7 +206,7 @@ async function resolveEnvironmentFromContext(
  * 1. MCP's own env values (if literal, not a reference)
  * 2. Shared environment (from system.environment artifacts)
  */
-function expandMcpConfig(
+export function expandMcpConfig(
   config: McpServerConfig,
   sharedEnv: Record<string, string>,
 ): McpServerConfig {
@@ -251,7 +251,7 @@ function expandMcpConfig(
  * queries for OAuth tokens. Use agentManager.getMcpConfigsForAgent() if app MCPs
  * are needed.
  */
-function buildMcpConfigsFromContext(
+export function buildMcpConfigsFromContext(
   definition: AgentDefinitionSummary | undefined,
   mcpArtifacts: Map<string, McpArtifactData>,
   sharedEnv: Record<string, string>,
