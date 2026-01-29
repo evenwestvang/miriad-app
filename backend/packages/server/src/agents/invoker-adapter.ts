@@ -166,15 +166,50 @@ export function createAgentInvokerAdapter(
         targets,
       );
 
-      // Invoke all agents in parallel
+      // =======================================================================
+      // Phase 1: Batch fetch all context upfront
+      // =======================================================================
+      const context = await storage.getMessageDeliveryContext(
+        spaceId,
+        channelId,
+        targets,
+      );
+
+      // Collect MCP slugs from agent definitions for batch fetch
+      const mcpSlugs = new Set<string>();
+      for (const [, agentData] of context.agents) {
+        const agentType = agentData.roster.agentType;
+        const definitions = context.definitions.get(agentType);
+        if (!definitions || definitions.length === 0) continue;
+        // Prefer channel definition over root
+        const def = definitions.find(d => d.channelId === channelId) ?? definitions[0];
+        const mcpRefs = (def.props?.mcp as Array<{ slug: string }>) ?? [];
+        for (const ref of mcpRefs) {
+          mcpSlugs.add(ref.slug);
+        }
+      }
+
+      // Batch fetch MCP artifacts
+      const mcpArtifacts = mcpSlugs.size > 0
+        ? await storage.getMcpArtifactsBySlug(channelId, context.rootChannelId, [...mcpSlugs])
+        : new Map();
+
+      console.log(
+        `[AgentInvoker] Context loaded: ${context.agents.size} agents, ${context.definitions.size} definitions, ${context.environments.length} env artifacts, ${mcpArtifacts.size} MCPs`,
+      );
+
+      // =======================================================================
+      // Phase 2: Process each agent in parallel
+      // =======================================================================
       const results = await Promise.allSettled(
         targets.map(async (callsign) => {
           try {
-            // Step 0a: Check if agent is paused or archived - skip if so
-            const rosterEntry = await storage.getRosterByCallsign(
-              channelId,
-              callsign,
-            );
+            // Get pre-fetched roster/runtime data
+            const agentData = context.agents.get(callsign);
+            const rosterEntry = agentData?.roster;
+            const runtimeRecord = agentData?.runtime;
+
+            // Check if agent is paused or archived - skip if so
             if (rosterEntry?.status === "paused") {
               console.log(
                 `[AgentInvoker] Skipping @${callsign}: agent is paused`,
@@ -195,12 +230,10 @@ export function createAgentInvokerAdapter(
             // Route via WebSocket to the runtime's connection
             if (rosterEntry?.runtimeId) {
               console.log(
-                `[AgentInvoker] @${callsign} bound to LocalRuntime ${rosterEntry.runtimeId}, checking DB`,
-              );
-              const runtimeRecord = await storage.getRuntime(
-                rosterEntry.runtimeId,
+                `[AgentInvoker] @${callsign} bound to LocalRuntime ${rosterEntry.runtimeId}`,
               );
 
+              // Runtime record was pre-fetched in context
               if (!runtimeRecord) {
                 console.warn(
                   `[AgentInvoker] @${callsign}'s runtime (${rosterEntry.runtimeId}) not found in DB`,
@@ -246,11 +279,8 @@ export function createAgentInvokerAdapter(
                 return;
               }
 
-              const systemPrompt = await agentManager.buildPromptForAgent(
-                spaceId,
-                channelId,
-                callsign,
-              );
+              // Build system prompt from pre-fetched context
+              const systemPrompt = buildPromptFromContext(context, channelId, callsign);
 
               // LocalRuntime simplification: Always send 'message' type directly.
               // The AgentManager.deliverMessage() auto-activates if needed (lines 172-192).
@@ -277,12 +307,11 @@ export function createAgentInvokerAdapter(
                 JSON.stringify(mcpServers),
               );
 
-              // Get agent definition props (engine, nameTheme, etc.)
-              const props = await agentManager.getAgentProps(
-                spaceId,
-                channelId,
-                callsign,
-              );
+              // Get agent definition props from pre-fetched context
+              const agentType = rosterEntry.agentType;
+              const definitions = context.definitions.get(agentType);
+              const def = definitions?.find(d => d.channelId === channelId) ?? definitions?.[0];
+              const props = def?.props as Record<string, unknown> | undefined;
               if (props) {
                 console.log(
                   `[AgentInvoker] @${callsign} props:`,
@@ -389,12 +418,8 @@ export function createAgentInvokerAdapter(
                 callsign,
               });
 
-              // Build system prompt using centralized method from AgentManager
-              const systemPrompt = await agentManager.buildPromptForAgent(
-                spaceId,
-                channelId,
-                callsign,
-              );
+              // Build system prompt from pre-fetched context
+              const systemPrompt = buildPromptFromContext(context, channelId, callsign);
 
               // v3.0: Pass routeHints to be echoed as HTTP headers (for Fly.io routing, etc.)
               const success = await pushMessagesToContainer(
