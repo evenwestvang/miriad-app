@@ -78,21 +78,12 @@ function buildPromptFromContext(
     }
   }
 
-  // Map focus type data
-  const focusType = context.focusType
-    ? {
-        slug: context.focusType.slug,
-        content: context.focusType.content,
-      }
-    : undefined;
-
   // Map channel context (handle null → undefined for optional fields)
   const channel = {
     id: context.channel.id,
     name: context.channel.name,
     tagline: context.channel.tagline ?? undefined,
     mission: context.channel.mission ?? undefined,
-    focusSlug: context.channel.focusSlug ?? undefined,
   };
 
   // Map roster entries (fullRoster from context)
@@ -108,7 +99,6 @@ function buildPromptFromContext(
     roster,
     callsign,
     agentDefinition,
-    focusType,
     userCallsign: context.spaceOwnerCallsign ?? undefined,
   });
 }

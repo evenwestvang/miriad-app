@@ -124,16 +124,6 @@ export interface ChannelContext {
   name: string;
   tagline: string | null;
   mission: string | null;
-  focusSlug: string | null;
-}
-
-/**
- * Focus type artifact data.
- */
-export interface FocusTypeData {
-  slug: string;
-  content: string;
-  props: Record<string, unknown> | null;
 }
 
 /**
@@ -141,7 +131,7 @@ export interface FocusTypeData {
  * Fetched in a single optimized query.
  */
 export interface MessageDeliveryContext {
-  /** Channel context (name, tagline, mission, focusSlug) */
+  /** Channel context (name, tagline, mission) */
   channel: ChannelContext;
   /** Space owner's callsign (human user) */
   spaceOwnerCallsign: string | null;
@@ -153,8 +143,6 @@ export interface MessageDeliveryContext {
   definitions: Map<string, AgentDefinitionSummary[]>;
   /** Environment artifacts (channel + root) */
   environments: EnvironmentArtifactData[];
-  /** Focus type artifact (if channel has focusSlug) */
-  focusType: FocusTypeData | null;
   /** Root channel ID for this space */
   rootChannelId: string | null;
 }

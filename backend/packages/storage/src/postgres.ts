@@ -84,7 +84,6 @@ import type {
   EnvironmentArtifactData,
   McpArtifactData,
   ChannelContext,
-  FocusTypeData,
 } from './interface.js';
 
 // =============================================================================
@@ -3545,7 +3544,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         
         -- Get current channel info
         channel_data AS (
-          SELECT id, name, tagline, mission, focus_slug
+          SELECT id, name, tagline, mission
           FROM channels
           WHERE id = ${channelId}
         ),
@@ -3604,17 +3603,6 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           WHERE type = 'system.environment'
             AND channel_id IN (${channelId}, (SELECT id FROM root_channel))
             AND status != 'archived'
-        ),
-        
-        -- Get focus type artifact if channel has focusSlug
-        focus_data AS (
-          SELECT a.slug, a.content, a.props
-          FROM artifacts a
-          JOIN channel_data cd ON a.slug = cd.focus_slug
-          WHERE a.channel_id IN (${channelId}, (SELECT id FROM root_channel))
-            AND a.type = 'system.focus'
-            AND a.status != 'archived'
-          LIMIT 1
         )
       
       SELECT 
@@ -3690,8 +3678,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           'id', cd.id,
           'name', cd.name,
           'tagline', cd.tagline,
-          'mission', cd.mission,
-          'focusSlug', cd.focus_slug
+          'mission', cd.mission
         ) as data
       FROM channel_data cd
       
@@ -3723,17 +3710,6 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       UNION ALL
       
       SELECT 
-        'focus' as _type,
-        jsonb_build_object(
-          'slug', fd.slug,
-          'content', fd.content,
-          'props', fd.props
-        ) as data
-      FROM focus_data fd
-      
-      UNION ALL
-      
-      SELECT 
         'space_owner' as _type,
         jsonb_build_object('callsign', so.callsign) as data
       FROM space_owner_data so
@@ -3746,7 +3722,6 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     const agents = new Map<string, RosterWithRuntime>();
     const definitions = new Map<string, AgentDefinitionSummary[]>();
     const environments: EnvironmentArtifactData[] = [];
-    let focusType: FocusTypeData | null = null;
     let rootChannelId: string | null = null;
 
     for (const row of result) {
@@ -3828,7 +3803,6 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
             name: data.name as string,
             tagline: data.tagline as string | null,
             mission: data.mission as string | null,
-            focusSlug: data.focusSlug as string | null,
           };
           break;
         }
@@ -3856,15 +3830,6 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           break;
         }
         
-        case 'focus': {
-          focusType = {
-            slug: data.slug as string,
-            content: data.content as string,
-            props: data.props as Record<string, unknown> | null,
-          };
-          break;
-        }
-        
         case 'space_owner': {
           spaceOwnerCallsign = data.callsign as string;
           break;
@@ -3884,7 +3849,6 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       agents, 
       definitions, 
       environments, 
-      focusType,
       rootChannelId,
     };
   }
