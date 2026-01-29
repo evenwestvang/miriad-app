@@ -118,62 +118,131 @@ interface MockStorageOptions {
   rosterRuntimeIds?: Record<string, string | null>;
   /** Map of callsign -> lastHeartbeat (for online status check) */
   rosterHeartbeats?: Record<string, string | null>;
+  /** Map of callsign -> status (default: 'active') */
+  rosterStatuses?: Record<string, 'active' | 'paused' | 'archived'>;
   /** Map of runtimeId -> runtime record */
   runtimes?: Record<string, { status: string; config?: { wsConnectionId?: string } } | null>;
+  /** Channel name for context (default: 'test-channel') */
+  channelName?: string;
 }
 
 function createMockStorage(options: MockStorageOptions = {}): Storage & {
   getRosterByCallsignCalls: string[];
   updateRosterEntryCalls: Array<{ channelId: string; entryId: string; update: unknown }>;
   getRuntimeCalls: string[];
+  getMessageDeliveryContextCalls: Array<{ spaceId: string; channelId: string; callsigns: string[] }>;
 } {
   const rosterCallbackUrls = options.rosterCallbackUrls ?? {};
   const rosterRuntimeIds = options.rosterRuntimeIds ?? {};
   const rosterHeartbeats = options.rosterHeartbeats ?? {};
+  const rosterStatuses = options.rosterStatuses ?? {};
   const runtimes = options.runtimes ?? {};
+  const channelName = options.channelName ?? 'test-channel';
   const getRosterByCallsignCalls: string[] = [];
   const updateRosterEntryCalls: Array<{ channelId: string; entryId: string; update: unknown }> = [];
   const getRuntimeCalls: string[] = [];
+  const getMessageDeliveryContextCalls: Array<{ spaceId: string; channelId: string; callsigns: string[] }> = [];
+
+  // Helper to build a roster entry
+  const buildRosterEntry = (channelId: string, callsign: string) => {
+    const callbackUrl = rosterCallbackUrls[callsign];
+    const runtimeId = rosterRuntimeIds[callsign];
+    const status = rosterStatuses[callsign] ?? 'active';
+    return {
+      id: `roster-${callsign}`,
+      channelId,
+      callsign,
+      agentType: 'engineer',
+      status,
+      createdAt: new Date().toISOString(),
+      callbackUrl: callbackUrl ?? undefined,
+      runtimeId: runtimeId ?? undefined,
+      lastHeartbeat: rosterHeartbeats[callsign] ?? undefined,
+    };
+  };
+
+  // Helper to build a runtime record
+  const buildRuntimeRecord = (runtimeId: string) => {
+    const runtime = runtimes[runtimeId];
+    if (!runtime) return null;
+    return {
+      id: runtimeId,
+      spaceId: 'space-1',
+      name: 'test-runtime',
+      status: runtime.status,
+      config: runtime.config ?? null,
+      createdAt: new Date().toISOString(),
+    };
+  };
 
   return {
     getRosterByCallsignCalls,
     updateRosterEntryCalls,
     getRuntimeCalls,
+    getMessageDeliveryContextCalls,
+    // New batch context method
+    getMessageDeliveryContext: vi.fn(async (spaceId: string, channelId: string, callsigns: string[]) => {
+      getMessageDeliveryContextCalls.push({ spaceId, channelId, callsigns });
+
+      // Build agents map from requested callsigns
+      const agents = new Map();
+      const allCallsigns = Object.keys(rosterCallbackUrls);
+      for (const callsign of callsigns) {
+        if (allCallsigns.includes(callsign) || rosterCallbackUrls[callsign] !== undefined) {
+          const roster = buildRosterEntry(channelId, callsign);
+          const runtimeId = rosterRuntimeIds[callsign];
+          const runtime = runtimeId ? buildRuntimeRecord(runtimeId) : null;
+          agents.set(callsign, { roster, runtime });
+        }
+      }
+
+      // Build full roster from all known callsigns
+      const fullRoster = allCallsigns.map(cs => buildRosterEntry(channelId, cs));
+
+      // Build definitions map (mock: each agent type has a simple definition)
+      const definitions = new Map();
+      definitions.set('engineer', [{
+        slug: 'engineer',
+        channelId: 'root',
+        title: 'Engineer',
+        tldr: 'A software engineer agent',
+        content: 'You are a software engineer.',
+        props: null,
+      }]);
+
+      return {
+        channel: {
+          id: channelId,
+          name: channelName,
+          tagline: 'Test channel',
+          mission: 'Testing',
+        },
+        spaceOwnerCallsign: 'alice',
+        fullRoster,
+        agents,
+        definitions,
+        environments: [],
+        rootChannelId: 'root-channel',
+      };
+    }),
+    // New batch MCP fetch method
+    getMcpArtifactsBySlug: vi.fn(async () => new Map()),
+    // Legacy methods (kept for backwards compat but no longer used by invoker)
     getRosterByCallsign: vi.fn(async (channelId: string, callsign: string) => {
       getRosterByCallsignCalls.push(callsign);
       const callbackUrl = rosterCallbackUrls[callsign];
       const runtimeId = rosterRuntimeIds[callsign];
       if (callbackUrl === undefined && runtimeId === undefined) {
-        // Not in roster
         return null;
       }
-      return {
-        id: `roster-${callsign}`,
-        channelId,
-        callsign,
-        agentType: 'engineer',
-        status: 'active',
-        createdAt: new Date().toISOString(),
-        callbackUrl: callbackUrl ?? undefined,
-        runtimeId: runtimeId ?? undefined,
-        lastHeartbeat: rosterHeartbeats[callsign] ?? undefined,
-      };
+      return buildRosterEntry(channelId, callsign);
     }),
     updateRosterEntry: vi.fn(async (channelId: string, entryId: string, update: unknown) => {
       updateRosterEntryCalls.push({ channelId, entryId, update });
     }),
     getRuntime: vi.fn(async (runtimeId: string) => {
       getRuntimeCalls.push(runtimeId);
-      const runtime = runtimes[runtimeId];
-      if (!runtime) return null;
-      return {
-        id: runtimeId,
-        spaceId: 'space-1',
-        name: 'test-runtime',
-        status: runtime.status,
-        config: runtime.config ?? null,
-        createdAt: new Date().toISOString(),
-      };
+      return buildRuntimeRecord(runtimeId);
     }),
     // Other methods not used
     saveMessage: vi.fn(),
@@ -198,6 +267,7 @@ function createMockStorage(options: MockStorageOptions = {}): Storage & {
     getRosterByCallsignCalls: string[];
     updateRosterEntryCalls: Array<{ channelId: string; entryId: string; update: unknown }>;
     getRuntimeCalls: string[];
+    getMessageDeliveryContextCalls: Array<{ spaceId: string; channelId: string; callsigns: string[] }>;
   };
 }
 
