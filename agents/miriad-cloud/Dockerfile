@@ -118,11 +118,6 @@ ENV HOME=/workspace
 ENV NPM_CONFIG_PREFIX=/workspace/.npm-global
 ENV PATH="/workspace/.npm-global/bin:$PATH"
 
-# Install global Claude Code skills (after HOME is set so they persist in /workspace)
-# Create directories first in same layer so they exist when npx runs
-RUN mkdir -p /workspace/.npm /workspace/.npm-global/lib /workspace/.claude && \
-    npx --yes skills add -g vercel-labs/skills@find-skills
-
 # Environment variables set at runtime:
 #   MIRIAD_CONFIG      - JSON config with credentials (RuntimeConfig)
 #   ANTHROPIC_API_KEY  - Claude API key
