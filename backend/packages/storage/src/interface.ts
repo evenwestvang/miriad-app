@@ -89,6 +89,8 @@ export interface RosterWithRuntime {
 export interface AgentDefinitionSummary {
   slug: string;
   channelId: string;
+  title: string | null;
+  tldr: string | null;
   content: string;
   props: Record<string, unknown> | null;
 }

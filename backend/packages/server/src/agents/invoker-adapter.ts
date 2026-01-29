@@ -9,7 +9,7 @@
  */
 
 import type { AgentManager } from "./agent-manager.js";
-import type { Storage } from "@cast/storage";
+import type { Storage, MessageDeliveryContext } from "@cast/storage";
 import type { LocalRuntimeConfig } from "@cast/core";
 import type { ConnectionManager } from "../websocket/index.js";
 import type { AgentInvoker, Message } from "../handlers/messages.js";
@@ -19,6 +19,7 @@ import {
   broadcastAgentState,
 } from "../handlers/checkin.js";
 import { generateContainerToken } from "../auth/index.js";
+import { buildSystemPrompt } from "./agent-manager.js";
 
 /**
  * Convert message content to string for agent consumption.
@@ -47,6 +48,69 @@ function buildUserMessage(message: Message): string {
   const content = contentToString(message.content);
   const attachmentSlugs = message.metadata?.attachmentSlugs as string[] | undefined;
   return `Message from @${message.sender}: ${content}${formatAttachments(attachmentSlugs)}`;
+}
+
+/**
+ * Build system prompt from pre-fetched context.
+ * Uses the batch-fetched MessageDeliveryContext to avoid per-agent queries.
+ */
+function buildPromptFromContext(
+  context: MessageDeliveryContext,
+  channelId: string,
+  callsign: string,
+): string {
+  // Get this agent's roster entry to find the agentType (definition slug)
+  const agentData = context.agents.get(callsign);
+  const agentType = agentData?.roster.agentType;
+
+  // Find agent definition - prefer channel-specific over root
+  let agentDefinition: { slug: string; title?: string; content: string } | undefined;
+  if (agentType) {
+    const definitions = context.definitions.get(agentType);
+    if (definitions && definitions.length > 0) {
+      // Prefer channel definition over root
+      const def = definitions.find(d => d.channelId === channelId) ?? definitions[0];
+      agentDefinition = {
+        slug: def.slug,
+        title: def.title ?? undefined,
+        content: def.content,
+      };
+    }
+  }
+
+  // Map focus type data
+  const focusType = context.focusType
+    ? {
+        slug: context.focusType.slug,
+        content: context.focusType.content,
+      }
+    : undefined;
+
+  // Map channel context (handle null → undefined for optional fields)
+  const channel = {
+    id: context.channel.id,
+    name: context.channel.name,
+    tagline: context.channel.tagline ?? undefined,
+    mission: context.channel.mission ?? undefined,
+    focusSlug: context.channel.focusSlug ?? undefined,
+  };
+
+  // Map roster entries (fullRoster from context)
+  const roster = context.fullRoster.map(r => ({
+    id: r.id,
+    callsign: r.callsign,
+    agentType: r.agentType,
+    status: r.status as "active" | "inactive",
+  }));
+
+  return buildSystemPrompt({
+    channel,
+    roster,
+    callsign,
+    agentDefinition,
+    focusType,
+    userCallsign: context.spaceOwnerCallsign ?? undefined,
+  });
 }
 
 // =============================================================================

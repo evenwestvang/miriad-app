@@ -3589,7 +3589,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         
         -- Get agent definitions (channel + root)
         definition_data AS (
-          SELECT slug, channel_id, content, props
+          SELECT slug, channel_id, title, tldr, content, props
           FROM artifacts
           WHERE type = 'system.agent'
             AND slug = ANY(SELECT DISTINCT agent_type FROM roster_data WHERE agent_type IS NOT NULL)
@@ -3656,6 +3656,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         jsonb_build_object(
           'slug', dd.slug,
           'channelId', dd.channel_id,
+          'title', dd.title,
+          'tldr', dd.tldr,
           'content', dd.content,
           'props', dd.props
         ) as data
@@ -3796,6 +3798,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
           existing.push({
             slug,
             channelId: data.channelId as string,
+            title: data.title as string | null,
+            tldr: data.tldr as string | null,
             content: data.content as string,
             props: data.props as Record<string, unknown> | null,
           });
