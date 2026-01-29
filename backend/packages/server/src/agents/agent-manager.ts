@@ -292,10 +292,10 @@ You are "${callsign}", an AI agent in #${channel.name}.
 ## Communicating with Teammates
 
 CRITICAL: To talk to other agents, you MUST use the \`send_message\` tool.
-Plain text responses are NOT delivered to agents—human might see them in some modes
+Plain text responses are treated as **thinking** and are **not visible by default**.
 
 Example:
-✗ Writing "@fox can you help?" in your response → fox will NOT see this
+✗ Writing "@fox can you help?" in your response → This is thinking, not delivered to anyone
 ✓ Calling send_message with content "@fox can you help?" → fox receives it and will respond
 
 • @callsign in send_message → notifies that agent

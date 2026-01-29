@@ -575,7 +575,7 @@ export function MessageList({
               </div>
             )}
             {(() => {
-              const groupedItems = groupMessages(messages);
+              const groupedItems = groupMessages(messages, firehoseMode);
 
               // Helper to get the last message of a grouped item (for sender comparison)
               const getLastMessageOfItem = (
@@ -791,14 +791,25 @@ type MessageOrGroup =
  * - Any non-tool message breaks the group
  * - This preserves interleaving: text → [tool group] → text → [tool group]
  */
-function groupMessages(messages: Message[]): MessageOrGroup[] {
+function groupMessages(messages: Message[], firehoseMode: boolean = false): MessageOrGroup[] {
   const result: MessageOrGroup[] = [];
 
   // Filter out send_message and set_status tool calls (redundant - they echo into the thread)
   // Also filter out event messages (system nudges not meant for user display)
+  // When firehose is off, also hide agent text that wasn't sent via send_message (raw generation/thinking)
   const filteredMessages = messages.filter((msg) => {
     // Hide event messages from the chat UI
     if (msg.type === "event") {
+      return false;
+    }
+    // When firehose is off, hide agent messages that aren't from send_message
+    // These are raw text generation / thinking - not intended for the channel
+    if (
+      !firehoseMode &&
+      msg.type === "agent" &&
+      msg.senderType === "agent" &&
+      msg.method !== "send_message"
+    ) {
       return false;
     }
     if (
