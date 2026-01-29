@@ -97,6 +97,58 @@ function createMockStorage() {
   return {
     getRosterByCallsign: vi.fn(async () => null), // No callback URL - always activate
     updateRosterEntry: vi.fn(async () => {}),
+    // New batch context method used by invoker-adapter
+    getMessageDeliveryContext: vi.fn(async (_spaceId: string, _channelId: string, callsigns: string[]) => {
+      // Build agents map from test fixtures - no callbackUrl means will spawn new containers
+      const agents = new Map<string, { roster: any; runtime: any | null }>();
+      for (const callsign of callsigns) {
+        const rosterEntry = testRoster.find(r => r.callsign === callsign);
+        if (rosterEntry) {
+          agents.set(callsign, {
+            roster: {
+              ...rosterEntry,
+              callbackUrl: null, // No callback URL - always activate
+              runtimeId: null,
+              routeHints: null,
+              tunnelHash: null,
+            },
+            runtime: null,
+          });
+        }
+      }
+
+      // Build definitions map - each agent type has a definition
+      const definitions = new Map<string, Array<{ slug: string; channelId: string; content: string; title: string | null; tldr: string | null; props: unknown }>>();
+      for (const entry of testRoster) {
+        if (!definitions.has(entry.agentType)) {
+          definitions.set(entry.agentType, [{
+            slug: entry.agentType,
+            channelId: TEST_CHANNEL_ID,
+            content: `You are a ${entry.agentType} agent.`,
+            title: entry.agentType,
+            tldr: null,
+            props: null,
+          }]);
+        }
+      }
+
+      return {
+        channel: testChannel,
+        spaceOwnerCallsign: 'svale',
+        fullRoster: testRoster.map(r => ({
+          ...r,
+          callbackUrl: null,
+          runtimeId: null,
+          routeHints: null,
+          tunnelHash: null,
+        })),
+        agents,
+        definitions,
+        environments: [],
+        rootChannelId: null,
+      };
+    }),
+    getMcpArtifactsBySlug: vi.fn(async () => new Map()),
     // Other methods can be stubs
     getChannel: vi.fn(async () => null),
     getChannelByName: vi.fn(async () => null),

@@ -75,7 +75,16 @@ import {
   getDefaultArtifactStatus,
   slugToPathSegment,
 } from '@cast/core';
-import type { Storage, SetSecretInput } from './interface.js';
+import type {
+  Storage,
+  SetSecretInput,
+  MessageDeliveryContext,
+  RosterWithRuntime,
+  AgentDefinitionSummary,
+  EnvironmentArtifactData,
+  McpArtifactData,
+  ChannelContext,
+} from './interface.js';
 
 // =============================================================================
 // Types
@@ -3514,6 +3523,395 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     `;
   }
 
+  // ---------------------------------------------------------------------------
+  // Message Delivery Context (Batch Query Optimization)
+  // ---------------------------------------------------------------------------
+
+  async function getMessageDeliveryContext(
+    spaceId: string,
+    channelId: string,
+    callsigns: string[]
+  ): Promise<MessageDeliveryContext> {
+    // Single query with CTEs to fetch all data in one round-trip
+    const result = await sql`
+      WITH 
+        -- Get root channel for this space
+        root_channel AS (
+          SELECT id FROM channels 
+          WHERE space_id = ${spaceId} AND name = 'root'
+          LIMIT 1
+        ),
+        
+        -- Get current channel info
+        channel_data AS (
+          SELECT id, name, tagline, mission
+          FROM channels
+          WHERE id = ${channelId}
+        ),
+        
+        -- Get space owner's callsign
+        space_owner_data AS (
+          SELECT u.callsign
+          FROM spaces s
+          JOIN users u ON s.owner_id = u.id
+          WHERE s.id = ${spaceId}
+        ),
+        
+        -- Get full roster for the channel (for prompt building)
+        full_roster_data AS (
+          SELECT 
+            r.id, r.channel_id, r.callsign, r.agent_type, r.status,
+            r.created_at, r.callback_url, r.readmark, r.tunnel_hash,
+            r.last_heartbeat, r.route_hints, r.current, r.last_message_routed_at,
+            r.runtime_id, r.props,
+            rt.name as runtime_name, rt.status as runtime_status
+          FROM roster r
+          LEFT JOIN runtimes rt ON r.runtime_id = rt.id
+          WHERE r.channel_id = ${channelId} AND r.status != 'archived'
+        ),
+        
+        -- Get requested roster entries with full runtime info
+        roster_data AS (
+          SELECT 
+            r.id, r.channel_id, r.callsign, r.agent_type, r.status,
+            r.created_at, r.callback_url, r.readmark, r.tunnel_hash,
+            r.last_heartbeat, r.route_hints, r.current, r.last_message_routed_at,
+            r.runtime_id, r.props,
+            rt.id as rt_id, rt.space_id as rt_space_id, rt.server_id as rt_server_id,
+            rt.name as rt_name, rt.type as rt_type, rt.status as rt_status,
+            rt.config as rt_config, rt.created_at as rt_created_at, rt.last_seen_at as rt_last_seen_at
+          FROM roster r
+          LEFT JOIN runtimes rt ON r.runtime_id = rt.id
+          WHERE r.channel_id = ${channelId} 
+            AND r.callsign = ANY(${callsigns.length > 0 ? callsigns : ['__none__']})
+        ),
+        
+        -- Get agent definitions (channel + root)
+        definition_data AS (
+          SELECT slug, channel_id, title, tldr, content, props
+          FROM artifacts
+          WHERE type = 'system.agent'
+            AND slug = ANY(SELECT DISTINCT agent_type FROM roster_data WHERE agent_type IS NOT NULL)
+            AND channel_id IN (${channelId}, (SELECT id FROM root_channel))
+            AND status != 'archived'
+        ),
+        
+        -- Get environment artifacts (channel + root)
+        environment_data AS (
+          SELECT slug, channel_id, props, secrets
+          FROM artifacts
+          WHERE type = 'system.environment'
+            AND channel_id IN (${channelId}, (SELECT id FROM root_channel))
+            AND status != 'archived'
+        )
+      
+      SELECT 
+        'roster' as _type,
+        jsonb_build_object(
+          'id', rd.id,
+          'channel_id', rd.channel_id,
+          'callsign', rd.callsign,
+          'agent_type', rd.agent_type,
+          'status', rd.status,
+          'created_at', rd.created_at,
+          'callback_url', rd.callback_url,
+          'readmark', rd.readmark,
+          'tunnel_hash', rd.tunnel_hash,
+          'last_heartbeat', rd.last_heartbeat,
+          'route_hints', rd.route_hints,
+          'current', rd.current,
+          'last_message_routed_at', rd.last_message_routed_at,
+          'runtime_id', rd.runtime_id,
+          'props', rd.props,
+          'runtime', CASE WHEN rd.rt_id IS NOT NULL THEN jsonb_build_object(
+            'id', rd.rt_id,
+            'spaceId', rd.rt_space_id,
+            'serverId', rd.rt_server_id,
+            'name', rd.rt_name,
+            'type', rd.rt_type,
+            'status', rd.rt_status,
+            'config', rd.rt_config,
+            'createdAt', rd.rt_created_at,
+            'lastSeenAt', rd.rt_last_seen_at
+          ) ELSE NULL END
+        ) as data
+      FROM roster_data rd
+      
+      UNION ALL
+      
+      SELECT 
+        'definition' as _type,
+        jsonb_build_object(
+          'slug', dd.slug,
+          'channelId', dd.channel_id,
+          'title', dd.title,
+          'tldr', dd.tldr,
+          'content', dd.content,
+          'props', dd.props
+        ) as data
+      FROM definition_data dd
+      
+      UNION ALL
+      
+      SELECT 
+        'environment' as _type,
+        jsonb_build_object(
+          'slug', ed.slug,
+          'channelId', ed.channel_id,
+          'props', ed.props,
+          'secrets', ed.secrets
+        ) as data
+      FROM environment_data ed
+      
+      UNION ALL
+      
+      SELECT 
+        'root_channel' as _type,
+        jsonb_build_object('id', rc.id) as data
+      FROM root_channel rc
+      
+      UNION ALL
+      
+      SELECT 
+        'channel' as _type,
+        jsonb_build_object(
+          'id', cd.id,
+          'name', cd.name,
+          'tagline', cd.tagline,
+          'mission', cd.mission
+        ) as data
+      FROM channel_data cd
+      
+      UNION ALL
+      
+      SELECT 
+        'full_roster' as _type,
+        jsonb_build_object(
+          'id', fr.id,
+          'channel_id', fr.channel_id,
+          'callsign', fr.callsign,
+          'agent_type', fr.agent_type,
+          'status', fr.status,
+          'created_at', fr.created_at,
+          'callback_url', fr.callback_url,
+          'readmark', fr.readmark,
+          'tunnel_hash', fr.tunnel_hash,
+          'last_heartbeat', fr.last_heartbeat,
+          'route_hints', fr.route_hints,
+          'current', fr.current,
+          'last_message_routed_at', fr.last_message_routed_at,
+          'runtime_id', fr.runtime_id,
+          'runtime_name', fr.runtime_name,
+          'runtime_status', fr.runtime_status,
+          'props', fr.props
+        ) as data
+      FROM full_roster_data fr
+      
+      UNION ALL
+      
+      SELECT 
+        'space_owner' as _type,
+        jsonb_build_object('callsign', so.callsign) as data
+      FROM space_owner_data so
+    `;
+
+    // Process results into structured response
+    let channel: ChannelContext | null = null;
+    let spaceOwnerCallsign: string | null = null;
+    const fullRoster: RosterEntry[] = [];
+    const agents = new Map<string, RosterWithRuntime>();
+    const definitions = new Map<string, AgentDefinitionSummary[]>();
+    const environments: EnvironmentArtifactData[] = [];
+    let rootChannelId: string | null = null;
+
+    for (const row of result) {
+      const data = row.data as Record<string, unknown>;
+      
+      switch (row._type) {
+        case 'roster': {
+          const callsign = data.callsign as string;
+          const runtimeData = data.runtime as Record<string, unknown> | null;
+          
+          agents.set(callsign, {
+            roster: {
+              id: data.id as string,
+              channelId: data.channel_id as string,
+              callsign,
+              agentType: data.agent_type as string,
+              status: data.status as RosterStatus,
+              // CTE queries return dates as strings, not Date objects
+              createdAt: typeof data.created_at === 'string' 
+                ? data.created_at 
+                : (data.created_at as Date).toISOString(),
+              callbackUrl: (data.callback_url as string | null) ?? undefined,
+              readmark: (data.readmark as string | null) ?? undefined,
+              tunnelHash: (data.tunnel_hash as string | null) ?? undefined,
+              lastHeartbeat: data.last_heartbeat 
+                ? (typeof data.last_heartbeat === 'string' ? data.last_heartbeat : (data.last_heartbeat as Date).toISOString()) 
+                : undefined,
+              routeHints: (data.route_hints as Record<string, string> | null) ?? undefined,
+              current: (data.current as RosterCurrent | null) ?? undefined,
+              lastMessageRoutedAt: data.last_message_routed_at 
+                ? (typeof data.last_message_routed_at === 'string' ? data.last_message_routed_at : (data.last_message_routed_at as Date).toISOString()) 
+                : undefined,
+              runtimeId: (data.runtime_id as string | null) ?? undefined,
+              runtimeName: (runtimeData?.name as string | undefined) ?? undefined,
+              runtimeStatus: (runtimeData?.status as RuntimeStatus | undefined) ?? undefined,
+              props: (data.props as Record<string, unknown> | null) ?? undefined,
+            },
+            runtime: runtimeData ? {
+              id: runtimeData.id as string,
+              spaceId: runtimeData.spaceId as string,
+              serverId: runtimeData.serverId as string | null,
+              name: runtimeData.name as string,
+              type: runtimeData.type as RuntimeType,
+              status: runtimeData.status as RuntimeStatus,
+              config: runtimeData.config as LocalRuntimeConfig | null,
+              createdAt: runtimeData.createdAt as string,
+              lastSeenAt: runtimeData.lastSeenAt as string | null,
+            } : null,
+          });
+          break;
+        }
+        
+        case 'definition': {
+          const slug = data.slug as string;
+          const existing = definitions.get(slug) ?? [];
+          existing.push({
+            slug,
+            channelId: data.channelId as string,
+            title: data.title as string | null,
+            tldr: data.tldr as string | null,
+            content: data.content as string,
+            props: data.props as Record<string, unknown> | null,
+          });
+          definitions.set(slug, existing);
+          break;
+        }
+        
+        case 'environment': {
+          environments.push({
+            slug: data.slug as string,
+            channelId: data.channelId as string,
+            props: data.props as { variables?: Record<string, string> } | null,
+            secrets: data.secrets as Record<string, StoredSecret> | null,
+          });
+          break;
+        }
+        
+        case 'root_channel': {
+          rootChannelId = data.id as string;
+          break;
+        }
+        
+        case 'channel': {
+          channel = {
+            id: data.id as string,
+            name: data.name as string,
+            tagline: data.tagline as string | null,
+            mission: data.mission as string | null,
+          };
+          break;
+        }
+        
+        case 'full_roster': {
+          fullRoster.push({
+            id: data.id as string,
+            channelId: data.channel_id as string,
+            callsign: data.callsign as string,
+            agentType: data.agent_type as string,
+            status: data.status as RosterStatus,
+            // CTE queries return dates as strings, not Date objects
+            createdAt: typeof data.created_at === 'string' 
+              ? data.created_at 
+              : (data.created_at as Date).toISOString(),
+            callbackUrl: (data.callback_url as string | null) ?? undefined,
+            readmark: (data.readmark as string | null) ?? undefined,
+            tunnelHash: (data.tunnel_hash as string | null) ?? undefined,
+            lastHeartbeat: data.last_heartbeat 
+              ? (typeof data.last_heartbeat === 'string' ? data.last_heartbeat : (data.last_heartbeat as Date).toISOString()) 
+              : undefined,
+            routeHints: (data.route_hints as Record<string, string> | null) ?? undefined,
+            current: (data.current as RosterCurrent | null) ?? undefined,
+            lastMessageRoutedAt: data.last_message_routed_at 
+              ? (typeof data.last_message_routed_at === 'string' ? data.last_message_routed_at : (data.last_message_routed_at as Date).toISOString()) 
+              : undefined,
+            runtimeId: (data.runtime_id as string | null) ?? undefined,
+            runtimeName: (data.runtime_name as string | null) ?? undefined,
+            runtimeStatus: (data.runtime_status as RuntimeStatus | null) ?? undefined,
+            props: (data.props as Record<string, unknown> | null) ?? undefined,
+          });
+          break;
+        }
+        
+        case 'space_owner': {
+          spaceOwnerCallsign = data.callsign as string;
+          break;
+        }
+      }
+    }
+
+    // Ensure we have channel context (should always exist)
+    if (!channel) {
+      throw new Error(`Channel not found: ${channelId}`);
+    }
+
+    return { 
+      channel,
+      spaceOwnerCallsign,
+      fullRoster,
+      agents, 
+      definitions, 
+      environments, 
+      rootChannelId,
+    };
+  }
+
+  async function getMcpArtifactsBySlug(
+    channelId: string,
+    rootChannelId: string | null,
+    slugs: string[]
+  ): Promise<Map<string, McpArtifactData>> {
+    if (slugs.length === 0) {
+      return new Map();
+    }
+
+    const channelIds = rootChannelId ? [channelId, rootChannelId] : [channelId];
+
+    const result = await sql<{
+      slug: string;
+      channel_id: string;
+      props: Record<string, unknown> | null;
+      secrets: Record<string, StoredSecret> | null;
+    }>`
+      SELECT slug, channel_id, props, secrets
+      FROM artifacts
+      WHERE type = 'system.mcp'
+        AND slug = ANY(${slugs})
+        AND channel_id = ANY(${channelIds})
+        AND status != 'archived'
+    `;
+
+    // Build map with channel version preferred over root
+    const map = new Map<string, McpArtifactData>();
+    
+    // First pass: add all results
+    for (const row of result) {
+      const existing = map.get(row.slug);
+      // Prefer channel version over root version
+      if (!existing || row.channel_id === channelId) {
+        map.set(row.slug, {
+          slug: row.slug,
+          channelId: row.channel_id,
+          props: row.props,
+          secrets: row.secrets,
+        });
+      }
+    }
+
+    return map;
+  }
+
   return {
     // Message operations
     saveMessage,
@@ -3607,6 +4005,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     getRuntimesBySpace,
     updateRuntime,
     deleteRuntime,
+    // Message delivery context (batch optimization)
+    getMessageDeliveryContext,
+    getMcpArtifactsBySlug,
     // Lifecycle
     initialize,
     close,
