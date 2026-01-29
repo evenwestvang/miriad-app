@@ -71,7 +71,8 @@ export function transformAgentTemplate(
     .filter((ref): ref is { slug: string } => ref !== null);
 
   const props: Record<string, unknown> = {
-    engine: agent.engine,
+    // Default to nuum engine if not specified in Sanity
+    engine: agent.engine || 'nuum',
   };
 
   if (agent.model) props.model = agent.model;
