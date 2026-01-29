@@ -95,21 +95,40 @@ describe("uploadAsset", () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  // TODO: Rewrite upload tests for presigned URL flow (commit 7ae40814)
-  // Tests expect old single-fetch FormData flow, but implementation now uses:
-  // 1. POST /presign → get uploadUrl
-  // 2. PUT to uploadUrl → upload file
-  // 3. POST /confirm → create artifact
-  it.skip("uploads a file successfully", async () => {
+  // Helper to mock the 3-step presigned URL upload flow
+  function mockPresignedUploadFlow(options: {
+    slug: string;
+    contentType?: string;
+    fileSize?: number;
+    url?: string;
+  }) {
+    // Step 1: POST /presign → get uploadUrl
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        slug: "test-asset",
-        contentType: "image/png",
-        fileSize: 8,
-        url: "https://cast.example.com/api/assets/channel-123/test-asset",
+        uploadUrl: "https://s3.example.com/presigned",
+        method: "PUT",
+        headers: { "Content-Type": options.contentType ?? "image/png" },
       }),
     });
+
+    // Step 2: PUT to uploadUrl → upload file
+    mockFetch.mockResolvedValueOnce({ ok: true });
+
+    // Step 3: POST /confirm → create artifact
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        slug: options.slug,
+        contentType: options.contentType ?? "image/png",
+        fileSize: options.fileSize ?? 8,
+        url: options.url ?? `https://cast.example.com/api/assets/channel-123/${options.slug}`,
+      }),
+    });
+  }
+
+  it("uploads a file successfully", async () => {
+    mockPresignedUploadFlow({ slug: "test-asset" });
 
     const input: UploadAssetInput = {
       path: testFilePath,
@@ -126,25 +145,35 @@ describe("uploadAsset", () => {
       url: "https://cast.example.com/api/assets/channel-123/test-asset",
     });
 
-    // Verify fetch was called correctly
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url, options] = mockFetch.mock.calls[0];
-    expect(url).toBe("https://cast.example.com/api/assets/channel-123");
-    expect(options.method).toBe("POST");
-    expect(options.headers.Authorization).toBe("Container test-token");
-    expect(options.body).toBeInstanceOf(FormData);
+    // Verify 3-step flow
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+
+    // Step 1: presign request
+    const [presignUrl, presignOptions] = mockFetch.mock.calls[0];
+    expect(presignUrl).toBe("https://cast.example.com/api/assets/channel-123/presign");
+    expect(presignOptions.method).toBe("POST");
+    expect(presignOptions.headers.Authorization).toBe("Container test-token");
+    expect(presignOptions.headers["Content-Type"]).toBe("application/json");
+    const presignBody = JSON.parse(presignOptions.body);
+    expect(presignBody.slug).toBe("test-asset");
+    expect(presignBody.contentType).toBe("image/png");
+    expect(presignBody.tldr).toBe("A test image");
+
+    // Step 2: upload to presigned URL
+    const [uploadUrl, uploadOptions] = mockFetch.mock.calls[1];
+    expect(uploadUrl).toBe("https://s3.example.com/presigned");
+    expect(uploadOptions.method).toBe("PUT");
+    expect(uploadOptions.body).toBeInstanceOf(Buffer);
+
+    // Step 3: confirm request
+    const [confirmUrl, confirmOptions] = mockFetch.mock.calls[2];
+    expect(confirmUrl).toBe("https://cast.example.com/api/assets/channel-123/confirm");
+    expect(confirmOptions.method).toBe("POST");
+    expect(confirmOptions.headers.Authorization).toBe("Container test-token");
   });
 
-  it.skip("includes optional title and parentSlug", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        slug: "test-asset",
-        contentType: "image/png",
-        fileSize: 8,
-        url: "https://cast.example.com/api/assets/channel-123/test-asset",
-      }),
-    });
+  it("includes optional title and parentSlug", async () => {
+    mockPresignedUploadFlow({ slug: "test-asset" });
 
     const input: UploadAssetInput = {
       path: testFilePath,
@@ -156,10 +185,17 @@ describe("uploadAsset", () => {
 
     await uploadAsset(input, config);
 
-    const [, options] = mockFetch.mock.calls[0];
-    const formData = options.body as FormData;
-    expect(formData.get("title")).toBe("Test Image Title");
-    expect(formData.get("parentSlug")).toBe("parent-folder");
+    // Verify title and parentSlug are sent in presign request
+    const [, presignOptions] = mockFetch.mock.calls[0];
+    const presignBody = JSON.parse(presignOptions.body);
+    expect(presignBody.title).toBe("Test Image Title");
+    expect(presignBody.parentSlug).toBe("parent-folder");
+
+    // Verify title and parentSlug are also sent in confirm request
+    const [, confirmOptions] = mockFetch.mock.calls[2];
+    const confirmBody = JSON.parse(confirmOptions.body);
+    expect(confirmBody.title).toBe("Test Image Title");
+    expect(confirmBody.parentSlug).toBe("parent-folder");
   });
 
   it("throws when file does not exist", async () => {
