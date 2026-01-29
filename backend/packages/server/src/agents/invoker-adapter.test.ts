@@ -752,8 +752,8 @@ describe('buildMcpConfigsFromContext', () => {
   const platformMcpUrl = 'https://api.cast.app';
 
   describe('platform MCPs', () => {
-    it('adds miriad and miriad-files MCPs when platformMcpUrl and authToken provided', () => {
-      const result = buildMcpConfigsFromContext(
+    it('adds miriad and miriad-files MCPs when platformMcpUrl and authToken provided', async () => {
+      const result = await buildMcpConfigsFromContext(
         undefined, // no definition
         new Map(),
         {},
@@ -776,8 +776,8 @@ describe('buildMcpConfigsFromContext', () => {
       expect(miriadFiles?.env?.CAST_CONTAINER_TOKEN).toBe(authToken);
     });
 
-    it('skips platform MCPs when platformMcpUrl is undefined', () => {
-      const result = buildMcpConfigsFromContext(
+    it('skips platform MCPs when platformMcpUrl is undefined', async () => {
+      const result = await buildMcpConfigsFromContext(
         undefined,
         new Map(),
         {},
@@ -789,8 +789,8 @@ describe('buildMcpConfigsFromContext', () => {
       expect(result).toHaveLength(0);
     });
 
-    it('skips platform MCPs when authToken is empty', () => {
-      const result = buildMcpConfigsFromContext(
+    it('skips platform MCPs when authToken is empty', async () => {
+      const result = await buildMcpConfigsFromContext(
         undefined,
         new Map(),
         {},
@@ -804,7 +804,7 @@ describe('buildMcpConfigsFromContext', () => {
   });
 
   describe('system MCPs from definition', () => {
-    it('adds system MCPs referenced in agent definition', () => {
+    it('adds system MCPs referenced in agent definition', async () => {
       const definition: AgentDefinitionSummary = {
         slug: 'test-agent',
         channelId,
@@ -826,7 +826,7 @@ describe('buildMcpConfigsFromContext', () => {
         }],
       ]);
 
-      const result = buildMcpConfigsFromContext(
+      const result = await buildMcpConfigsFromContext(
         definition,
         mcpArtifacts,
         {},
@@ -845,7 +845,7 @@ describe('buildMcpConfigsFromContext', () => {
       expect(myMcp?.args).toEqual(['server.js']);
     });
 
-    it('skips MCP if not found in pre-fetched artifacts', () => {
+    it('skips MCP if not found in pre-fetched artifacts', async () => {
       const definition: AgentDefinitionSummary = {
         slug: 'test-agent',
         channelId,
@@ -855,7 +855,7 @@ describe('buildMcpConfigsFromContext', () => {
         },
       };
 
-      const result = buildMcpConfigsFromContext(
+      const result = await buildMcpConfigsFromContext(
         definition,
         new Map(), // empty - MCP not pre-fetched
         {},
@@ -869,7 +869,7 @@ describe('buildMcpConfigsFromContext', () => {
       expect(result.find(c => c.name === 'missing-mcp')).toBeUndefined();
     });
 
-    it('skips MCP if no transport in props', () => {
+    it('skips MCP if no transport in props', async () => {
       const definition: AgentDefinitionSummary = {
         slug: 'test-agent',
         channelId,
@@ -890,7 +890,7 @@ describe('buildMcpConfigsFromContext', () => {
         }],
       ]);
 
-      const result = buildMcpConfigsFromContext(
+      const result = await buildMcpConfigsFromContext(
         definition,
         mcpArtifacts,
         {},
@@ -903,7 +903,7 @@ describe('buildMcpConfigsFromContext', () => {
       expect(result).toHaveLength(2);
     });
 
-    it('skips OAuth MCPs', () => {
+    it('skips HTTP OAuth MCPs without token fetcher', async () => {
       const definition: AgentDefinitionSummary = {
         slug: 'test-agent',
         channelId,
@@ -925,7 +925,7 @@ describe('buildMcpConfigsFromContext', () => {
         }],
       ]);
 
-      const result = buildMcpConfigsFromContext(
+      const result = await buildMcpConfigsFromContext(
         definition,
         mcpArtifacts,
         {},
@@ -938,10 +938,132 @@ describe('buildMcpConfigsFromContext', () => {
       expect(result).toHaveLength(2);
       expect(result.find(c => c.name === 'oauth-mcp')).toBeUndefined();
     });
+
+    it('injects OAuth token for HTTP MCPs when token fetcher provided', async () => {
+      const definition: AgentDefinitionSummary = {
+        slug: 'test-agent',
+        channelId,
+        content: '',
+        props: {
+          mcp: [{ slug: 'oauth-mcp' }],
+        },
+      };
+
+      const mcpArtifacts = new Map<string, McpArtifactData>([
+        ['oauth-mcp', {
+          slug: 'oauth-mcp',
+          channelId,
+          props: {
+            transport: 'http',
+            url: 'https://oauth-service.com',
+            oauth: { type: 'oauth' },
+          },
+        }],
+      ]);
+
+      const mockGetValidOAuthToken = vi.fn().mockResolvedValue('valid-oauth-token');
+
+      const result = await buildMcpConfigsFromContext(
+        definition,
+        mcpArtifacts,
+        {},
+        channelId,
+        authToken,
+        platformMcpUrl,
+        mockGetValidOAuthToken,
+        'space-123',
+      );
+
+      // Platform MCPs + OAuth MCP with token
+      expect(result).toHaveLength(3);
+      const oauthMcp = result.find(c => c.name === 'oauth-mcp');
+      expect(oauthMcp).toBeDefined();
+      expect(oauthMcp?.headers?.Authorization).toBe('Bearer valid-oauth-token');
+      expect(mockGetValidOAuthToken).toHaveBeenCalledWith('space-123', channelId, 'oauth-mcp');
+    });
+
+    it('skips HTTP OAuth MCP when token fetch returns null', async () => {
+      const definition: AgentDefinitionSummary = {
+        slug: 'test-agent',
+        channelId,
+        content: '',
+        props: {
+          mcp: [{ slug: 'oauth-mcp' }],
+        },
+      };
+
+      const mcpArtifacts = new Map<string, McpArtifactData>([
+        ['oauth-mcp', {
+          slug: 'oauth-mcp',
+          channelId,
+          props: {
+            transport: 'http',
+            url: 'https://oauth-service.com',
+            oauth: { type: 'oauth' },
+          },
+        }],
+      ]);
+
+      const mockGetValidOAuthToken = vi.fn().mockResolvedValue(null);
+
+      const result = await buildMcpConfigsFromContext(
+        definition,
+        mcpArtifacts,
+        {},
+        channelId,
+        authToken,
+        platformMcpUrl,
+        mockGetValidOAuthToken,
+        'space-123',
+      );
+
+      // Only platform MCPs, OAuth MCP skipped (no valid token)
+      expect(result).toHaveLength(2);
+      expect(result.find(c => c.name === 'oauth-mcp')).toBeUndefined();
+    });
+
+    it('allows stdio MCPs even with oauth field (oauth only applies to HTTP)', async () => {
+      const definition: AgentDefinitionSummary = {
+        slug: 'test-agent',
+        channelId,
+        content: '',
+        props: {
+          mcp: [{ slug: 'stdio-mcp' }],
+        },
+      };
+
+      const mcpArtifacts = new Map<string, McpArtifactData>([
+        ['stdio-mcp', {
+          slug: 'stdio-mcp',
+          channelId,
+          props: {
+            transport: 'stdio',
+            command: 'node',
+            args: ['server.js'],
+            oauth: { type: 'oauth' }, // Should be ignored for stdio
+          },
+        }],
+      ]);
+
+      const result = await buildMcpConfigsFromContext(
+        definition,
+        mcpArtifacts,
+        {},
+        channelId,
+        authToken,
+        platformMcpUrl,
+      );
+
+      // Platform MCPs + stdio MCP (oauth ignored)
+      expect(result).toHaveLength(3);
+      const stdioMcp = result.find(c => c.name === 'stdio-mcp');
+      expect(stdioMcp).toBeDefined();
+      expect(stdioMcp?.transport).toBe('stdio');
+    });
   });
 
   describe('${VAR} expansion', () => {
-    it('expands env vars in system MCP configs', () => {
+    it('expands env vars in system MCP configs', async () => {
       const definition: AgentDefinitionSummary = {
         slug: 'test-agent',
         channelId,
@@ -967,7 +1089,7 @@ describe('buildMcpConfigsFromContext', () => {
 
       const sharedEnv = { SHARED_API_KEY: 'secret-key-123' };
 
-      const result = buildMcpConfigsFromContext(
+      const result = await buildMcpConfigsFromContext(
         definition,
         mcpArtifacts,
         sharedEnv,
@@ -980,13 +1102,13 @@ describe('buildMcpConfigsFromContext', () => {
       expect(envMcp?.env?.API_KEY).toBe('secret-key-123');
     });
 
-    it('does NOT expand vars in platform MCPs (miriad, miriad-files)', () => {
+    it('does NOT expand vars in platform MCPs (miriad, miriad-files)', async () => {
       const sharedEnv = { 
         CAST_API_URL: 'should-not-override',
         CAST_CONTAINER_TOKEN: 'should-not-override',
       };
 
-      const result = buildMcpConfigsFromContext(
+      const result = await buildMcpConfigsFromContext(
         undefined,
         new Map(),
         sharedEnv,
@@ -1003,8 +1125,8 @@ describe('buildMcpConfigsFromContext', () => {
   });
 
   describe('no definition', () => {
-    it('returns only platform MCPs when definition is undefined', () => {
-      const result = buildMcpConfigsFromContext(
+    it('returns only platform MCPs when definition is undefined', async () => {
+      const result = await buildMcpConfigsFromContext(
         undefined,
         new Map(),
         {},

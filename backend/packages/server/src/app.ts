@@ -1439,6 +1439,85 @@ export function createApp(options: AppOptions): Hono {
   });
 
   // ---------------------------------------------------------------------------
+  // OAuth Token Fetcher (shared between AgentManager and InvokerAdapter)
+  // ---------------------------------------------------------------------------
+
+  const getValidOAuthToken = async (
+    sid: string,
+    cid: string,
+    mcpSlug: string,
+  ): Promise<string | null> => {
+    try {
+      // Get stored tokens
+      const tokens = await getOAuthTokens(storage, sid, cid, mcpSlug);
+      if (!tokens) {
+        return null;
+      }
+
+      // Get the MCP artifact to find token endpoint for refresh
+      const artifact = await storage.getArtifact(cid, mcpSlug);
+      if (!artifact) {
+        return null;
+      }
+
+      const props = artifact.props as {
+        url?: string;
+        oauth?: {
+          type: "oauth";
+          tokenEndpoint?: string;
+        };
+      } | undefined;
+
+      // If no OAuth config, just return the token as-is
+      if (!props?.oauth) {
+        return tokens.accessToken;
+      }
+
+      // Resolve token endpoint from OAuth config or via discovery
+      let tokenEndpoint = props.oauth.tokenEndpoint;
+      if (!tokenEndpoint && props.url) {
+        try {
+          const endpoints = await resolveOAuthEndpoints(props.url);
+          tokenEndpoint = endpoints.tokenEndpoint;
+        } catch {
+          // Discovery failed, can't refresh
+          console.warn(
+            `[OAuth] Failed to discover token endpoint for ${mcpSlug}`,
+          );
+        }
+      }
+
+      // Use getValidAccessToken which handles expiry check and refresh
+      const validToken = await getValidAccessToken(
+        {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: tokens.expiresAt,
+          tokenType: "Bearer",
+        },
+        tokenEndpoint ?? "",
+        tokens.clientId ?? "",
+        undefined, // No client secret for public clients
+        async (newTokens) => {
+          // Save refreshed tokens back to storage
+          await saveOAuthTokens(storage, sid, cid, mcpSlug, {
+            accessToken: newTokens.accessToken,
+            refreshToken: newTokens.refreshToken,
+            expiresAt: newTokens.expiresAt,
+            clientId: tokens.clientId,
+          });
+          console.log(`[OAuth] Refreshed tokens for ${mcpSlug}`);
+        },
+      );
+
+      return validToken;
+    } catch (error) {
+      console.error(`[OAuth] Failed to get valid token for ${mcpSlug}:`, error);
+      return null;
+    }
+  };
+
+  // ---------------------------------------------------------------------------
   // Create Agent Manager
   // ---------------------------------------------------------------------------
 
@@ -1640,76 +1719,7 @@ export function createApp(options: AppOptions): Hono {
       };
     },
     // Get a valid OAuth access token, auto-refreshing if expired
-    getValidOAuthToken: async (sid, cid, mcpSlug) => {
-      try {
-        // Get stored tokens
-        const tokens = await getOAuthTokens(storage, sid, cid, mcpSlug);
-        if (!tokens) {
-          return null;
-        }
-
-        // Get the MCP artifact to find token endpoint for refresh
-        const artifact = await storage.getArtifact(cid, mcpSlug);
-        if (!artifact) {
-          return null;
-        }
-
-        const props = artifact.props as {
-          url?: string;
-          oauth?: {
-            type: "oauth";
-            tokenEndpoint?: string;
-          };
-        } | undefined;
-
-        // If no OAuth config, just return the token as-is
-        if (!props?.oauth) {
-          return tokens.accessToken;
-        }
-
-        // Resolve token endpoint from OAuth config or via discovery
-        let tokenEndpoint = props.oauth.tokenEndpoint;
-        if (!tokenEndpoint && props.url) {
-          try {
-            const endpoints = await resolveOAuthEndpoints(props.url);
-            tokenEndpoint = endpoints.tokenEndpoint;
-          } catch {
-            // Discovery failed, can't refresh
-            console.warn(
-              `[OAuth] Failed to discover token endpoint for ${mcpSlug}`,
-            );
-          }
-        }
-
-        // Use getValidAccessToken which handles expiry check and refresh
-        const validToken = await getValidAccessToken(
-          {
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken,
-            expiresAt: tokens.expiresAt,
-            tokenType: "Bearer",
-          },
-          tokenEndpoint ?? "",
-          tokens.clientId ?? "",
-          undefined, // No client secret for public clients
-          async (newTokens) => {
-            // Save refreshed tokens back to storage
-            await saveOAuthTokens(storage, sid, cid, mcpSlug, {
-              accessToken: newTokens.accessToken,
-              refreshToken: newTokens.refreshToken,
-              expiresAt: newTokens.expiresAt,
-              clientId: tokens.clientId,
-            });
-            console.log(`[OAuth] Refreshed tokens for ${mcpSlug}`);
-          },
-        );
-
-        return validToken;
-      } catch (error) {
-        console.error(`[OAuth] Failed to get valid token for ${mcpSlug}:`, error);
-        return null;
-      }
-    },
+    getValidOAuthToken,
   });
 
   // ---------------------------------------------------------------------------
@@ -2117,6 +2127,7 @@ export function createApp(options: AppOptions): Hono {
               connectionManager,
               runtimeSend,
               platformMcpUrl: apiUrl,
+              getValidOAuthToken,
             });
             return invoker.invokeAgents(cid, targets, message);
           },
@@ -2379,6 +2390,7 @@ export function createApp(options: AppOptions): Hono {
         connectionManager,
         runtimeSend,
         platformMcpUrl: apiUrl,
+        getValidOAuthToken,
       });
       const followUpMessage: Message = {
         id: followUpMessageId,
@@ -2615,6 +2627,7 @@ export function createApp(options: AppOptions): Hono {
         connectionManager,
         runtimeSend,
         platformMcpUrl: apiUrl,
+        getValidOAuthToken,
       });
       const followUpMessage: Message = {
         id: followUpMessageId,
@@ -2763,6 +2776,7 @@ export function createApp(options: AppOptions): Hono {
           connectionManager,
           runtimeSend,
           platformMcpUrl: apiUrl,
+          getValidOAuthToken,
         });
         return invoker.invokeAgents(channelId, targets, message);
       },

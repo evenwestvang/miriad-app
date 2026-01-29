@@ -237,6 +237,13 @@ export function expandMcpConfig(
   };
 }
 
+/** Function type for OAuth token fetching */
+export type GetValidOAuthToken = (
+  spaceId: string,
+  channelId: string,
+  mcpSlug: string,
+) => Promise<string | null>;
+
 /**
  * Build MCP configs for an agent from pre-fetched data.
  *
@@ -247,18 +254,24 @@ export function expandMcpConfig(
  * - Platform MCPs (miriad, miriad-files) - always added if authToken provided
  * - System MCPs from agent definition's props.mcp - from pre-fetched mcpArtifacts
  *
+ * For HTTP MCPs with OAuth configured:
+ * - If getValidOAuthToken is provided, fetches and injects the token
+ * - If token fetch fails or returns null, skips the MCP
+ * - If getValidOAuthToken is not provided, skips OAuth MCPs
+ *
  * Note: App MCPs (system.app) are NOT included here - they require additional
- * queries for OAuth tokens. Use agentManager.getMcpConfigsForAgent() if app MCPs
- * are needed.
+ * queries. Use agentManager.getMcpConfigsForAgent() if app MCPs are needed.
  */
-export function buildMcpConfigsFromContext(
+export async function buildMcpConfigsFromContext(
   definition: AgentDefinitionSummary | undefined,
   mcpArtifacts: Map<string, McpArtifactData>,
   sharedEnv: Record<string, string>,
   channelId: string,
   authToken: string,
   platformMcpUrl: string | undefined,
-): McpServerConfig[] {
+  getValidOAuthToken?: GetValidOAuthToken,
+  spaceId?: string,
+): Promise<McpServerConfig[]> {
   const configs: McpServerConfig[] = [];
 
   // Add built-in platform MCPs if configured
@@ -315,15 +328,6 @@ export function buildMcpConfigsFromContext(
         continue;
       }
 
-      // Skip OAuth MCPs - they need token injection which requires async calls
-      // These will fall back to agentManager.getMcpConfigsForAgent() if needed
-      if (props.oauth) {
-        console.log(
-          `[AgentInvoker] Skipping system.mcp ${mcp.slug}: OAuth requires token injection (not supported in batch path)`,
-        );
-        continue;
-      }
-
       const mcpConfig: McpServerConfig = {
         name: mcp.slug,
         slug: mcp.slug,
@@ -334,6 +338,37 @@ export function buildMcpConfigsFromContext(
         cwd: props.cwd,
         url: props.url,
       };
+
+      // For HTTP MCPs with OAuth, fetch and inject token
+      if (props.transport === "http" && props.oauth) {
+        if (getValidOAuthToken && spaceId) {
+          const accessToken = await getValidOAuthToken(
+            spaceId,
+            mcp.channelId, // Use MCP's channel for OAuth tokens
+            mcp.slug,
+          );
+
+          if (accessToken) {
+            mcpConfig.headers = {
+              ...mcpConfig.headers,
+              Authorization: `Bearer ${accessToken}`,
+            };
+            console.log(
+              `[AgentInvoker] Injected OAuth token for system.mcp ${mcp.slug}`,
+            );
+          } else {
+            console.log(
+              `[AgentInvoker] Skipping system.mcp ${mcp.slug}: OAuth configured but no valid token`,
+            );
+            continue;
+          }
+        } else {
+          console.log(
+            `[AgentInvoker] Skipping system.mcp ${mcp.slug}: OAuth configured but token fetcher not available`,
+          );
+          continue;
+        }
+      }
 
       configs.push(mcpConfig);
       console.log(
@@ -372,6 +407,8 @@ export interface AgentInvokerAdapterOptions {
   runtimeSend?: (connectionId: string, data: string) => Promise<boolean>;
   /** Platform MCP URL for built-in miriad/miriad-files MCPs */
   platformMcpUrl?: string;
+  /** OAuth token fetcher for HTTP MCPs with OAuth configured */
+  getValidOAuthToken?: GetValidOAuthToken;
 }
 
 // =============================================================================
@@ -392,7 +429,7 @@ export interface AgentInvokerAdapterOptions {
 export function createAgentInvokerAdapter(
   options: AgentInvokerAdapterOptions,
 ): AgentInvoker {
-  const { agentManager, storage, spaceId, connectionManager, runtimeSend, platformMcpUrl } =
+  const { agentManager, storage, spaceId, connectionManager, runtimeSend, platformMcpUrl, getValidOAuthToken } =
     options;
 
   return {
@@ -564,13 +601,15 @@ export function createAgentInvokerAdapter(
               }
 
               // Build MCP configs from pre-fetched data
-              const mcpServers = buildMcpConfigsFromContext(
+              const mcpServers = await buildMcpConfigsFromContext(
                 def,
                 mcpArtifacts,
                 sharedEnvironment,
                 channelId,
                 authToken,
                 platformMcpUrl,
+                getValidOAuthToken,
+                spaceId,
               );
               console.log(
                 `[AgentInvoker] @${callsign} MCP configs:`,
