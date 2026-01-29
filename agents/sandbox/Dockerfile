@@ -47,6 +47,9 @@ RUN git.real config --system credential.helper '!f() { echo "username=x-access-t
 # Install Claude Code CLI globally (SDK requires CLI to be available)
 RUN npm install -g @anthropic-ai/claude-code
 
+# Install find-skills for enhanced file discovery
+RUN npx skills add -g vercel-labs/skills@find-skills
+
 # Create workspace directory (will be mounted from EFS)
 RUN mkdir -p /workspace
 
