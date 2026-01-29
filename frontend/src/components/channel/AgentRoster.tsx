@@ -99,6 +99,8 @@ function AgentBadge({ agent, isLeader, isSelected, onClick }: Omit<AgentBadgePro
           : "text-[#a0a0a0]",
         // Working animation (only when online and working)
         agent.isOnline && agent.isWorking && "animate-working",
+        // Pending animation (only when online, pending, and not yet working)
+        agent.isOnline && agent.isPending && !agent.isWorking && "animate-pending",
         // Strikethrough for muted (independent of online/offline)
         agent.isPaused && "line-through"
       )}>
