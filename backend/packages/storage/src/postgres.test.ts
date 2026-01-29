@@ -246,12 +246,33 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
   describe('getMessageDeliveryContext', () => {
     // Use unique IDs for this test suite to avoid conflicts
     const ctxSpaceId = 'test-ctx-space-001';
-    const ctxChannelId = 'test-ctx-channel-001';
+    let ctxChannelId = 'test-ctx-channel-001';
     const ctxRootChannelId = 'test-ctx-root-001';
     const createdArtifactIds: string[] = [];
     const createdRosterIds: string[] = [];
     const createdRuntimeIds: string[] = [];
     const createdChannelIds: string[] = [];
+    
+    // Generate unique suffix for this test run to avoid conflicts
+    const testRunId = Date.now().toString(36);
+
+    beforeAll(async () => {
+      // Create the base channel for the empty callsigns test
+      try {
+        const channel = await storage.createChannel({
+          spaceId: ctxSpaceId,
+          name: `ctx-base-channel-${testRunId}`,
+        });
+        ctxChannelId = channel.id;
+        createdChannelIds.push(channel.id);
+      } catch {
+        // Channel may already exist from a previous run
+        const channel = await storage.getChannelByName(ctxSpaceId, `ctx-base-channel-${testRunId}`);
+        if (channel) {
+          ctxChannelId = channel.id;
+        }
+      }
+    }, 30000);
 
     afterAll(async () => {
       // Clean up test data in reverse order of dependencies
@@ -292,7 +313,7 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
       // Create a runtime
       const runtime = await storage.createRuntime({
         spaceId: ctxSpaceId,
-        name: 'test-runtime-ctx',
+        name: `test-runtime-ctx-${testRunId}`,
         type: 'local',
       });
       createdRuntimeIds.push(runtime.id);
@@ -302,21 +323,23 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
       try {
         channel = await storage.createChannel({
           spaceId: ctxSpaceId,
-          name: 'ctx-test-channel',
+          name: `ctx-test-channel-${testRunId}`,
         });
         createdChannelIds.push(channel.id);
       } catch {
-        channel = await storage.getChannelByName(ctxSpaceId, 'ctx-test-channel');
+        channel = await storage.getChannelByName(ctxSpaceId, `ctx-test-channel-${testRunId}`);
       }
       
       if (!channel) {
         throw new Error('Failed to create or get test channel');
       }
 
+      const callsign = `test-agent-ctx-${testRunId}`;
+      
       // Add agent to roster with runtime binding
       const roster = await storage.addToRoster({
         channelId: channel.id,
-        callsign: 'test-agent-ctx',
+        callsign,
         agentType: 'test-builder',
       });
       createdRosterIds.push(roster.id);
@@ -326,16 +349,16 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
         runtimeId: runtime.id,
       });
 
-      const ctx = await storage.getMessageDeliveryContext(ctxSpaceId, channel.id, ['test-agent-ctx']);
+      const ctx = await storage.getMessageDeliveryContext(ctxSpaceId, channel.id, [callsign]);
 
       expect(ctx.agents.size).toBe(1);
-      const agent = ctx.agents.get('test-agent-ctx');
+      const agent = ctx.agents.get(callsign);
       expect(agent).toBeDefined();
-      expect(agent!.roster.callsign).toBe('test-agent-ctx');
+      expect(agent!.roster.callsign).toBe(callsign);
       expect(agent!.roster.agentType).toBe('test-builder');
       expect(agent!.runtime).not.toBeNull();
       expect(agent!.runtime!.id).toBe(runtime.id);
-      expect(agent!.runtime!.name).toBe('test-runtime-ctx');
+      expect(agent!.runtime!.name).toBe(`test-runtime-ctx-${testRunId}`);
     });
 
     it('should handle roster entry with no runtime bound', async () => {
@@ -344,31 +367,33 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
       try {
         channel = await storage.createChannel({
           spaceId: ctxSpaceId,
-          name: 'ctx-no-runtime-channel',
+          name: `ctx-no-runtime-channel-${testRunId}`,
         });
         createdChannelIds.push(channel.id);
       } catch {
-        channel = await storage.getChannelByName(ctxSpaceId, 'ctx-no-runtime-channel');
+        channel = await storage.getChannelByName(ctxSpaceId, `ctx-no-runtime-channel-${testRunId}`);
       }
 
       if (!channel) {
         throw new Error('Failed to create or get test channel');
       }
 
+      const callsign = `no-runtime-agent-${testRunId}`;
+
       // Add agent without runtime
       const roster = await storage.addToRoster({
         channelId: channel.id,
-        callsign: 'no-runtime-agent',
+        callsign,
         agentType: 'test-builder',
       });
       createdRosterIds.push(roster.id);
 
-      const ctx = await storage.getMessageDeliveryContext(ctxSpaceId, channel.id, ['no-runtime-agent']);
+      const ctx = await storage.getMessageDeliveryContext(ctxSpaceId, channel.id, [callsign]);
 
       expect(ctx.agents.size).toBe(1);
-      const agent = ctx.agents.get('no-runtime-agent');
+      const agent = ctx.agents.get(callsign);
       expect(agent).toBeDefined();
-      expect(agent!.roster.callsign).toBe('no-runtime-agent');
+      expect(agent!.roster.callsign).toBe(callsign);
       expect(agent!.runtime).toBeNull();
     });
 
@@ -378,35 +403,39 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
       try {
         channel = await storage.createChannel({
           spaceId: ctxSpaceId,
-          name: 'ctx-multi-agent-channel',
+          name: `ctx-multi-agent-channel-${testRunId}`,
         });
         createdChannelIds.push(channel.id);
       } catch {
-        channel = await storage.getChannelByName(ctxSpaceId, 'ctx-multi-agent-channel');
+        channel = await storage.getChannelByName(ctxSpaceId, `ctx-multi-agent-channel-${testRunId}`);
       }
 
       if (!channel) {
         throw new Error('Failed to create or get test channel');
       }
 
+      const callsign1 = `agent-one-${testRunId}`;
+      const callsign2 = `agent-two-${testRunId}`;
+      const callsign3 = `agent-three-${testRunId}`;
+
       // Add multiple agents
       const roster1 = await storage.addToRoster({
         channelId: channel.id,
-        callsign: 'agent-one',
+        callsign: callsign1,
         agentType: 'builder-a',
       });
       createdRosterIds.push(roster1.id);
 
       const roster2 = await storage.addToRoster({
         channelId: channel.id,
-        callsign: 'agent-two',
+        callsign: callsign2,
         agentType: 'builder-b',
       });
       createdRosterIds.push(roster2.id);
 
       const roster3 = await storage.addToRoster({
         channelId: channel.id,
-        callsign: 'agent-three',
+        callsign: callsign3,
         agentType: 'builder-a', // Same type as agent-one
       });
       createdRosterIds.push(roster3.id);
@@ -414,17 +443,17 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
       const ctx = await storage.getMessageDeliveryContext(
         ctxSpaceId, 
         channel.id, 
-        ['agent-one', 'agent-two', 'agent-three']
+        [callsign1, callsign2, callsign3]
       );
 
       expect(ctx.agents.size).toBe(3);
-      expect(ctx.agents.has('agent-one')).toBe(true);
-      expect(ctx.agents.has('agent-two')).toBe(true);
-      expect(ctx.agents.has('agent-three')).toBe(true);
+      expect(ctx.agents.has(callsign1)).toBe(true);
+      expect(ctx.agents.has(callsign2)).toBe(true);
+      expect(ctx.agents.has(callsign3)).toBe(true);
       
       // Verify different agent types
-      expect(ctx.agents.get('agent-one')!.roster.agentType).toBe('builder-a');
-      expect(ctx.agents.get('agent-two')!.roster.agentType).toBe('builder-b');
+      expect(ctx.agents.get(callsign1)!.roster.agentType).toBe('builder-a');
+      expect(ctx.agents.get(callsign2)!.roster.agentType).toBe('builder-b');
     });
 
     it('should return only requested callsigns (not all roster)', async () => {
@@ -433,28 +462,31 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
       try {
         channel = await storage.createChannel({
           spaceId: ctxSpaceId,
-          name: 'ctx-filter-channel',
+          name: `ctx-filter-channel-${testRunId}`,
         });
         createdChannelIds.push(channel.id);
       } catch {
-        channel = await storage.getChannelByName(ctxSpaceId, 'ctx-filter-channel');
+        channel = await storage.getChannelByName(ctxSpaceId, `ctx-filter-channel-${testRunId}`);
       }
 
       if (!channel) {
         throw new Error('Failed to create or get test channel');
       }
 
+      const requestedCallsign = `requested-agent-${testRunId}`;
+      const notRequestedCallsign = `not-requested-agent-${testRunId}`;
+
       // Add multiple agents
       const roster1 = await storage.addToRoster({
         channelId: channel.id,
-        callsign: 'requested-agent',
+        callsign: requestedCallsign,
         agentType: 'builder',
       });
       createdRosterIds.push(roster1.id);
 
       const roster2 = await storage.addToRoster({
         channelId: channel.id,
-        callsign: 'not-requested-agent',
+        callsign: notRequestedCallsign,
         agentType: 'builder',
       });
       createdRosterIds.push(roster2.id);
@@ -463,12 +495,12 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
       const ctx = await storage.getMessageDeliveryContext(
         ctxSpaceId, 
         channel.id, 
-        ['requested-agent']
+        [requestedCallsign]
       );
 
       expect(ctx.agents.size).toBe(1);
-      expect(ctx.agents.has('requested-agent')).toBe(true);
-      expect(ctx.agents.has('not-requested-agent')).toBe(false);
+      expect(ctx.agents.has(requestedCallsign)).toBe(true);
+      expect(ctx.agents.has(notRequestedCallsign)).toBe(false);
     });
   });
 

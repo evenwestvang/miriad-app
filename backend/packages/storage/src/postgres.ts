@@ -3739,14 +3739,21 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
               callsign,
               agentType: data.agent_type as string,
               status: data.status as RosterStatus,
-              createdAt: (data.created_at as Date).toISOString(),
+              // CTE queries return dates as strings, not Date objects
+              createdAt: typeof data.created_at === 'string' 
+                ? data.created_at 
+                : (data.created_at as Date).toISOString(),
               callbackUrl: (data.callback_url as string | null) ?? undefined,
               readmark: (data.readmark as string | null) ?? undefined,
               tunnelHash: (data.tunnel_hash as string | null) ?? undefined,
-              lastHeartbeat: data.last_heartbeat ? (data.last_heartbeat as Date).toISOString() : undefined,
+              lastHeartbeat: data.last_heartbeat 
+                ? (typeof data.last_heartbeat === 'string' ? data.last_heartbeat : (data.last_heartbeat as Date).toISOString()) 
+                : undefined,
               routeHints: (data.route_hints as Record<string, string> | null) ?? undefined,
               current: (data.current as RosterCurrent | null) ?? undefined,
-              lastMessageRoutedAt: data.last_message_routed_at ? (data.last_message_routed_at as Date).toISOString() : undefined,
+              lastMessageRoutedAt: data.last_message_routed_at 
+                ? (typeof data.last_message_routed_at === 'string' ? data.last_message_routed_at : (data.last_message_routed_at as Date).toISOString()) 
+                : undefined,
               runtimeId: (data.runtime_id as string | null) ?? undefined,
               runtimeName: (runtimeData?.name as string | undefined) ?? undefined,
               runtimeStatus: (runtimeData?.status as RuntimeStatus | undefined) ?? undefined,
@@ -3814,14 +3821,21 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
             callsign: data.callsign as string,
             agentType: data.agent_type as string,
             status: data.status as RosterStatus,
-            createdAt: (data.created_at as Date).toISOString(),
+            // CTE queries return dates as strings, not Date objects
+            createdAt: typeof data.created_at === 'string' 
+              ? data.created_at 
+              : (data.created_at as Date).toISOString(),
             callbackUrl: (data.callback_url as string | null) ?? undefined,
             readmark: (data.readmark as string | null) ?? undefined,
             tunnelHash: (data.tunnel_hash as string | null) ?? undefined,
-            lastHeartbeat: data.last_heartbeat ? (data.last_heartbeat as Date).toISOString() : undefined,
+            lastHeartbeat: data.last_heartbeat 
+              ? (typeof data.last_heartbeat === 'string' ? data.last_heartbeat : (data.last_heartbeat as Date).toISOString()) 
+              : undefined,
             routeHints: (data.route_hints as Record<string, string> | null) ?? undefined,
             current: (data.current as RosterCurrent | null) ?? undefined,
-            lastMessageRoutedAt: data.last_message_routed_at ? (data.last_message_routed_at as Date).toISOString() : undefined,
+            lastMessageRoutedAt: data.last_message_routed_at 
+              ? (typeof data.last_message_routed_at === 'string' ? data.last_message_routed_at : (data.last_message_routed_at as Date).toISOString()) 
+              : undefined,
             runtimeId: (data.runtime_id as string | null) ?? undefined,
             runtimeName: (data.runtime_name as string | null) ?? undefined,
             runtimeStatus: (data.runtime_status as RuntimeStatus | null) ?? undefined,
