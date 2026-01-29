@@ -2116,6 +2116,7 @@ export function createApp(options: AppOptions): Hono {
               spaceId,
               connectionManager,
               runtimeSend,
+              platformMcpUrl: apiUrl,
             });
             return invoker.invokeAgents(cid, targets, message);
           },
@@ -2377,6 +2378,7 @@ export function createApp(options: AppOptions): Hono {
         spaceId,
         connectionManager,
         runtimeSend,
+        platformMcpUrl: apiUrl,
       });
       const followUpMessage: Message = {
         id: followUpMessageId,
@@ -2612,6 +2614,7 @@ export function createApp(options: AppOptions): Hono {
         spaceId,
         connectionManager,
         runtimeSend,
+        platformMcpUrl: apiUrl,
       });
       const followUpMessage: Message = {
         id: followUpMessageId,
@@ -2759,6 +2762,7 @@ export function createApp(options: AppOptions): Hono {
           spaceId: channel.spaceId,
           connectionManager,
           runtimeSend,
+          platformMcpUrl: apiUrl,
         });
         return invoker.invokeAgents(channelId, targets, message);
       },

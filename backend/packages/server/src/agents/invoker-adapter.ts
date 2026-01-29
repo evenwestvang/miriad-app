@@ -9,11 +9,11 @@
  */
 
 import type { AgentManager } from "./agent-manager.js";
-import type { Storage, MessageDeliveryContext } from "@cast/storage";
+import type { Storage, MessageDeliveryContext, McpArtifactData, AgentDefinitionSummary } from "@cast/storage";
 import type { LocalRuntimeConfig } from "@cast/core";
 import type { ConnectionManager } from "../websocket/index.js";
 import type { AgentInvoker, Message } from "../handlers/messages.js";
-import type { DeliverMessageMessage } from "../runtimes/runtime-protocol-handlers.js";
+import type { DeliverMessageMessage, McpServerConfig } from "../runtimes/runtime-protocol-handlers.js";
 import {
   pushMessagesToContainer,
   broadcastAgentState,
@@ -199,6 +199,162 @@ async function resolveEnvironmentFromContext(
   return result;
 }
 
+/**
+ * Expand ${VAR} references in an MCP server config.
+ *
+ * Resolution order (specificity first - MCP's own wins):
+ * 1. MCP's own env values (if literal, not a reference)
+ * 2. Shared environment (from system.environment artifacts)
+ */
+function expandMcpConfig(
+  config: McpServerConfig,
+  sharedEnv: Record<string, string>,
+): McpServerConfig {
+  const expand = (str: string): string =>
+    str.replace(/\$\{(\w+)\}/g, (_, name) => {
+      const mcpValue = config.env?.[name];
+      // Use MCP's value only if it's a literal (not a reference that needs expansion)
+      if (mcpValue && !mcpValue.includes("${")) {
+        return mcpValue;
+      }
+      return sharedEnv[name] ?? "";
+    });
+
+  return {
+    ...config,
+    env: config.env
+      ? Object.fromEntries(
+          Object.entries(config.env).map(([k, v]) => [k, expand(v)]),
+        )
+      : undefined,
+    args: config.args?.map(expand),
+    url: config.url ? expand(config.url) : undefined,
+    headers: config.headers
+      ? Object.fromEntries(
+          Object.entries(config.headers).map(([k, v]) => [k, expand(v)]),
+        )
+      : undefined,
+  };
+}
+
+/**
+ * Build MCP configs for an agent from pre-fetched data.
+ *
+ * This replaces agentManager.getMcpConfigsForAgent() for the LocalRuntime path,
+ * using batch-fetched mcpArtifacts instead of per-agent queries.
+ *
+ * Includes:
+ * - Platform MCPs (miriad, miriad-files) - always added if authToken provided
+ * - System MCPs from agent definition's props.mcp - from pre-fetched mcpArtifacts
+ *
+ * Note: App MCPs (system.app) are NOT included here - they require additional
+ * queries for OAuth tokens. Use agentManager.getMcpConfigsForAgent() if app MCPs
+ * are needed.
+ */
+function buildMcpConfigsFromContext(
+  definition: AgentDefinitionSummary | undefined,
+  mcpArtifacts: Map<string, McpArtifactData>,
+  sharedEnv: Record<string, string>,
+  channelId: string,
+  authToken: string,
+  platformMcpUrl: string | undefined,
+): McpServerConfig[] {
+  const configs: McpServerConfig[] = [];
+
+  // Add built-in platform MCPs if configured
+  if (platformMcpUrl && authToken) {
+    configs.push({
+      name: "miriad",
+      transport: "http" as const,
+      url: `${platformMcpUrl}/mcp/${channelId}`,
+      headers: {
+        Authorization: `Container ${authToken}`,
+      },
+    });
+
+    configs.push({
+      name: "miriad-files",
+      transport: "stdio" as const,
+      command: "npx",
+      args: ["--yes", "@miriad-systems/assets-mcp"],
+      env: {
+        CAST_API_URL: platformMcpUrl,
+        CAST_CHANNEL_ID: channelId,
+        CAST_CONTAINER_TOKEN: authToken,
+      },
+    });
+  }
+
+  // Add system MCPs from agent definition
+  if (definition) {
+    const mcpRefs = (definition.props?.mcp as Array<{ slug: string }>) ?? [];
+    
+    for (const ref of mcpRefs) {
+      const mcp = mcpArtifacts.get(ref.slug);
+      if (!mcp) {
+        console.log(
+          `[AgentInvoker] MCP ${ref.slug} not found in pre-fetched artifacts`,
+        );
+        continue;
+      }
+
+      const props = mcp.props as {
+        transport?: "stdio" | "http";
+        url?: string;
+        command?: string;
+        args?: string[];
+        env?: Record<string, string>;
+        cwd?: string;
+        oauth?: { type: "oauth" };
+      } | undefined;
+
+      if (!props?.transport) {
+        console.log(
+          `[AgentInvoker] Skipping system.mcp ${mcp.slug}: no transport in props`,
+        );
+        continue;
+      }
+
+      // Skip OAuth MCPs - they need token injection which requires async calls
+      // These will fall back to agentManager.getMcpConfigsForAgent() if needed
+      if (props.oauth) {
+        console.log(
+          `[AgentInvoker] Skipping system.mcp ${mcp.slug}: OAuth requires token injection (not supported in batch path)`,
+        );
+        continue;
+      }
+
+      const mcpConfig: McpServerConfig = {
+        name: mcp.slug,
+        slug: mcp.slug,
+        transport: props.transport,
+        command: props.command,
+        args: props.args,
+        env: props.env,
+        cwd: props.cwd,
+        url: props.url,
+      };
+
+      configs.push(mcpConfig);
+      console.log(
+        `[AgentInvoker] Added system.mcp config: ${mcp.slug} (${props.transport})`,
+      );
+    }
+  }
+
+  // Expand ${VAR} references in all configs (except built-in MCPs)
+  const expandedConfigs = configs.map((config) =>
+    config.name === "miriad" || config.name === "miriad-files"
+      ? config
+      : expandMcpConfig(config, sharedEnv),
+  );
+
+  console.log(
+    `[AgentInvoker] Built ${expandedConfigs.length} MCP configs from context`,
+  );
+  return expandedConfigs;
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -214,6 +370,8 @@ export interface AgentInvokerAdapterOptions {
   connectionManager?: ConnectionManager;
   /** Send function for runtime WebSocket connections (different from client connectionManager) */
   runtimeSend?: (connectionId: string, data: string) => Promise<boolean>;
+  /** Platform MCP URL for built-in miriad/miriad-files MCPs */
+  platformMcpUrl?: string;
 }
 
 // =============================================================================
@@ -234,7 +392,7 @@ export interface AgentInvokerAdapterOptions {
 export function createAgentInvokerAdapter(
   options: AgentInvokerAdapterOptions,
 ): AgentInvoker {
-  const { agentManager, storage, spaceId, connectionManager, runtimeSend } =
+  const { agentManager, storage, spaceId, connectionManager, runtimeSend, platformMcpUrl } =
     options;
 
   return {
@@ -280,8 +438,18 @@ export function createAgentInvokerAdapter(
         ? await storage.getMcpArtifactsBySlug(channelId, context.rootChannelId, [...mcpSlugs])
         : new Map();
 
+      // Resolve environment once for all agents (same channel = same env)
+      const sharedEnvironment = await resolveEnvironmentFromContext(
+        context,
+        storage,
+        spaceId,
+        channelId,
+      );
+
+      // platformMcpUrl is passed via options (from AgentManager config)
+
       console.log(
-        `[AgentInvoker] Context loaded: ${context.agents.size} agents, ${context.definitions.size} definitions, ${context.environments.length} env artifacts, ${mcpArtifacts.size} MCPs`,
+        `[AgentInvoker] Context loaded: ${context.agents.size} agents, ${context.definitions.size} definitions, ${context.environments.length} env artifacts, ${mcpArtifacts.size} MCPs, ${Object.keys(sharedEnvironment).length} env vars`,
       );
 
       // =======================================================================
@@ -376,24 +544,14 @@ export function createAgentInvokerAdapter(
                 `[AgentInvoker] @${callsign} bound to LocalRuntime, sending message directly via WebSocket ${wsConnectionId}`,
               );
 
-              // Generate auth token and get MCP configs
+              // Generate auth token for MCP authentication
               const authToken = generateContainerToken({
                 spaceId,
                 channelId,
                 callsign,
               });
-              const mcpServers = await agentManager.getMcpConfigsForAgent(
-                spaceId,
-                channelId,
-                callsign,
-                authToken,
-              );
-              console.log(
-                `[AgentInvoker] @${callsign} MCP configs:`,
-                JSON.stringify(mcpServers),
-              );
 
-              // Get agent definition props from pre-fetched context
+              // Get agent definition from pre-fetched context
               const agentType = rosterEntry.agentType;
               const definitions = context.definitions.get(agentType);
               const def = definitions?.find(d => d.channelId === channelId) ?? definitions?.[0];
@@ -405,13 +563,22 @@ export function createAgentInvokerAdapter(
                 );
               }
 
-              // Resolve environment variables and secrets from pre-fetched context
-              const environment = await resolveEnvironmentFromContext(
-                context,
-                storage,
-                spaceId,
+              // Build MCP configs from pre-fetched data
+              const mcpServers = buildMcpConfigsFromContext(
+                def,
+                mcpArtifacts,
+                sharedEnvironment,
                 channelId,
+                authToken,
+                platformMcpUrl,
               );
+              console.log(
+                `[AgentInvoker] @${callsign} MCP configs:`,
+                JSON.stringify(mcpServers),
+              );
+
+              // Clone shared environment and add per-agent values
+              const environment = { ...sharedEnvironment };
 
               // Add tunnel credentials to environment (per-agent, for cast-tunnel script)
               if (rosterEntry.tunnelHash) {
