@@ -157,7 +157,7 @@ jobs:
       - working-directory: frontend
         run: |
           vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-          vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --prebuilt --prod --env BACKEND_URL=$VITE_BACKEND_URL --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VITE_BACKEND_URL: https://api.miriad.tech
           VITE_WS_URL: wss://ws.miriad.tech
