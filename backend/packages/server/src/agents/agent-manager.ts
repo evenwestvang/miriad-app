@@ -14,6 +14,7 @@ import type {
 import type { ArtifactSummary } from "@cast/core";
 import { generateContainerToken } from "../auth/index.js";
 import { getAppDefinition, type TokenSet } from "../apps/index.js";
+import { prepareHttpMcpHeaders } from "./mcp-auth.js";
 
 // =============================================================================
 // Types
@@ -712,6 +713,7 @@ export class AgentManager {
               command?: string;
               args?: string[];
               env?: Record<string, string>;
+              headers?: Record<string, string>;
               cwd?: string;
               oauth?: { type: "oauth" };
             }
@@ -736,29 +738,30 @@ export class AgentManager {
           url: props.url,
         };
 
-        // For HTTP transport with OAuth, get valid token (auto-refreshes if needed)
-        if (props.transport === "http" && props.oauth && getValidOAuthToken) {
-          const accessToken = await getValidOAuthToken(
+        // For HTTP MCPs, handle headers and OAuth
+        if (props.transport === "http") {
+          const headerResult = await prepareHttpMcpHeaders({
+            configuredHeaders: props.headers,
+            hasOAuthConfig: !!props.oauth,
+            getValidOAuthToken,
             spaceId,
-            definitionChannelId, // Use definition's channel for OAuth tokens
-            mcp.slug,
-          );
+            channelId: definitionChannelId, // Use definition's channel for OAuth tokens
+            mcpSlug: mcp.slug,
+          });
 
-          if (accessToken) {
-            // Inject Authorization header with Bearer token
-            mcpConfig.headers = {
-              ...mcpConfig.headers,
-              Authorization: `Bearer ${accessToken}`,
-            };
+          if (headerResult.skip) {
+            console.log(
+              `[AgentManager] Skipping system.mcp ${mcp.slug}: ${headerResult.skipReason}`,
+            );
+            continue;
+          }
+
+          mcpConfig.headers = headerResult.headers;
+
+          if (headerResult.oauthInjected) {
             console.log(
               `[AgentManager] Injected OAuth token for system.mcp ${mcp.slug}`,
             );
-          } else {
-            console.log(
-              `[AgentManager] Skipping system.mcp ${mcp.slug}: OAuth configured but no valid token`,
-            );
-            // MCP has OAuth configured but no tokens or refresh failed
-            continue;
           }
         }
 
