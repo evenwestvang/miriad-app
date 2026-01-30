@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { EditableField } from '../ui/editable-field'
 import { EnvEditor, type SecretMetadata } from '../ui/env-editor'
 import { KeyValueEditor, KeyValuePair } from '../ui/key-value-editor'
@@ -39,6 +40,11 @@ interface McpPropsEditorProps {
 export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets, isCreateMode }: McpPropsEditorProps) {
   const transport = props.transport || 'stdio'
 
+  // Memoize entries to avoid creating new arrays on every render
+  const envEntries = useMemo(() => envToEntries(props.env), [props.env])
+  const headerEntries = useMemo(() => envToEntries(props.headers), [props.headers])
+  const argsItems = useMemo(() => props.args || [], [props.args])
+
   return (
     <div className="space-y-8">
       {/* Transport Type */}
@@ -66,7 +72,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets, isC
           {/* Arguments */}
           <StringListEditor
             label="Arguments"
-            items={props.args || []}
+            items={argsItems}
             onChange={(items) => onChange({ args: items.length > 0 ? items : undefined })}
             placeholder="e.g., -y @modelcontextprotocol/server-github"
           />
@@ -85,7 +91,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets, isC
             <>
               <KeyValueEditor
                 label="Environment Variables"
-                entries={envToEntries(props.env)}
+                entries={envEntries}
                 onChange={(entries) => onChange({ env: entriesToEnv(entries) })}
                 keyPlaceholder="VARIABLE_NAME"
                 valuePlaceholder="value or ${ENV_REF}"
@@ -119,7 +125,7 @@ export function McpPropsEditor({ props, onChange, channel, mcpSlug, secrets, isC
           {/* Headers */}
           <KeyValueEditor
             label="Headers"
-            entries={envToEntries(props.headers)}
+            entries={headerEntries}
             onChange={(entries) => onChange({ headers: entriesToEnv(entries) })}
             keyPlaceholder="Header-Name"
             valuePlaceholder="value or ${ENV_REF}"

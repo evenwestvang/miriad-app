@@ -10,6 +10,15 @@ interface StringListEditorProps {
   className?: string
 }
 
+// Deep equality check for string arrays
+function itemsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
 export function StringListEditor({
   label,
   items,
@@ -23,11 +32,22 @@ export function StringListEditor({
   const [editValue, setEditValue] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Track pending flush to avoid resetting before parent acknowledges changes
+  const pendingFlushRef = useRef(false)
 
   // Sync local state when props change (from external updates)
+  // Skip sync while actively editing or with pending flush
   useEffect(() => {
-    setLocalItems(items)
-  }, [items])
+    if (editingIndex !== null) return
+    if (pendingFlushRef.current) {
+      // Parent acknowledged our changes, clear the flag
+      pendingFlushRef.current = false
+      return
+    }
+    // Only update if actual content differs, not just array reference
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing external props when not editing
+    setLocalItems(prev => itemsEqual(prev, items) ? prev : items)
+  }, [items, editingIndex])
 
   // Focus input when starting to edit
   useEffect(() => {
@@ -49,12 +69,31 @@ export function StringListEditor({
   const handleContainerBlur = (e: React.FocusEvent) => {
     // Check if focus is leaving the container entirely
     if (!containerRef.current?.contains(e.relatedTarget as Node)) {
-      // Commit current edit first
+      // Commit current edit and flush synchronously to avoid race with save button
       if (editingIndex !== null) {
-        commitCurrentEdit()
+        // Manually compute committed items and flush in one go
+        const newItems = [...localItems]
+        newItems[editingIndex] = editValue
+        const validItems = newItems.filter(item => item.trim() !== '')
+
+        // Update local state
+        setLocalItems(newItems)
+        setEditingIndex(null)
+        setEditValue('')
+
+        // Flush to parent synchronously
+        pendingFlushRef.current = true
+        if (JSON.stringify(validItems) !== JSON.stringify(items)) {
+          onChange(validItems)
+        }
+      } else {
+        // No active edit, just flush current state
+        const validItems = localItems.filter(item => item.trim() !== '')
+        if (JSON.stringify(validItems) !== JSON.stringify(items)) {
+          pendingFlushRef.current = true
+          onChange(validItems)
+        }
       }
-      // Then flush all valid items
-      setTimeout(() => flushChanges(), 0)
     }
   }
 
@@ -99,14 +138,22 @@ export function StringListEditor({
   }
 
   const handleAddNew = () => {
-    // Commit current edit first
-    if (editingIndex !== null) {
-      commitCurrentEdit()
-    }
-    const newItems = [...localItems, '']
-    setLocalItems(newItems)
-    // Start editing the new item
-    setEditingIndex(newItems.length - 1)
+    // Capture current length before any updates
+    const currentLength = localItems.length
+
+    // Commit current edit (if any) AND add new item in one atomic update
+    setLocalItems(prev => {
+      let newItems = [...prev]
+      if (editingIndex !== null) {
+        // Commit the current edit
+        newItems[editingIndex] = editValue
+      }
+      // Add new empty item
+      return [...newItems, '']
+    })
+
+    // Start editing the new item (it will be at currentLength index)
+    setEditingIndex(currentLength)
     setEditValue('')
   }
 
