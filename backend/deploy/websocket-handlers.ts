@@ -283,6 +283,7 @@ export async function defaultHandler(
 
     // Handle sync requests
     if (isSyncRequest(frame)) {
+      const t0 = performance.now();
       // Sync request may include channelId for channel switch
       const requestedChannelId = frame.channelId || connection.channelId;
 
@@ -299,6 +300,7 @@ export async function defaultHandler(
       }
 
       const storage = await getStorage();
+      const t1 = performance.now();
 
       // Look up channel and validate it exists
       let spaceId = channelSpaceCache.get(requestedChannelId);
@@ -322,6 +324,7 @@ export async function defaultHandler(
         await manager.switchChannel(connectionId, requestedChannelId);
         console.log(`[WebSocket] Switched ${connectionId} from ${connection.channelId} to ${requestedChannelId}`);
       }
+      const t2 = performance.now();
 
       // Fetch messages
       const effectiveLimit = frame.limit ?? 25;
@@ -331,6 +334,7 @@ export async function defaultHandler(
         limit: effectiveLimit,
         newestFirst: !frame.since && !frame.before,
       });
+      const t3 = performance.now();
 
       // Build NDJSON payload with all messages + sync response
       const frames = messages.map(msg => {
@@ -390,11 +394,13 @@ export async function defaultHandler(
         hasMore,
         oldestId: messages.length > 0 ? messages[0].id : undefined,
       }));
+      const t4 = performance.now();
 
       // Send all frames as single NDJSON payload
       await manager.send(connectionId, frames.join('\n'));
+      const t5 = performance.now();
 
-      console.log(`[WebSocket] Sent ${messages.length} messages + sync to ${connectionId}`);
+      console.log(`[Sync] Timing: storage=${(t1-t0).toFixed(1)}ms, channel=${(t2-t1).toFixed(1)}ms, query=${(t3-t2).toFixed(1)}ms, serialize=${(t4-t3).toFixed(1)}ms, send=${(t5-t4).toFixed(1)}ms, total=${(t5-t0).toFixed(1)}ms (${messages.length} msgs)`);
       return { statusCode: 200, body: 'Synced' };
     }
 

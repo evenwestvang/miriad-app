@@ -218,6 +218,13 @@ export function useTymbalConnection({
   const lastTimestampRef = useRef<string | null>(null);
   const oldestMessageIdRef = useRef<string | null>(null);
 
+  // Sync timing instrumentation
+  const syncTimingRef = useRef<{
+    requestSentAt: number;
+    firstMessageAt: number | null;
+    messageCount: number;
+  } | null>(null);
+
   // Reconnection state
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -254,6 +261,23 @@ export function useTymbalConnection({
           hasMore?: boolean;
           oldestId?: string;
         };
+        
+        // Log sync timing summary
+        if (syncTimingRef.current) {
+          const now = performance.now();
+          const timing = syncTimingRef.current;
+          const totalTime = now - timing.requestSentAt;
+          const timeToFirstMessage = timing.firstMessageAt 
+            ? timing.firstMessageAt - timing.requestSentAt 
+            : null;
+          console.log(
+            `[SyncTiming] Complete: total=${totalTime.toFixed(0)}ms, ` +
+            `timeToFirst=${timeToFirstMessage?.toFixed(0) ?? 'N/A'}ms, ` +
+            `messages=${timing.messageCount}, ` +
+            `hasMore=${syncFrame.hasMore}`,
+          );
+          syncTimingRef.current = null;
+        }
         console.log(
           `[ChannelSwitch] Sync complete at ${performance.now().toFixed(2)}ms, hasMore=${syncFrame.hasMore}, oldestId=${syncFrame.oldestId}`,
         );
@@ -327,6 +351,18 @@ export function useTymbalConnection({
       if (isSetFrame(frame)) {
         pendingMessages.current.delete(frame.i);
         lastTimestampRef.current = frame.t;
+
+        // Track sync timing - count messages and record first message time
+        if (syncTimingRef.current) {
+          syncTimingRef.current.messageCount++;
+          if (!syncTimingRef.current.firstMessageAt) {
+            syncTimingRef.current.firstMessageAt = performance.now();
+            console.log(
+              `[SyncTiming] First message at ${syncTimingRef.current.firstMessageAt.toFixed(0)}ms ` +
+              `(${(syncTimingRef.current.firstMessageAt - syncTimingRef.current.requestSentAt).toFixed(0)}ms after request)`,
+            );
+          }
+        }
 
         const value = frame.v;
 
@@ -705,8 +741,14 @@ export function useTymbalConnection({
       if (providedWsToken) {
         syncRequest.token = providedWsToken;
       }
+      // Start sync timing
+      syncTimingRef.current = {
+        requestSentAt: performance.now(),
+        firstMessageAt: null,
+        messageCount: 0,
+      };
       console.log(
-        `[ChannelSwitch] Sync request sent at ${performance.now().toFixed(2)}ms`,
+        `[SyncTiming] Request sent at ${performance.now().toFixed(2)}ms`,
         syncRequest,
       );
       ws.send(JSON.stringify(syncRequest));
