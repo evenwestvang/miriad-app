@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { X, Plus } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
@@ -55,15 +55,6 @@ export function StringListEditor({
       inputRef.current.focus()
     }
   }, [editingIndex])
-
-  // Flush valid items to parent - only non-empty strings
-  const flushChanges = useCallback(() => {
-    const validItems = localItems.filter(item => item.trim() !== '')
-    // Only call onChange if actually different
-    if (JSON.stringify(validItems) !== JSON.stringify(items)) {
-      onChange(validItems)
-    }
-  }, [localItems, items, onChange])
 
   // Handle blur on the entire container
   const handleContainerBlur = (e: React.FocusEvent) => {

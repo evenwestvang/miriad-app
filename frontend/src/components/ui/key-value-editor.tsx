@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { X, Plus } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
@@ -70,15 +70,6 @@ export function KeyValueEditor({
       keyInputRef.current.focus()
     }
   }, [editingIndex])
-
-  // Flush valid entries to parent - only non-empty key rows
-  const flushChanges = useCallback(() => {
-    const validEntries = localEntries.filter(e => e.key.trim() !== '')
-    // Only call onChange if actually different
-    if (JSON.stringify(validEntries) !== JSON.stringify(entries)) {
-      onChange(validEntries)
-    }
-  }, [localEntries, entries, onChange])
 
   // Handle blur on the entire container
   const handleContainerBlur = (e: React.FocusEvent) => {

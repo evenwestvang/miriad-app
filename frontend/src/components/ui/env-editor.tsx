@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { X, Plus, Pencil, Eye, EyeOff } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { apiFetch } from '../../lib/api'
@@ -115,18 +115,6 @@ export function EnvEditor({
   }, [editingIndex])
 
   // === Variables Section Logic ===
-
-  const flushVariablesChanges = useCallback(() => {
-    const validEntries = localEntries.filter(e => e.key.trim() !== '' && isValidEnvKey(e.key))
-    const newVars = validEntries.reduce((acc, { key, value }) => {
-      acc[key] = value
-      return acc
-    }, {} as Record<string, string>)
-
-    if (JSON.stringify(newVars) !== JSON.stringify(variables)) {
-      onVariablesChange(newVars)
-    }
-  }, [localEntries, variables, onVariablesChange])
 
   const handleVariablesContainerBlur = (e: React.FocusEvent) => {
     if (!variablesContainerRef.current?.contains(e.relatedTarget as Node)) {
