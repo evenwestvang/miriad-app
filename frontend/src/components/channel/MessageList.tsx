@@ -616,6 +616,25 @@ export function MessageList({
                   const firstMsg = item.messages[0];
                   const lastMsg = item.messages[item.messages.length - 1];
 
+                  // Check if this tool group should show the header
+                  // Show header if: first item, different sender from previous, or >20 min gap
+                  const showHeader =
+                    !prevLastMessage ||
+                    prevLastMessage.sender !== firstMsg.sender ||
+                    prevLastMessage.senderType !== firstMsg.senderType ||
+                    new Date(firstMsg.timestamp).getTime() -
+                      new Date(prevLastMessage.timestamp).getTime() >
+                      20 * 60 * 1000;
+
+                  // Compute display name (same logic as MessageItem)
+                  const isUser = firstMsg.senderType === "user";
+                  const displayName =
+                    firstMsg.sender && firstMsg.sender !== "agent"
+                      ? firstMsg.sender
+                      : isUser
+                        ? myName || "You"
+                        : threadName;
+
                   // Check if next item starts a new sender group (determines bottom margin)
                   const nextFirstMessage = nextItem
                     ? getFirstMessageOfItem(nextItem)
@@ -639,8 +658,27 @@ export function MessageList({
                     <div
                       key={`tool-group-${firstMsg.id}`}
                       data-message-id={firstMsg.id}
-                      className={marginClass}
+                      className={`relative ${marginClass}`}
                     >
+                      {showHeader && (
+                        <MessageHeader
+                          name={firstMsg.sender || displayName}
+                          displayName={displayName}
+                          timestamp={firstMsg.timestamp}
+                          isHuman={isUser}
+                          agentType={
+                            firstMsg.sender
+                              ? agentTypeMap.get(firstMsg.sender)
+                              : threadAgentType
+                          }
+                          channelId={channelId}
+                          rosterIndex={
+                            firstMsg.sender
+                              ? (rosterIndexMap.get(firstMsg.sender) ?? 0)
+                              : 0
+                          }
+                        />
+                      )}
                       <ToolGroup
                         messages={item.messages}
                         firehoseMode={firehoseMode}
