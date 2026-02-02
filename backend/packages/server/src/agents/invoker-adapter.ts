@@ -20,6 +20,7 @@ import {
 } from "../handlers/checkin.js";
 import { generateContainerToken } from "../auth/index.js";
 import { buildSystemPrompt } from "./agent-manager.js";
+import { prepareHttpMcpHeaders } from "./mcp-auth.js";
 
 /**
  * Convert message content to string for agent consumption.
@@ -317,6 +318,7 @@ export async function buildMcpConfigsFromContext(
         command?: string;
         args?: string[];
         env?: Record<string, string>;
+        headers?: Record<string, string>;
         cwd?: string;
         oauth?: { type: "oauth" };
       } | undefined;
@@ -339,34 +341,30 @@ export async function buildMcpConfigsFromContext(
         url: props.url,
       };
 
-      // For HTTP MCPs with OAuth, fetch and inject token
-      if (props.transport === "http" && props.oauth) {
-        if (getValidOAuthToken && spaceId) {
-          const accessToken = await getValidOAuthToken(
-            spaceId,
-            mcp.channelId, // Use MCP's channel for OAuth tokens
-            mcp.slug,
-          );
+      // For HTTP MCPs, handle headers and OAuth
+      if (props.transport === "http") {
+        const headerResult = await prepareHttpMcpHeaders({
+          configuredHeaders: props.headers,
+          hasOAuthConfig: !!props.oauth,
+          getValidOAuthToken,
+          spaceId,
+          channelId: mcp.channelId, // Use MCP's channel for OAuth tokens
+          mcpSlug: mcp.slug,
+        });
 
-          if (accessToken) {
-            mcpConfig.headers = {
-              ...mcpConfig.headers,
-              Authorization: `Bearer ${accessToken}`,
-            };
-            console.log(
-              `[AgentInvoker] Injected OAuth token for system.mcp ${mcp.slug}`,
-            );
-          } else {
-            console.log(
-              `[AgentInvoker] Skipping system.mcp ${mcp.slug}: OAuth configured but no valid token`,
-            );
-            continue;
-          }
-        } else {
+        if (headerResult.skip) {
           console.log(
-            `[AgentInvoker] Skipping system.mcp ${mcp.slug}: OAuth configured but token fetcher not available`,
+            `[AgentInvoker] Skipping system.mcp ${mcp.slug}: ${headerResult.skipReason}`,
           );
           continue;
+        }
+
+        mcpConfig.headers = headerResult.headers;
+
+        if (headerResult.oauthInjected) {
+          console.log(
+            `[AgentInvoker] Injected OAuth token for system.mcp ${mcp.slug}`,
+          );
         }
       }
 
