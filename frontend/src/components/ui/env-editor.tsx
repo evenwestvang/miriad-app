@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { X, Plus, Pencil, Eye, EyeOff } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { apiFetch } from '../../lib/api'
@@ -21,6 +21,15 @@ export interface EnvEditorProps {
 interface KeyValuePair {
   key: string
   value: string
+}
+
+// Deep equality check for KeyValuePair arrays
+function entriesEqual(a: KeyValuePair[], b: KeyValuePair[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].key !== b[i].key || a[i].value !== b[i].value) return false
+  }
+  return true
 }
 
 // Check if value contains ${VAR} reference pattern
@@ -64,6 +73,8 @@ export function EnvEditor({
   const variablesContainerRef = useRef<HTMLDivElement>(null)
   const keyInputRef = useRef<HTMLInputElement>(null)
   const valueInputRef = useRef<HTMLInputElement>(null)
+  // Track pending flush to avoid resetting before parent acknowledges changes
+  const pendingFlushRef = useRef(false)
 
   // === Secrets Section State ===
   const [secretsList, setSecretsList] = useState<Array<{ key: string; metadata: SecretMetadata }>>(() =>
@@ -79,9 +90,17 @@ export function EnvEditor({
   const [secretError, setSecretError] = useState<string | null>(null)
 
   // Sync local entries when variables prop changes
+  // Skip sync while actively editing or with pending flush
   useEffect(() => {
-    setLocalEntries(Object.entries(variables).map(([key, value]) => ({ key, value })))
-  }, [variables])
+    if (editingIndex !== null) return
+    if (pendingFlushRef.current) {
+      // Parent acknowledged our changes, clear the flag
+      pendingFlushRef.current = false
+      return
+    }
+    const newEntries = Object.entries(variables).map(([key, value]) => ({ key, value }))
+    setLocalEntries(prev => entriesEqual(prev, newEntries) ? prev : newEntries)
+  }, [variables, editingIndex])
 
   // Sync secrets list when secrets prop changes
   useEffect(() => {
@@ -97,24 +116,42 @@ export function EnvEditor({
 
   // === Variables Section Logic ===
 
-  const flushVariablesChanges = useCallback(() => {
-    const validEntries = localEntries.filter(e => e.key.trim() !== '' && isValidEnvKey(e.key))
-    const newVars = validEntries.reduce((acc, { key, value }) => {
-      acc[key] = value
-      return acc
-    }, {} as Record<string, string>)
-
-    if (JSON.stringify(newVars) !== JSON.stringify(variables)) {
-      onVariablesChange(newVars)
-    }
-  }, [localEntries, variables, onVariablesChange])
-
   const handleVariablesContainerBlur = (e: React.FocusEvent) => {
     if (!variablesContainerRef.current?.contains(e.relatedTarget as Node)) {
+      // Commit current edit and flush synchronously to avoid race with save button
       if (editingIndex !== null) {
-        commitCurrentEdit()
+        // Manually compute committed entries and flush in one go
+        const newEntries = [...localEntries]
+        newEntries[editingIndex] = { key: editKey, value: editValue }
+        const validEntries = newEntries.filter(e => e.key.trim() !== '' && isValidEnvKey(e.key))
+        const newVars = validEntries.reduce((acc, { key, value }) => {
+          acc[key] = value
+          return acc
+        }, {} as Record<string, string>)
+
+        // Update local state
+        setLocalEntries(newEntries)
+        setEditingIndex(null)
+        setEditKey('')
+        setEditValue('')
+
+        // Flush to parent synchronously
+        pendingFlushRef.current = true
+        if (JSON.stringify(newVars) !== JSON.stringify(variables)) {
+          onVariablesChange(newVars)
+        }
+      } else {
+        // No active edit, just flush current state
+        const validEntries = localEntries.filter(e => e.key.trim() !== '' && isValidEnvKey(e.key))
+        const newVars = validEntries.reduce((acc, { key, value }) => {
+          acc[key] = value
+          return acc
+        }, {} as Record<string, string>)
+        if (JSON.stringify(newVars) !== JSON.stringify(variables)) {
+          pendingFlushRef.current = true
+          onVariablesChange(newVars)
+        }
       }
-      setTimeout(() => flushVariablesChanges(), 0)
     }
   }
 
@@ -171,12 +208,22 @@ export function EnvEditor({
   }
 
   const handleAddVariable = () => {
-    if (editingIndex !== null) {
-      commitCurrentEdit()
-    }
-    const newEntries = [...localEntries, { key: '', value: '' }]
-    setLocalEntries(newEntries)
-    setEditingIndex(newEntries.length - 1)
+    // Capture current length before any updates
+    const currentLength = localEntries.length
+
+    // Commit current edit (if any) AND add new entry in one atomic update
+    setLocalEntries(prev => {
+      let newEntries = [...prev]
+      if (editingIndex !== null) {
+        // Commit the current edit
+        newEntries[editingIndex] = { key: editKey, value: editValue }
+      }
+      // Add new empty entry
+      return [...newEntries, { key: '', value: '' }]
+    })
+
+    // Start editing the new entry (it will be at currentLength index)
+    setEditingIndex(currentLength)
     setEditKey('')
     setEditValue('')
   }

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { X, Plus } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
@@ -21,6 +21,15 @@ function hasEnvReference(value: string): boolean {
   return /\$\{[^}]+\}/.test(value)
 }
 
+// Deep equality check for KeyValuePair arrays
+function entriesEqual(a: KeyValuePair[], b: KeyValuePair[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].key !== b[i].key || a[i].value !== b[i].value) return false
+  }
+  return true
+}
+
 export function KeyValueEditor({
   label,
   entries,
@@ -37,11 +46,23 @@ export function KeyValueEditor({
   const containerRef = useRef<HTMLDivElement>(null)
   const keyInputRef = useRef<HTMLInputElement>(null)
   const valueInputRef = useRef<HTMLInputElement>(null)
+  // Track pending flush to avoid resetting before parent acknowledges changes
+  const pendingFlushRef = useRef(false)
 
   // Sync local state when props change (from external updates)
+  // Skip sync while actively editing
   useEffect(() => {
-    setLocalEntries(entries)
-  }, [entries])
+    if (editingIndex !== null) return
+    if (pendingFlushRef.current) {
+      // We have a pending flush - only skip if entries match what we flushed
+      // Otherwise, the props source may have changed (e.g., edit mode -> view mode)
+      pendingFlushRef.current = false
+      // Still sync if content differs
+    }
+    // Only update if actual content differs, not just array reference
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing external props when not editing
+    setLocalEntries(prev => entriesEqual(prev, entries) ? prev : entries)
+  }, [entries, editingIndex])
 
   // Focus key input when starting to edit
   useEffect(() => {
@@ -50,25 +71,36 @@ export function KeyValueEditor({
     }
   }, [editingIndex])
 
-  // Flush valid entries to parent - only non-empty key rows
-  const flushChanges = useCallback(() => {
-    const validEntries = localEntries.filter(e => e.key.trim() !== '')
-    // Only call onChange if actually different
-    if (JSON.stringify(validEntries) !== JSON.stringify(entries)) {
-      onChange(validEntries)
-    }
-  }, [localEntries, entries, onChange])
-
   // Handle blur on the entire container
   const handleContainerBlur = (e: React.FocusEvent) => {
     // Check if focus is leaving the container entirely
     if (!containerRef.current?.contains(e.relatedTarget as Node)) {
-      // Commit current edit first
+      // Commit current edit and flush synchronously to avoid race with save button
       if (editingIndex !== null) {
-        commitCurrentEdit()
+        // Manually compute committed entries and flush in one go
+        const newEntries = [...localEntries]
+        newEntries[editingIndex] = { key: editKey, value: editValue }
+        const validEntries = newEntries.filter(e => e.key.trim() !== '')
+
+        // Update local state
+        setLocalEntries(newEntries)
+        setEditingIndex(null)
+        setEditKey('')
+        setEditValue('')
+
+        // Flush to parent synchronously
+        pendingFlushRef.current = true
+        if (JSON.stringify(validEntries) !== JSON.stringify(entries)) {
+          onChange(validEntries)
+        }
+      } else {
+        // No active edit, just flush current state
+        const validEntries = localEntries.filter(e => e.key.trim() !== '')
+        if (JSON.stringify(validEntries) !== JSON.stringify(entries)) {
+          pendingFlushRef.current = true
+          onChange(validEntries)
+        }
       }
-      // Then flush all valid entries
-      setTimeout(() => flushChanges(), 0)
     }
   }
 
@@ -116,14 +148,22 @@ export function KeyValueEditor({
   }
 
   const handleAddNew = () => {
-    // Commit current edit first
-    if (editingIndex !== null) {
-      commitCurrentEdit()
-    }
-    const newEntries = [...localEntries, { key: '', value: '' }]
-    setLocalEntries(newEntries)
-    // Start editing the new row
-    setEditingIndex(newEntries.length - 1)
+    // Capture current length before any updates
+    const currentLength = localEntries.length
+
+    // Commit current edit (if any) AND add new row in one atomic update
+    setLocalEntries(prev => {
+      let newEntries = [...prev]
+      if (editingIndex !== null) {
+        // Commit the current edit
+        newEntries[editingIndex] = { key: editKey, value: editValue }
+      }
+      // Add new empty row
+      return [...newEntries, { key: '', value: '' }]
+    })
+
+    // Start editing the new row (it will be at currentLength index)
+    setEditingIndex(currentLength)
     setEditKey('')
     setEditValue('')
   }

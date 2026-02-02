@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import { flushSync } from 'react-dom'
 import { Save, AlertTriangle, Copy, Check, ArrowLeft, History, RotateCcw, Archive, MoreHorizontal, ChevronDown } from 'lucide-react'
 import Markdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -226,6 +227,8 @@ export function ArtifactDetail({
   const [editContent, setEditContent] = useState('')
   const [editStatus, setEditStatus] = useState<ArtifactStatus>('draft')
   const [editProps, setEditProps] = useState<Record<string, unknown>>({})
+  // Ref to track editProps synchronously (for blur->save race condition)
+  const editPropsRef = useRef<Record<string, unknown>>({})
 
   // Create mode specific state
   const [editSlug, setEditSlug] = useState('')
@@ -349,7 +352,9 @@ export function ArtifactDetail({
       setEditTldr(artifact.tldr || '')
       setEditContent(artifact.content)
       setEditStatus(artifact.status)
-      setEditProps((artifact.props as Record<string, unknown>) || {})
+      const props = (artifact.props as Record<string, unknown>) || {}
+      setEditProps(props)
+      editPropsRef.current = props
     } else {
       // Create mode - reset to defaults
       setEditTitle('')
@@ -357,6 +362,7 @@ export function ArtifactDetail({
       setEditContent('')
       setEditStatus('draft')
       setEditProps({})
+      editPropsRef.current = {}
       setEditSlug('')
       setEditType(initialType || 'doc')
       setSlugManuallyEdited(false)
@@ -395,7 +401,9 @@ export function ArtifactDetail({
     setEditTldr(artifact.tldr || '')
     setEditContent(artifact.content)
     setEditStatus(artifact.status)
-    setEditProps((artifact.props as Record<string, unknown>) || {})
+    const props = (artifact.props as Record<string, unknown>) || {}
+    setEditProps(props)
+    editPropsRef.current = props
     setIsEditing(true)
     setError(null)
     setConflict(null)
@@ -474,8 +482,10 @@ export function ArtifactDetail({
       changes.push({ field: 'status', oldValue: artifact.status, newValue: editStatus })
     }
     // Props changes (for system.* types)
-    if (JSON.stringify(editProps) !== JSON.stringify(artifact.props || {})) {
-      changes.push({ field: 'props', oldValue: artifact.props, newValue: editProps })
+    // Use ref for most up-to-date value (handles blur->save race condition)
+    const currentEditProps = editPropsRef.current
+    if (JSON.stringify(currentEditProps) !== JSON.stringify(artifact.props || {})) {
+      changes.push({ field: 'props', oldValue: artifact.props, newValue: currentEditProps })
     }
 
     return changes
@@ -663,10 +673,25 @@ export function ArtifactDetail({
         }
 
         const patchData = await patchResponse.json()
-        updatedArtifact = patchData.artifact || updatedArtifact
+        if (patchData.artifact) {
+          updatedArtifact = patchData.artifact
+        } else {
+          // API didn't return artifact, construct it from our changes
+          updatedArtifact = {
+            ...updatedArtifact,
+            ...changes.reduce((acc, change) => {
+              acc[change.field] = change.newValue
+              return acc
+            }, {} as Record<string, unknown>),
+          } as typeof updatedArtifact
+        }
       }
 
-      onUpdate(updatedArtifact)
+      // Use flushSync to ensure parent processes the artifact update
+      // before we exit edit mode, preventing stale UI state
+      flushSync(() => {
+        onUpdate(updatedArtifact)
+      })
       setIsEditing(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')
@@ -1047,6 +1072,9 @@ export function ArtifactDetail({
               const currentProps = ((isEditing ? editProps : artifact?.props) as unknown as McpProps) || { transport: 'stdio' as const }
               const newProps = { ...currentProps, ...updates } as unknown as Record<string, unknown>
 
+              // Update ref synchronously (for blur->save race condition)
+              editPropsRef.current = newProps
+
               // Auto-enter edit mode if not already editing
               if (!isEditing && !isCreateMode && artifact) {
                 setEditTitle(artifact.title || '')
@@ -1081,6 +1109,9 @@ export function ArtifactDetail({
               const currentProps = (isEditing ? editProps : artifact?.props) as AgentProps || { engine: 'claude' }
               const newProps = { ...currentProps, ...updates } as unknown as Record<string, unknown>
 
+              // Update ref synchronously (for blur->save race condition)
+              editPropsRef.current = newProps
+
               // Auto-enter edit mode if not already editing
               if (!isEditing && !isCreateMode && artifact) {
                 setEditTitle(artifact.title || '')
@@ -1112,6 +1143,9 @@ export function ArtifactDetail({
               // Get current props (from editProps if editing, else from artifact)
               const currentProps = ((isEditing ? editProps : artifact?.props) as unknown as FocusProps) || { agents: [] }
               const newProps = { ...currentProps, ...updates } as unknown as Record<string, unknown>
+
+              // Update ref synchronously (for blur->save race condition)
+              editPropsRef.current = newProps
 
               // Auto-enter edit mode if not already editing
               if (!isEditing && !isCreateMode && artifact) {
