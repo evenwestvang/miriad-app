@@ -145,6 +145,9 @@ export function MessageInput({
 
   const { findMentionTrigger, getOptionsCount, getOptionAtIndex } = useMentionAutocomplete(roster)
 
+  // Check if roster is empty (no agents to message)
+  const isRosterEmpty = roster.length === 0
+
   // Track previous channelId to save draft before switching
   const prevChannelIdRef = useRef<string | undefined>(channelId)
 
@@ -612,14 +615,16 @@ export function MessageInput({
       // Submit on Enter (without Shift) when no menus are showing
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
-        handleSubmit()
+        if (!isRosterEmpty) {
+          handleSubmit()
+        }
       }
     },
     [
       showAgentPicker, agentPickerQuery, agentPickerIndex, getFilteredPickerAgents, handleAgentAction,
       showSlashMenu, filteredCommands, slashSelectedIndex, executeSlashCommand,
       showAutocomplete, autocompleteQuery, selectedIndex, getOptionsCount, getOptionAtIndex,
-      insertMention, handleSubmit
+      insertMention, handleSubmit, isRosterEmpty
     ]
   )
 
@@ -969,18 +974,23 @@ export function MessageInput({
                 <Plus className="w-[18px] h-[18px]" />
                 <span>Summon</span>
               </button>
+              {isRosterEmpty && (
+                <span className="text-[#ff6600] text-base ml-1">⬅︎ Add an agent to this channel!</span>
+              )}
             </div>
             {/* Send button */}
             <button
               onClick={handleSubmit}
-              disabled={disabled || (!content.trim() && stagedFiles.filter(f => !f.error).length === 0)}
+              disabled={disabled || isRosterEmpty || (!content.trim() && stagedFiles.filter(f => !f.error).length === 0)}
               className={cn(
                 "p-1 transition-colors",
-                (content.trim() || stagedFiles.filter(f => !f.error).length > 0) && !disabled
-                  ? "text-[#8c8c8c] hover:text-[#1a1a1a]"
-                  : "text-[#c0c0c0] cursor-not-allowed"
+                isRosterEmpty
+                  ? "text-[#e0e0e0] cursor-not-allowed"
+                  : (content.trim() || stagedFiles.filter(f => !f.error).length > 0) && !disabled
+                    ? "text-[#8c8c8c] hover:text-[#1a1a1a]"
+                    : "text-[#c0c0c0] cursor-not-allowed"
               )}
-              title="Send message"
+              title={isRosterEmpty ? "Summon an agent first" : "Send message"}
             >
               <Send className="w-[18px] h-[18px]" />
             </button>
