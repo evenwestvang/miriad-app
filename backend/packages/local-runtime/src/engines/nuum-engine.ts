@@ -59,7 +59,10 @@ class NuumProcess implements EngineProcess {
   private outputDone = false;
   private sessionId: string | null = null;
 
-  constructor(private readonly config: EngineConfig) {}
+  constructor(
+    private readonly config: EngineConfig,
+    private readonly customExecutable?: string
+  ) {}
 
   get pid(): number | null {
     return this.proc?.pid ?? null;
@@ -94,11 +97,24 @@ class NuumProcess implements EngineProcess {
       });
     }
 
-    this.proc = spawn('bunx', [
-      '@sanity-labs/nuum@latest',
-      '--stdio',
-      '--db', dbPath,
-    ], {
+    // Determine command and args
+    let command: string;
+    let args: string[];
+
+    if (this.customExecutable) {
+      // Custom executable: parse as shell command
+      // e.g., "node /path/to/nuum.js" or "/usr/local/bin/nuum"
+      const parts = this.customExecutable.split(' ');
+      command = parts[0];
+      args = [...parts.slice(1), '--stdio', '--db', dbPath];
+      console.log(`[NuumProcess] Using custom executable: ${command} ${args.join(' ')}`);
+    } else {
+      // Default: use bunx
+      command = 'bunx';
+      args = ['@sanity-labs/nuum@latest', '--stdio', '--db', dbPath];
+    }
+
+    this.proc = spawn(command, args, {
       cwd: this.config.workspacePath,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -327,9 +343,19 @@ export class NuumEngine implements AgentEngine {
   readonly engineId = 'nuum';
   readonly displayName = 'Nuum (Miriad Code)';
 
+  /** Custom executable command, or undefined for default */
+  private readonly customExecutable?: string;
+
+  constructor(customExecutable?: string) {
+    this.customExecutable = customExecutable;
+  }
+
   async isAvailable(): Promise<boolean> {
     try {
-      // Check if bunx is available
+      // Check if bunx is available (for default) or assume custom is available
+      if (this.customExecutable) {
+        return true; // Assume custom executable is available
+      }
       const { execSync } = await import('node:child_process');
       execSync('bunx --version', { stdio: 'ignore' });
       return true;
@@ -339,7 +365,7 @@ export class NuumEngine implements AgentEngine {
   }
 
   async spawn(config: EngineConfig): Promise<EngineProcess> {
-    const process = new NuumProcess(config);
+    const process = new NuumProcess(config, this.customExecutable);
     await process.spawn();
     return process;
   }

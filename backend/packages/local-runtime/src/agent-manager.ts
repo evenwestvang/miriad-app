@@ -184,6 +184,8 @@ function createMessageStream(initialContent: string): MessageStream {
 export interface AgentManagerConfig {
   /** Base path for agent workspaces */
   workspaceBasePath: string;
+  /** Custom nuum executable command (default: bunx @sanity-labs/nuum@latest) */
+  nuumExecutable?: string;
   /** Callback when agent sends a frame */
   onFrame: (message: AgentFrameMessage) => void;
   /** Callback when agent checks in (SDK ready) */
@@ -223,7 +225,7 @@ export class AgentManager {
 
   constructor(config: AgentManagerConfig) {
     this.config = config;
-    this.engineManager = createEngineManager();
+    this.engineManager = createEngineManager({ nuumExecutable: config.nuumExecutable });
   }
 
   /**

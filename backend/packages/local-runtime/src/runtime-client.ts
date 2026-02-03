@@ -31,6 +31,8 @@ export interface RuntimeClientConfig {
   config: RuntimeConfig;
   /** Idle timeout in minutes - exit after this many minutes of inactivity */
   idleTimeoutMinutes?: number;
+  /** Custom nuum executable command (default: bunx @sanity-labs/nuum@latest) */
+  nuumExecutable?: string;
   onConnected?: () => void;
   onDisconnected?: (code: number, reason: string) => void;
   onError?: (error: Error) => void;
@@ -81,6 +83,7 @@ export class RuntimeClient {
     // Create agent manager
     this.agentManager = new AgentManager({
       workspaceBasePath: this.runtimeConfig.workspace.basePath,
+      nuumExecutable: config.nuumExecutable,
       onFrame: (message) => this.sendFrame(message),
       onCheckin: (agentId) => this.sendCheckin(agentId),
       onError: (agentId, error) => {

@@ -37,11 +37,12 @@ Commands:
     Authenticate with Miriad using a connection string from the UI.
     Example: npx @miriad-systems/backend auth "cast://bst_xxx@api.miriad.systems/space_abc"
 
-  start [--name <name>] [--idle-timeout <minutes>]
+  start [--name <name>] [--idle-timeout <minutes>] [--nuum-executable <cmd>]
     Start the runtime and connect to Miriad.
     Options:
       --name <name>              Runtime name (default: hostname)
       --idle-timeout <minutes>   Exit after N minutes of inactivity (default: never)
+      --nuum-executable <cmd>    Custom nuum executable (default: bunx @sanity-labs/nuum@latest)
 
   status
     Show the runtime configuration and connection status.
@@ -118,6 +119,13 @@ async function cmdStart(args: string[]): Promise<void> {
     }
   }
 
+  // Check for --nuum-executable flag
+  let nuumExecutable: string | undefined;
+  const nuumIdx = args.indexOf('--nuum-executable');
+  if (nuumIdx !== -1 && args[nuumIdx + 1]) {
+    nuumExecutable = args[nuumIdx + 1];
+  }
+
   console.log('Starting local runtime...');
   console.log(`  Runtime: ${config.name} (${config.credentials.runtimeId})`);
   console.log(`  Space: ${config.spaceId}`);
@@ -125,12 +133,16 @@ async function cmdStart(args: string[]): Promise<void> {
   if (idleTimeoutMinutes) {
     console.log(`  Idle timeout: ${idleTimeoutMinutes} minutes`);
   }
+  if (nuumExecutable) {
+    console.log(`  Nuum executable: ${nuumExecutable}`);
+  }
   console.log();
 
   // Create and connect runtime client
   const client = new RuntimeClient({
     config,
     idleTimeoutMinutes,
+    nuumExecutable,
     onConnected: () => {
       console.log('Runtime ready. Waiting for agents...');
     },
