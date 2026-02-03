@@ -1,6 +1,6 @@
 {
   "name": "@miriad-systems/backend",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "Run Miriad agents on your local machine, container, or VPS",
   "type": "module",
   "main": "./dist/cli.js",
