@@ -146,7 +146,23 @@ export function MessageInput({
   const { findMentionTrigger, getOptionsCount, getOptionAtIndex } = useMentionAutocomplete(roster)
 
   // Check if roster is empty (no agents to message)
+  // Use a delayed state to avoid flashing on channel switch while roster loads
   const isRosterEmpty = roster.length === 0
+  const [showEmptyRosterHint, setShowEmptyRosterHint] = useState(false)
+
+  useEffect(() => {
+    if (!isRosterEmpty) {
+      // Roster has agents, hide hint immediately
+      setShowEmptyRosterHint(false)
+      return
+    }
+    // Roster is empty, but wait a bit before showing hint
+    // to allow time for roster to load on channel switch
+    const timer = setTimeout(() => {
+      setShowEmptyRosterHint(true)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [isRosterEmpty, channelId])
 
   // Track previous channelId to save draft before switching
   const prevChannelIdRef = useRef<string | undefined>(channelId)
@@ -974,7 +990,7 @@ export function MessageInput({
                 <Plus className="w-[18px] h-[18px]" />
                 <span>Summon</span>
               </button>
-              {isRosterEmpty && (
+              {showEmptyRosterHint && (
                 <span className="text-[#ff6600] text-base ml-1">⬅︎ Add an agent to this channel!</span>
               )}
             </div>
@@ -984,13 +1000,13 @@ export function MessageInput({
               disabled={disabled || isRosterEmpty || (!content.trim() && stagedFiles.filter(f => !f.error).length === 0)}
               className={cn(
                 "p-1 transition-colors",
-                isRosterEmpty
+                showEmptyRosterHint
                   ? "text-[#e0e0e0] cursor-not-allowed"
                   : (content.trim() || stagedFiles.filter(f => !f.error).length > 0) && !disabled
                     ? "text-[#8c8c8c] hover:text-[#1a1a1a]"
                     : "text-[#c0c0c0] cursor-not-allowed"
               )}
-              title={isRosterEmpty ? "Summon an agent first" : "Send message"}
+              title={showEmptyRosterHint ? "Add an agent first" : "Send message"}
             >
               <Send className="w-[18px] h-[18px]" />
             </button>
