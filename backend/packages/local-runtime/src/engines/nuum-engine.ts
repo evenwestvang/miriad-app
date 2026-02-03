@@ -90,15 +90,17 @@ class NuumProcess implements EngineProcess {
     };
 
     // Pass initial MCP config via environment
-    // Note: nuum uses NUUM_MCP_CONFIG env var
+    // Set both env vars for backwards compatibility during transition
     if (this.config.mcpServers && this.config.mcpServers.length > 0) {
       const mcpConfig = {
         mcpServers: Object.fromEntries(
           this.config.mcpServers.map(s => [s.name, s])
         ),
       };
-      env.NUUM_MCP_CONFIG = JSON.stringify(mcpConfig);
-      console.log(`[NuumProcess] Setting NUUM_MCP_CONFIG with ${Object.keys(mcpConfig.mcpServers).length} servers`);
+      const configJson = JSON.stringify(mcpConfig);
+      env.NUUM_MCP_CONFIG = configJson;      // New nuum
+      env.MIRIAD_MCP_CONFIG = configJson;    // Legacy
+      console.log(`[NuumProcess] Setting MCP config with ${Object.keys(mcpConfig.mcpServers).length} servers`);
     } else {
       console.log(`[NuumProcess] WARNING: No mcpServers in config!`);
     }
