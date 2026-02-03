@@ -81,6 +81,7 @@ class NuumProcess implements EngineProcess {
     console.log(`[NuumProcess] Spawning for ${this.config.agentId}`);
     console.log(`[NuumProcess] DB path: ${dbPath}`);
     console.log(`[NuumProcess] Working directory: ${this.config.workspacePath}`);
+    console.log(`[NuumProcess] mcpServers in config: ${this.config.mcpServers?.length ?? 0}`);
 
     // Build environment
     const env: Record<string, string> = {
@@ -90,11 +91,15 @@ class NuumProcess implements EngineProcess {
 
     // Pass initial MCP config via environment
     if (this.config.mcpServers && this.config.mcpServers.length > 0) {
-      env.MIRIAD_MCP_CONFIG = JSON.stringify({
+      const mcpConfig = {
         mcpServers: Object.fromEntries(
           this.config.mcpServers.map(s => [s.name, s])
         ),
-      });
+      };
+      env.MIRIAD_MCP_CONFIG = JSON.stringify(mcpConfig);
+      console.log(`[NuumProcess] Setting MIRIAD_MCP_CONFIG with ${Object.keys(mcpConfig.mcpServers).length} servers`);
+    } else {
+      console.log(`[NuumProcess] WARNING: No mcpServers in config!`);
     }
 
     // Determine command and args
