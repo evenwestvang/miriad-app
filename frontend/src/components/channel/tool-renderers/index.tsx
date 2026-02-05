@@ -29,9 +29,12 @@ import { SendMessageRenderer } from './SendMessageRenderer'
 import { ArtifactUpdateRenderer } from './ArtifactUpdateRenderer'
 import { ArtifactGlobRenderer } from './ArtifactGlobRenderer'
 import { ArtifactCheckpointRenderer } from './ArtifactCheckpointRenderer'
+import { getToolDisplayName, isToolHidden } from './toolConfig'
 
-// Export the shared types
+// Export the shared types and config helpers
 export type { ToolRendererProps }
+export { getToolDisplayName, isToolHidden }
+export { normalizeToolName }
 
 /**
  * Normalize tool name by stripping MCP prefixes and converting to lowercase.

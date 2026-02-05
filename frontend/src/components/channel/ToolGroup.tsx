@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { ChevronRight, ChevronDown, CheckCircle, XCircle } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { Message } from '../../types'
-import { getToolRenderer } from './tool-renderers'
+import { getToolRenderer, getToolDisplayName, isToolHidden, normalizeToolName } from './tool-renderers'
 
 interface ToolGroupProps {
   /** Array of consecutive tool_call and tool_result messages */
@@ -69,11 +69,22 @@ export function ToolGroup({ messages, firehoseMode = false }: ToolGroupProps) {
   }, [firehoseMode])
 
   // Pair tool_calls with their corresponding tool_results
-  const pairs = pairToolMessages(messages)
+  const allPairs = pairToolMessages(messages)
+  
+  // Filter out hidden tools (e.g., send_message, set_status - reflected elsewhere in UI)
+  const pairs = allPairs.filter(pair => {
+    const toolName = pair.call.toolName || ''
+    return !isToolHidden(normalizeToolName(toolName))
+  })
 
   // Count calls and errors
   const callCount = pairs.length
   const errorCount = pairs.filter(p => p.result?.toolResultStatus === 'error').length
+
+  // If all tools were hidden, render nothing
+  if (callCount === 0) {
+    return null
+  }
 
   // Get tool names for collapsed preview (deduplicated, max 5)
   const toolNames = getToolNamePreview(pairs)
@@ -145,9 +156,11 @@ interface ToolItemProps {
 function ToolItem({ pair }: ToolItemProps) {
   const [expanded, setExpanded] = useState(false)
 
-  const toolName = pair.call.toolName || 'Unknown'
+  const rawToolName = pair.call.toolName || 'Unknown'
+  const normalizedName = normalizeToolName(rawToolName)
+  const displayName = getToolDisplayName(normalizedName)
   const args = pair.call.toolArgs || {}
-  const argsPreview = formatArgsPreview(toolName, args)
+  const argsPreview = formatArgsPreview(rawToolName, args)
 
   const hasResult = !!pair.result
   const isSuccess = pair.result?.toolResultStatus !== 'error'
@@ -156,7 +169,7 @@ function ToolItem({ pair }: ToolItemProps) {
   const error = pair.result?.toolResultError
 
   // Check for custom renderer
-  const CustomRenderer = getToolRenderer(toolName)
+  const CustomRenderer = getToolRenderer(rawToolName)
 
   return (
     <div className="py-0.5">
@@ -169,7 +182,7 @@ function ToolItem({ pair }: ToolItemProps) {
         ) : (
           <ChevronRight className="w-3 h-3 text-muted-foreground flex-shrink-0" />
         )}
-        <span className="text-blue-400 font-medium">{toolName}</span>
+        <span className="text-blue-400 font-medium">{displayName}</span>
         {argsPreview && (
           <span className="text-muted-foreground text-xs font-mono truncate flex-1">{argsPreview}</span>
         )}
@@ -227,9 +240,11 @@ function ToolItem({ pair }: ToolItemProps) {
 function SingleToolItem({ pair }: { pair: ToolPair }) {
   const [expanded, setExpanded] = useState(false)
 
-  const toolName = pair.call.toolName || 'Unknown'
+  const rawToolName = pair.call.toolName || 'Unknown'
+  const normalizedName = normalizeToolName(rawToolName)
+  const displayName = getToolDisplayName(normalizedName)
   const args = pair.call.toolArgs || {}
-  const argsPreview = formatArgsPreview(toolName, args)
+  const argsPreview = formatArgsPreview(rawToolName, args)
 
   const hasResult = !!pair.result
   const isSuccess = pair.result?.toolResultStatus !== 'error'
@@ -238,7 +253,7 @@ function SingleToolItem({ pair }: { pair: ToolPair }) {
   const error = pair.result?.toolResultError
 
   // Check for custom renderer
-  const CustomRenderer = getToolRenderer(toolName)
+  const CustomRenderer = getToolRenderer(rawToolName)
 
   return (
     <div className="my-4">
@@ -251,7 +266,7 @@ function SingleToolItem({ pair }: { pair: ToolPair }) {
         ) : (
           <ChevronRight className="w-3 h-3 text-muted-foreground flex-shrink-0" />
         )}
-        <span className="text-blue-400 font-medium">{toolName}</span>
+        <span className="text-blue-400 font-medium">{displayName}</span>
         {argsPreview && (
           <span className="text-muted-foreground text-xs font-mono truncate">{argsPreview}</span>
         )}
@@ -357,10 +372,12 @@ function getToolNamePreview(pairs: ToolPair[]): string {
   const seen = new Set<string>()
 
   for (const pair of pairs) {
-    const name = pair.call.toolName || 'Unknown'
-    if (!seen.has(name)) {
-      seen.add(name)
-      names.push(name)
+    const rawName = pair.call.toolName || 'Unknown'
+    const normalizedName = normalizeToolName(rawName)
+    // Use normalized name for deduplication (so miriad__read and read don't both appear)
+    if (!seen.has(normalizedName)) {
+      seen.add(normalizedName)
+      names.push(getToolDisplayName(normalizedName))
       if (names.length >= 5) break
     }
   }
