@@ -11,6 +11,7 @@
 import { FileText, ListTodo, FileCode, GitBranch } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 import type { ToolRendererProps } from './types'
+import { normalizeArgs } from './normalizeArgs'
 
 const MAX_CONTENT_PREVIEW = 3 // Show first 3 lines of content
 
@@ -49,12 +50,13 @@ function getTypeBadgeColor(type: string): string {
 }
 
 export function ArtifactCreateRenderer({ args, error, isSuccess }: ToolRendererProps) {
-  const slug = (args.slug as string) || 'unknown'
-  const type = (args.type as string) || 'doc'
-  const title = (args.title as string) || undefined
-  const tldr = (args.tldr as string) || undefined
-  const content = (args.content as string) || ''
-  const parentSlug = (args.parentSlug as string) || undefined
+  const normalized = normalizeArgs(args)
+  const slug = (normalized.slug as string) || 'unknown'
+  const type = (normalized.type as string) || 'doc'
+  const title = (normalized.title as string) || undefined
+  const tldr = (normalized.tldr as string) || undefined
+  const content = (normalized.content as string) || ''
+  const parentSlug = (normalized.parentSlug as string) || undefined
 
   // Preview first few lines of content
   const contentLines = content.split('\n').filter(line => line.trim())

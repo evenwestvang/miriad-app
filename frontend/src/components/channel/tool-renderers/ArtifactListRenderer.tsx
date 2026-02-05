@@ -9,6 +9,7 @@
 import { FileText, ListTodo, FileCode, GitBranch } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 import type { ToolRendererProps } from './types'
+import { normalizeArgs } from './normalizeArgs'
 
 const MAX_RESULTS_PREVIEW = 20
 
@@ -62,10 +63,11 @@ function parseArtifactList(output: unknown): Array<{
 }
 
 export function ArtifactListRenderer({ args, output, error, isSuccess }: ToolRendererProps) {
-  const type = (args.type as string) || undefined
-  const status = (args.status as string) || undefined
-  const search = (args.search as string) || undefined
-  const parentSlug = (args.parentSlug as string) || undefined
+  const normalized = normalizeArgs(args)
+  const type = (normalized.type as string) || undefined
+  const status = (normalized.status as string) || undefined
+  const search = (normalized.search as string) || undefined
+  const parentSlug = (normalized.parentSlug as string) || undefined
 
   const artifacts = parseArtifactList(output)
   const totalCount = artifacts.length
