@@ -93,6 +93,12 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   const [runtimeAgents, setRuntimeAgents] = useState<Record<string, RuntimeAgent[]>>({})
   const [loadingAgents, setLoadingAgents] = useState<Set<string>>(new Set())
   const [cloudStatus, setCloudStatus] = useState<MiriadCloudStatus | null>(null)
+  // Optimistic UI: mask a specific state while waiting for backend to catch up
+  const [pendingMask, setPendingMask] = useState<{
+    maskState: MiriadCloudState  // The state we're hiding (e.g., 'stopped')
+    showAs: MiriadCloudState     // What to show instead (e.g., 'starting')
+    expiresAt: number            // Auto-expire after timeout
+  } | null>(null)
   const [deletingRuntime, setDeletingRuntime] = useState<string | null>(null)
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null)
   const [hasCheckedRuntimes, setHasCheckedRuntimes] = useState(false)
@@ -102,20 +108,35 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   // Track previous runtime statuses to detect changes
   const prevRuntimeStatusesRef = useRef<Map<string, 'online' | 'offline'>>(new Map())
 
+  // Derive display state for Miriad Cloud with optimistic mask
+  // The mask shows a transitional state while waiting for backend to confirm
+  const realCloudState = cloudStatus?.state ?? 'stopped'
+  const maskValid = pendingMask 
+    && realCloudState === pendingMask.maskState  // Only mask the expected state
+    && Date.now() < pendingMask.expiresAt        // And not timed out
+  const displayCloudState = maskValid ? pendingMask.showAs : realCloudState
+  
+  // Clear mask when real state changes to anything other than masked state
+  useEffect(() => {
+    if (pendingMask && realCloudState !== pendingMask.maskState) {
+      setPendingMask(null)
+    }
+  }, [realCloudState, pendingMask])
+
   // Determine overall status (computed early so it can be used in effects)
   // A runtime is considered "effectively online" if status is online AND not stale
   // For Miriad Cloud, use the derived state from cloudStatus
   const onlineRuntimes = runtimes.filter(r => {
     if (isMiriadCloud(r)) {
-      return cloudStatus?.state === 'online'
+      return displayCloudState === 'online'
     }
     return r.status === 'online' && !isRuntimeStale(r)
   })
   const hasAnyOnline = onlineRuntimes.length > 0
   const totalOnline = onlineRuntimes.length
   
-  // Miriad Cloud is "busy" if it's in a transitional state
-  const isCloudBusy = cloudStatus?.state === 'starting' || cloudStatus?.state === 'connecting' || cloudStatus?.state === 'stopping'
+  // Miriad Cloud is "busy" if it's in a transitional state (real or optimistic)
+  const isCloudBusy = displayCloudState === 'starting' || displayCloudState === 'connecting' || displayCloudState === 'stopping'
 
   // Check if API key is configured (re-check when dropdown opens or settings closes)
   useEffect(() => {
@@ -269,22 +290,30 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   }
 
   async function startMiriadCloud() {
+    // Set optimistic mask immediately for instant feedback
+    setPendingMask({ maskState: 'stopped', showAs: 'starting', expiresAt: Date.now() + 10_000 })
     try {
       await apiPost(`${apiHost}/api/runtimes/miriad-cloud/start`, {})
-      // Immediately fetch status - it will show 'starting' state
+      // Fetch status - real state will clear the mask when it catches up
       await fetchRuntimes()
     } catch (err) {
       console.error('Failed to start Miriad Cloud:', err)
+      // Clear mask on error so user sees real state and can retry
+      setPendingMask(null)
     }
   }
 
   async function stopMiriadCloud() {
+    // Set optimistic mask immediately for instant feedback
+    setPendingMask({ maskState: 'online', showAs: 'stopping', expiresAt: Date.now() + 10_000 })
     try {
       await apiPost(`${apiHost}/api/runtimes/miriad-cloud/stop`, {})
-      // Immediately fetch status - it will show 'stopping' state
+      // Fetch status - real state will clear the mask when it catches up
       await fetchRuntimes()
     } catch (err) {
       console.error('Failed to stop Miriad Cloud:', err)
+      // Clear mask on error so user sees real state and can retry
+      setPendingMask(null)
     }
   }
 
@@ -408,7 +437,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                     <div>
                       <div className="text-base font-medium">Miriad Cloud</div>
                       <div className="text-xs text-muted-foreground">
-                        {hasApiKey === false ? 'Not configured' : cloudStatus?.state === 'starting' ? 'Starting...' : 'Not running'}
+                        {hasApiKey === false ? 'Not configured' : displayCloudState === 'starting' ? 'Starting...' : 'Not running'}
                       </div>
                     </div>
                   </div>
@@ -429,10 +458,10 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                         e.stopPropagation()
                         startMiriadCloud()
                       }}
-                      disabled={!cloudStatus?.canStart}
+                      disabled={!cloudStatus?.canStart || displayCloudState === 'starting'}
                       className="flex items-center gap-1.5 px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
                     >
-                      {cloudStatus?.state === 'starting' ? (
+                      {displayCloudState === 'starting' ? (
                         <RefreshCw className="w-3 h-3 animate-spin" />
                       ) : (
                         <Play className="w-3 h-3" />
@@ -458,9 +487,9 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                   const isCloud = isMiriadCloud(runtime)
                   const isStale = isRuntimeStale(runtime)
                   
-                  // For Miriad Cloud, use derived state from cloudStatus
+                  // For Miriad Cloud, use display state (includes optimistic mask)
                   // For other runtimes, use the old staleness check
-                  const cloudState = isCloud ? cloudStatus?.state : null
+                  const cloudState = isCloud ? displayCloudState : null
                   const isEffectivelyOnline = isCloud 
                     ? cloudState === 'online'
                     : runtime.status === 'online' && !isStale
@@ -523,23 +552,25 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                                   : 'Offline'}
                           </div>
                         </div>
-                        {/* Stop button for Miriad Cloud when canStop is true */}
-                        {isCloud && cloudStatus?.canStop && (
+                        {/* Stop button for Miriad Cloud when canStop is true (and not already stopping) */}
+                        {isCloud && cloudStatus?.canStop && cloudState !== 'stopping' && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
                               stopMiriadCloud()
                             }}
-                            disabled={cloudState === 'stopping'}
-                            className="flex items-center gap-1.5 px-2 py-1 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/80 disabled:opacity-50"
+                            className="flex items-center gap-1.5 px-2 py-1 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/80"
                           >
-                            {cloudState === 'stopping' ? (
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Square className="w-3 h-3" />
-                            )}
+                            <Square className="w-3 h-3" />
                             Stop
                           </button>
+                        )}
+                        {/* Show spinner when stopping */}
+                        {isCloud && cloudState === 'stopping' && (
+                          <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground">
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                            Stopping...
+                          </div>
                         )}
                         {/* Start/Configure button for Miriad Cloud when canStart is true */}
                         {isCloud && cloudStatus?.canStart && (
