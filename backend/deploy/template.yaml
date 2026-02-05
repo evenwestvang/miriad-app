@@ -94,14 +94,14 @@ Parameters:
   FlyCpus:
     Type: Number
     Description: Fly.io machine CPU count
-    Default: 4
+    Default: 2
   FlyCpuKind:
     Type: String
     Description: Fly.io CPU type (shared or performance)
     AllowedValues:
       - shared
       - performance
-    Default: 'performance'
+    Default: 'shared'
   SpaceId:
     Type: String
     Description: Default space ID for agents
