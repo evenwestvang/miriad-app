@@ -424,21 +424,13 @@ export class RuntimeClient {
 
   /**
    * Check if idle timeout has been reached.
+   * Shuts down regardless of agent state - agents can be respawned when needed.
    */
   private checkIdleTimeout(): void {
     const idleTime = Date.now() - this.lastActivityTime;
 
     if (idleTime >= this.idleTimeoutMs) {
-      // Check that no agents are busy (in the middle of processing)
-      const agents = this.agentManager.getAgents();
-      const busyAgents = agents.filter((a) => a.status === 'busy');
-
-      if (busyAgents.length > 0) {
-        console.log(`[RuntimeClient] Idle timeout reached but ${busyAgents.length} agent(s) busy - waiting`);
-        return;
-      }
-
-      console.log(`[RuntimeClient] Idle timeout reached (${Math.round(idleTime / 60000)} minutes)`);
+      console.log(`[RuntimeClient] Idle timeout reached (${Math.round(idleTime / 60000)} minutes) - shutting down`);
       this.stopIdleCheck();
       this.onIdleTimeout?.();
     }

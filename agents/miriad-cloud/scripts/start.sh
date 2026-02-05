@@ -12,4 +12,4 @@ if [ ! -d "$HOME/.claude/skills" ]; then
 fi
 
 # Start the runtime
-exec node /app/dist/cli.js start --idle-timeout 15
+exec node /app/dist/cli.js start --idle-timeout 30
