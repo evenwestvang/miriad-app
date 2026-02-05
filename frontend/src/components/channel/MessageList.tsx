@@ -1039,7 +1039,7 @@ function MessageItem({
   // Note: tool_call and tool_result messages are handled by ToolGroup
   // in the parent render loop, so they won't reach this component
 
-  // Helper to extract text content (may be string, { text: "..." }, or { status: "..." } object)
+  // Helper to extract text content (may be string, { text: "..." }, { status: "..." }, or { message: "..." } object)
   const getTextContent = (content: unknown): string => {
     if (typeof content === "string") return content;
     if (content && typeof content === "object") {
@@ -1048,6 +1048,9 @@ function MessageItem({
       }
       if ("status" in content) {
         return (content as { status: string }).status;
+      }
+      if ("message" in content) {
+        return (content as { message: string }).message;
       }
     }
     return "";
