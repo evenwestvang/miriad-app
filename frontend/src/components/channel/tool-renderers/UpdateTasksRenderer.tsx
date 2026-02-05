@@ -6,7 +6,7 @@
  * - Visual distinction between pending, in_progress, completed, blocked
  * - Blocked reason when applicable
  */
-import { CheckCircle2, Circle, Loader2, AlertCircle, ListTodo } from 'lucide-react'
+import { CheckCircle2, CircleDashed, CircleDot, AlertCircle, ListTodo } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 import type { ToolRendererProps } from './types'
 import { normalizeArgs } from './normalizeArgs'
@@ -23,12 +23,12 @@ function getStatusIcon(status: Task['status']) {
     case 'completed':
       return <CheckCircle2 className="w-4 h-4 text-green-500" />
     case 'in_progress':
-      return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+      return <CircleDot className="w-4 h-4 text-blue-500" />
     case 'blocked':
       return <AlertCircle className="w-4 h-4 text-red-500" />
     case 'pending':
     default:
-      return <Circle className="w-4 h-4 text-muted-foreground" />
+      return <CircleDashed className="w-4 h-4 text-muted-foreground" />
   }
 }
 
@@ -67,11 +67,11 @@ export function UpdateTasksRenderer({ args, isSuccess }: ToolRendererProps) {
 
   return (
     <div className={cn(
-      "rounded-md border border-border overflow-hidden",
+      "rounded-md overflow-hidden",
       !isSuccess && "opacity-60"
     )}>
       {/* Header with summary */}
-      <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b border-border">
+      <div className="flex items-center justify-between py-1.5">
         <div className="flex items-center gap-2">
           <ListTodo className="w-4 h-4 text-purple-500" />
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tasks</span>
@@ -85,9 +85,9 @@ export function UpdateTasksRenderer({ args, isSuccess }: ToolRendererProps) {
       </div>
       
       {/* Task list */}
-      <div className="divide-y divide-border">
+      <div className="space-y-1">
         {tasks.map((task) => (
-          <div key={task.id} className="flex items-start gap-2 px-3 py-2">
+          <div key={task.id} className="flex items-start gap-2 py-0.5">
             <div className="mt-0.5 flex-shrink-0">
               {getStatusIcon(task.status)}
             </div>

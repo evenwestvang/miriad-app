@@ -26,17 +26,17 @@ export function SetMissionRenderer({ args, isSuccess }: ToolRendererProps) {
 
   return (
     <div className={cn(
-      "rounded-md border border-border overflow-hidden",
+      "rounded-md overflow-hidden",
       !isSuccess && "opacity-60"
     )}>
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b border-border">
+      <div className="flex items-center gap-2 py-1.5">
         <Target className="w-4 h-4 text-blue-500" />
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mission</span>
       </div>
       
       {/* Mission text */}
-      <div className="px-3 py-2">
+      <div className="py-1">
         <p className="text-sm">{mission}</p>
       </div>
     </div>
