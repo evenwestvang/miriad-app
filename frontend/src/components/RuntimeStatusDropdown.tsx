@@ -141,7 +141,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   // Derive canStart/canStop from display state (not just backend) for consistent UI
   // This ensures buttons match the displayed state during optimistic updates
   const displayCanStart = displayCloudState === 'stopped'
-  const displayCanStop = displayCloudState === 'online' || displayCloudState === 'starting' || displayCloudState === 'connecting'
+  const displayCanStop = displayCloudState === 'online' || displayCloudState === 'starting' || displayCloudState === 'connecting' || displayCloudState === 'stopping'
 
   // Check if API key is configured (re-check when dropdown opens or settings closes)
   useEffect(() => {
