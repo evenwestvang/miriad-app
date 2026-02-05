@@ -121,6 +121,44 @@ export interface MiriadCloudOptions {
   storage: Storage;
 }
 
+/**
+ * Derived state for Miriad Cloud - computed from reality, not tracked.
+ * 
+ * State machine:
+ * - stopped:     No machine exists or machine is stopped
+ * - starting:    Machine is starting/created but not yet running
+ * - connecting:  Machine is running but WS not connected yet
+ * - online:      Machine running, WS connected, heartbeat fresh
+ * - stopping:    Machine is in stopping state
+ * - error:       Machine in unexpected state
+ */
+export type MiriadCloudState = 
+  | 'stopped' 
+  | 'starting' 
+  | 'connecting' 
+  | 'online' 
+  | 'stopping' 
+  | 'error';
+
+export interface DerivedMiriadCloudStatus {
+  state: MiriadCloudState;
+  canStart: boolean;
+  canStop: boolean;
+  /** Runtime record info (if exists) */
+  runtime: {
+    id: string;
+    name: string;
+    lastSeenAt: string | null;
+  } | null;
+  /** Debug info for troubleshooting */
+  debug?: {
+    runtimeStatus: string | null;
+    containerState: string | null;
+    heartbeatAgeMs: number | null;
+    wsConnected: boolean;
+  };
+}
+
 interface MiriadConfig {
   spaceId: string;
   name: string;
@@ -508,6 +546,136 @@ async function getFlyMachineStatus(spaceId: string): Promise<'running' | 'stoppe
 }
 
 // =============================================================================
+// Stateless State Derivation
+// =============================================================================
+
+/** Heartbeat is considered fresh if within this window */
+const HEARTBEAT_FRESH_MS = 60_000; // 60 seconds
+
+/**
+ * Derive Miriad Cloud state from reality.
+ * 
+ * Uses tiered approach - cheap checks first:
+ * 1. Check runtime record (DB query, ~1-5ms)
+ *    - If WS connected and heartbeat fresh → online (done, skip Fly API)
+ * 2. Check container state (Fly API or Docker, ~50-100ms)
+ *    - Derive state from actual machine status
+ * 
+ * This is stateless and serverless-friendly - no background processes needed.
+ */
+async function deriveMiriadCloudState(
+  storage: Storage,
+  spaceId: string
+): Promise<DerivedMiriadCloudStatus> {
+  // 1. CHEAP: Check runtime record first
+  const runtime = await storage.getRuntimeByName(spaceId, MIRIAD_CLOUD_NAME);
+  
+  const wsConnected = !!(runtime?.status === 'online' && runtime?.config?.wsConnectionId);
+  const heartbeatAgeMs = runtime?.lastSeenAt 
+    ? Date.now() - new Date(runtime.lastSeenAt).getTime()
+    : null;
+  const heartbeatFresh = heartbeatAgeMs !== null && heartbeatAgeMs < HEARTBEAT_FRESH_MS;
+  
+  // If WS connected and heartbeat fresh → online, skip expensive Fly API call
+  if (wsConnected && heartbeatFresh) {
+    return {
+      state: 'online',
+      canStart: false,
+      canStop: true,
+      runtime: runtime ? {
+        id: runtime.id,
+        name: runtime.name,
+        lastSeenAt: runtime.lastSeenAt,
+      } : null,
+      debug: {
+        runtimeStatus: runtime?.status ?? null,
+        containerState: 'started', // Inferred from WS connection
+        heartbeatAgeMs,
+        wsConnected,
+      },
+    };
+  }
+  
+  // 2. EXPENSIVE: Query actual container state
+  let containerState: string | null = null;
+  
+  if (useDocker()) {
+    const dockerStatus = getDockerContainerStatus(spaceId);
+    containerState = dockerStatus === 'running' ? 'started' 
+      : dockerStatus === 'stopped' ? 'stopped' 
+      : null;
+  } else {
+    const machine = await findFlyMachine(spaceId);
+    containerState = machine?.state ?? null;
+  }
+  
+  // Build debug info
+  const debug = {
+    runtimeStatus: runtime?.status ?? null,
+    containerState,
+    heartbeatAgeMs,
+    wsConnected,
+  };
+  
+  const runtimeInfo = runtime ? {
+    id: runtime.id,
+    name: runtime.name,
+    lastSeenAt: runtime.lastSeenAt,
+  } : null;
+  
+  // Derive state from container reality
+  if (!containerState || containerState === 'stopped' || containerState === 'destroyed') {
+    return {
+      state: 'stopped',
+      canStart: true,
+      canStop: false,
+      runtime: runtimeInfo,
+      debug,
+    };
+  }
+  
+  if (containerState === 'starting' || containerState === 'created') {
+    return {
+      state: 'starting',
+      canStart: false,
+      canStop: true,
+      runtime: runtimeInfo,
+      debug,
+    };
+  }
+  
+  if (containerState === 'started') {
+    // Machine is running but WS not connected (or stale heartbeat)
+    return {
+      state: 'connecting',
+      canStart: false,
+      canStop: true,
+      runtime: runtimeInfo,
+      debug,
+    };
+  }
+  
+  if (containerState === 'stopping') {
+    return {
+      state: 'stopping',
+      canStart: false,
+      canStop: false,
+      runtime: runtimeInfo,
+      debug,
+    };
+  }
+  
+  // Unknown/unexpected state
+  return {
+    state: 'error',
+    canStart: false,
+    canStop: true,
+    runtime: runtimeInfo,
+    debug,
+  };
+}
+
+// =============================================================================
 // Route Factory
 // =============================================================================
 
@@ -664,7 +832,7 @@ export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
   });
 
   // ---------------------------------------------------------------------------
-  // GET /status - Get Miriad Cloud status
+  // GET /status - Get Miriad Cloud status (stateless, derived from reality)
   // ---------------------------------------------------------------------------
   app.get('/status', async (c) => {
     const session = await parseSession(c);
@@ -675,31 +843,21 @@ export function createMiriadCloudRoutes(options: MiriadCloudOptions): Hono {
     const { spaceId } = session;
 
     try {
-      // Get runtime record
-      const runtime = await storage.getRuntimeByName(spaceId, MIRIAD_CLOUD_NAME);
-
-      // Get container status
-      let containerStatus: 'running' | 'stopped' | 'not_found';
-      if (useDocker()) {
-        containerStatus = getDockerContainerStatus(spaceId);
-      } else {
-        containerStatus = await getFlyMachineStatus(spaceId);
-      }
-
+      // Derive state from reality using tiered approach (cheap checks first)
+      const derived = await deriveMiriadCloudState(storage, spaceId);
+      
       return c.json({
         available: true,
-        runtime: runtime
-          ? {
-              id: runtime.id,
-              name: runtime.name,
-              status: runtime.status,
-              lastSeenAt: runtime.lastSeenAt,
-            }
-          : null,
-        container: {
-          status: containerStatus,
-          provider: useDocker() ? 'docker' : 'fly',
-        },
+        // New unified state
+        state: derived.state,
+        canStart: derived.canStart,
+        canStop: derived.canStop,
+        // Runtime info
+        runtime: derived.runtime,
+        // Provider info
+        provider: useDocker() ? 'docker' : 'fly',
+        // Debug info (useful for troubleshooting)
+        debug: derived.debug,
       });
     } catch (error) {
       console.error('[MiriadCloud] Error getting status:', error);

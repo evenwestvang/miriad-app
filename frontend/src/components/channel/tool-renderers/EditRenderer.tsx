@@ -10,6 +10,7 @@ import { useState, useMemo } from 'react'
 import { Copy, Check } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 import type { ToolRendererProps } from './types'
+import { normalizeArgs } from './normalizeArgs'
 
 /**
  * Compute a unified diff between two strings using a simple LCS-based algorithm.
@@ -62,10 +63,11 @@ function computeDiff(oldStr: string, newStr: string): Array<{ type: 'context' | 
 export function EditRenderer({ args, error, isSuccess }: ToolRendererProps) {
   const [copied, setCopied] = useState(false)
 
-  const filePath = (args.file_path as string) || (args.path as string) || 'unknown'
-  const oldString = (args.old_string as string) || ''
-  const newString = (args.new_string as string) || ''
-  const replaceAll = (args.replace_all as boolean) || false
+  const normalized = normalizeArgs(args)
+  const filePath = (normalized.filePath as string) || (normalized.path as string) || 'unknown'
+  const oldString = (normalized.oldString as string) || ''
+  const newString = (normalized.newString as string) || ''
+  const replaceAll = (normalized.replaceAll as boolean) || false
 
   // Compute the diff
   const diffLines = useMemo(() => computeDiff(oldString, newString), [oldString, newString])

@@ -14,6 +14,7 @@ import { Copy, Check } from 'lucide-react'
 import { useIsDarkMode } from '../../../hooks/useIsDarkMode'
 import { cn } from '../../../lib/utils'
 import type { ToolRendererProps } from './types'
+import { normalizeArgs } from './normalizeArgs'
 
 const MAX_LINES_PREVIEW = 100 // Show less for Write since user already knows content
 
@@ -69,8 +70,9 @@ export function WriteRenderer({ args, output, error, isSuccess }: ToolRendererPr
   const [copied, setCopied] = useState(false)
   const [showAll, setShowAll] = useState(false)
 
-  const filePath = (args.file_path as string) || (args.path as string) || 'unknown'
-  const content = (args.content as string) || ''
+  const normalized = normalizeArgs(args)
+  const filePath = (normalized.filePath as string) || (normalized.path as string) || 'unknown'
+  const content = (normalized.content as string) || ''
   const language = detectLanguage(filePath)
   const stats = getContentStats(content)
   const lines = content.split('\n')

@@ -9,11 +9,13 @@
 import { Edit } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 import type { ToolRendererProps } from './types'
+import { normalizeArgs } from './normalizeArgs'
 
 export function ArtifactEditRenderer({ args, error, isSuccess }: ToolRendererProps) {
-  const slug = (args.slug as string) || 'unknown'
-  const oldString = (args.old_string as string) || ''
-  const newString = (args.new_string as string) || ''
+  const normalized = normalizeArgs(args)
+  const slug = (normalized.slug as string) || 'unknown'
+  const oldString = (normalized.oldString as string) || ''
+  const newString = (normalized.newString as string) || ''
 
   return (
     <div className="space-y-2">

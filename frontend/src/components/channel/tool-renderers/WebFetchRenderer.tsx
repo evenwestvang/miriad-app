@@ -11,12 +11,14 @@ import { useState } from 'react'
 import { Globe, Copy, Check } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 import type { ToolRendererProps } from './types'
+import { normalizeArgs } from './normalizeArgs'
 
 export function WebFetchRenderer({ args, output, error, isSuccess }: ToolRendererProps) {
   const [copied, setCopied] = useState(false)
 
-  const url = (args.url as string) || ''
-  const prompt = (args.prompt as string) || ''
+  const normalized = normalizeArgs(args)
+  const url = (normalized.url as string) || ''
+  const question = (normalized.question as string) || (normalized.prompt as string) || ''
 
   // Parse output
   let responseText = ''
@@ -60,10 +62,10 @@ export function WebFetchRenderer({ args, output, error, isSuccess }: ToolRendere
         </button>
       </div>
 
-      {/* Prompt if provided */}
-      {prompt && (
+      {/* Question if provided */}
+      {question && (
         <div className="text-xs text-muted-foreground">
-          <span className="font-medium">Prompt:</span> {prompt}
+          <span className="font-medium">Question:</span> {question}
         </div>
       )}
 

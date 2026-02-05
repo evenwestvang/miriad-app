@@ -1,16 +1,23 @@
 /**
  * Bash tool renderer - displays command and output like a terminal.
+ * 
+ * Shows description as a header when available (great for quick scanning),
+ * then the full command with syntax highlighting.
  */
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useIsDarkMode } from '../../../hooks/useIsDarkMode'
 import { cn } from '../../../lib/utils'
 import type { ToolRendererProps } from './types'
+import { normalizeArgs } from './normalizeArgs'
 
 export function BashRenderer({ args, output, error, isSuccess }: ToolRendererProps) {
   const isDarkMode = useIsDarkMode()
-  const command = (args.command as string) || ''
-  const cwd = (args.cwd as string) || ''
+  const normalized = normalizeArgs(args)
+  
+  const command = (normalized.command as string) || ''
+  const description = (normalized.description as string) || ''
+  const cwd = (normalized.cwd as string) || ''
 
   // Parse output - might be string or object
   let outputText = ''
@@ -28,6 +35,19 @@ export function BashRenderer({ args, output, error, isSuccess }: ToolRendererPro
 
   return (
     <div className="rounded overflow-hidden">
+      {/* Description header when available */}
+      {description && (
+        <div className={cn(
+          "px-3 py-2 text-sm border-b",
+          isDarkMode 
+            ? "bg-[#21252b] text-[#abb2bf] border-[#181a1f]" 
+            : "bg-[#f0f0f0] text-[#383a42] border-[#e0e0e0]"
+        )}>
+          {description}
+        </div>
+      )}
+      
+      {/* Command with syntax highlighting */}
       <SyntaxHighlighter
         language="bash"
         style={codeTheme}
@@ -37,11 +57,13 @@ export function BashRenderer({ args, output, error, isSuccess }: ToolRendererPro
           padding: '0.75rem 1rem',
           fontSize: '13px',
           lineHeight: '1.4',
-          borderRadius: '0.25rem',
+          borderRadius: description ? '0' : '0.25rem 0.25rem 0 0',
         }}
       >
         {cwd ? `${cwd} $ ${command}` : `$ ${command}`}
       </SyntaxHighlighter>
+      
+      {/* Output */}
       {outputText && (
         <div
           className={cn(

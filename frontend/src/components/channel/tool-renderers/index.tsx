@@ -25,15 +25,54 @@ import { SetStatusRenderer } from './SetStatusRenderer'
 import { WebFetchRenderer } from './WebFetchRenderer'
 import { WebSearchRenderer } from './WebSearchRenderer'
 import { TaskRenderer } from './TaskRenderer'
+import { SendMessageRenderer } from './SendMessageRenderer'
+import { ArtifactUpdateRenderer } from './ArtifactUpdateRenderer'
+import { ArtifactGlobRenderer } from './ArtifactGlobRenderer'
+import { ArtifactCheckpointRenderer } from './ArtifactCheckpointRenderer'
+import { SetMissionRenderer } from './SetMissionRenderer'
+import { UpdateTasksRenderer } from './UpdateTasksRenderer'
+import { getToolDisplayName, isToolHidden } from './toolConfig'
 
-// Export the shared types
+// Export the shared types and config helpers
 export type { ToolRendererProps }
+export { getToolDisplayName, isToolHidden }
+
+/**
+ * Normalize tool name by stripping MCP prefixes and converting to lowercase.
+ * 
+ * Handles naming variations across different engines/versions:
+ * - mcp__cast__artifact_read → artifact_read
+ * - mcp__miriad__artifact_read → artifact_read
+ * - miriad__artifact_read → artifact_read
+ * - Bash → bash
+ * 
+ * Note: present_* tools are NOT normalized - they're semantically different
+ * from miriad__* tools (e.g., present_set_status vs miriad__set_status).
+ * 
+ * Note: mcp_status (single underscore) is a different tool - don't normalize it.
+ */
+export function normalizeToolName(toolName: string): string {
+  let name = toolName.toLowerCase()
+  
+  // Don't normalize mcp_status - it's a distinct tool
+  if (name === 'mcp_status') return name
+  
+  // Don't normalize present_* tools - they're distinct from miriad__* tools
+  if (name.startsWith('present_')) return name
+  
+  // Strip MCP prefixes: mcp__cast__, mcp__miriad__, miriad__
+  name = name.replace(/^mcp__(cast|miriad)__/, '')
+  name = name.replace(/^miriad__/, '')
+  
+  return name
+}
 
 /**
  * Registry of custom tool renderers.
- * Keys are lowercase tool names.
+ * Keys are normalized tool names (no prefixes, lowercase).
  */
 export const toolRenderers: Record<string, React.ComponentType<ToolRendererProps>> = {
+  // File operations
   'bash': BashRenderer,
   'run_bash': BashRenderer,
   'read': ReadRenderer,
@@ -41,13 +80,31 @@ export const toolRenderers: Record<string, React.ComponentType<ToolRendererProps
   'edit': EditRenderer,
   'grep': GrepRenderer,
   'glob': GlobRenderer,
-  'mcp__cast__artifact_create': ArtifactCreateRenderer,
-  'mcp__cast__artifact_read': ArtifactReadRenderer,
-  'mcp__cast__artifact_edit': ArtifactEditRenderer,
-  'mcp__cast__artifact_list': ArtifactListRenderer,
-  'mcp__cast__set_status': SetStatusRenderer,
+  
+  // Artifact operations
+  'artifact_create': ArtifactCreateRenderer,
+  'artifact_read': ArtifactReadRenderer,
+  'artifact_edit': ArtifactEditRenderer,
+  'artifact_list': ArtifactListRenderer,
+  'artifact_update': ArtifactUpdateRenderer,
+  'artifact_glob': ArtifactGlobRenderer,
+  'artifact_checkpoint': ArtifactCheckpointRenderer,
+  
+  // Communication
+  'send_message': SendMessageRenderer,
+  'set_status': SetStatusRenderer,
+  
+  // Present state tools (agent's current focus)
+  'present_set_mission': SetMissionRenderer,
+  'present_update_tasks': UpdateTasksRenderer,
+  
+  // Web tools
   'webfetch': WebFetchRenderer,
+  'web_fetch': WebFetchRenderer,
   'websearch': WebSearchRenderer,
+  'web_search': WebSearchRenderer,
+  
+  // Tasks
   'task': TaskRenderer,
 }
 
@@ -55,12 +112,12 @@ export const toolRenderers: Record<string, React.ComponentType<ToolRendererProps
  * Check if a tool has a custom renderer.
  */
 export function hasCustomRenderer(toolName: string): boolean {
-  return toolName.toLowerCase() in toolRenderers
+  return normalizeToolName(toolName) in toolRenderers
 }
 
 /**
  * Get the custom renderer for a tool, if one exists.
  */
 export function getToolRenderer(toolName: string): React.ComponentType<ToolRendererProps> | null {
-  return toolRenderers[toolName.toLowerCase()] || null
+  return toolRenderers[normalizeToolName(toolName)] || null
 }

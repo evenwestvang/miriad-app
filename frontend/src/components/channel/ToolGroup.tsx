@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { ChevronRight, ChevronDown, CheckCircle, XCircle } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { Message } from '../../types'
-import { getToolRenderer } from './tool-renderers'
+import { getToolRenderer, getToolDisplayName, isToolHidden, normalizeToolName } from './tool-renderers'
 
 interface ToolGroupProps {
   /** Array of consecutive tool_call and tool_result messages */
@@ -69,11 +69,22 @@ export function ToolGroup({ messages, firehoseMode = false }: ToolGroupProps) {
   }, [firehoseMode])
 
   // Pair tool_calls with their corresponding tool_results
-  const pairs = pairToolMessages(messages)
+  const allPairs = pairToolMessages(messages)
+  
+  // Filter out hidden tools (e.g., send_message, set_status - reflected elsewhere in UI)
+  const pairs = allPairs.filter(pair => {
+    const toolName = pair.call.toolName || ''
+    return !isToolHidden(normalizeToolName(toolName))
+  })
 
   // Count calls and errors
   const callCount = pairs.length
   const errorCount = pairs.filter(p => p.result?.toolResultStatus === 'error').length
+
+  // If all tools were hidden, render nothing
+  if (callCount === 0) {
+    return null
+  }
 
   // Get tool names for collapsed preview (deduplicated, max 5)
   const toolNames = getToolNamePreview(pairs)
@@ -145,9 +156,11 @@ interface ToolItemProps {
 function ToolItem({ pair }: ToolItemProps) {
   const [expanded, setExpanded] = useState(false)
 
-  const toolName = pair.call.toolName || 'Unknown'
+  const rawToolName = pair.call.toolName || 'Unknown'
+  const normalizedName = normalizeToolName(rawToolName)
+  const displayName = getToolDisplayName(normalizedName)
   const args = pair.call.toolArgs || {}
-  const argsPreview = formatArgsPreview(toolName, args)
+  const argsPreview = formatArgsPreview(rawToolName, args)
 
   const hasResult = !!pair.result
   const isSuccess = pair.result?.toolResultStatus !== 'error'
@@ -156,7 +169,7 @@ function ToolItem({ pair }: ToolItemProps) {
   const error = pair.result?.toolResultError
 
   // Check for custom renderer
-  const CustomRenderer = getToolRenderer(toolName)
+  const CustomRenderer = getToolRenderer(rawToolName)
 
   return (
     <div className="py-0.5">
@@ -169,7 +182,7 @@ function ToolItem({ pair }: ToolItemProps) {
         ) : (
           <ChevronRight className="w-3 h-3 text-muted-foreground flex-shrink-0" />
         )}
-        <span className="text-blue-400 font-medium">{toolName}</span>
+        <span className="text-blue-400 font-medium">{displayName}</span>
         {argsPreview && (
           <span className="text-muted-foreground text-xs font-mono truncate flex-1">{argsPreview}</span>
         )}
@@ -227,9 +240,11 @@ function ToolItem({ pair }: ToolItemProps) {
 function SingleToolItem({ pair }: { pair: ToolPair }) {
   const [expanded, setExpanded] = useState(false)
 
-  const toolName = pair.call.toolName || 'Unknown'
+  const rawToolName = pair.call.toolName || 'Unknown'
+  const normalizedName = normalizeToolName(rawToolName)
+  const displayName = getToolDisplayName(normalizedName)
   const args = pair.call.toolArgs || {}
-  const argsPreview = formatArgsPreview(toolName, args)
+  const argsPreview = formatArgsPreview(rawToolName, args)
 
   const hasResult = !!pair.result
   const isSuccess = pair.result?.toolResultStatus !== 'error'
@@ -238,7 +253,7 @@ function SingleToolItem({ pair }: { pair: ToolPair }) {
   const error = pair.result?.toolResultError
 
   // Check for custom renderer
-  const CustomRenderer = getToolRenderer(toolName)
+  const CustomRenderer = getToolRenderer(rawToolName)
 
   return (
     <div className="my-4">
@@ -251,7 +266,7 @@ function SingleToolItem({ pair }: { pair: ToolPair }) {
         ) : (
           <ChevronRight className="w-3 h-3 text-muted-foreground flex-shrink-0" />
         )}
-        <span className="text-blue-400 font-medium">{toolName}</span>
+        <span className="text-blue-400 font-medium">{displayName}</span>
         {argsPreview && (
           <span className="text-muted-foreground text-xs font-mono truncate">{argsPreview}</span>
         )}
@@ -357,10 +372,12 @@ function getToolNamePreview(pairs: ToolPair[]): string {
   const seen = new Set<string>()
 
   for (const pair of pairs) {
-    const name = pair.call.toolName || 'Unknown'
-    if (!seen.has(name)) {
-      seen.add(name)
-      names.push(name)
+    const rawName = pair.call.toolName || 'Unknown'
+    const normalizedName = normalizeToolName(rawName)
+    // Use normalized name for deduplication (so miriad__read and read don't both appear)
+    if (!seen.has(normalizedName)) {
+      seen.add(normalizedName)
+      names.push(getToolDisplayName(normalizedName))
       if (names.length >= 5) break
     }
   }
@@ -377,12 +394,23 @@ function formatArgsPreview(toolName: string, args: Record<string, unknown>): str
   const name = toolName.toLowerCase()
 
   if (name === 'read_file' || name === 'read') {
-    return (args.path as string) || (args.file_path as string) || ''
+    const filePath = (args.filePath as string) || (args.path as string) || (args.file_path as string) || ''
+    // Show just the filename for compact view
+    return filePath.split('/').pop() || filePath
   }
   if (name === 'write_file' || name === 'write') {
-    return (args.path as string) || (args.file_path as string) || ''
+    const filePath = (args.filePath as string) || (args.path as string) || (args.file_path as string) || ''
+    const filename = filePath.split('/').pop() || filePath
+    const content = (args.content as string) || ''
+    const lines = content.split('\n').length
+    return `${filename} (${lines} ${lines === 1 ? 'line' : 'lines'})`
   }
   if (name === 'run_bash' || name === 'bash') {
+    // Prefer description for compact preview if available
+    const description = (args.description as string) || ''
+    if (description) {
+      return description.length > 80 ? description.slice(0, 80) + '…' : description
+    }
     const cmd = (args.command as string) || ''
     return cmd.length > 60 ? cmd.slice(0, 60) + '…' : cmd
   }
@@ -390,10 +418,128 @@ function formatArgsPreview(toolName: string, args: Record<string, unknown>): str
     return (args.path as string) || (args.pattern as string) || '.'
   }
   if (name === 'grep') {
-    return (args.pattern as string) || ''
+    const pattern = (args.pattern as string) || ''
+    const include = (args.include as string) || ''
+    if (include) {
+      return `"${pattern}" in ${include}`
+    }
+    return `"${pattern}"`
   }
   if (name === 'edit') {
-    return (args.file_path as string) || ''
+    const filePath = (args.filePath as string) || (args.file_path as string) || ''
+    const filename = filePath.split('/').pop() || filePath
+    const oldStr = (args.oldString as string) || (args.old_string as string) || ''
+    const newStr = (args.newString as string) || (args.new_string as string) || ''
+    const oldLines = oldStr.split('\n').length
+    const newLines = newStr.split('\n').length
+    const added = Math.max(0, newLines - oldLines + (newLines > 0 ? 1 : 0))
+    const removed = Math.max(0, oldLines - newLines + (oldLines > 0 ? 1 : 0))
+    return `${filename} (+${added} -${removed})`
+  }
+  if (name === 'miriad__send_message' || name === 'mcp__miriad__send_message' || name === 'mcp__cast__send_message') {
+    const content = (args.content as string) || ''
+    // Show first line or truncated content
+    const firstLine = content.split('\n')[0] || ''
+    return firstLine.length > 60 ? firstLine.slice(0, 60) + '…' : firstLine
+  }
+  if (name === 'web_fetch' || name === 'webfetch') {
+    const url = (args.url as string) || ''
+    // Show domain + start of path
+    try {
+      const parsed = new URL(url)
+      const path = parsed.pathname.length > 20 ? parsed.pathname.slice(0, 20) + '…' : parsed.pathname
+      return `${parsed.hostname}${path}`
+    } catch {
+      return url.slice(0, 50) + (url.length > 50 ? '…' : '')
+    }
+  }
+  if (name === 'web_search' || name === 'websearch') {
+    const query = (args.query as string) || ''
+    return `"${query.length > 50 ? query.slice(0, 50) + '…' : query}"`
+  }
+  if (name === 'miriad__set_status' || name === 'present_set_status' || name === 'mcp__cast__set_status' || name === 'set_status') {
+    return (args.status as string) || ''
+  }
+  
+  // Artifact tools (normalize prefixes)
+  const normalizedName = name.replace(/^(mcp__(cast|miriad)__|miriad__)/, '')
+  
+  if (normalizedName === 'artifact_read' || normalizedName === 'artifact_create') {
+    const slug = (args.slug as string) || ''
+    const type = (args.type as string) || ''
+    return type ? `${slug} (${type})` : slug
+  }
+  if (normalizedName === 'artifact_edit') {
+    const slug = (args.slug as string) || ''
+    return slug
+  }
+  if (normalizedName === 'artifact_list') {
+    const type = (args.type as string) || ''
+    const status = (args.status as string) || ''
+    const search = (args.search as string) || ''
+    const filters = [type, status, search && `"${search}"`].filter(Boolean)
+    return filters.length > 0 ? filters.join(', ') : 'all'
+  }
+  if (normalizedName === 'artifact_update') {
+    const slug = (args.slug as string) || ''
+    const changes = (args.changes as unknown[]) || []
+    return `${slug} (${changes.length} ${changes.length === 1 ? 'field' : 'fields'})`
+  }
+  if (normalizedName === 'artifact_glob') {
+    return (args.pattern as string) || '/**'
+  }
+  if (normalizedName === 'artifact_checkpoint') {
+    const slug = (args.slug as string) || ''
+    const version = (args.version as string) || ''
+    return `${slug} → ${version}`
+  }
+  
+  // Present state tools
+  if (name === 'present_set_mission') {
+    const mission = (args.mission as string) || ''
+    if (!mission) return 'cleared'
+    return mission.length > 60 ? mission.slice(0, 60) + '…' : mission
+  }
+  if (name === 'update_tasks' || name === 'present_update_tasks') {
+    const tasks = (args.tasks as Array<{ status?: string }>) || []
+    const completed = tasks.filter(t => t.status === 'completed').length
+    const inProgress = tasks.filter(t => t.status === 'in_progress').length
+    if (completed > 0 || inProgress > 0) {
+      const parts = []
+      if (completed > 0) parts.push(`${completed} done`)
+      if (inProgress > 0) parts.push(`${inProgress} active`)
+      return `${tasks.length} tasks (${parts.join(', ')})`
+    }
+    return `${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'}`
+  }
+  if (name === 'list_tasks') {
+    return 'listing tasks'
+  }
+  
+  // Message tools
+  if (name === 'get_messages' || normalizedName === 'message_get') {
+    const limit = (args.limit as number) || 50
+    const search = (args.search as string) || ''
+    return search ? `"${search}" (limit ${limit})` : `limit ${limit}`
+  }
+  
+  // LTM tools
+  if (name === 'ltm_read') {
+    return (args.slug as string) || ''
+  }
+  if (name === 'ltm_search') {
+    return `"${(args.query as string) || ''}"`
+  }
+  if (name === 'ltm_glob') {
+    return (args.pattern as string) || '/**'
+  }
+  
+  // Asset upload
+  if (name === 'upload_asset' || normalizedName === 'upload_asset') {
+    const slug = (args.slug as string) || ''
+    const path = (args.path as string) || ''
+    const filename = path.split('/').pop() || slug
+    return filename
   }
 
   // Default: show first string value

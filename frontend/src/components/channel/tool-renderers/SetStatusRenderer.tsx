@@ -8,9 +8,11 @@
  */
 import { Activity } from 'lucide-react'
 import type { ToolRendererProps } from './types'
+import { normalizeArgs } from './normalizeArgs'
 
 export function SetStatusRenderer({ args, error, isSuccess }: ToolRendererProps) {
-  const status = (args.status as string) || ''
+  const normalized = normalizeArgs(args)
+  const status = (normalized.status as string) || ''
 
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
