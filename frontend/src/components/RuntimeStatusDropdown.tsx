@@ -20,6 +20,24 @@ interface Runtime {
   agentCount: number
 }
 
+/**
+ * Derived state for Miriad Cloud - computed from reality, not tracked.
+ * Matches backend MiriadCloudState type.
+ */
+type MiriadCloudState = 'stopped' | 'starting' | 'connecting' | 'online' | 'stopping' | 'error'
+
+interface MiriadCloudStatus {
+  state: MiriadCloudState
+  canStart: boolean
+  canStop: boolean
+  runtime: {
+    id: string
+    name: string
+    lastSeenAt: string | null
+  } | null
+  provider: 'docker' | 'fly'
+}
+
 interface RuntimeAgent {
   id: string
   callsign: string
@@ -74,8 +92,8 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   const [expandedRuntimes, setExpandedRuntimes] = useState<Set<string>>(new Set())
   const [runtimeAgents, setRuntimeAgents] = useState<Record<string, RuntimeAgent[]>>({})
   const [loadingAgents, setLoadingAgents] = useState<Set<string>>(new Set())
-  const [startingCloud, setStartingCloud] = useState(false)
-  const [stoppingCloud, setStoppingCloud] = useState(false)
+  const [cloudStatus, setCloudStatus] = useState<MiriadCloudStatus | null>(null)
+  const [loadingCloudStatus, setLoadingCloudStatus] = useState(false)
   const [deletingRuntime, setDeletingRuntime] = useState<string | null>(null)
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null)
   const [hasCheckedRuntimes, setHasCheckedRuntimes] = useState(false)
@@ -87,9 +105,18 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
 
   // Determine overall status (computed early so it can be used in effects)
   // A runtime is considered "effectively online" if status is online AND not stale
-  const onlineRuntimes = runtimes.filter(r => r.status === 'online' && !isRuntimeStale(r))
+  // For Miriad Cloud, use the derived state from cloudStatus
+  const onlineRuntimes = runtimes.filter(r => {
+    if (isMiriadCloud(r)) {
+      return cloudStatus?.state === 'online'
+    }
+    return r.status === 'online' && !isRuntimeStale(r)
+  })
   const hasAnyOnline = onlineRuntimes.length > 0
   const totalOnline = onlineRuntimes.length
+  
+  // Miriad Cloud is "busy" if it's in a transitional state
+  const isCloudBusy = cloudStatus?.state === 'starting' || cloudStatus?.state === 'connecting' || cloudStatus?.state === 'stopping'
 
   // Check if API key is configured (re-check when dropdown opens or settings closes)
   useEffect(() => {
@@ -121,9 +148,9 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   }, [agentStateEventCounter])
 
   // Determine current poll interval
-  // Priority: startingCloud (2s) > fastPoll (1s) > normal (30s)
+  // Priority: cloudBusy (2s) > fastPoll (1s) > normal (30s)
   const isInFastPollMode = fastPollUntil !== null && Date.now() < fastPollUntil
-  const pollInterval = startingCloud ? 2000 : isInFastPollMode ? 1000 : 30000
+  const pollInterval = isCloudBusy ? 2000 : isInFastPollMode ? 1000 : 30000
 
   // Fetch status on mount and periodically
   useEffect(() => {
@@ -185,12 +212,32 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
     }
   }, [hasCheckedRuntimes, hasAnyOnline, hasApiKey, onDisconnectedStateChange])
 
+  async function fetchCloudStatus() {
+    setLoadingCloudStatus(true)
+    try {
+      const response = await apiFetch(`${apiHost}/api/runtimes/miriad-cloud/status`)
+      if (response.ok) {
+        const data = await response.json()
+        setCloudStatus(data as MiriadCloudStatus)
+      }
+    } catch (err) {
+      console.error('Failed to fetch Miriad Cloud status:', err)
+    } finally {
+      setLoadingCloudStatus(false)
+    }
+  }
+
   async function fetchRuntimes() {
     setLoading(true)
     try {
-      const response = await apiFetch(`${apiHost}/api/spaces/${spaceId}/runtimes`)
-      if (response.ok) {
-        const data = await response.json()
+      // Fetch both runtimes list and cloud status in parallel
+      const [runtimesResponse] = await Promise.all([
+        apiFetch(`${apiHost}/api/spaces/${spaceId}/runtimes`),
+        fetchCloudStatus(),
+      ])
+      
+      if (runtimesResponse.ok) {
+        const data = await runtimesResponse.json()
         const newRuntimes: Runtime[] = data.runtimes || []
         setRuntimes(newRuntimes)
 
@@ -226,30 +273,22 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   }
 
   async function startMiriadCloud() {
-    setStartingCloud(true)
     try {
       await apiPost(`${apiHost}/api/runtimes/miriad-cloud/start`, {})
+      // Immediately fetch status - it will show 'starting' state
       await fetchRuntimes()
-
-      // Lock button for up to 30 seconds, unlock early if cloud comes online
-      setTimeout(() => setStartingCloud(false), 30000)
     } catch (err) {
       console.error('Failed to start Miriad Cloud:', err)
-      setStartingCloud(false)
     }
   }
 
   async function stopMiriadCloud() {
-    setStoppingCloud(true)
     try {
       await apiPost(`${apiHost}/api/runtimes/miriad-cloud/stop`, {})
+      // Immediately fetch status - it will show 'stopping' state
       await fetchRuntimes()
-      // Reset startingCloud in case user stopped before the 30s timeout elapsed
-      setStartingCloud(false)
     } catch (err) {
       console.error('Failed to stop Miriad Cloud:', err)
-    } finally {
-      setStoppingCloud(false)
     }
   }
 
@@ -373,7 +412,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                     <div>
                       <div className="text-base font-medium">Miriad Cloud</div>
                       <div className="text-xs text-muted-foreground">
-                        {hasApiKey === false ? 'Not configured' : startingCloud ? 'Starting...' : 'Not running'}
+                        {hasApiKey === false ? 'Not configured' : cloudStatus?.state === 'starting' ? 'Starting...' : 'Not running'}
                       </div>
                     </div>
                   </div>
@@ -394,10 +433,10 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                         e.stopPropagation()
                         startMiriadCloud()
                       }}
-                      disabled={startingCloud}
+                      disabled={!cloudStatus?.canStart}
                       className="flex items-center gap-1.5 px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
                     >
-                      {startingCloud ? (
+                      {cloudStatus?.state === 'starting' ? (
                         <RefreshCw className="w-3 h-3 animate-spin" />
                       ) : (
                         <Play className="w-3 h-3" />
@@ -422,8 +461,26 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                   const isLoadingAgents = loadingAgents.has(runtime.id)
                   const isCloud = isMiriadCloud(runtime)
                   const isStale = isRuntimeStale(runtime)
-                  // Effective status: online only if status is online AND not stale
-                  const isEffectivelyOnline = runtime.status === 'online' && !isStale
+                  
+                  // For Miriad Cloud, use derived state from cloudStatus
+                  // For other runtimes, use the old staleness check
+                  const cloudState = isCloud ? cloudStatus?.state : null
+                  const isEffectivelyOnline = isCloud 
+                    ? cloudState === 'online'
+                    : runtime.status === 'online' && !isStale
+                  
+                  // Get status label for Miriad Cloud
+                  const getCloudStatusLabel = () => {
+                    switch (cloudState) {
+                      case 'online': return formatRelativeTime(cloudStatus?.runtime?.lastSeenAt ?? null)
+                      case 'starting': return 'Starting...'
+                      case 'connecting': return 'Connecting...'
+                      case 'stopping': return 'Stopping...'
+                      case 'stopped': return 'Stopped'
+                      case 'error': return 'Error'
+                      default: return 'Unknown'
+                    }
+                  }
 
                   return (
                     <div key={runtime.id} className="border-b border-border last:border-b-0">
@@ -449,31 +506,38 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-base font-medium truncate">{runtime.name}</span>
+                            {/* Status indicator - yellow for transitional states */}
                             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                              isEffectivelyOnline ? 'bg-green-500' : 'bg-gray-400'
+                              isEffectivelyOnline 
+                                ? 'bg-green-500' 
+                                : (isCloud && (cloudState === 'starting' || cloudState === 'connecting'))
+                                  ? 'bg-yellow-500 animate-pulse'
+                                  : 'bg-gray-400'
                             }`} />
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {runtime.agentCount} agent{runtime.agentCount !== 1 ? 's' : ''}
                             {' • '}
-                            {isEffectivelyOnline
-                              ? formatRelativeTime(runtime.lastSeenAt)
-                              : isStale && runtime.status === 'online'
-                                ? 'Stale'
-                                : 'Offline'}
+                            {isCloud 
+                              ? getCloudStatusLabel()
+                              : isEffectivelyOnline
+                                ? formatRelativeTime(runtime.lastSeenAt)
+                                : isStale && runtime.status === 'online'
+                                  ? 'Stale'
+                                  : 'Offline'}
                           </div>
                         </div>
-                        {/* Stop button for online Miriad Cloud */}
-                        {isCloud && runtime.status === 'online' && (
+                        {/* Stop button for Miriad Cloud when canStop is true */}
+                        {isCloud && cloudStatus?.canStop && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
                               stopMiriadCloud()
                             }}
-                            disabled={stoppingCloud}
+                            disabled={cloudState === 'stopping'}
                             className="flex items-center gap-1.5 px-2 py-1 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/80 disabled:opacity-50"
                           >
-                            {stoppingCloud ? (
+                            {cloudState === 'stopping' ? (
                               <RefreshCw className="w-3 h-3 animate-spin" />
                             ) : (
                               <Square className="w-3 h-3" />
@@ -481,8 +545,8 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                             Stop
                           </button>
                         )}
-                        {/* Start/Configure button for offline Miriad Cloud */}
-                        {isCloud && runtime.status === 'offline' && (
+                        {/* Start/Configure button for Miriad Cloud when canStart is true */}
+                        {isCloud && cloudStatus?.canStart && (
                           hasApiKey === false ? (
                             <button
                               onClick={(e) => {
@@ -500,14 +564,9 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                                 e.stopPropagation()
                                 startMiriadCloud()
                               }}
-                              disabled={startingCloud}
-                              className="flex items-center gap-1.5 px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+                              className="flex items-center gap-1.5 px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90"
                             >
-                              {startingCloud ? (
-                                <RefreshCw className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <Play className="w-3 h-3" />
-                              )}
+                              <Play className="w-3 h-3" />
                               Start
                             </button>
                           )
