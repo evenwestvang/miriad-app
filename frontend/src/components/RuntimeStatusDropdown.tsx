@@ -93,7 +93,6 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   const [runtimeAgents, setRuntimeAgents] = useState<Record<string, RuntimeAgent[]>>({})
   const [loadingAgents, setLoadingAgents] = useState<Set<string>>(new Set())
   const [cloudStatus, setCloudStatus] = useState<MiriadCloudStatus | null>(null)
-  const [loadingCloudStatus, setLoadingCloudStatus] = useState(false)
   const [deletingRuntime, setDeletingRuntime] = useState<string | null>(null)
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null)
   const [hasCheckedRuntimes, setHasCheckedRuntimes] = useState(false)
@@ -213,7 +212,6 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   }, [hasCheckedRuntimes, hasAnyOnline, hasApiKey, onDisconnectedStateChange])
 
   async function fetchCloudStatus() {
-    setLoadingCloudStatus(true)
     try {
       const response = await apiFetch(`${apiHost}/api/runtimes/miriad-cloud/status`)
       if (response.ok) {
@@ -222,8 +220,6 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
       }
     } catch (err) {
       console.error('Failed to fetch Miriad Cloud status:', err)
-    } finally {
-      setLoadingCloudStatus(false)
     }
   }
 
