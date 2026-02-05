@@ -333,6 +333,7 @@ export async function defaultHandler(
         before: frame.before,
         limit: effectiveLimit,
         newestFirst: !frame.since && !frame.before,
+        includeToolCalls: true,
       });
       const t3 = performance.now();
 
