@@ -340,6 +340,11 @@ export class AgentManager {
     } catch (error) {
       console.error(`[AgentManager] @${callsign} engine output error:`, error);
       this.config.onError?.(instance.state.agentId, error as Error);
+    } finally {
+      // Transition from busy → online (matches Claude SDK path at processMessage finally block)
+      instance.state.status = 'online';
+      instance.state.lastActivity = new Date().toISOString();
+      console.log(`[AgentManager] @${callsign} state: busy → online (Nuum stream ended)`);
     }
   }
 
