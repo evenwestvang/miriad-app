@@ -383,6 +383,11 @@ function formatArgsPreview(toolName: string, args: Record<string, unknown>): str
     return (args.path as string) || (args.file_path as string) || ''
   }
   if (name === 'run_bash' || name === 'bash') {
+    // Prefer description for compact preview if available
+    const description = (args.description as string) || ''
+    if (description) {
+      return description.length > 80 ? description.slice(0, 80) + '…' : description
+    }
     const cmd = (args.command as string) || ''
     return cmd.length > 60 ? cmd.slice(0, 60) + '…' : cmd
   }
