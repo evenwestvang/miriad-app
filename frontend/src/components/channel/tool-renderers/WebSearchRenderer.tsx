@@ -10,6 +10,7 @@
 import { Search, ExternalLink } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 import type { ToolRendererProps } from './types'
+import { normalizeArgs } from './normalizeArgs'
 
 const MAX_RESULTS_PREVIEW = 5
 
@@ -47,7 +48,8 @@ function parseSearchResults(output: unknown): SearchResult[] {
 }
 
 export function WebSearchRenderer({ args, output, error, isSuccess }: ToolRendererProps) {
-  const query = (args.query as string) || ''
+  const normalized = normalizeArgs(args)
+  const query = (normalized.query as string) || ''
 
   const results = parseSearchResults(output)
   const totalCount = results.length

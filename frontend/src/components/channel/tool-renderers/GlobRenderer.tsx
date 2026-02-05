@@ -10,6 +10,7 @@
 import { File, FileCode } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 import type { ToolRendererProps } from './types'
+import { normalizeArgs } from './normalizeArgs'
 
 const MAX_FILES_PREVIEW = 50
 
@@ -58,8 +59,9 @@ function truncatePath(path: string, maxDirs: number = 3): string {
 }
 
 export function GlobRenderer({ args, output, error, isSuccess }: ToolRendererProps) {
-  const pattern = (args.pattern as string) || '*'
-  const path = (args.path as string) || undefined
+  const normalized = normalizeArgs(args)
+  const pattern = (normalized.pattern as string) || '*'
+  const path = (normalized.path as string) || undefined
 
   const files = parseGlobOutput(output)
   const totalFiles = files.length

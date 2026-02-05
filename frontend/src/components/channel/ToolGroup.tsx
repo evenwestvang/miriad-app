@@ -425,6 +425,24 @@ function formatArgsPreview(toolName: string, args: Record<string, unknown>): str
     const firstLine = content.split('\n')[0] || ''
     return firstLine.length > 60 ? firstLine.slice(0, 60) + '…' : firstLine
   }
+  if (name === 'web_fetch' || name === 'webfetch') {
+    const url = (args.url as string) || ''
+    // Show domain + start of path
+    try {
+      const parsed = new URL(url)
+      const path = parsed.pathname.length > 20 ? parsed.pathname.slice(0, 20) + '…' : parsed.pathname
+      return `${parsed.hostname}${path}`
+    } catch {
+      return url.slice(0, 50) + (url.length > 50 ? '…' : '')
+    }
+  }
+  if (name === 'web_search' || name === 'websearch') {
+    const query = (args.query as string) || ''
+    return `"${query.length > 50 ? query.slice(0, 50) + '…' : query}"`
+  }
+  if (name === 'miriad__set_status' || name === 'present_set_status' || name === 'mcp__cast__set_status') {
+    return (args.status as string) || ''
+  }
 
   // Default: show first string value
   for (const value of Object.values(args)) {
