@@ -25,6 +25,7 @@ import { SetStatusRenderer } from './SetStatusRenderer'
 import { WebFetchRenderer } from './WebFetchRenderer'
 import { WebSearchRenderer } from './WebSearchRenderer'
 import { TaskRenderer } from './TaskRenderer'
+import { SendMessageRenderer } from './SendMessageRenderer'
 
 // Export the shared types
 export type { ToolRendererProps }
@@ -49,6 +50,9 @@ export const toolRenderers: Record<string, React.ComponentType<ToolRendererProps
   'webfetch': WebFetchRenderer,
   'websearch': WebSearchRenderer,
   'task': TaskRenderer,
+  'miriad__send_message': SendMessageRenderer,
+  'mcp__miriad__send_message': SendMessageRenderer,
+  'mcp__cast__send_message': SendMessageRenderer,
 }
 
 /**

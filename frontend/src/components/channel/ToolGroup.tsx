@@ -382,7 +382,11 @@ function formatArgsPreview(toolName: string, args: Record<string, unknown>): str
     return filePath.split('/').pop() || filePath
   }
   if (name === 'write_file' || name === 'write') {
-    return (args.path as string) || (args.file_path as string) || ''
+    const filePath = (args.filePath as string) || (args.path as string) || (args.file_path as string) || ''
+    const filename = filePath.split('/').pop() || filePath
+    const content = (args.content as string) || ''
+    const lines = content.split('\n').length
+    return `${filename} (${lines} ${lines === 1 ? 'line' : 'lines'})`
   }
   if (name === 'run_bash' || name === 'bash') {
     // Prefer description for compact preview if available
@@ -397,7 +401,12 @@ function formatArgsPreview(toolName: string, args: Record<string, unknown>): str
     return (args.path as string) || (args.pattern as string) || '.'
   }
   if (name === 'grep') {
-    return (args.pattern as string) || ''
+    const pattern = (args.pattern as string) || ''
+    const include = (args.include as string) || ''
+    if (include) {
+      return `"${pattern}" in ${include}`
+    }
+    return `"${pattern}"`
   }
   if (name === 'edit') {
     const filePath = (args.filePath as string) || (args.file_path as string) || ''
@@ -409,6 +418,12 @@ function formatArgsPreview(toolName: string, args: Record<string, unknown>): str
     const added = Math.max(0, newLines - oldLines + (newLines > 0 ? 1 : 0))
     const removed = Math.max(0, oldLines - newLines + (oldLines > 0 ? 1 : 0))
     return `${filename} (+${added} -${removed})`
+  }
+  if (name === 'miriad__send_message' || name === 'mcp__miriad__send_message' || name === 'mcp__cast__send_message') {
+    const content = (args.content as string) || ''
+    // Show first line or truncated content
+    const firstLine = content.split('\n')[0] || ''
+    return firstLine.length > 60 ? firstLine.slice(0, 60) + '…' : firstLine
   }
 
   // Default: show first string value
