@@ -137,6 +137,11 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
   
   // Miriad Cloud is "busy" if it's in a transitional state (real or optimistic)
   const isCloudBusy = displayCloudState === 'starting' || displayCloudState === 'connecting' || displayCloudState === 'stopping'
+  
+  // Derive canStart/canStop from display state (not just backend) for consistent UI
+  // This ensures buttons match the displayed state during optimistic updates
+  const displayCanStart = displayCloudState === 'stopped'
+  const displayCanStop = displayCloudState === 'online' || displayCloudState === 'starting' || displayCloudState === 'connecting'
 
   // Check if API key is configured (re-check when dropdown opens or settings closes)
   useEffect(() => {
@@ -452,20 +457,35 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                       <Settings className="w-3 h-3" />
                       Configure
                     </button>
+                  ) : displayCanStop ? (
+                    // Show stop button or spinner during transitional states
+                    displayCloudState === 'stopping' ? (
+                      <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground">
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                        Stopping...
+                      </div>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          stopMiriadCloud()
+                        }}
+                        className="flex items-center gap-1.5 px-2 py-1 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/80"
+                      >
+                        <Square className="w-3 h-3" />
+                        Stop
+                      </button>
+                    )
                   ) : (
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         startMiriadCloud()
                       }}
-                      disabled={!cloudStatus?.canStart || displayCloudState === 'starting'}
+                      disabled={!displayCanStart}
                       className="flex items-center gap-1.5 px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
                     >
-                      {displayCloudState === 'starting' ? (
-                        <RefreshCw className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <Play className="w-3 h-3" />
-                      )}
+                      <Play className="w-3 h-3" />
                       Start
                     </button>
                   )}
@@ -553,7 +573,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                           </div>
                         </div>
                         {/* Stop button for Miriad Cloud when canStop is true (and not already stopping) */}
-                        {isCloud && cloudStatus?.canStop && cloudState !== 'stopping' && (
+                        {isCloud && displayCanStop && cloudState !== 'stopping' && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
@@ -573,7 +593,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
                           </div>
                         )}
                         {/* Start/Configure button for Miriad Cloud when canStart is true */}
-                        {isCloud && cloudStatus?.canStart && (
+                        {isCloud && displayCanStart && (
                           hasApiKey === false ? (
                             <button
                               onClick={(e) => {
