@@ -48,9 +48,10 @@ export const TOOL_CONFIG: Record<string, ToolConfig> = {
   'artifact_copy': { displayName: 'Copy artifact' },
   'artifact_diff': { displayName: 'Diff artifact' },
   
-  // === Present state tools ===
-  'set_mission': { displayName: 'Set mission' },
-  'update_tasks': { displayName: 'Update tasks' },
+  // === Present state tools (keep present_ prefix - distinct namespace) ===
+  'present_set_mission': { displayName: 'Set mission' },
+  'present_set_status': { displayName: 'Set status' },
+  'present_update_tasks': { displayName: 'Update tasks' },
   
   // === Message/channel tools ===
   'get_messages': { displayName: 'Get messages' },

@@ -34,7 +34,6 @@ import { getToolDisplayName, isToolHidden } from './toolConfig'
 // Export the shared types and config helpers
 export type { ToolRendererProps }
 export { getToolDisplayName, isToolHidden }
-export { normalizeToolName }
 
 /**
  * Normalize tool name by stripping MCP prefixes and converting to lowercase.
@@ -43,21 +42,25 @@ export { normalizeToolName }
  * - mcp__cast__artifact_read → artifact_read
  * - mcp__miriad__artifact_read → artifact_read
  * - miriad__artifact_read → artifact_read
- * - present_set_status → set_status
  * - Bash → bash
+ * 
+ * Note: present_* tools are NOT normalized - they're semantically different
+ * from miriad__* tools (e.g., present_set_status vs miriad__set_status).
  * 
  * Note: mcp_status (single underscore) is a different tool - don't normalize it.
  */
-function normalizeToolName(toolName: string): string {
+export function normalizeToolName(toolName: string): string {
   let name = toolName.toLowerCase()
   
   // Don't normalize mcp_status - it's a distinct tool
   if (name === 'mcp_status') return name
   
-  // Strip MCP prefixes: mcp__cast__, mcp__miriad__, miriad__, present_
+  // Don't normalize present_* tools - they're distinct from miriad__* tools
+  if (name.startsWith('present_')) return name
+  
+  // Strip MCP prefixes: mcp__cast__, mcp__miriad__, miriad__
   name = name.replace(/^mcp__(cast|miriad)__/, '')
   name = name.replace(/^miriad__/, '')
-  name = name.replace(/^present_/, '')
   
   return name
 }
