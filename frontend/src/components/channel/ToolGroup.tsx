@@ -440,8 +440,76 @@ function formatArgsPreview(toolName: string, args: Record<string, unknown>): str
     const query = (args.query as string) || ''
     return `"${query.length > 50 ? query.slice(0, 50) + '…' : query}"`
   }
-  if (name === 'miriad__set_status' || name === 'present_set_status' || name === 'mcp__cast__set_status') {
+  if (name === 'miriad__set_status' || name === 'present_set_status' || name === 'mcp__cast__set_status' || name === 'set_status') {
     return (args.status as string) || ''
+  }
+  
+  // Artifact tools (normalize prefixes)
+  const normalizedName = name.replace(/^(mcp__(cast|miriad)__|miriad__)/, '')
+  
+  if (normalizedName === 'artifact_read' || normalizedName === 'artifact_create') {
+    const slug = (args.slug as string) || ''
+    const type = (args.type as string) || ''
+    return type ? `${slug} (${type})` : slug
+  }
+  if (normalizedName === 'artifact_edit') {
+    const slug = (args.slug as string) || ''
+    return slug
+  }
+  if (normalizedName === 'artifact_list') {
+    const type = (args.type as string) || ''
+    const status = (args.status as string) || ''
+    const search = (args.search as string) || ''
+    const filters = [type, status, search && `"${search}"`].filter(Boolean)
+    return filters.length > 0 ? filters.join(', ') : 'all'
+  }
+  if (normalizedName === 'artifact_update') {
+    const slug = (args.slug as string) || ''
+    const changes = (args.changes as unknown[]) || []
+    return `${slug} (${changes.length} ${changes.length === 1 ? 'field' : 'fields'})`
+  }
+  if (normalizedName === 'artifact_glob') {
+    return (args.pattern as string) || '/**'
+  }
+  if (normalizedName === 'artifact_checkpoint') {
+    const slug = (args.slug as string) || ''
+    const version = (args.version as string) || ''
+    return `${slug} → ${version}`
+  }
+  
+  // Task tools
+  if (name === 'update_tasks' || name === 'present_update_tasks') {
+    const tasks = (args.tasks as unknown[]) || []
+    return `${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'}`
+  }
+  if (name === 'list_tasks') {
+    return 'listing tasks'
+  }
+  
+  // Message tools
+  if (name === 'get_messages' || normalizedName === 'message_get') {
+    const limit = (args.limit as number) || 50
+    const search = (args.search as string) || ''
+    return search ? `"${search}" (limit ${limit})` : `limit ${limit}`
+  }
+  
+  // LTM tools
+  if (name === 'ltm_read') {
+    return (args.slug as string) || ''
+  }
+  if (name === 'ltm_search') {
+    return `"${(args.query as string) || ''}"`
+  }
+  if (name === 'ltm_glob') {
+    return (args.pattern as string) || '/**'
+  }
+  
+  // Asset upload
+  if (name === 'upload_asset' || normalizedName === 'upload_asset') {
+    const slug = (args.slug as string) || ''
+    const path = (args.path as string) || ''
+    const filename = path.split('/').pop() || slug
+    return filename
   }
 
   // Default: show first string value
