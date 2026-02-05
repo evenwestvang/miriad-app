@@ -29,6 +29,8 @@ import { SendMessageRenderer } from './SendMessageRenderer'
 import { ArtifactUpdateRenderer } from './ArtifactUpdateRenderer'
 import { ArtifactGlobRenderer } from './ArtifactGlobRenderer'
 import { ArtifactCheckpointRenderer } from './ArtifactCheckpointRenderer'
+import { SetMissionRenderer } from './SetMissionRenderer'
+import { UpdateTasksRenderer } from './UpdateTasksRenderer'
 import { getToolDisplayName, isToolHidden } from './toolConfig'
 
 // Export the shared types and config helpers
@@ -91,6 +93,10 @@ export const toolRenderers: Record<string, React.ComponentType<ToolRendererProps
   // Communication
   'send_message': SendMessageRenderer,
   'set_status': SetStatusRenderer,
+  
+  // Present state tools (agent's current focus)
+  'present_set_mission': SetMissionRenderer,
+  'present_update_tasks': UpdateTasksRenderer,
   
   // Web tools
   'webfetch': WebFetchRenderer,

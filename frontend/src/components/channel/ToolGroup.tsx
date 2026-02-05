@@ -494,9 +494,22 @@ function formatArgsPreview(toolName: string, args: Record<string, unknown>): str
     return `${slug} → ${version}`
   }
   
-  // Task tools
+  // Present state tools
+  if (name === 'present_set_mission') {
+    const mission = (args.mission as string) || ''
+    if (!mission) return 'cleared'
+    return mission.length > 60 ? mission.slice(0, 60) + '…' : mission
+  }
   if (name === 'update_tasks' || name === 'present_update_tasks') {
-    const tasks = (args.tasks as unknown[]) || []
+    const tasks = (args.tasks as Array<{ status?: string }>) || []
+    const completed = tasks.filter(t => t.status === 'completed').length
+    const inProgress = tasks.filter(t => t.status === 'in_progress').length
+    if (completed > 0 || inProgress > 0) {
+      const parts = []
+      if (completed > 0) parts.push(`${completed} done`)
+      if (inProgress > 0) parts.push(`${inProgress} active`)
+      return `${tasks.length} tasks (${parts.join(', ')})`
+    }
     return `${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'}`
   }
   if (name === 'list_tasks') {
