@@ -377,7 +377,9 @@ function formatArgsPreview(toolName: string, args: Record<string, unknown>): str
   const name = toolName.toLowerCase()
 
   if (name === 'read_file' || name === 'read') {
-    return (args.path as string) || (args.file_path as string) || ''
+    const filePath = (args.filePath as string) || (args.path as string) || (args.file_path as string) || ''
+    // Show just the filename for compact view
+    return filePath.split('/').pop() || filePath
   }
   if (name === 'write_file' || name === 'write') {
     return (args.path as string) || (args.file_path as string) || ''
@@ -398,7 +400,15 @@ function formatArgsPreview(toolName: string, args: Record<string, unknown>): str
     return (args.pattern as string) || ''
   }
   if (name === 'edit') {
-    return (args.file_path as string) || ''
+    const filePath = (args.filePath as string) || (args.file_path as string) || ''
+    const filename = filePath.split('/').pop() || filePath
+    const oldStr = (args.oldString as string) || (args.old_string as string) || ''
+    const newStr = (args.newString as string) || (args.new_string as string) || ''
+    const oldLines = oldStr.split('\n').length
+    const newLines = newStr.split('\n').length
+    const added = Math.max(0, newLines - oldLines + (newLines > 0 ? 1 : 0))
+    const removed = Math.max(0, oldLines - newLines + (oldLines > 0 ? 1 : 0))
+    return `${filename} (+${added} -${removed})`
   }
 
   // Default: show first string value
