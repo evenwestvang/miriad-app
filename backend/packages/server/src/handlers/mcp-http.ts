@@ -1867,9 +1867,21 @@ const toolHandlers: Record<string, ToolHandler> = {
           slug: 'github-mcp',
           type: 'system.mcp',
           tldr: 'GitHub API integration via MCP',
-          props: { transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] },
+          props: { transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], env: { GITHUB_TOKEN: '${GITHUB_TOKEN}' } },
         },
-        hint: 'Reference from system.agent via mcp array. Use ${VAR} in env/headers for server-side variable expansion.',
+        hint: 'Reference from system.agent via props.mcp array. Use ${VAR} in env/headers to reference secrets from system.environment artifacts. Secrets for ${VAR} expansion must be stored on system.environment, not on this artifact.',
+      },
+
+      'system.environment': {
+        description: 'Shared environment variables and encrypted secrets. Variables are available to MCP configs via ${VAR_NAME} syntax. Secrets are collected via structured_ask and encrypted at rest.',
+        statusValues: ['draft', 'active', 'archived'],
+        example: {
+          slug: 'environment',
+          type: 'system.environment',
+          tldr: 'Shared environment variables and API keys',
+          props: { variables: { SANITY_DATASET: 'production', NODE_ENV: 'development' } },
+        },
+        hint: 'Secrets (API keys, tokens) are stored encrypted via structured_ask with secret fields targeting this artifact. They don\'t appear in props — use artifact_read to see which secret keys are set (timestamps only, never values). Define in #root for global availability or in a specific channel for channel-scoped secrets.',
       },
 
       'system.playbook': {
