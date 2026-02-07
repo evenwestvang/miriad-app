@@ -75,7 +75,7 @@ export const SystemMcpPropsSchema = z
       .array(z.string())
       .optional()
       .describe('Arguments to pass to the command'),
-    variables: z
+    env: z
       .record(z.string())
       .optional()
       .describe('Environment variables. Use ${VAR_NAME} syntax to reference shared environment'),
@@ -90,6 +90,10 @@ export const SystemMcpPropsSchema = z
       .url()
       .optional()
       .describe('URL for HTTP transport MCP server'),
+    headers: z
+      .record(z.string())
+      .optional()
+      .describe('HTTP headers. Use ${VAR_NAME} syntax to reference shared environment'),
 
     // OAuth configuration for http transport (tokens stored in secrets)
     oauth: OAuthConfigSchema.optional().describe(

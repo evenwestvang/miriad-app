@@ -1347,6 +1347,58 @@ describe('MCP HTTP Routes (JSON-RPC)', () => {
         expect(result.hint).toContain('compare-and-swap');
       });
 
+      it('returns metadata for system.environment type', async () => {
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'explain_artifact_type',
+            arguments: { type: 'system.environment' },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.error).toBeUndefined();
+
+        const result = JSON.parse(json.result.content[0].text);
+        expect(result.type).toBe('system.environment');
+        expect(result.description).toContain('environment variables');
+        expect(result.statusValues).toContain('active');
+        expect(result.propsSchema).toBeDefined();
+        expect(result.propsSchema.properties.variables).toBeDefined();
+        expect(result.example).toBeDefined();
+        expect(result.hint).toContain('structured_ask');
+      });
+
+      it('returns metadata for system.mcp with env field in schema', async () => {
+        const res = await app.request('/mcp/test-channel', {
+          method: 'POST',
+          headers: {
+            Authorization: `Container ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: jsonRpcRequest('tools/call', {
+            name: 'explain_artifact_type',
+            arguments: { type: 'system.mcp' },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        const result = JSON.parse(json.result.content[0].text);
+
+        expect(result.type).toBe('system.mcp');
+        expect(result.propsSchema.properties.env).toBeDefined();
+        expect(result.propsSchema.properties.headers).toBeDefined();
+        // 'variables' should NOT be in the schema (renamed to 'env')
+        expect(result.propsSchema.properties.variables).toBeUndefined();
+        expect(result.hint).toContain('system.environment');
+      });
+
       it('returns error for unknown type', async () => {
         const res = await app.request('/mcp/test-channel', {
           method: 'POST',
