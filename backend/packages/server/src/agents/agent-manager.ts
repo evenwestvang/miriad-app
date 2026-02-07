@@ -376,6 +376,7 @@ Use \`read_instructions\` to learn about additional platform features:
 - **Interactive mini-apps** — Build visualizations, prototypes, or tools as runnable \`.app.js\` artifacts → \`interactive-artifacts\`
 - **Knowledge bases** — Create or query shared repositories of documentation → \`knowledge-bases\`
 - **MCP servers** — Configure external tool integrations (GitHub, Slack, etc.). Three artifacts work together: \`system.environment\` (stores secrets), \`system.mcp\` (server config), \`system.agent\` (assigns MCPs to agents). **Never ask for API keys in chat** — use \`structured_ask\` with \`secret\` fields. Full guide → \`system-mcp\`
+- **Getting started** — If the workspace looks fresh (no environment artifact, no MCPs), help the user set up API keys and integrations → \`getting-started\`
 - **Structured questions** — Use \`structured_ask\` for critical questions, project surveys, and secret collection. Forms persist until answered and surface in a "pending asks" indicator. Great for gathering requirements and highlighting critical asks → \`structured-asks\`
 - **Team assembly** — Use \`structured_ask\` with \`summon_request\` to propose agents to add. You suggest the team composition, the user can modify before confirming → \`structured-asks\`
 
