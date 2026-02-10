@@ -11,6 +11,7 @@ import { MessageInput } from "./components/channel/MessageInput";
 import { AgentRoster, type AgentType } from "./components/channel/AgentRoster";
 import { AgentDetailPanel } from "./components/channel/AgentDetailPanel";
 import { ChatHeader } from "./components/channel/ChatHeader";
+import { ArchiveChannelDialog } from "./components/channel/ArchiveChannelDialog";
 import {
   useTymbalConnection,
   type ArtifactEvent,
@@ -151,6 +152,8 @@ export function App() {
   const [preSelectedAgentSlug, setPreSelectedAgentSlug] = useState<string | undefined>(undefined);
   // Channel switcher (Cmd-K) open state
   const [channelSwitcherOpen, setChannelSwitcherOpen] = useState(false);
+  // Archive channel dialog open state
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   // Recently dismissed agents (for warning when mentioning them)
   const [dismissedAgents, setDismissedAgents] = useState<Set<string>>(new Set());
   // Mobile navigation tab state
@@ -976,6 +979,49 @@ export function App() {
     [navigateToChannel],
   );
 
+  const handleArchiveChannel = useCallback(async () => {
+    if (!selectedThread) return;
+
+    try {
+      const response = await apiFetch(
+        `${API_HOST}/channels/${selectedThread}/archive`,
+        {
+          method: "POST",
+        },
+      );
+
+      if (!response.ok) {
+        const data = await response.json();
+        console.error("Failed to archive channel:", data.error);
+        return;
+      }
+
+      // Remove channel from threads list and clear its cache
+      setThreads((prev) => prev.filter((t) => t.id !== selectedThread));
+      setMessageCache((prev) => {
+        const next = new Map(prev);
+        next.delete(selectedThread);
+        return next;
+      });
+
+      // Navigate to next available channel
+      const remaining = threads.filter(
+        (t) => t.id !== selectedThread && t.agentName !== "root",
+      );
+      if (remaining.length > 0) {
+        navigateToChannel(remaining[0].id);
+      } else {
+        // Fall back to root channel
+        const root = threads.find((t) => t.agentName === "root");
+        if (root) {
+          navigateToChannel(root.id);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to archive channel:", error);
+    }
+  }, [selectedThread, threads, navigateToChannel]);
+
   const handleSendMessage = useCallback(
     async (content: string, attachments?: File[]) => {
       if (!selectedThread) return;
@@ -1379,6 +1425,9 @@ export function App() {
                 onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
                 firehoseMode={firehoseMode}
                 onToggleFirehose={() => setFirehoseMode(!firehoseMode)}
+                channelName={currentThread?.agentName}
+                isRootChannel={currentThread?.agentName === "root"}
+                onArchiveChannel={() => setArchiveDialogOpen(true)}
               />
               <MessageList
                 messages={messages}
@@ -1517,6 +1566,16 @@ export function App() {
         selectedChannelId={selectedThread}
         onSelectChannel={handleSwitchChannel}
       />
+
+      {/* Archive channel confirmation dialog */}
+      {archiveDialogOpen && currentThread && (
+        <ArchiveChannelDialog
+          channelName={currentThread.agentName}
+          activeAgentCount={roster.filter((a) => !a.isPaused).length}
+          onConfirm={handleArchiveChannel}
+          onClose={() => setArchiveDialogOpen(false)}
+        />
+      )}
     </div>
   );
 }

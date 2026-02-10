@@ -4,7 +4,8 @@
  * Header for the chat panel, similar to BoardHeader structure.
  * Shows "Thread" label with board toggle button and channel cost total.
  */
-import { LayoutGrid, PanelLeftClose, PanelLeft, Flame } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { LayoutGrid, PanelLeftClose, PanelLeft, Flame, MoreVertical, Archive } from 'lucide-react'
 
 interface ChatHeaderProps {
   /** Whether the agent is currently thinking/processing */
@@ -23,6 +24,12 @@ interface ChatHeaderProps {
   firehoseMode?: boolean
   /** Callback to toggle firehose mode */
   onToggleFirehose?: () => void
+  /** Channel name for display */
+  channelName?: string
+  /** Whether this is the root channel (archive disabled) */
+  isRootChannel?: boolean
+  /** Callback when user clicks archive channel */
+  onArchiveChannel?: () => void
 }
 
 /**
@@ -50,7 +57,32 @@ export function ChatHeader({
   onToggleSidebar,
   firehoseMode = false,
   onToggleFirehose,
+  isRootChannel = false,
+  onArchiveChannel,
 }: ChatHeaderProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Close menu on click outside
+  useEffect(() => {
+    if (!menuOpen) return
+
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside)
+    }, 0)
+
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [menuOpen])
+
   return (
     <div className="flex items-center justify-between h-10 px-3 border-b border-border">
       <div className="flex items-center gap-2">
@@ -101,6 +133,39 @@ export function ChatHeader({
           >
             <LayoutGrid className="w-4 h-4 text-muted-foreground" />
           </button>
+        )}
+        {/* Channel menu */}
+        {onArchiveChannel && (
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="p-1.5 rounded hover:bg-secondary/50 transition-colors"
+              title="Channel options"
+            >
+              <MoreVertical className="w-4 h-4 text-muted-foreground" />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[180px] z-50">
+                <button
+                  onClick={() => {
+                    if (!isRootChannel) {
+                      setMenuOpen(false)
+                      onArchiveChannel()
+                    }
+                  }}
+                  disabled={isRootChannel}
+                  className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left ${
+                    isRootChannel
+                      ? 'text-muted-foreground/50 cursor-not-allowed'
+                      : 'text-muted-foreground hover:bg-secondary/50'
+                  }`}
+                >
+                  <Archive className="w-4 h-4" />
+                  Archive channel
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
