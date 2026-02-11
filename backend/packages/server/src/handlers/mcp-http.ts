@@ -1305,6 +1305,30 @@ const toolHandlers: Record<string, ToolHandler> = {
     // Agent messages: senderIsHuman = false
     const routing = determineRouting(parsed, false, roster, callsign);
 
+    // Resolve global agents from unresolved @mentions
+    if (!routing.isBroadcast && parsed.mentions.length > 0) {
+      const allMembers = [...roster.agents, ...(roster.users ?? [])];
+      const unresolvedMentions = parsed.mentions.filter(
+        (m) => !allMembers.includes(m) && m !== callsign
+      );
+
+      if (unresolvedMentions.length > 0) {
+        const globalAgents = await storage.getGlobalAgents(spaceId);
+        for (const mention of unresolvedMentions) {
+          if (globalAgents[mention]) {
+            await storage.addToRoster({
+              channelId,
+              callsign: mention,
+              agentType: 'chorus',
+              status: 'active',
+            });
+            routing.targets.push(mention);
+            console.log(`[MCP] Auto-rostered global agent @${mention} in channel ${channelId}`);
+          }
+        }
+      }
+    }
+
     const messageId = generateMessageId();
     const now = new Date().toISOString();
 

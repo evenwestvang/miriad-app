@@ -2148,6 +2148,26 @@ export function createApp(options: AppOptions): Hono {
             lastActiveAt: new Date().toISOString(),
           });
         },
+        resolveGlobalAgents: async (cid: string, unresolvedMentions: string[]) => {
+          const globalAgents = await storage.getGlobalAgents(spaceId);
+          const resolved: string[] = [];
+
+          for (const mention of unresolvedMentions) {
+            if (globalAgents[mention]) {
+              // Auto-add to roster
+              await storage.addToRoster({
+                channelId: cid,
+                callsign: mention,
+                agentType: 'chorus',
+                status: 'active',
+              });
+              resolved.push(mention);
+              console.log(`[Messages] Auto-rostered global agent @${mention} in channel ${cid}`);
+            }
+          }
+
+          return resolved;
+        },
         artifactStorage: {
           getArtifact: (channelId: string, slug: string) =>
             storage.getArtifact(channelId, slug),
