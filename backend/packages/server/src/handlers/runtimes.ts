@@ -13,6 +13,11 @@
  * - DELETE /api/spaces/:spaceId/secrets/:key - Delete a secret
  * - GET    /api/spaces/:spaceId/secrets      - List secrets (metadata only)
  *
+ * Global Agents (Chorus):
+ * - GET    /api/spaces/:spaceId/global-agents       - List global agents
+ * - PUT    /api/spaces/:spaceId/global-agents/:name - Add/update global agent
+ * - DELETE /api/spaces/:spaceId/global-agents/:name - Remove global agent
+ *
  * All endpoints require authentication and space membership verification.
  */
 
@@ -28,6 +33,12 @@ import { parseSession } from '../auth/index.js';
 const SetSecretSchema = z.object({
   value: z.string().min(1, 'value is required'),
   expiresAt: z.string().datetime().optional(),
+});
+
+const SetGlobalAgentSchema = z.object({
+  connectionString: z.string().url('connectionString must be a valid URL'),
+  displayName: z.string().optional(),
+  description: z.string().optional(),
 });
 
 function formatZodError(error: z.ZodError): { error: string; details?: unknown } {
@@ -344,6 +355,99 @@ export function createRuntimeRoutes(options: RuntimeRoutesOptions): Hono {
     } catch (error) {
       console.error('[Spaces] Error listing secrets:', error);
       return c.json({ error: 'Failed to list secrets' }, 500);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Global Agent Endpoints (Chorus)
+  // ---------------------------------------------------------------------------
+
+  // GET /api/spaces/:spaceId/global-agents - List global agents
+  app.get('/:spaceId/global-agents', async (c) => {
+    const session = await parseSession(c);
+    if (!session) {
+      return c.json({ error: 'Authentication required' }, 401);
+    }
+
+    const spaceId = c.req.param('spaceId');
+
+    if (session.spaceId !== spaceId) {
+      return c.json({ error: 'Access denied to this space' }, 403);
+    }
+
+    try {
+      const agents = await storage.getGlobalAgents(spaceId);
+      return c.json({ agents });
+    } catch (error) {
+      console.error('[GlobalAgents] Error listing agents:', error);
+      return c.json({ error: 'Failed to list global agents' }, 500);
+    }
+  });
+
+  // PUT /api/spaces/:spaceId/global-agents/:name - Add/update global agent
+  app.put('/:spaceId/global-agents/:name', async (c) => {
+    const session = await parseSession(c);
+    if (!session) {
+      return c.json({ error: 'Authentication required' }, 401);
+    }
+
+    const spaceId = c.req.param('spaceId');
+    const name = c.req.param('name');
+
+    if (session.spaceId !== spaceId) {
+      return c.json({ error: 'Access denied to this space' }, 403);
+    }
+
+    // Validate callsign format (lowercase, alphanumeric + hyphens)
+    if (!/^[a-z][a-z0-9-]*$/.test(name)) {
+      return c.json({
+        error: 'Invalid agent name. Must start with a letter and contain only lowercase letters, numbers, and hyphens.',
+      }, 400);
+    }
+
+    try {
+      const body = await c.req.json();
+      const parsed = SetGlobalAgentSchema.safeParse(body);
+
+      if (!parsed.success) {
+        return c.json(formatZodError(parsed.error), 400);
+      }
+
+      const { connectionString, displayName, description } = parsed.data;
+
+      await storage.setGlobalAgent(spaceId, name, {
+        protocol: 'chorus',
+        displayName,
+        description,
+      }, connectionString);
+
+      return c.json({ name, protocol: 'chorus', displayName, description });
+    } catch (error) {
+      console.error('[GlobalAgents] Error setting agent:', error);
+      return c.json({ error: 'Failed to set global agent' }, 500);
+    }
+  });
+
+  // DELETE /api/spaces/:spaceId/global-agents/:name - Remove global agent
+  app.delete('/:spaceId/global-agents/:name', async (c) => {
+    const session = await parseSession(c);
+    if (!session) {
+      return c.json({ error: 'Authentication required' }, 401);
+    }
+
+    const spaceId = c.req.param('spaceId');
+    const name = c.req.param('name');
+
+    if (session.spaceId !== spaceId) {
+      return c.json({ error: 'Access denied to this space' }, 403);
+    }
+
+    try {
+      await storage.removeGlobalAgent(spaceId, name);
+      return c.json({ removed: name });
+    } catch (error) {
+      console.error('[GlobalAgents] Error removing agent:', error);
+      return c.json({ error: 'Failed to remove global agent' }, 500);
     }
   });
 
