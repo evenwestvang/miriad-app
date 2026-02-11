@@ -14,7 +14,7 @@
  *   - tool_call: { type: "tool_call", ... }
  *   - tool_result: { type: "tool_result", ... }
  *   - error:     { type: "error", message: string }
- *   - status:    { type: "status", text: string } → IGNORED (agent uses MCP set_status)
+ *   - status:    { type: "status", status: string } → IGNORED (agent uses MCP set_status)
  */
 
 import { Hono } from 'hono';

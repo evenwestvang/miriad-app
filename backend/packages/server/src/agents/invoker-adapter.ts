@@ -10,7 +10,7 @@
 
 import type { AgentManager } from "./agent-manager.js";
 import type { Storage, MessageDeliveryContext, McpArtifactData, AgentDefinitionSummary } from "@cast/storage";
-import type { LocalRuntimeConfig } from "@cast/core";
+import { tymbal, generateMessageId, type LocalRuntimeConfig } from "@cast/core";
 import type { ConnectionManager } from "../websocket/index.js";
 import type { AgentInvoker, Message } from "../handlers/messages.js";
 import type { DeliverMessageMessage, McpServerConfig } from "../runtimes/runtime-protocol-handlers.js";
@@ -558,31 +558,10 @@ export function createAgentInvokerAdapter(
                 });
               }
 
-              // Add any HTTP MCPs from agent definition
-              const agentType = rosterEntry.agentType;
-              const definitions = context.definitions.get(agentType);
-              const definition = definitions?.find(d => d.channelId === channelId) ?? definitions?.[0];
-              if (definition && platformMcpUrl) {
-                const allMcpConfigs = await buildMcpConfigsFromContext(
-                  definition,
-                  mcpArtifacts,
-                  sharedEnvironment,
-                  channelId,
-                  authToken,
-                  platformMcpUrl,
-                  getValidOAuthToken,
-                  spaceId,
-                );
-                for (const mcp of allMcpConfigs) {
-                  if (mcp.transport === "http" && mcp.url) {
-                    mcpServers.push({
-                      name: mcp.name ?? "unknown",
-                      url: mcp.url,
-                      headers: (mcp.headers as Record<string, string>) ?? {},
-                    });
-                  }
-                }
-              }
+              // Note: Chorus agents don't get channel MCP enrichment.
+              // agentType is 'chorus' which doesn't match any definition slug,
+              // and by design external agents bring their own tools — we only
+              // provide the platform MCP for channel interaction.
 
               // Build channel context for the Chorus agent
               const channelContext = buildPromptFromContext(context, channelId, callsign);
@@ -616,6 +595,15 @@ export function createAgentInvokerAdapter(
                   console.error(
                     `[AgentInvoker] Chorus POST to @${callsign} failed: ${response.status} ${response.statusText}`,
                   );
+                  if (connectionManager) {
+                    const errorFrame = tymbal.set(generateMessageId(), {
+                      type: 'error',
+                      sender: callsign,
+                      senderType: 'agent',
+                      content: `Failed to reach @${callsign} — the agent returned ${response.status}. It may be offline or misconfigured.`,
+                    });
+                    await connectionManager.broadcast(channelId, errorFrame);
+                  }
                   return;
                 }
               } catch (error) {
@@ -623,6 +611,15 @@ export function createAgentInvokerAdapter(
                   `[AgentInvoker] Chorus POST to @${callsign} failed:`,
                   error,
                 );
+                if (connectionManager) {
+                  const errorFrame = tymbal.set(generateMessageId(), {
+                    type: 'error',
+                    sender: callsign,
+                    senderType: 'agent',
+                    content: `Failed to reach @${callsign} — the agent may be offline or unreachable.`,
+                  });
+                  await connectionManager.broadcast(channelId, errorFrame);
+                }
                 return;
               }
 

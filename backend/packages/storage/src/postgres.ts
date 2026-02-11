@@ -905,6 +905,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ${tunnelHash},
         ${runtimeId}
       )
+      ON CONFLICT (channel_id, callsign)
+      DO UPDATE SET status = EXCLUDED.status
       RETURNING *
     `;
 

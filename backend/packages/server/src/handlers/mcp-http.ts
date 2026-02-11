@@ -37,6 +37,7 @@ import {
 import type { ConnectionManager } from '../websocket/index.js';
 import type { AgentInvoker, Message } from './messages.js';
 import { broadcastArtifactEvent } from './artifacts.js';
+import { resolveAndRosterGlobalAgents } from './global-agent-roster.js';
 
 // =============================================================================
 // Helpers
@@ -1313,19 +1314,10 @@ const toolHandlers: Record<string, ToolHandler> = {
       );
 
       if (unresolvedMentions.length > 0) {
-        const globalAgents = await storage.getGlobalAgents(spaceId);
-        for (const mention of unresolvedMentions) {
-          if (globalAgents[mention]) {
-            await storage.addToRoster({
-              channelId,
-              callsign: mention,
-              agentType: 'chorus',
-              status: 'active',
-            });
-            routing.targets.push(mention);
-            console.log(`[MCP] Auto-rostered global agent @${mention} in channel ${channelId}`);
-          }
-        }
+        const result = await resolveAndRosterGlobalAgents(
+          storage, spaceId, channelId, unresolvedMentions, connectionManager,
+        );
+        routing.targets.push(...result.resolved);
       }
     }
 

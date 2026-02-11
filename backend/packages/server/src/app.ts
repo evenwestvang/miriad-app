@@ -53,6 +53,7 @@ import { createAppRoutes } from "./handlers/apps.js";
 import { createRuntimeAuthRoutes } from "./handlers/runtime-auth.js";
 import { createRuntimeRoutes } from "./handlers/runtimes.js";
 import { createChorusCallbackRoutes } from "./handlers/chorus-callback.js";
+import { resolveAndRosterGlobalAgents } from "./handlers/global-agent-roster.js";
 import { createMiriadCloudRoutes } from "./handlers/miriad-cloud.js";
 import { createKBRoutes } from "./handlers/kb.js";
 import { createDisclaimerRoutes } from "./handlers/disclaimer.js";
@@ -2149,24 +2150,10 @@ export function createApp(options: AppOptions): Hono {
           });
         },
         resolveGlobalAgents: async (cid: string, unresolvedMentions: string[]) => {
-          const globalAgents = await storage.getGlobalAgents(spaceId);
-          const resolved: string[] = [];
-
-          for (const mention of unresolvedMentions) {
-            if (globalAgents[mention]) {
-              // Auto-add to roster
-              await storage.addToRoster({
-                channelId: cid,
-                callsign: mention,
-                agentType: 'chorus',
-                status: 'active',
-              });
-              resolved.push(mention);
-              console.log(`[Messages] Auto-rostered global agent @${mention} in channel ${cid}`);
-            }
-          }
-
-          return resolved;
+          const result = await resolveAndRosterGlobalAgents(
+            storage, spaceId, cid, unresolvedMentions, connectionManager,
+          );
+          return result.resolved;
         },
         artifactStorage: {
           getArtifact: (channelId: string, slug: string) =>
