@@ -3000,6 +3000,62 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   // ---------------------------------------------------------------------------
+  // Global Agent Operations (Chorus)
+  // ---------------------------------------------------------------------------
+
+  async function getGlobalAgents(
+    spaceId: string
+  ): Promise<Record<string, GlobalAgentConfig>> {
+    const result = await sql<{ global_agents: Record<string, GlobalAgentConfig> | null }>`
+      SELECT global_agents FROM spaces WHERE id = ${spaceId}
+    `;
+
+    if (result.length === 0) {
+      return {};
+    }
+
+    return (result[0].global_agents as Record<string, GlobalAgentConfig>) ?? {};
+  }
+
+  async function setGlobalAgent(
+    spaceId: string,
+    name: string,
+    config: GlobalAgentConfig,
+    connectionString: string
+  ): Promise<void> {
+    // Store config in global_agents JSONB (atomic jsonb_set)
+    await sql`
+      UPDATE spaces
+      SET global_agents = jsonb_set(
+        COALESCE(global_agents, '{}'),
+        ${`{${name}}`}::text[],
+        ${JSON.stringify(config)}::jsonb
+      ),
+      updated_at = NOW()
+      WHERE id = ${spaceId}
+    `;
+
+    // Store connection string as encrypted space secret
+    await setSpaceSecret(spaceId, `chorus:${name}`, { value: connectionString });
+  }
+
+  async function removeGlobalAgent(
+    spaceId: string,
+    name: string
+  ): Promise<void> {
+    // Remove from global_agents JSONB
+    await sql`
+      UPDATE spaces
+      SET global_agents = global_agents - ${name},
+      updated_at = NOW()
+      WHERE id = ${spaceId}
+    `;
+
+    // Remove connection string secret
+    await deleteSpaceSecret(spaceId, `chorus:${name}`);
+  }
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
 
@@ -3992,6 +4048,10 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     getSpaceSecretValue,
     getSpaceSecretMetadata,
     listSpaceSecrets,
+    // Global Agent operations (Chorus)
+    getGlobalAgents,
+    setGlobalAgent,
+    removeGlobalAgent,
     // Local Agent Server operations (Stage 3)
     saveLocalAgentServer,
     getLocalAgentServer,
