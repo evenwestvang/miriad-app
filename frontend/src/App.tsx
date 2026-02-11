@@ -739,7 +739,7 @@ export function App() {
             apiFetch(`${API_HOST}/channels/${selectedThread}/costs`),
             apiFetch(`${API_HOST}/channels/${selectedThread}/agents/archived`),
             authSession?.spaceId
-              ? apiFetch(`${API_HOST}/spaces/${authSession.spaceId}/global-agents`)
+              ? apiFetch(`${API_HOST}/api/spaces/${authSession.spaceId}/global-agents`)
               : Promise.resolve(null),
           ]);
 

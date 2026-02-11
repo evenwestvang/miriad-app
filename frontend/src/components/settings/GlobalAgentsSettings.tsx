@@ -34,7 +34,7 @@ export function GlobalAgentsSettings({ apiHost, spaceId }: GlobalAgentsSettingsP
     setLoading(true)
     setError(null)
     try {
-      const response = await apiFetch(`${apiHost}/spaces/${spaceId}/global-agents`)
+      const response = await apiFetch(`${apiHost}/api/spaces/${spaceId}/global-agents`)
       if (!response.ok) {
         throw new Error(`Failed to fetch global agents: ${response.status}`)
       }
@@ -75,7 +75,7 @@ export function GlobalAgentsSettings({ apiHost, spaceId }: GlobalAgentsSettingsP
     setAddError(null)
     try {
       await apiPut(
-        `${apiHost}/spaces/${spaceId}/global-agents/${trimmedName}`,
+        `${apiHost}/api/spaces/${spaceId}/global-agents/${trimmedName}`,
         { connectionString: newConnectionString.trim() }
       )
       // Reset form and refresh list
@@ -93,7 +93,7 @@ export function GlobalAgentsSettings({ apiHost, spaceId }: GlobalAgentsSettingsP
   async function handleDelete(name: string) {
     setDeleting(name)
     try {
-      await apiDelete(`${apiHost}/spaces/${spaceId}/global-agents/${name}`)
+      await apiDelete(`${apiHost}/api/spaces/${spaceId}/global-agents/${name}`)
       setConfirmDelete(null)
       await fetchAgents()
     } catch (err) {
