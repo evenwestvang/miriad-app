@@ -86,7 +86,7 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
     });
 
     it('should save a message with custom id', async () => {
-      const customId = '01JGNTEST00000000000000001';
+      const customId = `01JGNTEST${Date.now().toString(36).padStart(16, '0').slice(0, 16)}`;
       const message = await storage.saveMessage({
         id: customId,
         spaceId: testSpaceId,
