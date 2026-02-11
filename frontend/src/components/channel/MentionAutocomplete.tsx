@@ -44,6 +44,8 @@ export interface RosterAgent {
   runtimeName?: string
   /** Runtime connection status - agent is online when runtime is online */
   runtimeStatus?: 'online' | 'offline'
+  /** Whether this is a global agent (Chorus-backed, not container-based) */
+  isGlobal?: boolean
 }
 
 interface MentionAutocompleteProps {

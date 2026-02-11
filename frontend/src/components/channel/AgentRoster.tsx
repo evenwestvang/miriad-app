@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Globe } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { AgentSummonPicker } from './AgentSummonPicker'
 import { DismissConfirmDialog } from './DismissConfirmDialog'
@@ -79,7 +80,7 @@ function AgentBadge({ agent, isLeader, isSelected, onClick }: Omit<AgentBadgePro
           : 'idle'
 
   // Runtime info for tooltip
-  const runtimeLabel = agent.runtimeName || 'Miriad Cloud'
+  const runtimeLabel = agent.isGlobal ? 'Global' : (agent.runtimeName || 'Miriad Cloud')
 
   return (
     <button
@@ -91,6 +92,10 @@ function AgentBadge({ agent, isLeader, isSelected, onClick }: Omit<AgentBadgePro
       )}
       title={`@${agent.callsign} - ${stateLabel}${isLeader ? ' (leader)' : ''} • ${runtimeLabel}`}
     >
+      {/* Globe icon for global agents */}
+      {agent.isGlobal && (
+        <Globe className="w-3 h-3 text-[var(--cast-text-muted)] shrink-0" />
+      )}
       {/* Name: color based on online/offline, strikethrough added if muted */}
       <span className={cn(
         // Base color: gray for offline, black otherwise

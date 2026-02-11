@@ -358,16 +358,18 @@ export function App() {
         if (prev.some((a) => a.callsign === event.agent.callsign)) {
           return prev;
         }
+        const isChorus = event.agent.agentType === "chorus";
         return [
           ...prev,
           {
             callsign: event.agent.callsign,
             agentType: event.agent.agentType,
-            // isOnline based on runtime status
-            isOnline: event.agent.runtimeStatus === "online",
+            // Chorus agents are always reachable, container agents need runtime online
+            isOnline: isChorus ? true : event.agent.runtimeStatus === "online",
             runtimeId: event.agent.runtimeId,
             runtimeName: event.agent.runtimeName,
             runtimeStatus: event.agent.runtimeStatus,
+            isGlobal: isChorus,
           },
         ];
       });
@@ -806,27 +808,32 @@ export function App() {
                 runtimeId?: string | null;
                 runtimeName?: string;
                 runtimeStatus?: 'online' | 'offline';
-              }) => ({
-                callsign: r.callsign,
-                // isOnline: runtime is online (agent can receive messages)
-                isOnline: r.runtimeStatus === "online",
-                // Paused/muted status from API
-                isPaused: r.status === "paused",
-                // Tunnel hash for HTTP exposure
-                tunnelHash: r.tunnelHash,
-                // Agent type for visual identification
-                agentType: r.agentType,
-                // Last heartbeat for client-side timeout tracking
-                lastHeartbeat: r.lastHeartbeat,
-                // Initialize with persisted cost (if any)
-                sessionCost: costsByCallsign.get(r.callsign) ?? 0,
-                // Current agent state from set_status calls
-                current: r.current,
-                // Runtime binding (null = cloud)
-                runtimeId: r.runtimeId,
-                runtimeName: r.runtimeName,
-                runtimeStatus: r.runtimeStatus,
-              }),
+              }) => {
+                const isChorus = r.agentType === "chorus";
+                return {
+                  callsign: r.callsign,
+                  // Chorus agents are always reachable (external service), container agents need runtime online
+                  isOnline: isChorus ? r.status === "active" : r.runtimeStatus === "online",
+                  // Paused/muted status from API
+                  isPaused: r.status === "paused",
+                  // Tunnel hash for HTTP exposure
+                  tunnelHash: r.tunnelHash,
+                  // Agent type for visual identification
+                  agentType: r.agentType,
+                  // Last heartbeat for client-side timeout tracking
+                  lastHeartbeat: r.lastHeartbeat,
+                  // Initialize with persisted cost (if any)
+                  sessionCost: costsByCallsign.get(r.callsign) ?? 0,
+                  // Current agent state from set_status calls
+                  current: r.current,
+                  // Runtime binding (null = cloud)
+                  runtimeId: r.runtimeId,
+                  runtimeName: r.runtimeName,
+                  runtimeStatus: r.runtimeStatus,
+                  // Global agent flag
+                  isGlobal: isChorus,
+                };
+              },
             );
             setRoster(rosterAgents);
             // Clear working agents on channel switch (fresh start)
