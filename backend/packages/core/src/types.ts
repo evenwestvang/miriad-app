@@ -366,6 +366,13 @@ export interface RosterEntry {
    * Unlike 'current' (ephemeral), this persists across sessions.
    */
   props?: Record<string, unknown>;
+
+  /**
+   * Chorus callback token for global agents.
+   * Used to construct callback URLs for Chorus protocol delivery.
+   * Generated once when a global agent is first added to a channel roster.
+   */
+  chorusCallbackToken?: string;
 }
 
 /**
@@ -404,6 +411,8 @@ export interface UpdateRosterInput {
   runtimeId?: string | null;
   /** Persistent engine-specific properties */
   props?: Record<string, unknown>;
+  /** Chorus callback token for global agents */
+  chorusCallbackToken?: string;
 }
 
 // =============================================================================
@@ -498,6 +507,18 @@ export interface CreateUserInput {
 // =============================================================================
 
 /**
+ * Configuration for a global agent backed by Chorus protocol.
+ */
+export interface GlobalAgentConfig {
+  /** Protocol used to reach this agent */
+  protocol: 'chorus';
+  /** Display name (defaults to callsign if not set) */
+  displayName?: string;
+  /** Description of the agent's capabilities */
+  description?: string;
+}
+
+/**
  * A space (tenant workspace) as stored in the database.
  */
 export interface StoredSpace {
@@ -509,6 +530,13 @@ export interface StoredSpace {
 
   /** Display name for the space */
   name?: string;
+
+  /**
+   * Global agents configured at space level.
+   * Keys are agent callsigns, values are protocol config.
+   * Connection strings stored separately as space secrets (chorus:<name>).
+   */
+  globalAgents: Record<string, GlobalAgentConfig>;
 
   /** ISO timestamp of creation */
   createdAt: string;

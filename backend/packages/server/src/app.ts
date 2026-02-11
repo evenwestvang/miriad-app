@@ -52,6 +52,8 @@ import {
 import { createAppRoutes } from "./handlers/apps.js";
 import { createRuntimeAuthRoutes } from "./handlers/runtime-auth.js";
 import { createRuntimeRoutes } from "./handlers/runtimes.js";
+import { createChorusCallbackRoutes } from "./handlers/chorus-callback.js";
+import { resolveAndRosterGlobalAgents } from "./handlers/global-agent-roster.js";
 import { createMiriadCloudRoutes } from "./handlers/miriad-cloud.js";
 import { createKBRoutes } from "./handlers/kb.js";
 import { createDisclaimerRoutes } from "./handlers/disclaimer.js";
@@ -1352,6 +1354,15 @@ export function createApp(options: AppOptions): Hono {
   app.route("/api/spaces", runtimeRoutes);
 
   // ---------------------------------------------------------------------------
+  // Chorus Callback Routes (global agent protocol adapter)
+  // ---------------------------------------------------------------------------
+  const chorusCallbackRoutes = createChorusCallbackRoutes({
+    storage,
+    broadcast: (channelId, frame) => connectionManager.broadcast(channelId, frame),
+  });
+  app.route("/api/chorus", chorusCallbackRoutes);
+
+  // ---------------------------------------------------------------------------
   // Miriad Cloud Routes (container provisioning)
   // ---------------------------------------------------------------------------
   const miriadCloudRoutes = createMiriadCloudRoutes({ storage });
@@ -2137,6 +2148,12 @@ export function createApp(options: AppOptions): Hono {
           await storage.updateChannel(spaceId, cid, {
             lastActiveAt: new Date().toISOString(),
           });
+        },
+        resolveGlobalAgents: async (cid: string, unresolvedMentions: string[]) => {
+          const result = await resolveAndRosterGlobalAgents(
+            storage, spaceId, cid, unresolvedMentions, connectionManager,
+          );
+          return result.resolved;
         },
         artifactStorage: {
           getArtifact: (channelId: string, slug: string) =>

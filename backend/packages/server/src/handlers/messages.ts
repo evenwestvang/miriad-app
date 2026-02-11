@@ -107,6 +107,15 @@ export interface ArtifactStorage {
   setArtifactAttachment: (channelId: string, slug: string, messageId: string, updatedBy: string) => Promise<void>;
 }
 
+/**
+ * Resolve global agents from unresolved @mentions.
+ * Returns callsigns that were auto-added to the roster.
+ */
+export type GlobalAgentResolver = (
+  channelId: string,
+  unresolvedMentions: string[]
+) => Promise<string[]>;
+
 export interface MessageHandlerOptions {
   /** Storage for messages */
   messageStorage: MessageStorage;
@@ -120,6 +129,8 @@ export interface MessageHandlerOptions {
   onUserMessage?: (channelId: string) => Promise<void>;
   /** Optional: artifact storage for linking attachments to messages */
   artifactStorage?: ArtifactStorage;
+  /** Optional: resolve global agents from unresolved @mentions (auto-roster) */
+  resolveGlobalAgents?: GlobalAgentResolver;
 }
 
 // =============================================================================
@@ -189,7 +200,7 @@ export function getAddressedAgents(
  * Create the /channels/:id/messages routes.
  */
 export function createMessageRoutes(options: MessageHandlerOptions): Hono {
-  const { messageStorage, rosterProvider, connectionManager, agentInvoker, onUserMessage, artifactStorage } = options;
+  const { messageStorage, rosterProvider, connectionManager, agentInvoker, onUserMessage, artifactStorage, resolveGlobalAgents } = options;
 
   const app = new Hono();
 
@@ -290,11 +301,29 @@ export function createMessageRoutes(options: MessageHandlerOptions): Hono {
     }
 
     // Determine addressed agents
-    const { addressedAgents, isBroadcast } = getAddressedAgents(
+    let { addressedAgents, isBroadcast } = getAddressedAgents(
       content,
       senderType === 'user',
       roster
     );
+
+    // Resolve global agents from unresolved @mentions
+    if (resolveGlobalAgents && !isBroadcast) {
+      const parsed = parseMentions(content);
+      const allMembers = [...roster.agents, ...(roster.users ?? [])];
+      const unresolvedMentions = parsed.mentions.filter(
+        (m) => !allMembers.includes(m) && m !== sender
+      );
+
+      if (unresolvedMentions.length > 0) {
+        const resolved = await resolveGlobalAgents(channelId, unresolvedMentions);
+        if (resolved.length > 0) {
+          addressedAgents = [...addressedAgents, ...resolved];
+          console.log('[Messages] Auto-rostered global agents:', resolved);
+        }
+      }
+    }
+
     console.log('[Messages] Addressed agents:', addressedAgents, 'isBroadcast:', isBroadcast);
 
     const messageId = generateMessageId();

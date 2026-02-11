@@ -5,6 +5,7 @@ import {
   BotOff,
   Bed,
   Cloud,
+  Globe,
   Laptop,
   Loader2,
   MoreVertical,
@@ -164,7 +165,7 @@ export function AgentDetailPanel({
 
     // Fall back to derived status
     if (agent.isPaused) return 'Muted — will not respond to mentions'
-    if (!agent.isOnline) return 'Offline — runtime not connected'
+    if (!agent.isOnline) return agent.isGlobal ? 'Offline — external service unreachable' : 'Offline — runtime not connected'
     if (agent.isWorking) return 'Working on a task'
     if (agent.isPending) return 'Pending — waiting for response'
     return 'Idle — ready for work'
@@ -332,27 +333,38 @@ export function AgentDetailPanel({
           </button>
         </div>
 
-        {/* Bottom row: status, cost, tunnel, env */}
+        {/* Bottom row: status, cost, runtime/global */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base text-[var(--cast-text-muted)]">
           <span>{getStatusDescription()}</span>
+          {!agent.isGlobal && (
+            <>
+              <span>·</span>
+              <span className="font-mono">{costDisplay}</span>
+            </>
+          )}
           <span>·</span>
-          <span className="font-mono">{costDisplay}</span>
-          <span>·</span>
-          <span className="flex items-center gap-1">
-            {agent.runtimeId ? (
-              <Laptop className="w-3.5 h-3.5" />
-            ) : (
-              <Cloud className="w-3.5 h-3.5" />
-            )}
-            {agent.runtimeName || 'Miriad Cloud'}
-            <span
-              className={cn(
-                "w-1.5 h-1.5 rounded-full",
-                agent.runtimeStatus === 'online' ? "bg-green-500" : "bg-gray-400"
+          {agent.isGlobal ? (
+            <span className="flex items-center gap-1">
+              <Globe className="w-3.5 h-3.5" />
+              Global agent
+            </span>
+          ) : (
+            <span className="flex items-center gap-1">
+              {agent.runtimeId ? (
+                <Laptop className="w-3.5 h-3.5" />
+              ) : (
+                <Cloud className="w-3.5 h-3.5" />
               )}
-            />
-            <span>{agent.runtimeStatus === 'online' ? 'connected' : 'offline'}</span>
-          </span>
+              {agent.runtimeName || 'Miriad Cloud'}
+              <span
+                className={cn(
+                  "w-1.5 h-1.5 rounded-full",
+                  agent.runtimeStatus === 'online' ? "bg-green-500" : "bg-gray-400"
+                )}
+              />
+              <span>{agent.runtimeStatus === 'online' ? 'connected' : 'offline'}</span>
+            </span>
+          )}
         </div>
       </div>
     </div>

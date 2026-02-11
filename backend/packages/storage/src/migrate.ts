@@ -139,6 +139,10 @@ async function migrate(): Promise<void> {
   `;
 
   await sql`
+    ALTER TABLE spaces ADD COLUMN IF NOT EXISTS global_agents JSONB DEFAULT '{}'
+  `;
+
+  await sql`
     CREATE INDEX IF NOT EXISTS idx_spaces_owner
     ON spaces(owner_id)
   `;
@@ -235,6 +239,7 @@ async function migrate(): Promise<void> {
       ALTER TABLE roster ADD COLUMN IF NOT EXISTS route_hints JSONB;
       ALTER TABLE roster ADD COLUMN IF NOT EXISTS runtime_id VARCHAR(26);
       ALTER TABLE roster ADD COLUMN IF NOT EXISTS props JSONB;
+      ALTER TABLE roster ADD COLUMN IF NOT EXISTS chorus_callback_token VARCHAR(255);
     EXCEPTION
       WHEN duplicate_column THEN NULL;
     END $$;

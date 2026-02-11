@@ -68,6 +68,7 @@ import type {
   RuntimeType,
   RuntimeStatus,
   LocalRuntimeConfig,
+  GlobalAgentConfig,
 } from '@cast/core';
 // Import functions separately (not as types)
 import {
@@ -244,6 +245,7 @@ interface RosterRow {
   runtime_name?: string | null;
   runtime_status?: string | null;
   props: Record<string, unknown> | null;
+  chorus_callback_token: string | null;
 }
 
 interface UserRow {
@@ -261,6 +263,7 @@ interface SpaceRow {
   id: string;
   owner_id: string;
   name: string | null;
+  global_agents: Record<string, unknown> | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -902,6 +905,8 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ${tunnelHash},
         ${runtimeId}
       )
+      ON CONFLICT (channel_id, callsign)
+      DO UPDATE SET status = EXCLUDED.status
       RETURNING *
     `;
 
@@ -1022,6 +1027,9 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     if (update.props !== undefined) {
       updateObj.props = JSON.stringify(update.props);
     }
+    if (update.chorusCallbackToken !== undefined) {
+      updateObj.chorus_callback_token = update.chorusCallbackToken;
+    }
 
     if (Object.keys(updateObj).length === 0) return;
 
@@ -1062,6 +1070,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       id: row.id,
       ownerId: row.owner_id,
       name: row.name ?? undefined,
+      globalAgents: (row.global_agents as Record<string, GlobalAgentConfig>) ?? {},
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
     };
@@ -1184,6 +1193,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         id: row.id,
         ownerId: row.owner_id,
         name: row.name ?? undefined,
+        globalAgents: (row.global_agents as Record<string, GlobalAgentConfig>) ?? {},
         createdAt: row.created_at.toISOString(),
         updatedAt: row.updated_at.toISOString(),
       },
@@ -2213,6 +2223,11 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       ALTER TABLE spaces ADD COLUMN IF NOT EXISTS secrets JSONB
     `;
 
+    // Add global_agents column for Chorus protocol integration
+    await sql`
+      ALTER TABLE spaces ADD COLUMN IF NOT EXISTS global_agents JSONB DEFAULT '{}'
+    `;
+
     await sql`
       CREATE INDEX IF NOT EXISTS idx_spaces_owner
       ON spaces(owner_id)
@@ -2313,6 +2328,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS last_message_routed_at TIMESTAMPTZ;
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS route_hints JSONB;
         ALTER TABLE roster ADD COLUMN IF NOT EXISTS runtime_id VARCHAR(26);
+        ALTER TABLE roster ADD COLUMN IF NOT EXISTS chorus_callback_token VARCHAR(255);
       EXCEPTION
         WHEN duplicate_column THEN NULL;
       END $$;
@@ -2986,6 +3002,62 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
   }
 
   // ---------------------------------------------------------------------------
+  // Global Agent Operations (Chorus)
+  // ---------------------------------------------------------------------------
+
+  async function getGlobalAgents(
+    spaceId: string
+  ): Promise<Record<string, GlobalAgentConfig>> {
+    const result = await sql<{ global_agents: Record<string, GlobalAgentConfig> | null }>`
+      SELECT global_agents FROM spaces WHERE id = ${spaceId}
+    `;
+
+    if (result.length === 0) {
+      return {};
+    }
+
+    return (result[0].global_agents as Record<string, GlobalAgentConfig>) ?? {};
+  }
+
+  async function setGlobalAgent(
+    spaceId: string,
+    name: string,
+    config: GlobalAgentConfig,
+    connectionString: string
+  ): Promise<void> {
+    // Store config in global_agents JSONB (atomic jsonb_set)
+    await sql`
+      UPDATE spaces
+      SET global_agents = jsonb_set(
+        COALESCE(global_agents, '{}'),
+        ${`{${name}}`}::text[],
+        ${JSON.stringify(config)}::jsonb
+      ),
+      updated_at = NOW()
+      WHERE id = ${spaceId}
+    `;
+
+    // Store connection string as encrypted space secret
+    await setSpaceSecret(spaceId, `chorus:${name}`, { value: connectionString });
+  }
+
+  async function removeGlobalAgent(
+    spaceId: string,
+    name: string
+  ): Promise<void> {
+    // Remove from global_agents JSONB
+    await sql`
+      UPDATE spaces
+      SET global_agents = global_agents - ${name},
+      updated_at = NOW()
+      WHERE id = ${spaceId}
+    `;
+
+    // Remove connection string secret
+    await deleteSpaceSecret(spaceId, `chorus:${name}`);
+  }
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
 
@@ -3043,6 +3115,7 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
       runtimeName: row.runtime_name ?? undefined,
       runtimeStatus: (row.runtime_status as RuntimeStatus) ?? undefined,
       props: (row.props as Record<string, unknown>) ?? undefined,
+      chorusCallbackToken: row.chorus_callback_token ?? undefined,
     };
   }
 
@@ -3977,6 +4050,10 @@ export function createPostgresStorage(options: PostgresStorageOptions): Storage 
     getSpaceSecretValue,
     getSpaceSecretMetadata,
     listSpaceSecrets,
+    // Global Agent operations (Chorus)
+    getGlobalAgents,
+    setGlobalAgent,
+    removeGlobalAgent,
     // Local Agent Server operations (Stage 3)
     saveLocalAgentServer,
     getLocalAgentServer,

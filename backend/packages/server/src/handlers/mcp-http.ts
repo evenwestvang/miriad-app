@@ -37,6 +37,7 @@ import {
 import type { ConnectionManager } from '../websocket/index.js';
 import type { AgentInvoker, Message } from './messages.js';
 import { broadcastArtifactEvent } from './artifacts.js';
+import { resolveAndRosterGlobalAgents } from './global-agent-roster.js';
 
 // =============================================================================
 // Helpers
@@ -1304,6 +1305,21 @@ const toolHandlers: Record<string, ToolHandler> = {
     const parsed = parseMentions(content);
     // Agent messages: senderIsHuman = false
     const routing = determineRouting(parsed, false, roster, callsign);
+
+    // Resolve global agents from unresolved @mentions
+    if (!routing.isBroadcast && parsed.mentions.length > 0) {
+      const allMembers = [...roster.agents, ...(roster.users ?? [])];
+      const unresolvedMentions = parsed.mentions.filter(
+        (m) => !allMembers.includes(m) && m !== callsign
+      );
+
+      if (unresolvedMentions.length > 0) {
+        const result = await resolveAndRosterGlobalAgents(
+          storage, spaceId, channelId, unresolvedMentions, connectionManager,
+        );
+        routing.targets.push(...result.resolved);
+      }
+    }
 
     const messageId = generateMessageId();
     const now = new Date().toISOString();

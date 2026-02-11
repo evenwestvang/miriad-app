@@ -47,7 +47,7 @@ import { RuntimeStatusDropdown } from "./components/RuntimeStatusDropdown";
 // Auth mode: 'dev' (show LoginPage) or 'workos' (redirect to /auth/login)
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || "dev";
 import type { Agent, Channel, Message } from "./types";
-import type { RosterAgent } from "./components/channel/MentionAutocomplete";
+import type { RosterAgent, GlobalAgent } from "./components/channel/MentionAutocomplete";
 
 export function App() {
   // Check for OAuth popup pages first (before any state initialization)
@@ -114,6 +114,8 @@ export function App() {
   const currentUser = authSession?.user.callsign || "user";
   const [isCreatingThread, setIsCreatingThread] = useState(false);
   const [roster, setRoster] = useState<RosterAgent[]>([]);
+  // Global agents configured at space level (fetched once per space)
+  const [globalAgents, setGlobalAgents] = useState<GlobalAgent[]>([]);
   // Increment to trigger roster reload (e.g., when runtime status changes)
   const [rosterRefreshKey, setRosterRefreshKey] = useState(0);
   // Total channel cost (sum of all agents, including archived)
@@ -356,16 +358,18 @@ export function App() {
         if (prev.some((a) => a.callsign === event.agent.callsign)) {
           return prev;
         }
+        const isChorus = event.agent.agentType === "chorus";
         return [
           ...prev,
           {
             callsign: event.agent.callsign,
             agentType: event.agent.agentType,
-            // isOnline based on runtime status
-            isOnline: event.agent.runtimeStatus === "online",
+            // Chorus agents are always reachable, container agents need runtime online
+            isOnline: isChorus ? true : event.agent.runtimeStatus === "online",
             runtimeId: event.agent.runtimeId,
             runtimeName: event.agent.runtimeName,
             runtimeStatus: event.agent.runtimeStatus,
+            isGlobal: isChorus,
           },
         ];
       });
@@ -729,11 +733,14 @@ export function App() {
           `[ChannelSwitch] Starting roster fetch at ${performance.now().toFixed(2)}ms`,
         );
         try {
-          // Fetch roster, costs, and archived agents in parallel
-          const [rosterResponse, costsResponse, archivedResponse] = await Promise.all([
+          // Fetch roster, costs, archived agents, and global agents in parallel
+          const [rosterResponse, costsResponse, archivedResponse, globalAgentsResponse] = await Promise.all([
             apiFetch(`${API_HOST}/channels/${selectedThread}/roster`),
             apiFetch(`${API_HOST}/channels/${selectedThread}/costs`),
             apiFetch(`${API_HOST}/channels/${selectedThread}/agents/archived`),
+            authSession?.spaceId
+              ? apiFetch(`${API_HOST}/api/spaces/${authSession.spaceId}/global-agents`)
+              : Promise.resolve(null),
           ]);
 
           if (!rosterResponse.ok) {
@@ -767,6 +774,23 @@ export function App() {
             }
           }
 
+          // Parse global agents response
+          if (globalAgentsResponse?.ok) {
+            const globalData = await globalAgentsResponse.json();
+            if (globalData.agents && typeof globalData.agents === 'object') {
+              // API returns Record<string, GlobalAgentConfig>, convert to array
+              const agents: GlobalAgent[] = Object.entries(globalData.agents).map(
+                ([name, config]: [string, any]) => ({
+                  name,
+                  protocol: config.protocol,
+                  displayName: config.displayName,
+                  description: config.description,
+                })
+              );
+              setGlobalAgents(agents);
+            }
+          }
+
           console.log(
             `[ChannelSwitch] Roster fetch complete at ${performance.now().toFixed(2)}ms`,
           );
@@ -784,27 +808,32 @@ export function App() {
                 runtimeId?: string | null;
                 runtimeName?: string;
                 runtimeStatus?: 'online' | 'offline';
-              }) => ({
-                callsign: r.callsign,
-                // isOnline: runtime is online (agent can receive messages)
-                isOnline: r.runtimeStatus === "online",
-                // Paused/muted status from API
-                isPaused: r.status === "paused",
-                // Tunnel hash for HTTP exposure
-                tunnelHash: r.tunnelHash,
-                // Agent type for visual identification
-                agentType: r.agentType,
-                // Last heartbeat for client-side timeout tracking
-                lastHeartbeat: r.lastHeartbeat,
-                // Initialize with persisted cost (if any)
-                sessionCost: costsByCallsign.get(r.callsign) ?? 0,
-                // Current agent state from set_status calls
-                current: r.current,
-                // Runtime binding (null = cloud)
-                runtimeId: r.runtimeId,
-                runtimeName: r.runtimeName,
-                runtimeStatus: r.runtimeStatus,
-              }),
+              }) => {
+                const isChorus = r.agentType === "chorus";
+                return {
+                  callsign: r.callsign,
+                  // Chorus agents are always reachable (external service), container agents need runtime online
+                  isOnline: isChorus ? r.status === "active" : r.runtimeStatus === "online",
+                  // Paused/muted status from API
+                  isPaused: r.status === "paused",
+                  // Tunnel hash for HTTP exposure
+                  tunnelHash: r.tunnelHash,
+                  // Agent type for visual identification
+                  agentType: r.agentType,
+                  // Last heartbeat for client-side timeout tracking
+                  lastHeartbeat: r.lastHeartbeat,
+                  // Initialize with persisted cost (if any)
+                  sessionCost: costsByCallsign.get(r.callsign) ?? 0,
+                  // Current agent state from set_status calls
+                  current: r.current,
+                  // Runtime binding (null = cloud)
+                  runtimeId: r.runtimeId,
+                  runtimeName: r.runtimeName,
+                  runtimeStatus: r.runtimeStatus,
+                  // Global agent flag
+                  isGlobal: isChorus,
+                };
+              },
             );
             setRoster(rosterAgents);
             // Clear working agents on channel switch (fresh start)
@@ -1447,6 +1476,7 @@ export function App() {
                   onSend={handleSendMessage}
                   disabled={!connected}
                   roster={rosterWithWorkingState}
+                  globalAgents={globalAgents}
                   channelId={selectedThread || undefined}
                   apiHost={API_HOST}
                   onSummon={() => setSummonOpen(true)}

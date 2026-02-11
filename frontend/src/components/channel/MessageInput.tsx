@@ -19,7 +19,7 @@ import {
   FileVideo,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { MentionAutocomplete, useMentionAutocomplete, type RosterAgent } from './MentionAutocomplete'
+import { MentionAutocomplete, useMentionAutocomplete, type RosterAgent, type GlobalAgent } from './MentionAutocomplete'
 import { getSenderColor } from '../../utils'
 
 /** Maximum file size for attachments (500 MB) */
@@ -37,6 +37,8 @@ interface MessageInputProps {
   disabled?: boolean
   placeholder?: string
   roster?: RosterAgent[]
+  /** Global agents available at space level (for @-mention autocomplete) */
+  globalAgents?: GlobalAgent[]
   channelId?: string
   apiHost?: string
   onSummon?: () => void
@@ -109,6 +111,7 @@ export function MessageInput({
   disabled,
   placeholder = 'Type a message...',
   roster = [],
+  globalAgents,
   channelId,
   apiHost,
   onSummon,
@@ -143,7 +146,7 @@ export function MessageInput({
   const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const { findMentionTrigger, getOptionsCount, getOptionAtIndex } = useMentionAutocomplete(roster)
+  const { findMentionTrigger, getOptionsCount, getOptionAtIndex } = useMentionAutocomplete(roster, globalAgents)
 
   // Check if roster is empty (no agents to message)
   // Use a delayed state to avoid flashing on channel switch while roster loads
@@ -827,6 +830,7 @@ export function MessageInput({
           <MentionAutocomplete
             query={autocompleteQuery}
             roster={roster}
+            globalAgents={globalAgents}
             selectedIndex={selectedIndex}
             onSelect={insertMention}
             onClose={() => setShowAutocomplete(false)}

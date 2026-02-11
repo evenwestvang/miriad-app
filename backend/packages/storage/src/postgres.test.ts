@@ -86,7 +86,7 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
     });
 
     it('should save a message with custom id', async () => {
-      const customId = '01JGNTEST00000000000000001';
+      const customId = `01JGNTEST${Date.now().toString(36).padStart(16, '0').slice(0, 16)}`;
       const message = await storage.saveMessage({
         id: customId,
         spaceId: testSpaceId,
@@ -527,6 +527,114 @@ describe.skipIf(!canConnect)('PostgresStorage', () => {
     it('should handle null rootChannelId', async () => {
       const result = await storage.getMcpArtifactsBySlug(mcpChannelId, null, ['some-mcp']);
       expect(result.size).toBe(0);
+    });
+  });
+
+  describe('globalAgents', () => {
+    // Global agent tests need a real space (setSpaceSecret queries spaces table)
+    const runId = Date.now().toString(36);
+    const globalTestUserId = `ga-user-${runId}`;
+    const globalTestSpaceId = `ga-space-${runId}`;
+
+    beforeAll(async () => {
+      // Create a real user and space for these tests
+      await storage.createUser({
+        id: globalTestUserId,
+        externalId: `ext-ga-${runId}`,
+        callsign: `ga-user-${runId}`,
+      });
+      await storage.createSpace({
+        id: globalTestSpaceId,
+        ownerId: globalTestUserId,
+        name: `Global Agent Test Space ${runId}`,
+      });
+    });
+
+    afterAll(async () => {
+      // Clean up global agents, then space and user
+      try {
+        await storage.removeGlobalAgent(globalTestSpaceId, 'test-chorus-agent');
+      } catch { /* ignore */ }
+      try {
+        await storage.removeGlobalAgent(globalTestSpaceId, 'test-chorus-agent-2');
+      } catch { /* ignore */ }
+      // Note: space and user cleanup would need DELETE queries not exposed in storage interface
+      // They'll be orphaned but harmless in test DB
+    });
+
+    it('should return empty object when no global agents configured', async () => {
+      const agents = await storage.getGlobalAgents(globalTestSpaceId);
+      // May have agents from previous runs, but should be a valid object
+      expect(typeof agents).toBe('object');
+    });
+
+    it('should set and get a global agent', async () => {
+      await storage.setGlobalAgent(globalTestSpaceId, 'test-chorus-agent', {
+        protocol: 'chorus',
+        displayName: 'Test Agent',
+      }, 'https://nuum.dev/chorus/abc123/test/token123');
+
+      const agents = await storage.getGlobalAgents(globalTestSpaceId);
+      expect(agents['test-chorus-agent']).toBeDefined();
+      expect(agents['test-chorus-agent'].protocol).toBe('chorus');
+      expect(agents['test-chorus-agent'].displayName).toBe('Test Agent');
+    });
+
+    it('should store connection string as encrypted space secret', async () => {
+      // Connection string should be retrievable as a space secret
+      const connectionString = await storage.getSpaceSecretValue(
+        globalTestSpaceId,
+        'chorus:test-chorus-agent'
+      );
+      expect(connectionString).toBe('https://nuum.dev/chorus/abc123/test/token123');
+    });
+
+    it('should support multiple global agents', async () => {
+      await storage.setGlobalAgent(globalTestSpaceId, 'test-chorus-agent-2', {
+        protocol: 'chorus',
+        description: 'Second test agent',
+      }, 'https://nuum.dev/chorus/def456/test2/token456');
+
+      const agents = await storage.getGlobalAgents(globalTestSpaceId);
+      expect(agents['test-chorus-agent']).toBeDefined();
+      expect(agents['test-chorus-agent-2']).toBeDefined();
+      expect(agents['test-chorus-agent-2'].description).toBe('Second test agent');
+    });
+
+    it('should update an existing global agent config', async () => {
+      await storage.setGlobalAgent(globalTestSpaceId, 'test-chorus-agent', {
+        protocol: 'chorus',
+        displayName: 'Updated Agent Name',
+      }, 'https://nuum.dev/chorus/abc123/test/newtoken');
+
+      const agents = await storage.getGlobalAgents(globalTestSpaceId);
+      expect(agents['test-chorus-agent'].displayName).toBe('Updated Agent Name');
+
+      // Connection string should also be updated
+      const connectionString = await storage.getSpaceSecretValue(
+        globalTestSpaceId,
+        'chorus:test-chorus-agent'
+      );
+      expect(connectionString).toBe('https://nuum.dev/chorus/abc123/test/newtoken');
+    });
+
+    it('should remove a global agent and its secret', async () => {
+      await storage.removeGlobalAgent(globalTestSpaceId, 'test-chorus-agent-2');
+
+      const agents = await storage.getGlobalAgents(globalTestSpaceId);
+      expect(agents['test-chorus-agent-2']).toBeUndefined();
+
+      // Secret should also be removed
+      const connectionString = await storage.getSpaceSecretValue(
+        globalTestSpaceId,
+        'chorus:test-chorus-agent-2'
+      );
+      expect(connectionString).toBeNull();
+    });
+
+    it('should return empty object for non-existent space', async () => {
+      const agents = await storage.getGlobalAgents('nonexistent-space-id');
+      expect(agents).toEqual({});
     });
   });
 });

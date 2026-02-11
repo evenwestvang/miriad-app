@@ -10,7 +10,7 @@
 
 import type { AgentManager } from "./agent-manager.js";
 import type { Storage, MessageDeliveryContext, McpArtifactData, AgentDefinitionSummary } from "@cast/storage";
-import type { LocalRuntimeConfig } from "@cast/core";
+import { tymbal, generateMessageId, type LocalRuntimeConfig } from "@cast/core";
 import type { ConnectionManager } from "../websocket/index.js";
 import type { AgentInvoker, Message } from "../handlers/messages.js";
 import type { DeliverMessageMessage, McpServerConfig } from "../runtimes/runtime-protocol-handlers.js";
@@ -19,6 +19,7 @@ import {
   broadcastAgentState,
 } from "../handlers/checkin.js";
 import { generateContainerToken } from "../auth/index.js";
+import { generateCallbackToken } from "../handlers/chorus-callback.js";
 import { buildSystemPrompt } from "./agent-manager.js";
 import { prepareHttpMcpHeaders } from "./mcp-auth.js";
 
@@ -417,6 +418,7 @@ export interface AgentInvokerAdapterOptions {
  * Create an AgentInvoker that routes messages to agents.
  *
  * Flow for each target agent:
+ * 0. If agent is Chorus type → POST to connection string via Chorus protocol
  * 1. If agent has runtimeId → route via WebSocket to LocalRuntime (DB lookup)
  * 2. If agent has callbackUrl → push directly to Fly.io container via HTTP
  * 3. Otherwise → spawn new container via AgentManager
@@ -514,6 +516,131 @@ export function createAgentInvokerAdapter(
 
             const agentId = `${spaceId}:${channelId}:${callsign}`;
             const userMessage = buildUserMessage(message);
+
+            // Step 0: Check if this is a Chorus agent (global agent)
+            if (rosterEntry?.agentType === "chorus") {
+              console.log(
+                `[AgentInvoker] @${callsign} is Chorus agent, delivering via HTTP POST`,
+              );
+
+              // Get connection string from space secrets
+              const connectionUrl = await storage.getSpaceSecretValue(
+                spaceId,
+                `chorus:${callsign}`,
+              );
+              if (!connectionUrl) {
+                console.warn(
+                  `[AgentInvoker] @${callsign} is chorus agent but no connection string found`,
+                );
+                return;
+              }
+
+              // Generate or reuse callback token
+              let callbackToken = rosterEntry.chorusCallbackToken;
+              if (!callbackToken) {
+                callbackToken = generateCallbackToken(spaceId, channelId, callsign);
+                await storage.updateRosterEntry(channelId, rosterEntry.id, {
+                  chorusCallbackToken: callbackToken,
+                });
+              }
+
+              // Generate auth token for MCP access
+              const authToken = generateContainerToken({ spaceId, channelId, callsign });
+
+              // Build MCP array — only HTTP-transport MCPs for Chorus agents
+              const mcpServers: Array<{ name: string; url: string; headers: Record<string, string> }> = [];
+
+              if (platformMcpUrl) {
+                mcpServers.push({
+                  name: "miriad",
+                  url: `${platformMcpUrl}/mcp/${channelId}`,
+                  headers: { Authorization: `Container ${authToken}` },
+                });
+              }
+
+              // Note: Chorus agents don't get channel MCP enrichment.
+              // agentType is 'chorus' which doesn't match any definition slug,
+              // and by design external agents bring their own tools — we only
+              // provide the platform MCP for channel interaction.
+
+              // Build channel context for the Chorus agent
+              const channelContext = buildPromptFromContext(context, channelId, callsign);
+
+              // Build callback URL
+              const callbackUrl = `${platformMcpUrl}/api/chorus/callback/${callbackToken}`;
+
+              // POST to Chorus connection string
+              try {
+                const response = await fetch(connectionUrl, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    channel: {
+                      id: channelId,
+                      name: context.channel?.name ?? channelId,
+                      service: "Miriad",
+                      context: channelContext,
+                    },
+                    message: {
+                      id: message.id,
+                      sender: message.sender,
+                      content: userMessage,
+                    },
+                    callback: callbackUrl,
+                    mcp: mcpServers,
+                  }),
+                });
+
+                if (!response.ok) {
+                  console.error(
+                    `[AgentInvoker] Chorus POST to @${callsign} failed: ${response.status} ${response.statusText}`,
+                  );
+                  if (connectionManager) {
+                    const errorFrame = tymbal.set(generateMessageId(), {
+                      type: 'error',
+                      sender: callsign,
+                      senderType: 'agent',
+                      content: `Failed to reach @${callsign} — the agent returned ${response.status}. It may be offline or misconfigured.`,
+                    });
+                    await connectionManager.broadcast(channelId, errorFrame);
+                  }
+                  return;
+                }
+              } catch (error) {
+                console.error(
+                  `[AgentInvoker] Chorus POST to @${callsign} failed:`,
+                  error,
+                );
+                if (connectionManager) {
+                  const errorFrame = tymbal.set(generateMessageId(), {
+                    type: 'error',
+                    sender: callsign,
+                    senderType: 'agent',
+                    content: `Failed to reach @${callsign} — the agent may be offline or unreachable.`,
+                  });
+                  await connectionManager.broadcast(channelId, errorFrame);
+                }
+                return;
+              }
+
+              // Update readmark and routing timestamp
+              await storage.updateRosterEntry(channelId, rosterEntry.id, {
+                readmark: message.id,
+                lastMessageRoutedAt: new Date().toISOString(),
+              });
+
+              // Broadcast pending state
+              if (connectionManager) {
+                await broadcastAgentState(
+                  connectionManager,
+                  channelId,
+                  callsign,
+                  "pending",
+                );
+              }
+
+              return;
+            }
 
             // Step 1: Check if agent is bound to a LocalRuntime (via roster.runtime_id)
             // Route via WebSocket to the runtime's connection

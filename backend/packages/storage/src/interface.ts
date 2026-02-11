@@ -54,6 +54,8 @@ import type {
   StoredRuntime,
   CreateRuntimeInput,
   UpdateRuntimeInput,
+  // Global agent types (Chorus)
+  GlobalAgentConfig,
 } from '@cast/core';
 
 // =============================================================================
@@ -690,6 +692,50 @@ export interface Storage {
   listSpaceSecrets(
     spaceId: string
   ): Promise<Record<string, SecretMetadata>>;
+
+  // ---------------------------------------------------------------------------
+  // Global Agent Operations (Chorus)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get all global agents configured for a space.
+   *
+   * @param spaceId - Space ID
+   * @returns Record of callsign → config (empty object if none)
+   */
+  getGlobalAgents(
+    spaceId: string
+  ): Promise<Record<string, GlobalAgentConfig>>;
+
+  /**
+   * Add or update a global agent in a space.
+   * Stores config in spaces.global_agents JSONB and connection string as
+   * an encrypted space secret with key `chorus:<name>`.
+   *
+   * @param spaceId - Space ID
+   * @param name - Agent callsign
+   * @param config - Agent configuration (protocol, displayName, etc.)
+   * @param connectionString - Chorus connection URL (stored as encrypted secret)
+   */
+  setGlobalAgent(
+    spaceId: string,
+    name: string,
+    config: GlobalAgentConfig,
+    connectionString: string
+  ): Promise<void>;
+
+  /**
+   * Remove a global agent from a space.
+   * Deletes from spaces.global_agents JSONB and removes the
+   * `chorus:<name>` space secret.
+   *
+   * @param spaceId - Space ID
+   * @param name - Agent callsign
+   */
+  removeGlobalAgent(
+    spaceId: string,
+    name: string
+  ): Promise<void>;
 
   // ---------------------------------------------------------------------------
   // Local Agent Server Operations (Stage 3)
