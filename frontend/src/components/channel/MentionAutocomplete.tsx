@@ -1,5 +1,18 @@
 import { useEffect, useRef } from 'react'
+import { Globe } from 'lucide-react'
 import { cn } from '../../lib/utils'
+
+/** A global agent configured at space level (Chorus protocol) */
+export interface GlobalAgent {
+  /** Agent callsign (unique within space) */
+  name: string
+  /** Protocol used to reach this agent */
+  protocol: 'chorus'
+  /** Display name (defaults to callsign if not set) */
+  displayName?: string
+  /** Description of the agent's capabilities */
+  description?: string
+}
 
 export interface RosterAgent {
   callsign: string
@@ -36,6 +49,8 @@ export interface RosterAgent {
 interface MentionAutocompleteProps {
   query: string
   roster: RosterAgent[]
+  /** Global agents available at space level (shown if not already in roster) */
+  globalAgents?: GlobalAgent[]
   selectedIndex: number
   onSelect: (mention: string) => void
   onClose: () => void
@@ -47,6 +62,7 @@ interface MentionAutocompleteProps {
 export function MentionAutocomplete({
   query,
   roster,
+  globalAgents,
   selectedIndex,
   onSelect,
   onClose,
@@ -54,8 +70,8 @@ export function MentionAutocomplete({
 }: MentionAutocompleteProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Filter options based on query
-  const filteredOptions = getFilteredOptions(query, roster)
+  // Filter options based on query (roster + global agents, deduplicated)
+  const filteredOptions = getFilteredOptions(query, roster, globalAgents)
 
   // Close on click outside
   useEffect(() => {
@@ -101,6 +117,14 @@ export function MentionAutocomplete({
                 <span className="font-medium text-[var(--cast-text-primary)]">channel</span>
                 <span className="text-[var(--cast-text-muted)] text-xs ml-auto">broadcast</span>
               </>
+            ) : option.type === 'global' ? (
+              <>
+                <Globe className="w-3.5 h-3.5 text-[var(--cast-text-muted)] shrink-0" />
+                <span className="font-medium text-[var(--cast-text-primary)]">
+                  {option.globalAgent?.displayName || option.value}
+                </span>
+                <span className="text-[var(--cast-text-muted)] text-xs ml-auto">global</span>
+              </>
             ) : (
               <>
                 <span className={cn(
@@ -124,12 +148,13 @@ export function MentionAutocomplete({
 }
 
 interface FilteredOption {
-  type: 'agent' | 'channel'
+  type: 'agent' | 'channel' | 'global'
   value: string
   agent?: RosterAgent
+  globalAgent?: GlobalAgent
 }
 
-function getFilteredOptions(query: string, roster: RosterAgent[]): FilteredOption[] {
+function getFilteredOptions(query: string, roster: RosterAgent[], globalAgents?: GlobalAgent[]): FilteredOption[] {
   const lowerQuery = query.toLowerCase()
   const options: FilteredOption[] = []
 
@@ -139,7 +164,9 @@ function getFilteredOptions(query: string, roster: RosterAgent[]): FilteredOptio
   }
 
   // Filter roster agents
+  const rosterCallsigns = new Set<string>()
   for (const agent of roster) {
+    rosterCallsigns.add(agent.callsign.toLowerCase())
     if (agent.callsign.toLowerCase().startsWith(lowerQuery)) {
       options.push({
         type: 'agent',
@@ -149,13 +176,27 @@ function getFilteredOptions(query: string, roster: RosterAgent[]): FilteredOptio
     }
   }
 
+  // Filter global agents (exclude those already in roster)
+  if (globalAgents) {
+    for (const ga of globalAgents) {
+      if (rosterCallsigns.has(ga.name.toLowerCase())) continue
+      if (ga.name.toLowerCase().startsWith(lowerQuery)) {
+        options.push({
+          type: 'global',
+          value: ga.name,
+          globalAgent: ga,
+        })
+      }
+    }
+  }
+
   return options
 }
 
 /**
  * Hook to manage mention autocomplete state
  */
-export function useMentionAutocomplete(roster: RosterAgent[]) {
+export function useMentionAutocomplete(roster: RosterAgent[], globalAgents?: GlobalAgent[]) {
   // Find mention trigger in text
   const findMentionTrigger = (text: string, cursorPos: number): { start: number; query: string } | null => {
     // Look backwards from cursor for @ that starts a mention
@@ -181,12 +222,12 @@ export function useMentionAutocomplete(roster: RosterAgent[]) {
 
   // Get filtered options count for a query
   const getOptionsCount = (query: string): number => {
-    return getFilteredOptions(query, roster).length
+    return getFilteredOptions(query, roster, globalAgents).length
   }
 
   // Get option at index
   const getOptionAtIndex = (query: string, index: number): string | null => {
-    const options = getFilteredOptions(query, roster)
+    const options = getFilteredOptions(query, roster, globalAgents)
     return options[index]?.value ?? null
   }
 

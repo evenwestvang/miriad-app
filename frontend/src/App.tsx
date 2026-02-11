@@ -47,7 +47,7 @@ import { RuntimeStatusDropdown } from "./components/RuntimeStatusDropdown";
 // Auth mode: 'dev' (show LoginPage) or 'workos' (redirect to /auth/login)
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || "dev";
 import type { Agent, Channel, Message } from "./types";
-import type { RosterAgent } from "./components/channel/MentionAutocomplete";
+import type { RosterAgent, GlobalAgent } from "./components/channel/MentionAutocomplete";
 
 export function App() {
   // Check for OAuth popup pages first (before any state initialization)
@@ -114,6 +114,8 @@ export function App() {
   const currentUser = authSession?.user.callsign || "user";
   const [isCreatingThread, setIsCreatingThread] = useState(false);
   const [roster, setRoster] = useState<RosterAgent[]>([]);
+  // Global agents configured at space level (fetched once per space)
+  const [globalAgents, setGlobalAgents] = useState<GlobalAgent[]>([]);
   // Increment to trigger roster reload (e.g., when runtime status changes)
   const [rosterRefreshKey, setRosterRefreshKey] = useState(0);
   // Total channel cost (sum of all agents, including archived)
@@ -729,11 +731,14 @@ export function App() {
           `[ChannelSwitch] Starting roster fetch at ${performance.now().toFixed(2)}ms`,
         );
         try {
-          // Fetch roster, costs, and archived agents in parallel
-          const [rosterResponse, costsResponse, archivedResponse] = await Promise.all([
+          // Fetch roster, costs, archived agents, and global agents in parallel
+          const [rosterResponse, costsResponse, archivedResponse, globalAgentsResponse] = await Promise.all([
             apiFetch(`${API_HOST}/channels/${selectedThread}/roster`),
             apiFetch(`${API_HOST}/channels/${selectedThread}/costs`),
             apiFetch(`${API_HOST}/channels/${selectedThread}/agents/archived`),
+            authSession?.spaceId
+              ? apiFetch(`${API_HOST}/spaces/${authSession.spaceId}/global-agents`)
+              : Promise.resolve(null),
           ]);
 
           if (!rosterResponse.ok) {
@@ -764,6 +769,23 @@ export function App() {
                 archivedData.agents.map((a: { callsign: string }) => a.callsign)
               );
               setDismissedAgents(archivedCallsigns);
+            }
+          }
+
+          // Parse global agents response
+          if (globalAgentsResponse?.ok) {
+            const globalData = await globalAgentsResponse.json();
+            if (globalData.agents && typeof globalData.agents === 'object') {
+              // API returns Record<string, GlobalAgentConfig>, convert to array
+              const agents: GlobalAgent[] = Object.entries(globalData.agents).map(
+                ([name, config]: [string, any]) => ({
+                  name,
+                  protocol: config.protocol,
+                  displayName: config.displayName,
+                  description: config.description,
+                })
+              );
+              setGlobalAgents(agents);
             }
           }
 
@@ -1447,6 +1469,7 @@ export function App() {
                   onSend={handleSendMessage}
                   disabled={!connected}
                   roster={rosterWithWorkingState}
+                  globalAgents={globalAgents}
                   channelId={selectedThread || undefined}
                   apiHost={API_HOST}
                   onSummon={() => setSummonOpen(true)}
