@@ -52,6 +52,7 @@ import {
 import { createAppRoutes } from "./handlers/apps.js";
 import { createRuntimeAuthRoutes } from "./handlers/runtime-auth.js";
 import { createRuntimeRoutes } from "./handlers/runtimes.js";
+import { createChorusCallbackRoutes } from "./handlers/chorus-callback.js";
 import { createMiriadCloudRoutes } from "./handlers/miriad-cloud.js";
 import { createKBRoutes } from "./handlers/kb.js";
 import { createDisclaimerRoutes } from "./handlers/disclaimer.js";
@@ -1350,6 +1351,15 @@ export function createApp(options: AppOptions): Hono {
   // ---------------------------------------------------------------------------
   const runtimeRoutes = createRuntimeRoutes({ storage });
   app.route("/api/spaces", runtimeRoutes);
+
+  // ---------------------------------------------------------------------------
+  // Chorus Callback Routes (global agent protocol adapter)
+  // ---------------------------------------------------------------------------
+  const chorusCallbackRoutes = createChorusCallbackRoutes({
+    storage,
+    broadcast: (channelId, frame) => connectionManager.broadcast(channelId, frame),
+  });
+  app.route("/api/chorus", chorusCallbackRoutes);
 
   // ---------------------------------------------------------------------------
   // Miriad Cloud Routes (container provisioning)
