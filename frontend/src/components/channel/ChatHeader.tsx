@@ -5,7 +5,7 @@
  * Shows "Thread" label with board toggle button and channel cost total.
  */
 import { useState, useEffect, useRef } from 'react'
-import { LayoutGrid, PanelLeftClose, PanelLeft, Flame, MoreVertical, Archive } from 'lucide-react'
+import { LayoutGrid, PanelLeftClose, PanelLeft, Flame, MoreVertical, Archive, Pencil } from 'lucide-react'
 
 interface ChatHeaderProps {
   /** Whether the agent is currently thinking/processing */
@@ -26,8 +26,10 @@ interface ChatHeaderProps {
   onToggleFirehose?: () => void
   /** Channel name for display */
   channelName?: string
-  /** Whether this is the root channel (archive disabled) */
+  /** Whether this is the root channel (archive/rename disabled) */
   isRootChannel?: boolean
+  /** Callback when user clicks rename channel */
+  onRenameChannel?: () => void
   /** Callback when user clicks archive channel */
   onArchiveChannel?: () => void
 }
@@ -58,6 +60,7 @@ export function ChatHeader({
   firehoseMode = false,
   onToggleFirehose,
   isRootChannel = false,
+  onRenameChannel,
   onArchiveChannel,
 }: ChatHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -135,7 +138,7 @@ export function ChatHeader({
           </button>
         )}
         {/* Channel menu */}
-        {onArchiveChannel && (
+        {(onRenameChannel || onArchiveChannel) && (
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setMenuOpen(!menuOpen)}
@@ -146,23 +149,44 @@ export function ChatHeader({
             </button>
             {menuOpen && (
               <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[180px] z-50">
-                <button
-                  onClick={() => {
-                    if (!isRootChannel) {
-                      setMenuOpen(false)
-                      onArchiveChannel()
-                    }
-                  }}
-                  disabled={isRootChannel}
-                  className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left ${
-                    isRootChannel
-                      ? 'text-muted-foreground/50 cursor-not-allowed'
-                      : 'text-muted-foreground hover:bg-secondary/50'
-                  }`}
-                >
-                  <Archive className="w-4 h-4" />
-                  Archive channel
-                </button>
+                {onRenameChannel && (
+                  <button
+                    onClick={() => {
+                      if (!isRootChannel) {
+                        setMenuOpen(false)
+                        onRenameChannel()
+                      }
+                    }}
+                    disabled={isRootChannel}
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left ${
+                      isRootChannel
+                        ? 'text-muted-foreground/50 cursor-not-allowed'
+                        : 'text-muted-foreground hover:bg-secondary/50'
+                    }`}
+                  >
+                    <Pencil className="w-4 h-4" />
+                    Rename channel
+                  </button>
+                )}
+                {onArchiveChannel && (
+                  <button
+                    onClick={() => {
+                      if (!isRootChannel) {
+                        setMenuOpen(false)
+                        onArchiveChannel()
+                      }
+                    }}
+                    disabled={isRootChannel}
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left ${
+                      isRootChannel
+                        ? 'text-muted-foreground/50 cursor-not-allowed'
+                        : 'text-muted-foreground hover:bg-secondary/50'
+                    }`}
+                  >
+                    <Archive className="w-4 h-4" />
+                    Archive channel
+                  </button>
+                )}
               </div>
             )}
           </div>

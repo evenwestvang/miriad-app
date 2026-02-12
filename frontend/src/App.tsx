@@ -12,6 +12,7 @@ import { AgentRoster, type AgentType } from "./components/channel/AgentRoster";
 import { AgentDetailPanel } from "./components/channel/AgentDetailPanel";
 import { ChatHeader } from "./components/channel/ChatHeader";
 import { ArchiveChannelDialog } from "./components/channel/ArchiveChannelDialog";
+import { RenameChannelDialog } from "./components/channel/RenameChannelDialog";
 import {
   useTymbalConnection,
   type ArtifactEvent,
@@ -156,6 +157,7 @@ export function App() {
   const [channelSwitcherOpen, setChannelSwitcherOpen] = useState(false);
   // Archive channel dialog open state
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   // Recently dismissed agents (for warning when mentioning them)
   const [dismissedAgents, setDismissedAgents] = useState<Set<string>>(new Set());
   // Mobile navigation tab state
@@ -1008,6 +1010,36 @@ export function App() {
     [navigateToChannel],
   );
 
+  const handleRenameChannel = useCallback(async (newName: string) => {
+    if (!selectedThread) return;
+
+    try {
+      const response = await apiFetch(
+        `${API_HOST}/channels/${selectedThread}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: newName }),
+        },
+      );
+
+      if (!response.ok) {
+        const data = await response.json();
+        console.error("Failed to rename channel:", data.error);
+        return;
+      }
+
+      // Update channel name in local state
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.id === selectedThread ? { ...t, agentName: newName } : t,
+        ),
+      );
+    } catch (error) {
+      console.error("Failed to rename channel:", error);
+    }
+  }, [selectedThread]);
+
   const handleArchiveChannel = useCallback(async () => {
     if (!selectedThread) return;
 
@@ -1456,6 +1488,7 @@ export function App() {
                 onToggleFirehose={() => setFirehoseMode(!firehoseMode)}
                 channelName={currentThread?.agentName}
                 isRootChannel={currentThread?.agentName === "root"}
+                onRenameChannel={() => setRenameDialogOpen(true)}
                 onArchiveChannel={() => setArchiveDialogOpen(true)}
               />
               <MessageList
@@ -1596,6 +1629,15 @@ export function App() {
         selectedChannelId={selectedThread}
         onSelectChannel={handleSwitchChannel}
       />
+
+      {/* Rename channel dialog */}
+      {renameDialogOpen && currentThread && (
+        <RenameChannelDialog
+          currentName={currentThread.agentName}
+          onConfirm={handleRenameChannel}
+          onClose={() => setRenameDialogOpen(false)}
+        />
+      )}
 
       {/* Archive channel confirmation dialog */}
       {archiveDialogOpen && currentThread && (
