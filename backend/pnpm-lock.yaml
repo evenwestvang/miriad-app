@@ -170,6 +170,9 @@ importers:
       '@cast/runtime':
         specifier: workspace:*
         version: link:../runtime
+      '@cast/sandbox-mcp':
+        specifier: workspace:*
+        version: link:../sandbox-mcp
       '@cast/storage':
         specifier: workspace:*
         version: link:../storage

@@ -66,6 +66,8 @@ import {
   OAUTH_SECRET_KEYS,
 } from "./oauth/index.js";
 import { resetRootChannel } from "./onboarding/index.js";
+import { createSandboxMcpRoutes } from "./handlers/mcp-sandbox.js";
+import { createDaytonaClient } from "@cast/sandbox-mcp";
 
 // =============================================================================
 // Types
@@ -2800,6 +2802,76 @@ export function createApp(options: AppOptions): Hono {
     },
   });
   app.route("/mcp", mcpRoutes);
+
+  // Sandbox MCP routes (Daytona sandbox tools for agents)
+  // Only mounted if DAYTONA_API_KEY is configured
+  const daytonaApiKey = process.env.DAYTONA_API_KEY;
+  if (daytonaApiKey) {
+    const daytonaClient = createDaytonaClient({
+      apiKey: daytonaApiKey,
+      apiUrl: process.env.DAYTONA_API_URL,
+    });
+
+    const sandboxMcpRoutes = createSandboxMcpRoutes({
+      storage,
+      daytona: daytonaClient,
+      resolveEnvironment: async (sid: string, cid: string) => {
+        // Lightweight env resolution — same semantics as resolveEnvironmentFromContext
+        // but without needing the full MessageDeliveryContext batch query.
+        const result: Record<string, string> = {};
+
+        // Get root channel for space-wide defaults
+        const rootChannel = await storage.getChannelByName(sid, "root");
+        const rootChannelId = rootChannel?.id;
+
+        // Fetch environment artifacts from root + channel
+        const channelEnvs = await storage.listArtifacts(cid, { type: "system.environment" });
+        const rootEnvs = rootChannelId
+          ? await storage.listArtifacts(rootChannelId, { type: "system.environment" })
+          : [];
+
+        // Root first (base layer)
+        for (const summary of rootEnvs) {
+          const artifact = await storage.getArtifact(rootChannelId!, summary.slug);
+          if (!artifact) continue;
+          const vars = (artifact.props as any)?.variables as Record<string, string> | undefined;
+          if (vars) Object.assign(result, vars);
+          // Decrypt secrets
+          if (artifact.secrets) {
+            for (const key of Object.keys(artifact.secrets)) {
+              const value = await storage.getSecretValue(sid, rootChannelId!, artifact.slug, key);
+              if (value !== null) result[key] = value;
+            }
+          }
+        }
+
+        // Channel overlays (specificity wins)
+        for (const summary of channelEnvs) {
+          const artifact = await storage.getArtifact(cid, summary.slug);
+          if (!artifact) continue;
+          const vars = (artifact.props as any)?.variables as Record<string, string> | undefined;
+          if (vars) Object.assign(result, vars);
+          if (artifact.secrets) {
+            for (const key of Object.keys(artifact.secrets)) {
+              const value = await storage.getSecretValue(sid, cid, artifact.slug, key);
+              if (value !== null) result[key] = value;
+            }
+          }
+        }
+
+        // process.env takes precedence (security)
+        for (const key of Object.keys(result)) {
+          if (process.env[key]) result[key] = process.env[key]!;
+        }
+
+        return result;
+      },
+    });
+    app.route("/mcp/sandbox", sandboxMcpRoutes);
+    console.log("[App] Sandbox MCP enabled (DAYTONA_API_KEY configured)");
+  } else {
+    console.log("[App] Sandbox MCP disabled (no DAYTONA_API_KEY)");
+  }
 
   // Assets API routes (container auth for agents)
   // Used by @miriad-systems/assets-mcp for agent file upload/download

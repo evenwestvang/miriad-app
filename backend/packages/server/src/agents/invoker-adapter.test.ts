@@ -750,6 +750,8 @@ describe('buildMcpConfigsFromContext', () => {
   const channelId = 'channel-123';
   const authToken = 'test-auth-token';
   const platformMcpUrl = 'https://api.cast.app';
+  // Platform MCPs: miriad + miriad-files + sandbox (if DAYTONA_API_KEY is set)
+  const platformMcpCount = process.env.DAYTONA_API_KEY ? 3 : 2;
 
   describe('platform MCPs', () => {
     it('adds miriad and miriad-files MCPs when platformMcpUrl and authToken provided', async () => {
@@ -762,7 +764,7 @@ describe('buildMcpConfigsFromContext', () => {
         platformMcpUrl,
       );
 
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(platformMcpCount);
       
       const miriad = result.find(c => c.name === 'miriad');
       expect(miriad).toBeDefined();
@@ -835,8 +837,8 @@ describe('buildMcpConfigsFromContext', () => {
         platformMcpUrl,
       );
 
-      // 2 platform MCPs + 1 system MCP
-      expect(result).toHaveLength(3);
+      // platform MCPs + 1 system MCP
+      expect(result).toHaveLength(platformMcpCount + 1);
       
       const myMcp = result.find(c => c.name === 'my-mcp');
       expect(myMcp).toBeDefined();
@@ -865,7 +867,7 @@ describe('buildMcpConfigsFromContext', () => {
       );
 
       // Only platform MCPs, missing-mcp skipped
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(platformMcpCount);
       expect(result.find(c => c.name === 'missing-mcp')).toBeUndefined();
     });
 
@@ -900,7 +902,7 @@ describe('buildMcpConfigsFromContext', () => {
       );
 
       // Only platform MCPs
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(platformMcpCount);
     });
 
     it('skips HTTP OAuth MCPs without token fetcher', async () => {
@@ -935,7 +937,7 @@ describe('buildMcpConfigsFromContext', () => {
       );
 
       // Only platform MCPs, OAuth MCP skipped
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(platformMcpCount);
       expect(result.find(c => c.name === 'oauth-mcp')).toBeUndefined();
     });
 
@@ -975,7 +977,7 @@ describe('buildMcpConfigsFromContext', () => {
       );
 
       // Platform MCPs + OAuth MCP with token
-      expect(result).toHaveLength(3);
+      expect(result).toHaveLength(platformMcpCount + 1);
       const oauthMcp = result.find(c => c.name === 'oauth-mcp');
       expect(oauthMcp).toBeDefined();
       expect(oauthMcp?.headers?.Authorization).toBe('Bearer valid-oauth-token');
@@ -1018,7 +1020,7 @@ describe('buildMcpConfigsFromContext', () => {
       );
 
       // Only platform MCPs, OAuth MCP skipped (no valid token)
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(platformMcpCount);
       expect(result.find(c => c.name === 'oauth-mcp')).toBeUndefined();
     });
 
@@ -1055,7 +1057,7 @@ describe('buildMcpConfigsFromContext', () => {
       );
 
       // Platform MCPs + stdio MCP (oauth ignored)
-      expect(result).toHaveLength(3);
+      expect(result).toHaveLength(platformMcpCount + 1);
       const stdioMcp = result.find(c => c.name === 'stdio-mcp');
       expect(stdioMcp).toBeDefined();
       expect(stdioMcp?.transport).toBe('stdio');
@@ -1135,8 +1137,10 @@ describe('buildMcpConfigsFromContext', () => {
         platformMcpUrl,
       );
 
-      expect(result).toHaveLength(2);
-      expect(result.map(c => c.name)).toEqual(['miriad', 'miriad-files']);
+      expect(result).toHaveLength(platformMcpCount);
+      // Platform MCPs always include miriad + miriad-files, plus sandbox if DAYTONA_API_KEY is set
+      expect(result.find(c => c.name === 'miriad')).toBeDefined();
+      expect(result.find(c => c.name === 'miriad-files')).toBeDefined();
     });
   });
 });

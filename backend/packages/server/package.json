@@ -32,6 +32,7 @@
     "@aws-sdk/s3-request-presigner": "^3.975.0",
     "@cast/core": "workspace:*",
     "@cast/runtime": "workspace:*",
+    "@cast/sandbox-mcp": "workspace:*",
     "@cast/storage": "workspace:*",
     "@hono/node-server": "^1.8.0",
     "@workos-inc/node": "^7.79.3",
