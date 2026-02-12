@@ -190,44 +190,33 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
     return () => clearInterval(interval)
   }, [apiHost, spaceId, pollInterval])
 
-  // Close on outside click (but not when no runtimes are online)
+  // Close on outside click
   useEffect(() => {
     if (!isOpen) return
 
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        // Don't close if no runtimes are online - user needs to configure one
-        if (hasAnyOnline) {
-          setIsOpen(false)
-        }
+        setIsOpen(false)
       }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isOpen, hasAnyOnline])
+  }, [isOpen])
 
-  // Close on escape (but not when no runtimes are online)
+  // Close on escape
   useEffect(() => {
     if (!isOpen) return
 
     const handleEscape = (e: KeyboardEvent) => {
-      // Don't close if no runtimes are online - user needs to configure one
-      if (e.key === 'Escape' && hasAnyOnline) {
+      if (e.key === 'Escape') {
         setIsOpen(false)
       }
     }
 
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
-  }, [isOpen, hasAnyOnline])
-
-  // Auto-open dropdown if no runtimes are online after initial check
-  useEffect(() => {
-    if (hasCheckedRuntimes && !hasAnyOnline && !isOpen) {
-      setIsOpen(true)
-    }
-  }, [hasCheckedRuntimes, hasAnyOnline])
+  }, [isOpen])
 
   // Notify parent of disconnected state (no runtime online AND no API key)
   useEffect(() => {
