@@ -1120,6 +1120,71 @@ Return ONLY the callsign, nothing else.`;
    * Sets status back to 'active' and spawns a new container.
    * Used when user wants to re-summon a previously dismissed agent.
    */
+  /**
+   * POST /channels/:id/archive - Archive a channel
+   *
+   * Dismisses all active agents, then archives the channel (soft delete).
+   * Root channel cannot be archived.
+   */
+  app.post("/:channelId/archive", async (c) => {
+    const channelId = c.req.param("channelId");
+    const spaceId = getSpaceId(c);
+
+    try {
+      const channel = await storage.getChannel(spaceId, channelId);
+      if (!channel) {
+        return c.json({ error: "Channel not found" }, 404);
+      }
+
+      if (channel.name === "root") {
+        return c.json({ error: "Cannot archive the root channel" }, 400);
+      }
+
+      // Dismiss all active agents
+      const rosterEntries = await storage.listRoster(channelId);
+      const activeEntries = rosterEntries.filter(
+        (entry) => entry.status !== "archived",
+      );
+
+      for (const entry of activeEntries) {
+        await sendSuspendToRuntime(
+          spaceId,
+          channelId,
+          entry.callsign,
+          entry.runtimeId,
+          "channel_archived",
+        );
+
+        await storage.updateRosterEntry(channelId, entry.id, {
+          status: "archived",
+          runtimeId: undefined,
+          lastHeartbeat: undefined,
+          callbackUrl: undefined,
+        });
+
+        await broadcastAgentState(
+          connectionManager,
+          channelId,
+          entry.callsign,
+          "dismissed",
+        );
+      }
+
+      await storage.archiveChannel(spaceId, channelId);
+
+      console.log(
+        `[Channels] Archived channel ${channelId} (dismissed ${activeEntries.length} agents)`,
+      );
+      return c.json({
+        success: true,
+        dismissedAgents: activeEntries.length,
+      });
+    } catch (error) {
+      console.error("[Channels] Error archiving channel:", error);
+      return c.json({ error: "Failed to archive channel" }, 500);
+    }
+  });
+
   app.post("/:channelId/agents/:callsign/unarchive", async (c) => {
     const channelId = c.req.param("channelId");
     const callsign = c.req.param("callsign");
