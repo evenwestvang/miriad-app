@@ -35,6 +35,8 @@ export function createDaytonaClient(config: {
   apiKey: string;
   apiUrl?: string;
 }): Daytona {
+  // `target` is a valid runtime param (selects Daytona region) but not in the
+  // SDK's DaytonaConfig type definition. Cast needed until SDK types catch up.
   return new Daytona({
     apiKey: config.apiKey,
     apiUrl: config.apiUrl || 'https://app.daytona.io/api',
