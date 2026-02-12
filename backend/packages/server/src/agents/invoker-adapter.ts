@@ -298,6 +298,18 @@ export async function buildMcpConfigsFromContext(
         CAST_CONTAINER_TOKEN: authToken,
       },
     });
+
+    // Add sandbox MCP if Daytona is configured
+    if (process.env.DAYTONA_API_KEY) {
+      configs.push({
+        name: "sandbox",
+        transport: "http" as const,
+        url: `${platformMcpUrl}/mcp-sandbox/${channelId}`,
+        headers: {
+          Authorization: `Container ${authToken}`,
+        },
+      });
+    }
   }
 
   // Add system MCPs from agent definition
@@ -556,6 +568,15 @@ export function createAgentInvokerAdapter(
                   url: `${platformMcpUrl}/mcp/${channelId}`,
                   headers: { Authorization: `Container ${authToken}` },
                 });
+
+                // Add sandbox MCP if Daytona is configured
+                if (process.env.DAYTONA_API_KEY) {
+                  mcpServers.push({
+                    name: "sandbox",
+                    url: `${platformMcpUrl}/mcp-sandbox/${channelId}`,
+                    headers: { Authorization: `Container ${authToken}` },
+                  });
+                }
               }
 
               // Note: Chorus agents don't get channel MCP enrichment.

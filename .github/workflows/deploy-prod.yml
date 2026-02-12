@@ -91,6 +91,8 @@ jobs:
           PARAM_FLY_API_TOKEN: ${{ secrets.PROD_FLY_API_TOKEN }}
           PARAM_FLY_APP_NAME: ${{ secrets.PROD_FLY_APP_NAME }}
           PARAM_CONTAINER_SECRET: ${{ secrets.PROD_CONTAINER_SECRET }}
+          PARAM_DAYTONA_API_KEY: ${{ secrets.PROD_DAYTONA_API_KEY }}
+          PARAM_DAYTONA_API_URL: ${{ secrets.PROD_DAYTONA_API_URL }}
         run: |
           # Write samconfig.toml to bypass SAM CLI parameter parsing entirely
           # This avoids the space-truncation issue with FlyV1 tokens
@@ -126,6 +128,8 @@ jobs:
             "FlyRegion=iad",
             "SpaceId=default",
             "ContainerSecret=${PARAM_CONTAINER_SECRET}",
+            "DaytonaApiKey=${PARAM_DAYTONA_API_KEY}",
+            "DaytonaApiUrl=${PARAM_DAYTONA_API_URL}",
             "MiriadRuntimeMode=fly",
             "DeployTimestamp=${{ github.run_id }}-${{ github.run_number }}"
           ]
