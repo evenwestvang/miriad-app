@@ -18,7 +18,29 @@ export interface ToolDefinition {
 }
 
 /**
+ * Recursively scrub all string values in an object/array.
+ * Operates on raw strings before JSON serialization, so escaped characters
+ * (e.g., \n → \\n from JSON.stringify) can't bypass the scrubber regex.
+ */
+export function deepScrub(value: unknown, scrub: (text: string) => string): unknown {
+  if (typeof value === 'string') return scrub(value);
+  if (Array.isArray(value)) return value.map(v => deepScrub(v, scrub));
+  if (value !== null && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      result[k] = deepScrub(v, scrub);
+    }
+    return result;
+  }
+  return value; // numbers, booleans, null — pass through
+}
+
+/**
  * Wraps a handler to return MCP tool result format with scrubbed output.
+ *
+ * Scrubs the result object recursively BEFORE JSON.stringify to prevent
+ * bypass via JSON escaping (e.g., newlines in secrets becoming \\n).
+ * Handler-level scrubs remain as belt-and-suspenders.
  */
 function wrapHandler(
   handler: (ctx: SandboxContext, args: any) => Promise<any>,
@@ -26,9 +48,10 @@ function wrapHandler(
   return async (ctx, args) => {
     try {
       const result = await handler(ctx, args);
-      const text = JSON.stringify(result, null, 2);
+      const scrubbed = deepScrub(result, ctx.scrubber.scrub);
+      const text = JSON.stringify(scrubbed, null, 2);
       return {
-        content: [{ type: 'text' as const, text: ctx.scrubber.scrub(text) }],
+        content: [{ type: 'text' as const, text }],
       };
     } catch (err) {
       const { error, code } = formatError(err);

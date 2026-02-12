@@ -14,7 +14,7 @@
  *   // Register tools with MCP server, passing ctx to each handler
  */
 
-export { getWrappedTools, tools } from './tools.js';
+export { getWrappedTools, tools, deepScrub } from './tools.js';
 export type { ToolDefinition } from './tools.js';
 export type { SandboxContext, GitCredentials, SecretScrubber, ToolResult } from './types.js';
 export { createScrubber } from './scrubber.js';

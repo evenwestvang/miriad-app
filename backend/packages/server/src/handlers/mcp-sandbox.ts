@@ -90,10 +90,12 @@ export function createSandboxMcpRoutes(options: SandboxMcpOptions) {
     inputSchema: zodToJsonSchema(t.schema),
   }));
 
-  // Build handler lookup
+  // Build handler + schema lookups
   const toolHandlers = new Map<string, (ctx: SandboxContext, args: any) => Promise<ToolResult>>();
+  const toolSchemas = new Map<string, (typeof wrappedTools)[number]['schema']>();
   for (const t of wrappedTools) {
     toolHandlers.set(t.name, t.handler);
+    toolSchemas.set(t.name, t.schema);
   }
 
   // POST /mcp/sandbox/:channel — JSON-RPC endpoint
@@ -155,6 +157,18 @@ export function createSandboxMcpRoutes(options: SandboxMcpOptions) {
         }
 
         try {
+          // Validate input against Zod schema before touching Daytona
+          const schema = toolSchemas.get(params.name);
+          let validatedArgs = params.arguments ?? {};
+          if (schema) {
+            const parsed = schema.safeParse(validatedArgs);
+            if (!parsed.success) {
+              const issues = parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
+              return c.json(jsonRpcError(request.id, JSONRPC_ERRORS.INVALID_PARAMS, `Invalid arguments: ${issues}`));
+            }
+            validatedArgs = parsed.data;
+          }
+
           // Resolve channel environment (secrets decrypted)
           const env = await resolveEnvironment(spaceId, channelId);
 
@@ -174,7 +188,7 @@ export function createSandboxMcpRoutes(options: SandboxMcpOptions) {
             git,
           });
 
-          const result = await handler(ctx, params.arguments ?? {});
+          const result = await handler(ctx, validatedArgs);
           return c.json(jsonRpcSuccess(request.id, result));
         } catch (err) {
           return c.json(jsonRpcSuccess(request.id, {
