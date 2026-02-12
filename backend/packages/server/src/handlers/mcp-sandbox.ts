@@ -156,43 +156,45 @@ export function createSandboxMcpRoutes(options: SandboxMcpOptions) {
           return c.json(jsonRpcError(request.id, JSONRPC_ERRORS.METHOD_NOT_FOUND, `Unknown tool: ${params.name}`));
         }
 
-        try {
-          // Validate input against Zod schema before touching Daytona
-          const schema = toolSchemas.get(params.name);
-          let validatedArgs = params.arguments ?? {};
-          if (schema) {
-            const parsed = schema.safeParse(validatedArgs);
-            if (!parsed.success) {
-              const issues = parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
-              return c.json(jsonRpcError(request.id, JSONRPC_ERRORS.INVALID_PARAMS, `Invalid arguments: ${issues}`));
-            }
-            validatedArgs = parsed.data;
+        // Validate input against Zod schema before touching Daytona
+        const schema = toolSchemas.get(params.name);
+        let validatedArgs = params.arguments ?? {};
+        if (schema) {
+          const parsed = schema.safeParse(validatedArgs);
+          if (!parsed.success) {
+            const issues = parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
+            return c.json(jsonRpcError(request.id, JSONRPC_ERRORS.INVALID_PARAMS, `Invalid arguments: ${issues}`));
           }
+          validatedArgs = parsed.data;
+        }
 
-          // Resolve channel environment (secrets decrypted)
+        // Resolve environment and build context — errors here are infra-level
+        // (DB connection, secret decryption) and must NOT leak raw messages
+        let ctx: SandboxContext;
+        try {
           const env = await resolveEnvironment(spaceId, channelId);
-
-          // Extract git credentials from resolved env
           const git = {
             token: env.GITHUB_TOKEN || env.GIT_TOKEN || env.GITHUB_PERSONAL_ACCESS_TOKEN,
             username: env.GIT_USERNAME || 'oauth2',
           };
+          ctx = createSandboxContext({ daytona, channelId, spaceId, callsign, env, git });
+        } catch (err) {
+          console.error(`[Sandbox MCP] Environment resolution failed for channel ${channelId}:`, err);
+          return c.json(jsonRpcSuccess(request.id, {
+            content: [{ type: 'text', text: 'Internal error resolving environment' }],
+            isError: true,
+          }));
+        }
 
-          // Create per-request sandbox context
-          const ctx = createSandboxContext({
-            daytona,
-            channelId,
-            spaceId,
-            callsign,
-            env,
-            git,
-          });
-
+        // Execute tool — errors here may contain channel secrets (Daytona API
+        // echoing back connection strings, etc.), so scrub before returning
+        try {
           const result = await handler(ctx, validatedArgs);
           return c.json(jsonRpcSuccess(request.id, result));
         } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
           return c.json(jsonRpcSuccess(request.id, {
-            content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
+            content: [{ type: 'text', text: ctx.scrubber.scrub(msg) }],
             isError: true,
           }));
         }

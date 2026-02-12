@@ -56,7 +56,7 @@ function wrapHandler(
     } catch (err) {
       const { error, code } = formatError(err);
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ error, code }) }],
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: ctx.scrubber.scrub(error), code }) }],
         isError: true,
       };
     }
