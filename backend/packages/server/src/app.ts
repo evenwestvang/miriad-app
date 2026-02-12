@@ -2863,6 +2863,13 @@ export function createApp(options: AppOptions): Hono {
           }
         }
 
+        // Inject space-level secrets (same as miriad-cloud.ts:703)
+        // These are set in Settings → Cloud, not in system.environment artifacts
+        const githubToken = await storage.getSpaceSecretValue(sid, 'github_token');
+        if (githubToken && !result['GITHUB_TOKEN']) {
+          result['GITHUB_TOKEN'] = githubToken;
+        }
+
         // process.env takes precedence (security)
         for (const key of Object.keys(result)) {
           if (process.env[key]) result[key] = process.env[key]!;
