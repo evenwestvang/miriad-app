@@ -58,7 +58,7 @@ export function RootChannelEmptyState({ onSpawnCustodian }: RootChannelEmptyStat
       {/* Custodian CTA */}
       {onSpawnCustodian && (
         <div className="w-full max-w-md">
-          <p className="text-sm text-orange-500 mb-3">
+          <p className="text-sm text-emerald-500 mb-3">
             Summon an agent to help you customize your space:
           </p>
           <button

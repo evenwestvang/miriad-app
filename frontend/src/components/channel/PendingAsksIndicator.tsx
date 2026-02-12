@@ -201,7 +201,7 @@ export function PendingAsksIndicator({
           'hover:bg-secondary/50 transition-colors',
           isLoading && 'opacity-50'
         )}
-        style={{ color: '#ff6600' }}
+        style={{ color: '#10B981' }}
         disabled={isLoading}
       >
         {isLoading ? '...' : `${pendingAsks.length} ask${pendingAsks.length !== 1 ? 's' : ''}`}

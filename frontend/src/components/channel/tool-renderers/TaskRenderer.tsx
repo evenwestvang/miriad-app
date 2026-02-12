@@ -44,8 +44,8 @@ export function TaskRenderer({ args, output, error, isSuccess }: ToolRendererPro
     <div className="space-y-2">
       {/* Header with distinctive purple color for Task */}
       <div className="flex items-center gap-2">
-        <Bot className="w-4 h-4 text-purple-500" />
-        <span className="text-xs font-medium text-purple-500">Task</span>
+        <Bot className="w-4 h-4 text-amber-500" />
+        <span className="text-xs font-medium text-amber-500">Task</span>
         <span className="text-xs text-muted-foreground">→</span>
         <span className="text-xs font-medium">{subagentType}</span>
         {runInBackground && (

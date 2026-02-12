@@ -119,7 +119,7 @@ export function ChatHeader({
             onClick={onToggleFirehose}
             className={`p-1.5 rounded transition-colors ${
               firehoseMode
-                ? 'bg-orange-500/20 text-orange-500 hover:bg-orange-500/30'
+                ? 'bg-emerald-500/20 text-emerald-500 hover:bg-emerald-500/30'
                 : 'hover:bg-secondary/50 text-muted-foreground'
             }`}
             title="Enable firehose mode"

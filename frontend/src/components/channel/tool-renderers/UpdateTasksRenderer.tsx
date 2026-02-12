@@ -73,7 +73,7 @@ export function UpdateTasksRenderer({ args, isSuccess }: ToolRendererProps) {
       {/* Header with summary */}
       <div className="flex items-center justify-between py-1.5">
         <div className="flex items-center gap-2">
-          <ListTodo className="w-4 h-4 text-purple-500" />
+          <ListTodo className="w-4 h-4 text-amber-500" />
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tasks</span>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">

@@ -45,7 +45,7 @@ function getTypeBadgeColor(type: string): string {
     case 'code':
       return 'bg-green-500'
     default:
-      return 'bg-[#de946a]' // Cast orange for docs
+      return 'bg-emerald-500' // docs
   }
 }
 

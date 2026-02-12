@@ -1079,7 +1079,7 @@ export function MessageInput({
                 <span>Summon</span>
               </button>
               {showEmptyRosterHint && (
-                <span className="text-[#ff6600] text-base ml-1">⬅︎ Add an agent to this channel!</span>
+                <span className="text-[#10B981] text-base ml-1">⬅︎ Add an agent to this channel!</span>
               )}
             </div>
             {/* Send button */}

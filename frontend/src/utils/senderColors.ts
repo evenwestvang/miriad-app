@@ -5,9 +5,9 @@
 
 // Predefined colors for common senders
 const PREDEFINED_COLORS: Record<string, string> = {
-  human: 'text-green-500',
-  user: 'text-green-500',
-  You: 'text-green-500',
+  human: 'text-cyan-500',
+  user: 'text-cyan-500',
+  You: 'text-cyan-500',
 }
 
 // Color palette for agent callsigns (good contrast on dark backgrounds)
@@ -27,7 +27,7 @@ const AGENT_COLORS = [
  * Used for Cartouche and roster dots.
  */
 const ROSTER_COLORS = [
-  "#FF6600", // orange (brand)
+  "#10B981", // emerald green (brand)
   "#E5194D", // red
   "#FF9ED0", // pink
   "#9B4DCA", // purple
@@ -82,7 +82,7 @@ function seededShuffle<T>(array: T[], seed: number): T[] {
  *
  * @param channelId - The channel ID (used to shuffle color order)
  * @param rosterIndex - The agent's index in the roster
- * @returns Hex color string (e.g., '#FF6600')
+ * @returns Hex color string (e.g., '#10B981')
  */
 export function getRosterColor(channelId: string, rosterIndex: number): string {
   const channelSeed = hashString(channelId)
@@ -143,9 +143,9 @@ const AGENT_HEX_COLORS = [
  * @returns Hex color string (e.g., '#60a5fa')
  */
 export function getSenderDotColor(sender: string): string {
-  // Humans get green
+  // Humans get cyan
   if (PREDEFINED_COLORS[sender]) {
-    return '#22c55e' // green-500
+    return '#06b6d4' // cyan-500
   }
 
   // Generate deterministic color from sender name (same hash as getSenderColor)

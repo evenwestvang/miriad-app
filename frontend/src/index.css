@@ -11,7 +11,7 @@
         --card-foreground: 0 0% 10%;
         --popover: 0 0% 100%;
         --popover-foreground: 0 0% 10%;
-        --primary: 24 100% 50%;
+        --primary: 160 84% 39%;
         --primary-foreground: 0 0% 100%;
         --secondary: 0 0% 96%;
         --secondary-foreground: 0 0% 10%;
@@ -35,14 +35,14 @@
         --cast-border-subtle: #f0f0f0;
         --cast-bg-hover: #f5f5f5;
         --cast-bg-active: #f0f0f0;
-        --cast-accent: #FF6600;
+        --cast-accent: #10B981;
 
         /* Status colors */
         --status-idle: 142 76% 36%;
         --status-thinking: 217 91% 60%;
-        --status-tool: 271 81% 56%;
+        --status-tool: 43 96% 56%;
         --status-error: 0 84% 60%;
-        --status-starting: 48 96% 53%;
+        --status-starting: 43 96% 56%;
         --status-stopped: 0 0% 45%;
     }
 
@@ -63,7 +63,7 @@
         --border: 0 0% 20%;
         --input: 0 0% 20%;
         --ring: 0 0% 95%;
-        --primary: 24 100% 50%;
+        --primary: 160 84% 39%;
         --radius: 0px;
 
         /* Inverted Cast tokens */
@@ -75,7 +75,7 @@
         --cast-border-subtle: #2a2a2a;
         --cast-bg-hover: #1a1a1a;
         --cast-bg-active: #252525;
-        --cast-accent: #FF6600;
+        --cast-accent: #10B981;
     }
 
     * {
@@ -188,16 +188,16 @@
 }
 
 .message-item.user {
-    @apply border-l-green-500;
+    @apply border-l-cyan-500;
 }
 
 .message-item.tool_call,
 .message-item.tool_result {
-    @apply border-l-purple-500;
+    @apply border-l-amber-500;
 }
 
 .message-item.thinking {
-    @apply border-l-yellow-500 opacity-80;
+    @apply border-l-amber-500 opacity-80;
 }
 
 .message-item.error {
@@ -217,7 +217,7 @@
 }
 
 .sender.user {
-    @apply text-green-500;
+    @apply text-cyan-500;
 }
 
 .timestamp {
@@ -411,15 +411,15 @@
     @apply font-medium;
 }
 
-/* @channel - Cast orange (broadcast to everyone) */
+/* @channel - emerald green (broadcast to everyone) */
 .mention-channel {
-    color: #FF6600;
+    color: var(--cast-accent);
 }
 
-/* @me - Cast orange with subtle highlight (needs my attention) */
+/* @me - emerald green with subtle highlight (needs my attention) */
 .mention-me {
-    color: #FF6600;
-    background-color: rgba(255, 102, 0, 0.15);
+    color: var(--cast-accent);
+    background-color: rgba(16, 185, 129, 0.15);
     padding: 0 0.25rem;
     border-radius: 2px;
 }
@@ -463,13 +463,13 @@
     @apply flex items-center gap-2;
 }
 
-/* Agent working animation - subtle purple-black cycling */
+/* Agent working animation - subtle green cycling */
 @keyframes working {
     0%, 100% {
         color: var(--cast-text-primary);
     }
     50% {
-        color: #9333ea; /* purple-600 */
+        color: #10B981; /* emerald-500 */
     }
 }
 

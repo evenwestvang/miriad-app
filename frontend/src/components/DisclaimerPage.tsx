@@ -105,7 +105,7 @@ export function DisclaimerPage({ onAccept }: DisclaimerPageProps) {
         <div className="text-center space-y-4">
           <div className="flex flex-col items-center gap-2">
             <img src={miriadLogo} alt="Miriad" className="w-12 h-12" />
-            <span className="text-[#ff6600] font-semibold tracking-wide" style={{ fontFamily: 'Inter, sans-serif' }}>MIRIAD</span>
+            <span className="text-[#10B981] font-semibold tracking-wide" style={{ fontFamily: 'Inter, sans-serif' }}>MIRIAD</span>
           </div>
           <h2 className="text-xl font-semibold text-foreground">
             Before you begin

@@ -1371,7 +1371,7 @@ export function App() {
       {/* Unified header - spans full width */}
       <header className="h-12 flex items-center gap-2 md:gap-3 px-3 md:px-5 border-b border-border bg-card flex-shrink-0">
         {/* Branding - text only, no logo */}
-        <span className="font-semibold text-[#FF6600] text-base tracking-[0.05em]">
+        <span className="font-semibold text-[#10B981] text-base tracking-[0.05em]">
           MIRIAD
         </span>
 

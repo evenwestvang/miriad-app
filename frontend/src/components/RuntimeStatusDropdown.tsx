@@ -414,7 +414,7 @@ export function RuntimeStatusDropdown({ apiHost, spaceId, onOpenSettings, settin
 
           {/* Warning when no runtimes online */}
           {!hasAnyOnline && (
-            <div className="px-3 py-2 bg-orange-500/10 border-b border-orange-500/20">
+            <div className="px-3 py-2 bg-amber-500/10 border-b border-amber-500/20">
               <p className="text-xs text-orange-600 dark:text-orange-400">
                 You need at least one runtime to work with agents. Start Miriad Cloud or connect a local runtime.
               </p>
