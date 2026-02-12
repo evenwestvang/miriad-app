@@ -304,7 +304,7 @@ export async function buildMcpConfigsFromContext(
       configs.push({
         name: "sandbox",
         transport: "http" as const,
-        url: `${platformMcpUrl}/mcp/sandbox/${channelId}`,
+        url: `${platformMcpUrl}/mcp-sandbox/${channelId}`,
         headers: {
           Authorization: `Container ${authToken}`,
         },
@@ -573,7 +573,7 @@ export function createAgentInvokerAdapter(
                 if (process.env.DAYTONA_API_KEY) {
                   mcpServers.push({
                     name: "sandbox",
-                    url: `${platformMcpUrl}/mcp/sandbox/${channelId}`,
+                    url: `${platformMcpUrl}/mcp-sandbox/${channelId}`,
                     headers: { Authorization: `Container ${authToken}` },
                   });
                 }

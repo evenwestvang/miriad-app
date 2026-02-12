@@ -6,7 +6,7 @@
  * as sandbox__create, sandbox__Read, etc.
  *
  * Endpoint:
- * - POST /mcp/sandbox/:channel - JSON-RPC endpoint for sandbox tools
+ * - POST /mcp-sandbox/:channel - JSON-RPC endpoint for sandbox tools
  *
  * Auth: Same channel bearer token as the main miriad MCP.
  * Env: Resolved from channel's system.environment artifacts (same path as agent delivery).
@@ -133,6 +133,8 @@ export function createSandboxMcpRoutes(options: SandboxMcpOptions) {
       }
 
       case 'notifications/initialized': {
+        // JSON-RPC notifications have no id and expect no response,
+        // but MCP clients send this as a regular request. Return empty result.
         return c.json(jsonRpcSuccess(request.id, {}));
       }
 

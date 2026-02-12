@@ -2830,6 +2830,10 @@ export function createApp(options: AppOptions): Hono {
           ? await storage.listArtifacts(rootChannelId, { type: "system.environment" })
           : [];
 
+        // Sort by slug for deterministic ordering (matches resolveEnvironmentFromContext)
+        rootEnvs.sort((a, b) => a.slug.localeCompare(b.slug));
+        channelEnvs.sort((a, b) => a.slug.localeCompare(b.slug));
+
         // Root first (base layer)
         for (const summary of rootEnvs) {
           const artifact = await storage.getArtifact(rootChannelId!, summary.slug);
@@ -2867,7 +2871,7 @@ export function createApp(options: AppOptions): Hono {
         return result;
       },
     });
-    app.route("/mcp/sandbox", sandboxMcpRoutes);
+    app.route("/mcp-sandbox", sandboxMcpRoutes);
     console.log("[App] Sandbox MCP enabled (DAYTONA_API_KEY configured)");
   } else {
     console.log("[App] Sandbox MCP disabled (no DAYTONA_API_KEY)");
