@@ -111,6 +111,15 @@ Parameters:
     Description: Secret for container token validation (must match tunnel server)
     NoEcho: true
     Default: ''
+  DaytonaApiKey:
+    Type: String
+    Description: Daytona API key for sandbox MCP (optional — sandbox tools disabled if empty)
+    NoEcho: true
+    Default: ''
+  DaytonaApiUrl:
+    Type: String
+    Description: Daytona API URL (defaults to https://app.daytona.io/api)
+    Default: ''
   MiriadRuntimeMode:
     Type: String
     Description: Runtime mode for Miriad Cloud containers (docker for local dev, fly for production)
@@ -194,6 +203,8 @@ Resources:
           ASSETS_BUCKET_NAME: !Ref AssetsBucket
           ASSETS_BUCKET_REGION: !Ref AWS::Region
           MIRIAD_RUNTIME_MODE: !Ref MiriadRuntimeMode
+          DAYTONA_API_KEY: !Ref DaytonaApiKey
+          DAYTONA_API_URL: !Ref DaytonaApiUrl
           DEPLOY_TIMESTAMP: !Ref DeployTimestamp
       Events:
         RootPath:
